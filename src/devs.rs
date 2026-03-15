@@ -50,6 +50,20 @@ impl Devs {
         }
     }
 
+    pub fn del(&mut self, id: usize) {
+        self.dev_id.remove(&id);
+    }
+
+    pub fn list(&self) -> Vec<(usize, String)> {
+        let mut items: Vec<(usize, String)> = self
+            .dev_id
+            .iter()
+            .map(|(&id, d)| (id, d.name.clone()))
+            .collect();
+        items.sort_by_key(|(id, _)| *id);
+        items
+    }
+
     pub fn add(&mut self, name: &str) -> usize {
         if let Some((&id, _)) = self.dev_id.iter().find(|(_, dev)| dev.get_name() == name) {
             return id;

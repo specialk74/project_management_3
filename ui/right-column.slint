@@ -1,0 +1,26 @@
+import {
+    AppState,
+    EffortByPrjData,
+    EffortByPrjGui,
+    EffortsData,
+} from "global.slint";
+
+export component RightColumn inherits Rectangle {
+    in property <string> prefix;
+    in property <EffortsData> efforts;
+    in-out property <length> viewport_y;
+    in-out property <length> viewport_x;
+
+    Flickable {
+        viewport-y <=> root.viewport_y;
+        viewport-x <=> root.viewport_x;
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+            for effort in root.efforts.projects: EffortByPrjGui {
+                effort: effort;
+                //num_visible: root.num_visible;
+            }
+        }
+    }
+}

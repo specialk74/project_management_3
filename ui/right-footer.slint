@@ -1,0 +1,44 @@
+import {
+    AppState,
+    EffortByPrjData,
+    EffortByPrjGui,
+    EffortsData,
+    DayData,
+    PjmCallback,
+} from "global.slint";
+import { Styles } from "styles.slint";
+import { StyleMetrics, HorizontalBox } from "std-widgets.slint";
+
+export component RightFooter inherits Rectangle {
+    in property <EffortsData> efforts;
+    in-out property <length> viewport-x;
+
+    Flickable {
+        viewport-x <=> root.viewport-x;
+        HorizontalLayout {
+            padding: 0px;
+            spacing: 0px;
+            for data in root.efforts.sovra: Rectangle {
+                HorizontalLayout {
+                    Rectangle {
+                        background: data.week == PjmCallback.this_week ? #00ce3a : Colors.transparent;
+                        width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+                    }
+
+                    VerticalLayout {
+                        for value[index] in data.value: Rectangle {
+                            background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                            width: Styles.width;
+                            height: Styles.height;
+                            Text {
+                                font-weight: value == 80 ? 200 : 800;
+                                color: value > 80 ? Colors.red : (value < 40 ? Colors.yellow : (value < 80 ? Colors.orange : Colors.lightgreen));
+                                text: value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -66,6 +66,16 @@ impl Projects {
         }
     }
 
+    pub fn list(&self) -> Vec<(usize, String)> {
+        let mut items: Vec<(usize, String)> = self
+            .projects
+            .iter()
+            .map(|(&id, p)| (id, p.info.clone()))
+            .collect();
+        items.sort_by_key(|(id, _)| *id);
+        items
+    }
+
     pub fn add(&mut self, info: &str) -> usize {
         let id = self.last_id;
         self.projects.insert(id, Project::new(info));

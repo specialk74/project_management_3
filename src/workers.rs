@@ -64,4 +64,14 @@ impl Workers {
     pub fn del(&mut self, id: usize) {
         self.worker_id.remove(&id);
     }
+
+    pub fn list(&self) -> Vec<(usize, String)> {
+        let mut items: Vec<(usize, String)> = self
+            .worker_id
+            .iter()
+            .map(|(&id, w)| (id, w.name.clone()))
+            .collect();
+        items.sort_by_key(|(id, _)| *id);
+        items
+    }
 }

@@ -1,0 +1,206 @@
+import {
+    Button,
+    VerticalBox,
+    ListView,
+    CheckBox,
+    LineEdit,
+    Spinner,
+    TextEdit,
+    HorizontalBox,
+    ProgressIndicator,
+} from "std-widgets.slint";
+
+import { Styles } from "styles.slint";
+import {
+    EffortByPrjData,
+    EffortByDateData,
+    EffortByDevData,
+    Cell-RO,
+    Cell-RW,
+    PjmCallback,
+    EffortsData,
+    DayData,
+} from "global.slint";
+
+export {PjmCallback}
+
+import { Header } from "header.slint";
+import { LeftColumn } from "left-column.slint";
+import { RightColumn } from "right-column.slint";
+import { LeftFooter } from "left-footer.slint";
+import { RightFooter } from "right-footer.slint";
+
+component ModalWindow inherits Window {
+    callback closed(string);
+    callback select_all();
+
+    FocusScope {
+        VerticalLayout {
+            spacing: 0px;
+            padding: 0px;
+
+            Cell-RO {
+                text: "Search...";
+            }
+
+            input_field := LineEdit {
+                placeholder-text: "Enter text...";
+                text: "";
+                accepted => {
+                    root.closed(input_field.text);
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 0px;
+                padding: 0px;
+
+                alignment: stretch;
+                Button {
+                    text: "Abort";
+                    clicked => {
+                        root.closed("");
+                    }
+                }
+
+                Button {
+                    text: "Search";
+                    clicked => {
+                        root.closed(input_field.text);
+                    }
+                }
+            }
+        }
+
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.closed(PjmCallback.last-search);
+                accept
+            }
+            if (event.text == Key.Return) {
+                root.closed(input_field.text);
+                accept
+            }
+            reject
+        }
+    }
+
+    forward-focus: input_field;
+
+    select-all => {
+        input_field.select_all();
+    }
+}
+
+export component AppWindow inherits Window {
+    in-out property <EffortsData> efforts;
+    in property <int> num_visible: 1;
+    in property <bool> loading: true;
+    property <length> viewport_y;
+    property <length> viewport_x;
+    property <length> width1: 150px;
+    in property <[DayData]> weeks;
+
+    default-font-size: Styles.font-size;
+    default-font-family: Styles.font-family;
+    title: "Project Management Effort Tracker App [" + PjmCallback.current_file + "]" + (PjmCallback.changed ? " (*)" : "");
+    min-width: 1024px;
+    resize-border-width: 10px;
+    full-screen: true;
+
+    VerticalLayout {
+        Header {
+            weeks: root.weeks;
+            viewport_x <=> root.viewport_x;
+            efforts: root.efforts;
+        }
+
+        Rectangle {
+            height: 2px;
+            background: Colors.yellow;
+        }
+
+        HorizontalLayout {
+            LeftColumn {
+                efforts: root.efforts;
+
+                // binding verticale
+                viewport_y <=> root.viewport_y;
+            }
+
+            RightColumn {
+                efforts: root.efforts;
+
+                viewport_y <=> root.viewport_y;
+                viewport_x <=> root.viewport_x;
+            }
+
+            spacing: 0px;
+            padding: 0px;
+        }
+
+        Rectangle {
+            height: 2px;
+            background: Colors.yellow;
+        }
+
+        Header {
+            weeks: root.weeks;
+            viewport_x <=> root.viewport_x;
+            efforts: root.efforts;
+        }
+
+        HorizontalLayout {
+            LeftFooter {
+                efforts: root.efforts;
+            }
+
+            RightFooter {
+                efforts: root.efforts;
+                viewport_x <=> root.viewport_x;
+            }
+        }
+    }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.modifiers.control) {
+                if (event.text == "S" || event.text == "s") {
+                    PjmCallback.save_file();
+                    return accept;
+                }
+                if (event.text == "f") {
+                    PjmCallback.show_modal = true;
+                    im.select_all();
+                    im.focus();
+                    return accept;
+                }
+                if (event.text == "F") {
+                    PjmCallback.last-search = "";
+                    PjmCallback.search("");
+                    return accept;
+                }
+                if (event.text == "N" || event.text == "n") {
+                    PjmCallback.new_project();
+                    return accept;
+                }
+                if (event.text == "O" || event.text == "o") {
+                    PjmCallback.open_file();
+                    return accept;
+                }
+            }
+            reject
+        }
+    }
+
+    im := ModalWindow {
+        visible: PjmCallback.show_modal;
+        title: "Search the worker...";
+        closed(result) => {
+            PjmCallback.last-search = result;
+            PjmCallback.search(result);
+            PjmCallback.show_modal = false;
+            fs.focus();
+        }
+    }
+}

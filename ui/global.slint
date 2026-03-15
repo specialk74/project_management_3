@@ -1,0 +1,519 @@
+import {
+    Button,
+    VerticalBox,
+    ListView,
+    CheckBox,
+    LineEdit,
+    Spinner,
+    TextEdit,
+    HorizontalBox,
+    ProgressIndicator,
+    StyleMetrics,
+    Palette,
+} from "std-widgets.slint";
+
+import { Styles } from "styles.slint";
+
+export global AppState {
+    in property <[{title: string, col: color, text-color: color}]> model: [
+        { title: "Mcsw", col: #0099ff, text-color: Colors.white },
+        { title: "Sms", col: Colors.violet, text-color: Colors.black },
+        { title: "Mvh", col: Colors.brown, text-color: Colors.white },
+        { title: "Hw", col: Colors.green, text-color: Colors.black },
+        { title: "Ele", col: Colors.blue, text-color: Colors.white },
+        { title: "Hw Test", col: Colors.yellow, text-color: Colors.black },
+        { title: "Fw Test", col: Colors.purple, text-color: Colors.white },
+        { title: "Sys Test", col: Colors.orange, text-color: Colors.black },
+        { title: "Pjm", col: Colors.cyan, text-color: Colors.black }
+    ];
+}
+
+export struct EffortByDateData {
+    total: int,
+    remains: int,
+    dev: int,
+    project: int,
+    effort: int,
+    week: int,
+    persons: [string],
+}
+
+export struct EffortByDevData {
+    project: int,
+    dev: int,
+    total: int,
+    effort: int,
+    remains: int,
+    visible: bool,
+    enable: bool,
+    max: int,
+    datas: [EffortByDateData],
+}
+
+export struct EffortByPrjData {
+    project: int,
+    text: string,
+    start_week: int,
+    end_week:int,
+    visible: bool,
+    enable: bool,
+    efforts: [EffortByDevData]
+}
+
+export struct SovraData {
+    value: [int],
+    week: int,
+}
+
+export struct EffortsData {
+    worker_names: [string],
+    week_off: [int],
+    sovra: [SovraData],
+    projects: [EffortByPrjData]
+}
+
+export struct DayData  {
+    week: int,
+    text: string,
+}
+
+export struct ProjectListItem {
+    text: string,
+    visible: bool,
+}
+
+export global PjmCallback {
+    callback changed_effort(EffortByDateData);
+    callback set_dev_effort(EffortByDevData);
+    callback save_file();
+    callback open_file();
+    callback move_effort(int /*project*/, int /*dev*/, int /*start_week*/, int /*end_week*/, int /*start_row*/, int /*end_row*/, int /*offset_weeks*/);
+    callback search(string);
+    callback new_project();
+    callback add_row(int, int);
+    callback del_row(int, int);
+    callback hide_dev(int, int, bool);
+    in property <string> testo-copiato;
+    in property <string> last-search;
+    in property <bool> show_modal;
+    in property <bool> changed;
+    in property <int> this_week;
+    in property <length> this_week_width: 5px;
+    in property <string> current_file: "efforts.json";
+    // Selezione
+    in-out property <int> sel_project: -1;
+    in-out property <int> sel_dev: -1;
+    in-out property <int> sel_anchor_week: -1;
+    in-out property <int> sel_anchor_row: -1;
+    in-out property <int> sel_start_week: -1;
+    in-out property <int> sel_end_week: -1;
+    in-out property <int> sel_start_row: -1;
+    in-out property <int> sel_end_row: -1;
+    // Drag
+    in-out property <bool> drag_active: false;
+    in-out property <int> drag_preview_offset: 0;
+}
+
+component InternalText inherits Text {
+    overflow: clip;
+    vertical-alignment: center;
+    horizontal-alignment: center;
+    wrap: word-wrap;
+}
+
+export component Cell-RO inherits Rectangle {
+    in property <string> text;
+    in property <color> text_color: Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black;
+    in property <int> font-weight: 800;
+    //in property <color> error_color: #ffffff;
+    //in property <color> background_color: #ffffff;
+    in property <TextHorizontalAlignment> horizontal-alignment: TextHorizontalAlignment.center;
+
+    height: self.visible ? Styles.height : 0px;
+    width: Styles.width;
+    //background: root.error_color;
+
+    clip: true;
+    Rectangle {
+        width: parent.width - 5px;
+        height: parent.visible ? parent.height - 5px : 0px;
+
+        innerRect := Rectangle {
+            property <length> parent_width: parent.width;
+            property <length> position: (parent.width - self.width) / 2;
+            property <length> start_position: (parent.width - self.width) / 2;
+            property <bool> running: self.width > parent.width;
+            x: position;
+            width: myText.width;
+            animate x {
+                duration: 1000ms;
+                easing: ease-in-out;
+            }
+            Timer {
+                interval: 5000ms;
+                running: running;
+
+                triggered => {
+                    position = position == 0 ? (parent_width - innerRect.width) : 0;
+                }
+            }
+
+            myText := InternalText {
+                color: root.text_color;
+                text: root.text;
+                font-weight: root.font-weight;
+                horizontal-alignment: root.horizontal-alignment;
+            }
+        }
+    }
+}
+
+export component Cell-RW inherits Rectangle {
+    in-out property <string> text;
+    in property <bool> selected: false;
+    callback double_clicked(string);
+    // Selezione
+    callback sel_plain();
+    callback sel_shift();
+    callback sel_ctrl();
+    // Drag
+    callback drag_delta(length);
+    callback drag_end();
+
+    property <bool> editing: false;
+    property <bool> has-focus: fs.has-focus;
+    height: self.visible ? Styles.height : 0px;
+    width: Styles.width;
+
+    fs := FocusScope {
+        focus-on-tab-navigation: true;
+        le := LineEdit {
+            visible: editing;
+            height: 100%;
+            width: 100%;
+            text <=> root.text;
+            accepted => {
+                root.double_clicked(root.text);
+                root.editing = false;
+                fs.focus();
+            }
+        }
+
+        Rectangle {
+            visible: !editing;
+            background: (root.selected && PjmCallback.drag_active) ? Colors.orange.with-alpha(0.5) :
+                        root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
+            border-color: fs.has-focus ? Colors.orangered : Colors.transparent;
+            border-width: parent.visible ? 1px : 0px;
+
+            TouchArea {
+                property <length> press_x;
+                property <bool> may_drag: false;
+                mouse-cursor: root.selected ? move : default;
+
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                        press_x = self.mouse-x;
+                        may_drag = false;
+                        if event.modifiers.shift {
+                            root.sel_shift();
+                        } else if event.modifiers.control {
+                            root.sel_ctrl();
+                        } else if root.selected {
+                            may_drag = true;
+                            PjmCallback.drag_active = false;
+                            PjmCallback.drag_preview_offset = 0;
+                            fs.focus();
+                        } else {
+                            root.sel_plain();
+                            fs.focus();
+                        }
+                    }
+                    if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
+                        if may_drag {
+                            root.drag_end();
+                            may_drag = false;
+                        }
+                    }
+                }
+
+                moved => {
+                    if may_drag {
+                        root.drag_delta(self.mouse-x - press_x);
+                    }
+                }
+
+                Cell-RO {
+                    text: root.text;
+                }
+            }
+        }
+
+        key-pressed(event) => {
+            if (event.modifiers.control) {
+                if (event.text == "C" || event.text == "c") {
+                    PjmCallback.testo-copiato = root.text;
+                }
+                if (event.text == "V" || event.text == "v") {
+                    root.text = PjmCallback.testo-copiato;
+                    root.double_clicked(root.text);
+                }
+                if (event.text == "S" || event.text == "s") {
+                    PjmCallback.save_file();
+                }
+                if (event.text == "f") {
+                    PjmCallback.show_modal = true;
+                    return accept;
+                }
+                if (event.text == "F") {
+                    PjmCallback.last-search = "";
+                    PjmCallback.search("");
+                    return accept;
+                }
+            }
+            if (event.text == Key.Escape) {
+                root.editing = false;
+                le.clear-focus();
+                fs.focus();
+            }
+            if (event.text == Key.Return) {
+                root.editing = true;
+                le.focus();
+            }
+            if (event.text == Key.Delete || event.text == Key.Backspace) {
+                root.text = "";
+                root.double_clicked(root.text);
+            }
+            if (event.text == Key.Tab) {
+                reject
+            } else {
+                accept
+            }
+        }
+    }
+}
+
+export component EffortByDataGui inherits Rectangle {
+    in property <int> num_visible;
+    in property <EffortByDateData> effort;
+
+    property <bool> is_drag_dest:
+        PjmCallback.drag_active &&
+        PjmCallback.drag_preview_offset != 0 &&
+        effort.project == PjmCallback.sel_project &&
+        effort.dev     == PjmCallback.sel_dev &&
+        effort.week    >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) &&
+        effort.week    <= (PjmCallback.sel_end_week   + PjmCallback.drag_preview_offset * 7);
+
+    popup := Rectangle {
+        x: cell.x;
+        y: cell.y + Styles.height;
+        visible: t.has-hover;
+        height: Styles.height;
+        width: Styles.width;
+        background: yellow;
+        Text {
+            font-weight: 800;
+            text: effort.remains;
+            color: Colors.black;
+        }
+    }
+
+    VerticalLayout {
+        spacing: 0px;
+        padding: 0px;
+
+        function my-function(effort: EffortByDateData) -> color {
+            if effort.total == 0 {
+                return Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black;
+            }
+            if effort.total < effort.effort * 10 / 100 {
+                return #018730;
+            }
+            if effort.total < effort.effort * 20 / 100 {
+                return #558d00;
+            }
+            if effort.total < effort.effort * 30 / 100 {
+                return #6d8800;
+            }
+            if effort.total < effort.effort * 40 / 100 {
+                return #888800;
+            }
+            if effort.total < effort.effort * 50 / 100 {
+                return #a88700;
+            }
+            if effort.total < effort.effort * 60 / 100 {
+                return #b57a00;
+            }
+            if effort.total < effort.effort * 70 / 100 {
+                return #cf6f00;
+            }
+            if effort.total < effort.effort * 80 / 100 {
+                return #c54300;
+            }
+            if effort.total < effort.effort * 90 / 100 {
+                return #d52c00;
+            }
+            return #d10100;
+        }
+
+        cell := Cell-RO {
+            visible: root.visible;
+            text: effort.total;
+            text_color: my-function(effort);
+
+            t := TouchArea {
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        for person[row_idx] in effort.persons: Cell-RW {
+            text: person;
+            visible: root.visible;
+            selected: effort.project == PjmCallback.sel_project
+                   && effort.dev    == PjmCallback.sel_dev
+                   && effort.week   >= PjmCallback.sel_start_week
+                   && effort.week   <= PjmCallback.sel_end_week
+                   && row_idx       >= PjmCallback.sel_start_row
+                   && row_idx       <= PjmCallback.sel_end_row;
+
+            double_clicked(text) => {
+                person = text;
+                PjmCallback.changed_effort(root.effort);
+            }
+
+            sel_plain() => {
+                PjmCallback.sel_project     = effort.project;
+                PjmCallback.sel_dev         = effort.dev;
+                PjmCallback.sel_anchor_week = effort.week;
+                PjmCallback.sel_anchor_row  = row_idx;
+                PjmCallback.sel_start_week  = effort.week;
+                PjmCallback.sel_end_week    = effort.week;
+                PjmCallback.sel_start_row   = row_idx;
+                PjmCallback.sel_end_row     = row_idx;
+            }
+
+            sel_shift() => {
+                if effort.project == PjmCallback.sel_project
+                && effort.dev     == PjmCallback.sel_dev {
+                    PjmCallback.sel_start_week = min(effort.week, PjmCallback.sel_anchor_week);
+                    PjmCallback.sel_end_week   = max(effort.week, PjmCallback.sel_anchor_week);
+                    PjmCallback.sel_start_row  = min(row_idx,     PjmCallback.sel_anchor_row);
+                    PjmCallback.sel_end_row    = max(row_idx,     PjmCallback.sel_anchor_row);
+                }
+            }
+
+            sel_ctrl() => {
+                if effort.project == PjmCallback.sel_project
+                && effort.dev     == PjmCallback.sel_dev {
+                    if effort.week < PjmCallback.sel_start_week { PjmCallback.sel_start_week = effort.week; }
+                    if effort.week > PjmCallback.sel_end_week   { PjmCallback.sel_end_week   = effort.week; }
+                    if row_idx     < PjmCallback.sel_start_row  { PjmCallback.sel_start_row  = row_idx; }
+                    if row_idx     > PjmCallback.sel_end_row    { PjmCallback.sel_end_row    = row_idx; }
+                } else {
+                    PjmCallback.sel_project     = effort.project;
+                    PjmCallback.sel_dev         = effort.dev;
+                    PjmCallback.sel_anchor_week = effort.week;
+                    PjmCallback.sel_anchor_row  = row_idx;
+                    PjmCallback.sel_start_week  = effort.week;
+                    PjmCallback.sel_end_week    = effort.week;
+                    PjmCallback.sel_start_row   = row_idx;
+                    PjmCallback.sel_end_row     = row_idx;
+                }
+            }
+
+            drag_delta(delta) => {
+                PjmCallback.drag_active        = true;
+                PjmCallback.drag_preview_offset = Math.round(delta / Styles.width);
+            }
+
+            drag_end() => {
+                if PjmCallback.drag_preview_offset != 0 {
+                    PjmCallback.move_effort(
+                        PjmCallback.sel_project,
+                        PjmCallback.sel_dev,
+                        PjmCallback.sel_start_week,
+                        PjmCallback.sel_end_week,
+                        PjmCallback.sel_start_row,
+                        PjmCallback.sel_end_row,
+                        PjmCallback.drag_preview_offset
+                    );
+                }
+                PjmCallback.drag_active         = false;
+                PjmCallback.drag_preview_offset = 0;
+            }
+        }
+    }
+
+    // Ghost preview rectangle shown at destination during drag
+    Rectangle {
+        visible: is_drag_dest;
+        x: 0;
+        y: Styles.height * (PjmCallback.sel_start_row + 1);
+        width: Styles.width;
+        height: (PjmCallback.sel_end_row - PjmCallback.sel_start_row + 1) * Styles.height;
+        background: Colors.steelblue.with-alpha(0.25);
+        border-color: Colors.steelblue;
+        border-width: 2px;
+        z: 10;
+    }
+}
+
+export component EffortByDevGui inherits Rectangle {
+    in property <int> num_visible;
+    in property <EffortByDevData> datas;
+    in property <int> index;
+    VerticalLayout {
+        Rectangle {
+            height: 2px;
+            background: AppState.model[root.index].col;
+        }
+
+        HorizontalLayout {
+            spacing: 0px;
+            padding: 0px;
+            visible: datas.visible && datas.enable;
+
+            for data in datas.datas: Rectangle {
+                HorizontalLayout {
+                    Rectangle {
+                        background: data.week == PjmCallback.this_week ? #00ce3a : Colors.transparent;
+                        width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+                    }
+
+                    EffortByDataGui {
+                        num_visible: root.num_visible;
+                        effort: data;
+                        visible: datas.visible && datas.enable;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 2px;
+            background: AppState.model[root.index].col;
+        }
+    }
+}
+
+export component EffortByPrjGui inherits Rectangle {
+    in property <int> num_visible;
+    in property <EffortByPrjData> effort;
+    visible: effort.visible && effort.enable;
+    VerticalLayout {
+        spacing: 0px;
+        padding: 0px;
+
+        for data[index] in effort.efforts: EffortByDevGui {
+            index: index;
+            num_visible: root.num_visible;
+            datas: data;
+        }
+        Rectangle {
+            height: 2px;
+            background: Colors.cyan;
+        }
+    }
+}

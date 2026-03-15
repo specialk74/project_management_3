@@ -1,0 +1,64 @@
+import {
+    AppState,
+    EffortByPrjData,
+    EffortsData,
+    PjmCallback,
+    Cell-RO,
+} from "global.slint";
+import { Styles } from "styles.slint";
+
+export component LeftFooter inherits Rectangle {
+    in property <EffortsData> efforts;
+
+    height: Styles.height * (max(AppState.model.length, efforts.worker_names.length) + 1);
+    width: 60px * 4;
+    HorizontalLayout {
+        // I vari dev
+        Rectangle {
+            //width: Styles.width;
+            VerticalLayout {
+                for data in AppState.model: Rectangle {
+                    height: Styles.height;
+                    HorizontalLayout {
+                        Rectangle {
+                            background: data.col;
+                            HorizontalLayout {
+
+                                Cell-RO {
+                                    width: Styles.width - 20px;
+                                    font-weight: 800;
+                                    text_color: data.text-color;
+                                    text: data.title;
+                                    horizontal-alignment: center;
+                                    //vertical-alignment: center;
+                                }
+
+                                Text {
+                                    width: Styles.width - 20px;
+                                    color: data.text-color;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    text: "0";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // I vari worker
+        Rectangle {
+            VerticalLayout {
+                for name[index] in efforts.worker_names: Rectangle {
+                    height: Styles.height;
+                    background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                    Cell-RO {
+                        width: Styles.width;
+                        text: name;
+                    }
+                }
+            }
+        }
+    }
+}

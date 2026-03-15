@@ -1,0 +1,254 @@
+import {
+    Button,
+    VerticalBox,
+    ListView,
+    CheckBox,
+    LineEdit,
+    Spinner,
+    TextEdit,
+    HorizontalBox,
+    ProgressIndicator,
+} from "std-widgets.slint";
+
+import {
+    AppState,
+    EffortByPrjData,
+    PjmCallback,
+    EffortsData,
+} from "global.slint";
+import { Styles } from "styles.slint";
+
+component Separatore inherits Rectangle {
+    in property <color> bgcolor;
+
+    height: self.visible == false ? 0px : 1px;
+    background: bgcolor;
+}
+
+component Devmenu inherits Window {
+    in-out property <int> project;
+    in-out property <int> dev;
+    in-out property <bool> enable;
+
+    public function show(project: int, dev: int, enable: bool) {
+        popup.show();
+        root.project = project;
+        root.dev = dev;
+        root.enable = enable;
+    }
+    popup := PopupWindow {
+        VerticalLayout {
+            Rectangle {
+                visible: !root.enable;
+                background: Colors.grey;
+                Text {
+                    text: "Add Row";
+                }
+
+                TouchArea {
+                    clicked => {
+                        PjmCallback.add_row(root.project, root.dev);
+                        popup.close();
+                    }
+                }
+            }
+
+            Rectangle {
+                visible: !root.enable;
+                background: Colors.grey;
+                Text {
+                    text: "Del Row";
+                }
+
+                TouchArea {
+                    clicked => {
+                        PjmCallback.del_row(root.project, root.dev);
+                        popup.close();
+                    }
+                }
+            }
+
+            Rectangle {
+                background: Colors.grey;
+                Text {
+                    text: root.enable ? "Show Dev" : "Hide Dev";
+                }
+
+                TouchArea {
+                    clicked => {
+                        PjmCallback.hide_dev(root.project, root.dev, root.enable);
+                        popup.close();
+                    }
+                }
+            }
+        }
+
+        x: 20px;
+        y: 20px;
+        close-policy: close-on-click-outside;
+    }
+}
+
+export component LeftColumn inherits Rectangle {
+    in property <EffortsData> efforts;
+    in-out property <length> viewport_y;
+
+    width: 60px * 4;
+
+    popup := Devmenu {
+        visible: false;
+    }
+
+    Flickable {
+        viewport-y <=> root.viewport_y;
+        VerticalLayout {
+            for item in root.efforts.projects: Rectangle {
+                VerticalLayout {
+                    Rectangle {
+                        HorizontalLayout {
+                            TextEdit {
+                                width: 60px * 2;
+                                wrap: TextWrap.word-wrap;
+                                horizontal-alignment: center;
+                                text: item.text;
+                                edited(text) => {
+                                    item.text = text;
+                                    PjmCallback.changed = true;
+                                }
+                            }
+
+                            VerticalLayout {
+                                for data[index] in item.efforts: Rectangle {
+                                    in property <bool> visibility;
+                                    visibility: data.visible && data.enable;
+                                    VerticalLayout {
+                                        cell := Separatore {
+                                            bgcolor: AppState.model[index].col;
+                                            height: 2px;
+
+                                            TouchArea {
+                                                pointer-event(event) => {
+                                                    if event.button == PointerEventButton.right {
+                                                        if event.kind == PointerEventKind.down {
+                                                            popup.x = cell.absolute-position.x;
+                                                            popup.y = cell.absolute-position.y;
+                                                            popup.visible = true;
+                                                            popup.show(item.project, data.dev, data.enable == false);
+                                                        } else {
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            height: visibility ? Styles.height * (data.max + 1) : 0px;
+
+                                            HorizontalLayout {
+                                                Rectangle {
+                                                    background: AppState.model[index].col;
+                                                    width: Styles.width - 50px;
+                                                    clip: true;
+                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                                    Text {
+                                                        height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                                        width: Styles.width - 50px;
+                                                        font-weight: 800;
+                                                        color: AppState.model[index].text-color;
+                                                        text: AppState.model[index].title;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                        wrap: word-wrap;
+                                                        TouchArea {
+                                                            width: parent.width;
+                                                            height: parent.height;
+                                                            double-clicked => {
+                                                                debug("add_row");
+                                                                PjmCallback.add_row(item.project, data.dev);
+                                                            }
+
+                                                            pointer-event(event) => {
+                                                                if event.button == PointerEventButton.right {
+                                                                    if event.kind == PointerEventKind.down {
+                                                                        popup.x = cell.absolute-position.x;
+                                                                        popup.y = cell.absolute-position.y;
+                                                                        popup.visible = true;
+                                                                        popup.show(item.project, data.dev, !data.enable);
+                                                                    } else {
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
+
+                                                    VerticalLayout {
+                                                        LineEdit {
+                                                            width: Styles.width;
+                                                            horizontal-alignment: center;
+                                                            text: data.effort;
+                                                            height: visibility ? Styles.height : 0px;
+
+                                                            accepted(text) => {
+                                                                data.effort = text.to-float();
+                                                                PjmCallback.set_dev_effort(data);
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
+                                                            height: visibility ? Styles.height : 0px;
+
+                                                            Text {
+                                                                horizontal-alignment: center;
+                                                                vertical-alignment: center;
+                                                                text: data.remains;
+                                                                height: visibility ? Styles.height : 0px;
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            height: Styles.height * (data.max - 1);
+                                                            background: Colors.transparent;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Separatore {
+                                            height: 2px;
+                                            bgcolor: AppState.model[index].col;
+
+                                            TouchArea {
+                                                pointer-event(event) => {
+                                                    if event.button == PointerEventButton.right {
+                                                        if event.kind == PointerEventKind.down {
+                                                            popup.x = cell.absolute-position.x;
+                                                            popup.y = cell.absolute-position.y;
+                                                            popup.visible = true;
+                                                            popup.show(item.project, data.dev, data.enable == false);
+                                                        } else {
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 2px;
+                        background: Colors.cyan;
+                    }
+                }
+            }
+        }
+    }
+}
