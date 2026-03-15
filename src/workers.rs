@@ -1,0 +1,77 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Serialize, Deserialize)]
+pub struct Worker {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_color: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_color: Option<usize>,
+}
+
+impl Worker {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            bg_color: None,
+            font_color: None,
+        }
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn set_bg_color(&mut self, color: Option<usize>) {
+        self.bg_color = color;
+    }
+    pub fn set_font_color(&mut self, color: Option<usize>) {
+        self.font_color = color;
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Workers {
+    last_id: usize,
+    worker_id: HashMap<usize, Worker>,
+}
+
+impl Workers {
+    pub fn new() -> Self {
+        Self {
+            last_id: 0,
+            worker_id: HashMap::new(),
+        }
+    }
+
+    fn get_id_by_name(&self, name: &str) -> Option<usize> {
+        self.worker_id
+            .iter()
+            .find(|(_, w)| w.name == name)
+            .map(|(id, _)| *id)
+    }
+
+    pub fn add(&mut self, name: &str) -> usize {
+        self.get_id_by_name(name).unwrap_or_else(|| {
+            let id = self.last_id;
+            self.worker_id.insert(self.last_id, Worker::new(name));
+            self.last_id += 1;
+            id
+        })
+    }
+
+    pub fn del(&mut self, id: usize) {
+        self.worker_id.remove(&id);
+    }
+
+    // pub fn del(&mut self, name: &str) {
+    //     self.list.retain(|_, w| w.name != name);
+    // }
+
+    // pub fn set_color(&mut self, name: &str, color: Option<usize>) {
+    //     if let Some((_, item)) = self.list.iter_mut().find(|(_, w)| w.name == name) {
+    //         item.set_color(color);
+    //     }
+    // }
+}

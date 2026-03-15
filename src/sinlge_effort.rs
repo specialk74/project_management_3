@@ -1,0 +1,64 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+pub struct SingleEffort {
+    effort: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+impl SingleEffort {
+    pub fn new(effort: usize) -> Self {
+        Self { effort, note: None }
+    }
+
+    pub fn set_effort(&mut self, effort: usize) {
+        self.effort = effort;
+    }
+
+    pub fn set_note(&mut self, note: &str) {
+        self.note = Some(note.to_string());
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SingleEffortWeek {
+    worker_id: HashMap<usize, SingleEffort>,
+}
+
+impl SingleEffortWeek {
+    pub fn new() -> Self {
+        Self {
+            worker_id: HashMap::new(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.worker_id.clear();
+    }
+
+    pub fn effort_tot(&self) -> usize {
+        self.worker_id.iter().map(|(_, f)| f.effort).sum()
+    }
+
+    pub fn effort(&self, worker_id: usize) -> usize {
+        self.worker_id.get(&worker_id).map_or(0, |f| f.effort)
+    }
+
+    pub fn add(&mut self, id_worker: usize, effort: usize) {
+        match self.worker_id.get_mut(&id_worker) {
+            Some(single_effort) => single_effort.set_effort(effort),
+            None => {
+                self.worker_id.insert(id_worker, SingleEffort::new(effort));
+            }
+        }
+    }
+
+    pub fn set_note(&mut self, id_worker: usize, note: &str) {
+        if let Some(single_effort) = self.worker_id.get_mut(&id_worker) {
+            single_effort.set_note(note);
+        }
+    }
+}
