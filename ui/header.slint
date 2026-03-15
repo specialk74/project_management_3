@@ -1,8 +1,6 @@
 import {
-    AppState,
-    EffortByPrjData,
     PjmCallback,
-    EffortsData,
+    AppProject,
     DayData,
 } from "global.slint";
 import { Styles } from "styles.slint";
@@ -10,7 +8,7 @@ import { HorizontalBox } from "std-widgets.slint";
 
 export component Header inherits Rectangle {
     in-out property <length> viewport_x;
-    in property <EffortsData> efforts;
+    in property <AppProject> app_project;
     in property <[DayData]> weeks;
 
     height: Styles.height;

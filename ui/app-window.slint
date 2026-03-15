@@ -18,11 +18,11 @@ import {
     Cell-RO,
     Cell-RW,
     PjmCallback,
-    EffortsData,
+    AppProject,
     DayData,
 } from "global.slint";
 
-export {PjmCallback}
+export { PjmCallback }
 
 import { Header } from "header.slint";
 import { LeftColumn } from "left-column.slint";
@@ -92,8 +92,113 @@ component ModalWindow inherits Window {
     }
 }
 
+component Toolbar inherits Rectangle {
+    height: 32px;
+    background: #2a2a2a;
+
+    HorizontalLayout {
+        spacing: 4px;
+        padding-left: 6px;
+        padding-right: 6px;
+        alignment: start;
+
+        Button {
+            text: "+ Progetto";
+            height: 26px;
+            clicked => {
+                PjmCallback.new_project();
+            }
+        }
+
+        Rectangle {
+            width: 8px;
+        }
+
+        worker-input := LineEdit {
+            placeholder-text: "Nome worker…";
+            width: 130px;
+            height: 26px;
+            accepted => {
+                if (self.text != "") {
+                    PjmCallback.add_worker(self.text);
+                    self.text = "";
+                }
+            }
+        }
+
+        Button {
+            text: "+ Worker";
+            height: 26px;
+            clicked => {
+                if (worker-input.text != "") {
+                    PjmCallback.add_worker(worker-input.text);
+                    worker-input.text = "";
+                }
+            }
+        }
+
+        Rectangle {
+            width: 8px;
+        }
+
+        dev-input := LineEdit {
+            placeholder-text: "Nome dev…";
+            width: 130px;
+            height: 26px;
+            accepted => {
+                if (self.text != "") {
+                    PjmCallback.add_dev(self.text);
+                    self.text = "";
+                }
+            }
+        }
+
+        Button {
+            text: "+ Dev";
+            height: 26px;
+            clicked => {
+                if (dev-input.text != "") {
+                    PjmCallback.add_dev(dev-input.text);
+                    dev-input.text = "";
+                }
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: PjmCallback.current_file;
+            color: PjmCallback.changed ? Colors.orange : Colors.gray;
+            vertical-alignment: center;
+            font-size: 11px;
+        }
+
+        Rectangle {
+            width: 6px;
+        }
+
+        Button {
+            text: "Salva";
+            height: 26px;
+            clicked => {
+                PjmCallback.save_file();
+            }
+        }
+
+        Button {
+            text: "Apri";
+            height: 26px;
+            clicked => {
+                PjmCallback.open_file();
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
-    in-out property <EffortsData> efforts;
+    in-out property <AppProject> app_project;
     in property <int> num_visible: 1;
     in property <bool> loading: true;
     property <length> viewport_y;
@@ -105,14 +210,17 @@ export component AppWindow inherits Window {
     default-font-family: Styles.font-family;
     title: "Project Management Effort Tracker App [" + PjmCallback.current_file + "]" + (PjmCallback.changed ? " (*)" : "");
     min-width: 1024px;
+    min-height: 768px;
     resize-border-width: 10px;
-    full-screen: true;
+    full-screen: false;
 
     VerticalLayout {
+        Toolbar { }
+
         Header {
             weeks: root.weeks;
             viewport_x <=> root.viewport_x;
-            efforts: root.efforts;
+            app_project: root.app_project;
         }
 
         Rectangle {
@@ -120,23 +228,26 @@ export component AppWindow inherits Window {
             background: Colors.yellow;
         }
 
-        HorizontalLayout {
-            LeftColumn {
-                efforts: root.efforts;
+        Rectangle {
+            vertical-stretch: 100;
+            HorizontalLayout {
+                LeftColumn {
+                    app_project: root.app_project;
 
-                // binding verticale
+                    // binding verticale
                 viewport_y <=> root.viewport_y;
+                }
+
+                RightColumn {
+                    app_project: root.app_project;
+
+                    viewport_y <=> root.viewport_y;
+                    viewport_x <=> root.viewport_x;
+                }
+
+                spacing: 0px;
+                padding: 0px;
             }
-
-            RightColumn {
-                efforts: root.efforts;
-
-                viewport_y <=> root.viewport_y;
-                viewport_x <=> root.viewport_x;
-            }
-
-            spacing: 0px;
-            padding: 0px;
         }
 
         Rectangle {
@@ -147,16 +258,16 @@ export component AppWindow inherits Window {
         Header {
             weeks: root.weeks;
             viewport_x <=> root.viewport_x;
-            efforts: root.efforts;
+            app_project: root.app_project;
         }
 
         HorizontalLayout {
             LeftFooter {
-                efforts: root.efforts;
+                app_project: root.app_project;
             }
 
             RightFooter {
-                efforts: root.efforts;
+                app_project: root.app_project;
                 viewport_x <=> root.viewport_x;
             }
         }

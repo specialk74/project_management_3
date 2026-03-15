@@ -1,23 +1,21 @@
 import {
-    AppState,
-    EffortByPrjData,
-    EffortsData,
+    AppProject,
     PjmCallback,
     Cell-RO,
 } from "global.slint";
 import { Styles } from "styles.slint";
 
 export component LeftFooter inherits Rectangle {
-    in property <EffortsData> efforts;
+    in property <AppProject> app_project;
 
-    height: Styles.height * (max(AppState.model.length, efforts.worker_names.length) + 1);
+    height: Styles.height * (max(app_project.devs.length, app_project.worker_names.length) + 1);
     width: 60px * 4;
     HorizontalLayout {
         // I vari dev
         Rectangle {
             //width: Styles.width;
             VerticalLayout {
-                for data in AppState.model: Rectangle {
+                for data in app_project.devs: Rectangle {
                     height: Styles.height;
                     HorizontalLayout {
                         Rectangle {
@@ -50,7 +48,7 @@ export component LeftFooter inherits Rectangle {
         // I vari worker
         Rectangle {
             VerticalLayout {
-                for name[index] in efforts.worker_names: Rectangle {
+                for name[index] in app_project.worker_names: Rectangle {
                     height: Styles.height;
                     background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
                     Cell-RO {

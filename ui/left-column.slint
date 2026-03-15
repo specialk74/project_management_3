@@ -11,10 +11,10 @@ import {
 } from "std-widgets.slint";
 
 import {
-    AppState,
     EffortByPrjData,
     PjmCallback,
-    EffortsData,
+    AppProject,
+    DevInfo,
 } from "global.slint";
 import { Styles } from "styles.slint";
 
@@ -23,6 +23,55 @@ component Separatore inherits Rectangle {
 
     height: self.visible == false ? 0px : 1px;
     background: bgcolor;
+}
+
+component DevSelectPopup inherits Window {
+    in property <[DevInfo]> devs;
+    in-out property <int> project;
+    in-out property <bool> add;
+
+    public function show(project: int, add: bool) {
+        root.add = add;
+        root.project = project;
+        popup.show();
+    }
+
+    popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 140px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555;
+            border-width: 1px;
+
+            VerticalLayout {
+                padding: 2px;
+                spacing: 1px;
+
+                for dev[dev-idx] in root.devs: Rectangle {
+                    height: Styles.height;
+                    background: dev.col;
+                    border-radius: 2px;
+
+                    Text {
+                        color: dev.text-color;
+                        text: dev.title;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            PjmCallback.add_dev_to_project(root.project, dev-idx, root.add);
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 component Devmenu inherits Window {
@@ -68,19 +117,19 @@ component Devmenu inherits Window {
                 }
             }
 
-            Rectangle {
-                background: Colors.grey;
-                Text {
-                    text: root.enable ? "Show Dev" : "Hide Dev";
-                }
+            // Rectangle {
+            //     background: Colors.grey;
+            //     Text {
+            //         text: root.enable ? "Show Dev" : "Hide Dev";
+            //     }
 
-                TouchArea {
-                    clicked => {
-                        PjmCallback.hide_dev(root.project, root.dev, root.enable);
-                        popup.close();
-                    }
-                }
-            }
+            //     TouchArea {
+            //         clicked => {
+            //             PjmCallback.hide_dev(root.project, root.dev, root.enable);
+            //             popup.close();
+            //         }
+            //     }
+            // }
         }
 
         x: 20px;
@@ -90,40 +139,122 @@ component Devmenu inherits Window {
 }
 
 export component LeftColumn inherits Rectangle {
-    in property <EffortsData> efforts;
+    in property <AppProject> app_project;
     in-out property <length> viewport_y;
 
     width: 60px * 4;
-
     popup := Devmenu {
         visible: false;
     }
 
+    dev-popup := DevSelectPopup {
+        devs: root.app_project.devs;
+        visible: false;
+    }
+
     Flickable {
+        width: root.width;
+        height: root.height;
         viewport-y <=> root.viewport_y;
         VerticalLayout {
-            for item in root.efforts.projects: Rectangle {
+            // Per ogni progetto
+            for project in root.app_project.projects: Rectangle {
                 VerticalLayout {
+                    // Casella di testo per l'info del progetto
+                    // + i vari Dev
                     Rectangle {
+                        // Casella di testo per l'info del progetto
+                        // + i vari Dev
                         HorizontalLayout {
-                            TextEdit {
+                            // Casella di testo per l'info del progetto
+                            // + il pulsante "+ Dev"
+                            VerticalLayout {
                                 width: 60px * 2;
-                                wrap: TextWrap.word-wrap;
-                                horizontal-alignment: center;
-                                text: item.text;
-                                edited(text) => {
-                                    item.text = text;
-                                    PjmCallback.changed = true;
+
+                                Rectangle {
+                                    min-height: Styles.height;
+                                    width: parent.width;
+                                    TextEdit {
+                                        wrap: TextWrap.word-wrap;
+                                        horizontal-alignment: center;
+                                        text: project.text;
+                                        width: parent.width;
+                                        font-family: Styles.font-family;
+                                        font-size: Styles.font-size;
+                                        height: parent.height;
+
+                                        edited(text) => {
+                                            project.text = text;
+                                            PjmCallback.changed = true;
+                                            PjmCallback.set_project_name(project.project_id, text);
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+
+                                    add-dev-btn := Rectangle {
+                                        height: Styles.height;
+                                        background: add-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
+                                        border-color: #555;
+                                        border-width: 1px;
+
+                                        Text {
+                                            text: "+ Dev";
+                                            color: Colors.lightgray;
+                                            font-size: Styles.font-size;
+                                            font-family: Styles.font-family;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            min-height: Styles.height;
+                                        }
+
+                                        add-dev-ta := TouchArea {
+                                            clicked => {
+                                                dev-popup.x = add-dev-btn.absolute-position.x;
+                                                dev-popup.y = add-dev-btn.absolute-position.y + add-dev-btn.height;
+                                                dev-popup.show(project.project_id, true);
+                                            }
+                                        }
+                                    }
+
+                                    del-dev-btn := Rectangle {
+                                        height: Styles.height;
+                                        background: del-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
+                                        border-color: #555;
+                                        border-width: 1px;
+
+                                        Text {
+                                            text: "- Dev";
+                                            color: Colors.lightgray;
+                                            font-size: Styles.font-size;
+                                            font-family: Styles.font-family;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            min-height: Styles.height;
+                                        }
+
+                                        del-dev-ta := TouchArea {
+                                            clicked => {
+                                                dev-popup.x = del-dev-btn.absolute-position.x;
+                                                dev-popup.y = del-dev-btn.absolute-position.y + del-dev-btn.height;
+                                                dev-popup.show(project.project_id, false);
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
+                            // I vari dev collegati al progetto
                             VerticalLayout {
-                                for data[index] in item.efforts: Rectangle {
+                                for data[index] in project.devs-of-the-project: Rectangle {
                                     in property <bool> visibility;
+
                                     visibility: data.visible && data.enable;
+                                    // I vari dev collegati al progetto
                                     VerticalLayout {
                                         cell := Separatore {
-                                            bgcolor: AppState.model[index].col;
+                                            bgcolor: root.app_project.devs[data.dev].col;
                                             height: 2px;
 
                                             TouchArea {
@@ -133,7 +264,7 @@ export component LeftColumn inherits Rectangle {
                                                             popup.x = cell.absolute-position.x;
                                                             popup.y = cell.absolute-position.y;
                                                             popup.visible = true;
-                                                            popup.show(item.project, data.dev, data.enable == false);
+                                                            popup.show(project.project_id, data.dev, data.enable == false);
                                                         } else {
                                                         }
                                                     }
@@ -142,20 +273,18 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                            height: visibility ? Styles.height * (data.max == 0 ? 2 : data.max + 2) : 0px;
 
                                             HorizontalLayout {
                                                 Rectangle {
-                                                    background: AppState.model[index].col;
+                                                    background: root.app_project.devs[data.dev].col;
                                                     width: Styles.width - 50px;
                                                     clip: true;
-                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
                                                     Text {
-                                                        height: visibility ? Styles.height * (data.max + 1) : 0px;
                                                         width: Styles.width - 50px;
                                                         font-weight: 800;
-                                                        color: AppState.model[index].text-color;
-                                                        text: AppState.model[index].title;
+                                                        color: root.app_project.devs[data.dev].text-color;
+                                                        text: root.app_project.devs[data.dev].title;
                                                         horizontal-alignment: center;
                                                         vertical-alignment: center;
                                                         wrap: word-wrap;
@@ -164,7 +293,7 @@ export component LeftColumn inherits Rectangle {
                                                             height: parent.height;
                                                             double-clicked => {
                                                                 debug("add_row");
-                                                                PjmCallback.add_row(item.project, data.dev);
+                                                                PjmCallback.add_row(project.project_id, data.dev);
                                                             }
 
                                                             pointer-event(event) => {
@@ -173,7 +302,7 @@ export component LeftColumn inherits Rectangle {
                                                                         popup.x = cell.absolute-position.x;
                                                                         popup.y = cell.absolute-position.y;
                                                                         popup.visible = true;
-                                                                        popup.show(item.project, data.dev, !data.enable);
+                                                                        popup.show(project.project_id, data.dev, !data.enable);
                                                                     } else {
                                                                     }
                                                                 }
@@ -183,30 +312,26 @@ export component LeftColumn inherits Rectangle {
                                                 }
 
                                                 Rectangle {
-                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
-
                                                     VerticalLayout {
                                                         LineEdit {
                                                             width: Styles.width;
                                                             horizontal-alignment: center;
                                                             text: data.effort;
-                                                            height: visibility ? Styles.height : 0px;
+                                                            height: Styles.height;
 
                                                             accepted(text) => {
                                                                 data.effort = text.to-float();
-                                                                PjmCallback.set_dev_effort(data);
+                                                                PjmCallback.set_dev_effort(project.project_id, data.dev, text.to-float());
                                                             }
                                                         }
 
                                                         Rectangle {
                                                             background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
-                                                            height: visibility ? Styles.height : 0px;
 
                                                             Text {
                                                                 horizontal-alignment: center;
                                                                 vertical-alignment: center;
                                                                 text: data.remains;
-                                                                height: visibility ? Styles.height : 0px;
                                                             }
                                                         }
 
@@ -221,7 +346,7 @@ export component LeftColumn inherits Rectangle {
 
                                         Separatore {
                                             height: 2px;
-                                            bgcolor: AppState.model[index].col;
+                                            bgcolor: root.app_project.devs[data.dev].col;
 
                                             TouchArea {
                                                 pointer-event(event) => {
@@ -230,7 +355,7 @@ export component LeftColumn inherits Rectangle {
                                                             popup.x = cell.absolute-position.x;
                                                             popup.y = cell.absolute-position.y;
                                                             popup.visible = true;
-                                                            popup.show(item.project, data.dev, data.enable == false);
+                                                            popup.show(project.project_id, data.dev, data.enable == false);
                                                         } else {
                                                         }
                                                     }

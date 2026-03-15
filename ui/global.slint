@@ -14,18 +14,10 @@ import {
 
 import { Styles } from "styles.slint";
 
-export global AppState {
-    in property <[{title: string, col: color, text-color: color}]> model: [
-        { title: "Mcsw", col: #0099ff, text-color: Colors.white },
-        { title: "Sms", col: Colors.violet, text-color: Colors.black },
-        { title: "Mvh", col: Colors.brown, text-color: Colors.white },
-        { title: "Hw", col: Colors.green, text-color: Colors.black },
-        { title: "Ele", col: Colors.blue, text-color: Colors.white },
-        { title: "Hw Test", col: Colors.yellow, text-color: Colors.black },
-        { title: "Fw Test", col: Colors.purple, text-color: Colors.white },
-        { title: "Sys Test", col: Colors.orange, text-color: Colors.black },
-        { title: "Pjm", col: Colors.cyan, text-color: Colors.black }
-    ];
+export struct DevInfo {
+    title: string,
+    col: color,
+    text-color: color,
 }
 
 export struct EffortByDateData {
@@ -51,13 +43,13 @@ export struct EffortByDevData {
 }
 
 export struct EffortByPrjData {
-    project: int,
+    project_id: int,
     text: string,
     start_week: int,
     end_week:int,
     visible: bool,
     enable: bool,
-    efforts: [EffortByDevData]
+    devs_of_the_project: [EffortByDevData]
 }
 
 export struct SovraData {
@@ -65,11 +57,12 @@ export struct SovraData {
     week: int,
 }
 
-export struct EffortsData {
+export struct AppProject {
     worker_names: [string],
     week_off: [int],
     sovra: [SovraData],
-    projects: [EffortByPrjData]
+    projects: [EffortByPrjData],
+    devs: [DevInfo],
 }
 
 export struct DayData  {
@@ -84,7 +77,7 @@ export struct ProjectListItem {
 
 export global PjmCallback {
     callback changed_effort(EffortByDateData);
-    callback set_dev_effort(EffortByDevData);
+    callback set_dev_effort(int /*project*/, int /*dev*/, int /*effort*/);
     callback save_file();
     callback open_file();
     callback move_effort(int /*project*/, int /*dev*/, int /*start_week*/, int /*end_week*/, int /*start_row*/, int /*end_row*/, int /*offset_weeks*/);
@@ -93,6 +86,10 @@ export global PjmCallback {
     callback add_row(int, int);
     callback del_row(int, int);
     callback hide_dev(int, int, bool);
+    callback add_worker(string);
+    callback add_dev(string);
+    callback add_dev_to_project(int /*project*/, int /*dev*/, bool /*add*/);
+    callback set_project_name(int /*project_idx*/, string);
     in property <string> testo-copiato;
     in property <string> last-search;
     in property <bool> show_modal;
@@ -201,8 +198,7 @@ export component Cell-RW inherits Rectangle {
 
         Rectangle {
             visible: !editing;
-            background: (root.selected && PjmCallback.drag_active) ? Colors.orange.with-alpha(0.5) :
-                        root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
+            background: (root.selected && PjmCallback.drag_active) ? Colors.orange.with-alpha(0.5) : root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
             border-color: fs.has-focus ? Colors.orangered : Colors.transparent;
             border-width: parent.visible ? 1px : 0px;
 
@@ -298,12 +294,7 @@ export component EffortByDataGui inherits Rectangle {
     in property <EffortByDateData> effort;
 
     property <bool> is_drag_dest:
-        PjmCallback.drag_active &&
-        PjmCallback.drag_preview_offset != 0 &&
-        effort.project == PjmCallback.sel_project &&
-        effort.dev     == PjmCallback.sel_dev &&
-        effort.week    >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) &&
-        effort.week    <= (PjmCallback.sel_end_week   + PjmCallback.drag_preview_offset * 7);
+        PjmCallback.drag_active && PjmCallback.drag_preview_offset != 0 && effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) && effort.week <= (PjmCallback.sel_end_week + PjmCallback.drag_preview_offset * 7);
 
     popup := Rectangle {
         x: cell.x;
@@ -371,12 +362,7 @@ export component EffortByDataGui inherits Rectangle {
         for person[row_idx] in effort.persons: Cell-RW {
             text: person;
             visible: root.visible;
-            selected: effort.project == PjmCallback.sel_project
-                   && effort.dev    == PjmCallback.sel_dev
-                   && effort.week   >= PjmCallback.sel_start_week
-                   && effort.week   <= PjmCallback.sel_end_week
-                   && row_idx       >= PjmCallback.sel_start_row
-                   && row_idx       <= PjmCallback.sel_end_row;
+            selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
 
             double_clicked(text) => {
                 person = text;
@@ -384,47 +370,53 @@ export component EffortByDataGui inherits Rectangle {
             }
 
             sel_plain() => {
-                PjmCallback.sel_project     = effort.project;
-                PjmCallback.sel_dev         = effort.dev;
+                PjmCallback.sel_project = effort.project;
+                PjmCallback.sel_dev = effort.dev;
                 PjmCallback.sel_anchor_week = effort.week;
-                PjmCallback.sel_anchor_row  = row_idx;
-                PjmCallback.sel_start_week  = effort.week;
-                PjmCallback.sel_end_week    = effort.week;
-                PjmCallback.sel_start_row   = row_idx;
-                PjmCallback.sel_end_row     = row_idx;
+                PjmCallback.sel_anchor_row = row_idx;
+                PjmCallback.sel_start_week = effort.week;
+                PjmCallback.sel_end_week = effort.week;
+                PjmCallback.sel_start_row = row_idx;
+                PjmCallback.sel_end_row = row_idx;
             }
 
             sel_shift() => {
-                if effort.project == PjmCallback.sel_project
-                && effort.dev     == PjmCallback.sel_dev {
+                if effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev {
                     PjmCallback.sel_start_week = min(effort.week, PjmCallback.sel_anchor_week);
-                    PjmCallback.sel_end_week   = max(effort.week, PjmCallback.sel_anchor_week);
-                    PjmCallback.sel_start_row  = min(row_idx,     PjmCallback.sel_anchor_row);
-                    PjmCallback.sel_end_row    = max(row_idx,     PjmCallback.sel_anchor_row);
+                    PjmCallback.sel_end_week = max(effort.week, PjmCallback.sel_anchor_week);
+                    PjmCallback.sel_start_row = min(row_idx,     PjmCallback.sel_anchor_row);
+                    PjmCallback.sel_end_row = max(row_idx,     PjmCallback.sel_anchor_row);
                 }
             }
 
             sel_ctrl() => {
-                if effort.project == PjmCallback.sel_project
-                && effort.dev     == PjmCallback.sel_dev {
-                    if effort.week < PjmCallback.sel_start_week { PjmCallback.sel_start_week = effort.week; }
-                    if effort.week > PjmCallback.sel_end_week   { PjmCallback.sel_end_week   = effort.week; }
-                    if row_idx     < PjmCallback.sel_start_row  { PjmCallback.sel_start_row  = row_idx; }
-                    if row_idx     > PjmCallback.sel_end_row    { PjmCallback.sel_end_row    = row_idx; }
+                if effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev {
+                    if effort.week < PjmCallback.sel_start_week {
+                        PjmCallback.sel_start_week = effort.week;
+                    }
+                    if effort.week > PjmCallback.sel_end_week {
+                        PjmCallback.sel_end_week = effort.week;
+                    }
+                    if row_idx < PjmCallback.sel_start_row {
+                        PjmCallback.sel_start_row = row_idx;
+                    }
+                    if row_idx > PjmCallback.sel_end_row {
+                        PjmCallback.sel_end_row = row_idx;
+                    }
                 } else {
-                    PjmCallback.sel_project     = effort.project;
-                    PjmCallback.sel_dev         = effort.dev;
+                    PjmCallback.sel_project = effort.project;
+                    PjmCallback.sel_dev = effort.dev;
                     PjmCallback.sel_anchor_week = effort.week;
-                    PjmCallback.sel_anchor_row  = row_idx;
-                    PjmCallback.sel_start_week  = effort.week;
-                    PjmCallback.sel_end_week    = effort.week;
-                    PjmCallback.sel_start_row   = row_idx;
-                    PjmCallback.sel_end_row     = row_idx;
+                    PjmCallback.sel_anchor_row = row_idx;
+                    PjmCallback.sel_start_week = effort.week;
+                    PjmCallback.sel_end_week = effort.week;
+                    PjmCallback.sel_start_row = row_idx;
+                    PjmCallback.sel_end_row = row_idx;
                 }
             }
 
             drag_delta(delta) => {
-                PjmCallback.drag_active        = true;
+                PjmCallback.drag_active = true;
                 PjmCallback.drag_preview_offset = Math.round(delta / Styles.width);
             }
 
@@ -437,10 +429,9 @@ export component EffortByDataGui inherits Rectangle {
                         PjmCallback.sel_end_week,
                         PjmCallback.sel_start_row,
                         PjmCallback.sel_end_row,
-                        PjmCallback.drag_preview_offset
-                    );
+                        PjmCallback.drag_preview_offset);
                 }
-                PjmCallback.drag_active         = false;
+                PjmCallback.drag_active = false;
                 PjmCallback.drag_preview_offset = 0;
             }
         }
@@ -463,17 +454,18 @@ export component EffortByDataGui inherits Rectangle {
 export component EffortByDevGui inherits Rectangle {
     in property <int> num_visible;
     in property <EffortByDevData> datas;
-    in property <int> index;
+    in property <[DevInfo]> devs;
+    visible: datas.visible && datas.enable;
     VerticalLayout {
         Rectangle {
             height: 2px;
-            background: AppState.model[root.index].col;
+            background: root.devs[root.datas.dev].col;
         }
 
         HorizontalLayout {
             spacing: 0px;
             padding: 0px;
-            visible: datas.visible && datas.enable;
+            //visible: datas.visible && datas.enable;
 
             for data in datas.datas: Rectangle {
                 HorizontalLayout {
@@ -485,7 +477,7 @@ export component EffortByDevGui inherits Rectangle {
                     EffortByDataGui {
                         num_visible: root.num_visible;
                         effort: data;
-                        visible: datas.visible && datas.enable;
+                        //visible: datas.visible && datas.enable;
                     }
                 }
             }
@@ -493,23 +485,24 @@ export component EffortByDevGui inherits Rectangle {
 
         Rectangle {
             height: 2px;
-            background: AppState.model[root.index].col;
+            background: root.devs[root.datas.dev].col;
         }
     }
 }
 
 export component EffortByPrjGui inherits Rectangle {
     in property <int> num_visible;
-    in property <EffortByPrjData> effort;
-    visible: effort.visible && effort.enable;
+    in property <EffortByPrjData> project;
+    in property <[DevInfo]> devs;
+    visible: project.visible && project.enable;
     VerticalLayout {
         spacing: 0px;
         padding: 0px;
 
-        for data[index] in effort.efforts: EffortByDevGui {
-            index: index;
+        for data in project.devs-of-the-project: EffortByDevGui {
             num_visible: root.num_visible;
             datas: data;
+            devs: root.devs;
         }
         Rectangle {
             height: 2px;

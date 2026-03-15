@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::workers::WorkerId;
+
 #[derive(Serialize, Deserialize)]
 pub struct SingleEffort {
     effort: usize,
@@ -25,7 +27,7 @@ impl SingleEffort {
 
 #[derive(Serialize, Deserialize)]
 pub struct SingleEffortWeek {
-    worker_id: HashMap<usize, SingleEffort>,
+    worker_id: HashMap<WorkerId, SingleEffort>,
 }
 
 impl SingleEffortWeek {
@@ -43,18 +45,18 @@ impl SingleEffortWeek {
         self.worker_id.values().map(|f| f.effort).sum()
     }
 
-    pub fn effort(&self, worker_id: usize) -> usize {
+    pub fn effort(&self, worker_id: WorkerId) -> usize {
         self.worker_id.get(&worker_id).map_or(0, |f| f.effort)
     }
 
-    pub fn add(&mut self, id_worker: usize, effort: usize) {
+    pub fn add(&mut self, id_worker: WorkerId, effort: usize) {
         self.worker_id
             .entry(id_worker)
             .and_modify(|e| e.set_effort(effort))
             .or_insert_with(|| SingleEffort::new(effort));
     }
 
-    pub fn set_note(&mut self, id_worker: usize, note: &str) {
+    pub fn set_note(&mut self, id_worker: WorkerId, note: &str) {
         if let Some(single_effort) = self.worker_id.get_mut(&id_worker) {
             single_effort.set_note(note);
         }
