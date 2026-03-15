@@ -40,7 +40,7 @@ impl SingleEffortWeek {
     }
 
     pub fn effort_tot(&self) -> usize {
-        self.worker_id.iter().map(|(_, f)| f.effort).sum()
+        self.worker_id.values().map(|f| f.effort).sum()
     }
 
     pub fn effort(&self, worker_id: usize) -> usize {
@@ -48,12 +48,10 @@ impl SingleEffortWeek {
     }
 
     pub fn add(&mut self, id_worker: usize, effort: usize) {
-        match self.worker_id.get_mut(&id_worker) {
-            Some(single_effort) => single_effort.set_effort(effort),
-            None => {
-                self.worker_id.insert(id_worker, SingleEffort::new(effort));
-            }
-        }
+        self.worker_id
+            .entry(id_worker)
+            .and_modify(|e| e.set_effort(effort))
+            .or_insert_with(|| SingleEffort::new(effort));
     }
 
     pub fn set_note(&mut self, id_worker: usize, note: &str) {

@@ -23,10 +23,7 @@ impl SingleDev {
     }
 
     pub fn get_effort_tot(&self) -> usize {
-        self.weeks
-            .iter()
-            .map(|(_, single)| single.effort_tot())
-            .sum()
+        self.weeks.values().map(|single| single.effort_tot()).sum()
     }
 
     pub fn get_effort(&self, week: usize, worker_id: usize) -> usize {
@@ -34,14 +31,10 @@ impl SingleDev {
     }
 
     pub fn add(&mut self, week: usize, id_worker: usize, effort: usize) {
-        match self.weeks.get_mut(&week) {
-            Some(single) => single.add(id_worker, effort),
-            None => {
-                let mut single = SingleEffortWeek::new();
-                single.add(id_worker, effort);
-                self.weeks.insert(week, single);
-            }
-        }
+        self.weeks
+            .entry(week)
+            .or_insert_with(SingleEffortWeek::new)
+            .add(id_worker, effort);
     }
 
     pub fn set_note(&mut self, week: usize, id_worker: usize, note: &str) {

@@ -21,7 +21,6 @@ struct App {
 impl App {
     fn save(&self, path: &str) {
         let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .ok()
             .unwrap();
         let _ = fs::write(path, content);
     }

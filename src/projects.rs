@@ -110,8 +110,6 @@ impl Projects {
     }
 
     pub fn add_dev_effort(&mut self, id_project: usize, id_dev: usize, effort: usize) {
-        self.add_dev(id_project, id_dev);
-
         self.projects
             .get_mut(&id_project)
             .unwrap()

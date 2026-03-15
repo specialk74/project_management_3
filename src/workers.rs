@@ -64,14 +64,4 @@ impl Workers {
     pub fn del(&mut self, id: usize) {
         self.worker_id.remove(&id);
     }
-
-    // pub fn del(&mut self, name: &str) {
-    //     self.list.retain(|_, w| w.name != name);
-    // }
-
-    // pub fn set_color(&mut self, name: &str, color: Option<usize>) {
-    //     if let Some((_, item)) = self.list.iter_mut().find(|(_, w)| w.name == name) {
-    //         item.set_color(color);
-    //     }
-    // }
 }

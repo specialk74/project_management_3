@@ -51,21 +51,12 @@ impl Devs {
     }
 
     pub fn add(&mut self, name: &str) -> usize {
-        match self
-            .dev_id
-            .iter_mut()
-            .find(|(_, dev)| dev.get_name() == name)
-        {
-            Some((id, dev)) => {
-                dev.set_name(name);
-                *id
-            }
-            None => {
-                let id_dev = self.last_id;
-                self.dev_id.insert(self.last_id, Dev::new(name));
-                self.last_id += 1;
-                id_dev
-            }
+        if let Some((&id, _)) = self.dev_id.iter().find(|(_, dev)| dev.get_name() == name) {
+            return id;
         }
+        let id = self.last_id;
+        self.dev_id.insert(id, Dev::new(name));
+        self.last_id += 1;
+        id
     }
 }
