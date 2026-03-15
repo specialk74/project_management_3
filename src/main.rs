@@ -13,6 +13,7 @@ use std::fs;
 
 #[derive(Serialize, Deserialize)]
 struct App {
+    start_week: usize,
     workers: Workers,
     devs: Devs,
     projects: Projects,
@@ -20,8 +21,7 @@ struct App {
 
 impl App {
     fn save(&self, path: &str) {
-        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .unwrap();
+        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap();
         let _ = fs::write(path, content);
     }
 
@@ -33,6 +33,7 @@ impl App {
 
 fn main() {
     let mut app = App {
+        start_week: 0,
         workers: Workers::new(),
         devs: Devs::new(),
         projects: Projects::new(),
