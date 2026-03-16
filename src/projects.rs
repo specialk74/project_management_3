@@ -1,4 +1,9 @@
-use crate::{devs::DevId, single_dev::SingleDev, workers::WorkerId};
+use crate::{
+    devs::DevId,
+    single_dev::{SingleDev, WeekId},
+    sinlge_effort::Effort,
+    workers::WorkerId,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -33,12 +38,12 @@ impl Project {
         }
     }
 
-    pub fn add_dev_effort(&mut self, id_dev: DevId, effort: usize) {
+    pub fn add_dev_effort(&mut self, id_dev: DevId, effort: Effort) {
         self.add_dev(id_dev);
         self.dev_id.get_mut(&id_dev).unwrap().set_effort(effort);
     }
 
-    pub fn set_note(&mut self, id_dev: DevId, week: usize, id_worker: WorkerId, note: &str) {
+    pub fn set_note(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, note: &str) {
         self.add_dev(id_dev);
         self.dev_id
             .get_mut(&id_dev)
@@ -46,7 +51,7 @@ impl Project {
             .set_note(week, id_worker, note);
     }
 
-    pub fn add_effort(&mut self, id_dev: DevId, week: usize, id_worker: WorkerId, effort: usize) {
+    pub fn add_effort(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, effort: Effort) {
         self.add_dev(id_dev);
         self.dev_id
             .get_mut(&id_dev)
@@ -137,7 +142,7 @@ impl Projects {
         &mut self,
         id_project: ProjectId,
         id_dev: DevId,
-        week: usize,
+        week: WeekId,
         id_worker: WorkerId,
         note: &str,
     ) {
@@ -151,9 +156,9 @@ impl Projects {
         &mut self,
         id_project: ProjectId,
         id_dev: DevId,
-        week: usize,
+        week: WeekId,
         id_worker: WorkerId,
-        effort: usize,
+        effort: Effort,
     ) {
         self.projects
             .get_mut(&id_project)
@@ -161,7 +166,7 @@ impl Projects {
             .add_effort(id_dev, week, id_worker, effort);
     }
 
-    pub fn add_dev_effort(&mut self, id_project: ProjectId, id_dev: DevId, effort: usize) {
+    pub fn add_dev_effort(&mut self, id_project: ProjectId, id_dev: DevId, effort: Effort) {
         self.projects
             .get_mut(&id_project)
             .unwrap()
