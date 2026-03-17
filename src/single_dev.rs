@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{sinlge_effort::Effort, sinlge_effort::SingleEffortWeek, workers::WorkerId};
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
 pub struct WeekId(pub usize);
 
 #[derive(Serialize, Deserialize)]
@@ -21,8 +21,33 @@ impl SingleDev {
         }
     }
 
+    pub fn get_week_with_max_worker(&self) -> Option<WeekId> {
+        if self.weeks.values().any(|s| s.has_worker_zero()) {
+            return None;
+        }
+
+        self.weeks
+            .iter()
+            .max_by_key(|(_, s)| s.num_workers())
+            .map(|(week, _)| *week)
+    }
+
+    pub fn reset_effort(&mut self, week: WeekId) {
+        self.weeks.remove(&week);
+    }
+
     pub fn set_effort(&mut self, effort: Effort) {
         self.effort = effort;
+    }
+
+    pub fn max_num_efforts(&self) -> usize {
+        let mut max = 0;
+        for (_, s) in self.weeks.iter() {
+            if s.num_workers() > max {
+                max = s.num_workers();
+            }
+        }
+        max
     }
 
     pub fn get_effort_tot(&self) -> Effort {
@@ -56,5 +81,12 @@ impl SingleDev {
         if let Some(single) = self.weeks.get_mut(&week) {
             single.set_note(id_worker, note);
         }
+    }
+
+    pub fn get_workers(&self, week: WeekId) -> Vec<&WorkerId> {
+        self.weeks
+            .get(&week)
+            .map(|s| s.get_workers())
+            .unwrap_or_default()
     }
 }

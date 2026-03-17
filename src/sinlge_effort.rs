@@ -46,8 +46,12 @@ impl SingleEffortWeek {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.worker_id.clear();
+    // pub fn reset_effort(&mut self) {
+    //     self.worker_id.clear();
+    // }
+
+    pub fn has_worker_zero(&self) -> bool {
+        self.worker_id.contains_key(&WorkerId(0))
     }
 
     pub fn effort_tot(&self) -> Effort {
@@ -71,5 +75,13 @@ impl SingleEffortWeek {
         if let Some(single_effort) = self.worker_id.get_mut(&id_worker) {
             single_effort.set_note(note);
         }
+    }
+
+    pub fn get_workers(&self) -> Vec<&WorkerId> {
+        self.worker_id.keys().collect()
+    }
+
+    pub fn num_workers(&self) -> usize {
+        self.worker_id.iter().count()
     }
 }

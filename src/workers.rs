@@ -43,12 +43,12 @@ pub struct Workers {
 impl Workers {
     pub fn new() -> Self {
         Self {
-            last_id: WorkerId(0),
-            worker_id: HashMap::new(),
+            last_id: WorkerId(1),
+            worker_id: HashMap::from([(WorkerId(0), Worker::new(""))]),
         }
     }
 
-    fn get_id_by_name(&self, name: &str) -> Option<WorkerId> {
+    pub fn get_id_by_name(&self, name: &str) -> Option<WorkerId> {
         self.worker_id
             .iter()
             .find(|(_, w)| w.name == name)

@@ -273,7 +273,8 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            height: visibility ? Styles.height * (data.max == 0 ? 2 : data.max + 2) : 0px;
+                                            //height: visibility ? Styles.height * (data.max == 0 ? 2 : data.max + 2) : 0px;
+                                            height: Styles.height * (data.max + 1);
 
                                             HorizontalLayout {
                                                 Rectangle {
@@ -312,6 +313,7 @@ export component LeftColumn inherits Rectangle {
                                                 }
 
                                                 Rectangle {
+                                                    height: Styles.height * (data.max + 1);
                                                     VerticalLayout {
                                                         LineEdit {
                                                             width: Styles.width;
@@ -327,7 +329,6 @@ export component LeftColumn inherits Rectangle {
 
                                                         Rectangle {
                                                             background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
-
                                                             Text {
                                                                 horizontal-alignment: center;
                                                                 vertical-alignment: center;
@@ -335,10 +336,10 @@ export component LeftColumn inherits Rectangle {
                                                             }
                                                         }
 
-                                                        Rectangle {
-                                                            height: Styles.height * (data.max - 1);
-                                                            background: Colors.transparent;
-                                                        }
+                                                        // Rectangle {
+                                                        //     height: Styles.height * (data.max - 1);
+                                                        //     background: Colors.transparent;
+                                                        // }
                                                     }
                                                 }
                                             }

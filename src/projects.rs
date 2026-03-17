@@ -28,6 +28,10 @@ impl Project {
         }
     }
 
+    pub fn reset_effort(&mut self, id_dev: DevId, week: WeekId) {
+        self.dev_id.get_mut(&id_dev).unwrap().reset_effort(week);
+    }
+
     pub fn set_info(&mut self, info: &str) {
         self.info = info.to_string();
     }
@@ -65,6 +69,10 @@ impl Project {
 
     pub fn list_dev_id(&self) -> Vec<DevId> {
         self.dev_id.keys().copied().collect()
+    }
+
+    pub fn get_week_with_max_worker(&self, id_dev: DevId) -> Option<WeekId> {
+        self.dev_id.get(&id_dev).unwrap().get_week_with_max_worker()
     }
 }
 
@@ -152,6 +160,12 @@ impl Projects {
             .set_note(id_dev, week, id_worker, note);
     }
 
+    pub fn reset_effort(&mut self, id_project: ProjectId, id_dev: DevId, week: WeekId) {
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.reset_effort(id_dev, week);
+        }
+    }
+
     pub fn add_effort(
         &mut self,
         id_project: ProjectId,
@@ -192,5 +206,11 @@ impl Projects {
 
     pub fn get_single_dev(&self, project_id: ProjectId, dev_id: DevId) -> Option<&SingleDev> {
         self.projects.get(&project_id)?.dev_id.get(&dev_id)
+    }
+
+    pub fn get_week_with_max_worker(&self, project_id: ProjectId, id_dev: DevId) -> Option<WeekId> {
+        self.projects
+            .get(&project_id)?
+            .get_week_with_max_worker(id_dev)
     }
 }

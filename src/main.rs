@@ -12,10 +12,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::devs::Devs;
-use crate::projects::Projects;
-use crate::sinlge_effort::Effort;
+use crate::devs::{DevId, Devs};
+use crate::projects::{ProjectId, Projects};
 use crate::single_dev::WeekId;
+use crate::sinlge_effort::Effort;
 use crate::workers::{WorkerId, Workers};
 use std::fs;
 
@@ -177,7 +177,7 @@ fn build_project_data(
                             &workers,
                             start_w,
                             end_w,
-                            max,
+                            //max,
                             enable,
                         )
                     } else {
@@ -206,39 +206,42 @@ fn build_dev(
     workers: &[(WorkerId, String)],
     start_w: usize,
     end_w: usize,
-    max: i32,
     enable: bool,
 ) -> EffortByDevData {
     let planned = sd.planned_effort().0 as i32;
     let total = sd.get_effort_tot().0 as i32;
-    let extra_rows = (max - workers.len() as i32).max(0) as usize;
-    println!("extra_rows: {}", extra_rows);
 
-    let mut cumulative = 0i32;
+    let max = (sd.max_num_efforts() as i32).max(1);
+
     let week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .map(|w| {
-            let mut persons: Vec<SharedString> = workers
+            let mut workers_in_week: Vec<SharedString> = sd
+                .get_workers(WeekId(w))
                 .iter()
-                .map(|(wid, _)| {
-                    let e = sd.get_effort(WeekId(w), *wid).0;
-                    SharedString::from(if e == 0 { String::new() } else { e.to_string() })
-                })
+                .map(|w_id| SharedString::from(&workers[w_id.0].1))
                 .collect();
-            persons.extend(std::iter::repeat_n(SharedString::default(), extra_rows));
+
+            // let persons = if workers_in_week.is_empty() {
+            //     vec![SharedString::from("")]
+            // } else {
+            //     workers_in_week
+            // };
+
+            workers_in_week.resize(max as usize, SharedString::from(""));
+
             let week_total: i32 = workers
                 .iter()
                 .map(|(wid, _)| sd.get_effort(WeekId(w), *wid).0 as i32)
                 .sum();
-            cumulative += week_total;
 
             EffortByDateData {
                 total: week_total,
-                remains: planned - cumulative,
+                remains: planned - week_total,
                 dev: dev_idx,
                 project: proj_idx,
                 effort: planned,
                 week: w as i32,
-                persons: mk(persons),
+                persons: mk(workers_in_week),
             }
         })
         .collect();
@@ -251,7 +254,7 @@ fn build_dev(
         remains: planned - total,
         visible: true,
         enable,
-        max: (max - 1).max(0),
+        max, //(max - 1).max(0),
         datas: mk(week_data),
     }
 }
@@ -414,7 +417,6 @@ fn main() {
             let mut a = app.borrow_mut();
             let projects = a.projects.list();
             let devs = a.devs.list();
-            let workers = a.workers.list();
             let Some(&(proj_id, _)) = projects.get(effort.project as usize) else {
                 return;
             };
@@ -422,10 +424,15 @@ fn main() {
                 return;
             };
             let week = effort.week as usize;
-            for (i, person) in effort.persons.iter().enumerate() {
-                if let Some(&(worker_id, _)) = workers.get(i) {
+            a.projects.reset_effort(proj_id, dev_id, WeekId(week));
+
+            for person in effort.persons.iter() {
+                println!("person: {}", person.as_str());
+
+                if let Some(worker_id) = a.workers.get_id_by_name(person.as_str()) {
                     let e = person.trim().parse::<usize>().unwrap_or(0);
-                    a.projects.add_effort(proj_id, dev_id, WeekId(week), worker_id, Effort(e));
+                    a.projects
+                        .add_effort(proj_id, dev_id, WeekId(week), worker_id, Effort(e));
                 }
             }
             if let Some(ui) = ui_w.upgrade() {
@@ -452,7 +459,8 @@ fn main() {
                 let Some(&(dev_id, _)) = devs.get(dev_idx as usize) else {
                     return;
                 };
-                a.projects.add_dev_effort(proj_id, dev_id, Effort(effort as usize));
+                a.projects
+                    .add_dev_effort(proj_id, dev_id, Effort(effort as usize));
                 refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
                 PjmCallback::get(&ui).set_changed(true);
             }
@@ -619,10 +627,16 @@ fn main() {
         let visibility = visibility.clone();
         let ui_w = ui.as_weak();
         PjmCallback::get(&ui).on_add_row(move |proj_idx, dev_idx| {
-            *row_counts
-                .borrow_mut()
-                .entry((proj_idx, dev_idx))
-                .or_insert(0) += 1;
+            let proj_id = ProjectId(proj_idx as usize);
+            let dev_id = DevId(dev_idx as usize);
+
+            {
+                let mut a = app.borrow_mut();
+                if let Some(week) = a.projects.get_week_with_max_worker(proj_id, dev_id) {
+                    a.projects
+                        .add_effort(proj_id, dev_id, week, WorkerId(0), Effort(0));
+                }
+            }
             if let Some(ui) = ui_w.upgrade() {
                 let mut a = app.borrow_mut();
                 sync_project_texts(&ui, &mut a);
@@ -716,7 +730,8 @@ fn main() {
                 for w in (start_week as usize)..=(end_week as usize) {
                     for r in (start_row as usize)..=max_row {
                         if let Some(&(worker_id, _)) = workers.get(r) {
-                            a.projects.add_effort(proj_id, dev_id, WeekId(w), worker_id, Effort(0));
+                            a.projects
+                                .add_effort(proj_id, dev_id, WeekId(w), worker_id, Effort(0));
                         }
                     }
                 }
@@ -724,8 +739,13 @@ fn main() {
                 // Scrivi destinazione
                 for (w, worker_id, effort) in moves {
                     let dst_w = (w as i32 + offset) as usize;
-                    a.projects
-                        .add_effort(proj_id, dev_id, WeekId(dst_w), worker_id, Effort(effort));
+                    a.projects.add_effort(
+                        proj_id,
+                        dev_id,
+                        WeekId(dst_w),
+                        worker_id,
+                        Effort(effort),
+                    );
                 }
 
                 if let Some(ui) = ui_w.upgrade() {
