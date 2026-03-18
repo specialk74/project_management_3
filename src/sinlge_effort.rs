@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::workers::WorkerId;
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Default)]
 pub struct Effort(pub usize);
 
 #[derive(Serialize, Deserialize)]
@@ -26,11 +26,15 @@ impl SingleEffort {
     pub fn set_note(&mut self, note: &str) {
         self.note = Some(note.to_string());
     }
+
+    pub fn get_effort(&self) -> usize {
+        self.effort.0
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SingleEffortWeek {
-    worker_id: HashMap<WorkerId, SingleEffort>,
+    pub worker_id: HashMap<WorkerId, SingleEffort>,
 }
 
 impl std::iter::Sum for Effort {

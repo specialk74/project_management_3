@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{sinlge_effort::Effort, sinlge_effort::SingleEffortWeek, workers::WorkerId};
+use crate::{
+    sinlge_effort::{Effort, SingleEffortWeek},
+    workers::WorkerId,
+};
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
 pub struct WeekId(pub usize);
@@ -81,6 +84,10 @@ impl SingleDev {
         if let Some(single) = self.weeks.get_mut(&week) {
             single.set_note(id_worker, note);
         }
+    }
+
+    pub fn get_all(&self, week: WeekId) -> Option<&SingleEffortWeek> {
+        self.weeks.get(&week)
     }
 
     pub fn get_workers(&self, week: WeekId) -> Vec<&WorkerId> {

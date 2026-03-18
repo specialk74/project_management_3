@@ -199,6 +199,10 @@ fn build_project_data(
         .collect()
 }
 
+fn get_hours(effort: Effort) -> i32 {
+    (effort.0 * 40 / 100) as i32
+}
+
 fn build_dev(
     proj_idx: i32,
     dev_idx: i32,
@@ -209,29 +213,36 @@ fn build_dev(
     enable: bool,
 ) -> EffortByDevData {
     let planned = sd.planned_effort().0 as i32;
-    let total = sd.get_effort_tot().0 as i32;
+    let total = get_hours(sd.get_effort_tot());
 
     let max = (sd.max_num_efforts() as i32).max(1);
 
     let week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .map(|w| {
-            let mut workers_in_week: Vec<SharedString> = sd
-                .get_workers(WeekId(w))
-                .iter()
-                .map(|w_id| SharedString::from(&workers[w_id.0].1))
-                .collect();
-
-            // let persons = if workers_in_week.is_empty() {
-            //     vec![SharedString::from("")]
-            // } else {
-            //     workers_in_week
-            // };
-
-            workers_in_week.resize(max as usize, SharedString::from(""));
+            let workers_in_week: Vec<SharedString> = {
+                let mut v = sd
+                    .get_all(WeekId(w))
+                    .map(|s| {
+                        s.worker_id
+                            .iter()
+                            .filter(|(worker_id, _)| *worker_id != &WorkerId(0))
+                            .map(|(worker_id, single_effort)| {
+                                SharedString::from(format!(
+                                    "{}|{}",
+                                    &workers[worker_id.0].1,
+                                    single_effort.get_effort()
+                                ))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                v.resize(max as usize, SharedString::from(""));
+                v
+            };
 
             let week_total: i32 = workers
                 .iter()
-                .map(|(wid, _)| sd.get_effort(WeekId(w), *wid).0 as i32)
+                .map(|(wid, _)| get_hours(sd.get_effort(WeekId(w), *wid)))
                 .sum();
 
             EffortByDateData {
