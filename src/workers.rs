@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub const WORKER_ID_ZERO: WorkerId = WorkerId(0);
+
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct WorkerId(pub usize);
 
@@ -44,7 +46,7 @@ impl Workers {
     pub fn new() -> Self {
         Self {
             last_id: WorkerId(1),
-            worker_id: HashMap::from([(WorkerId(0), Worker::new(""))]),
+            worker_id: HashMap::from([(WORKER_ID_ZERO, Worker::new(""))]),
         }
     }
 

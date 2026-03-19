@@ -16,7 +16,7 @@ use crate::devs::{DevId, Devs};
 use crate::projects::{ProjectId, Projects};
 use crate::single_dev::WeekId;
 use crate::sinlge_effort::Effort;
-use crate::workers::{WorkerId, Workers};
+use crate::workers::{WORKER_ID_ZERO, WorkerId, Workers};
 use std::fs;
 
 const SAVE_PATH: &str = "workers.ron";
@@ -314,6 +314,7 @@ fn build_sovra_data(app: &App) -> Vec<SovraData> {
         .map(|w| {
             let values: Vec<i32> = workers
                 .iter()
+                .filter(|(w_id, _)| w_id != &WORKER_ID_ZERO)
                 .map(|(wid, _)| {
                     let total_h: usize = projects
                         .iter()
@@ -325,7 +326,7 @@ fn build_sovra_data(app: &App) -> Vec<SovraData> {
                             })
                         })
                         .sum();
-                    ((total_h * 100) / 40) as i32
+                    get_hours(Effort(total_h))
                 })
                 .collect();
             SovraData {
@@ -379,6 +380,7 @@ fn refresh(
         app.workers
             .list()
             .into_iter()
+            .filter(|(w_id, _)| w_id != &WORKER_ID_ZERO)
             .map(|(_, n)| SharedString::from(n.as_str()))
             .collect::<Vec<_>>(),
     );
