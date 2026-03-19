@@ -1,13 +1,13 @@
 use slint::{ComponentHandle, Model, SharedString};
 use std::collections::HashMap;
 
+use crate::AppWindow;
 use crate::app::App;
 use crate::builders::{
     build_dev_infos, build_project_data, build_sovra_data, build_weeks, find_end_week,
 };
 use crate::live_models::LiveModels;
 use crate::workers::WORKER_ID_ZERO;
-use crate::AppWindow;
 
 pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
     let efforts = ui.get_app_project();
@@ -30,14 +30,17 @@ pub fn refresh(
 
     live.projects
         .set_vec(build_project_data(app, row_counts, visibility));
-    live.worker_names.set_vec(
-        app.workers
+    live.worker_names.set_vec({
+        let mut names = app
+            .workers
             .list()
             .into_iter()
             .filter(|(w_id, _)| w_id != &WORKER_ID_ZERO)
             .map(|(_, n)| SharedString::from(n.as_str()))
-            .collect::<Vec<_>>(),
-    );
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    });
     live.sovra.set_vec(build_sovra_data(app));
     live.weeks.set_vec(build_weeks(app.start_week, end_w));
     live.devs.set_vec(build_dev_infos(app));
