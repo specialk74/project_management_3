@@ -47,11 +47,9 @@ fn register_del_row(ui: &AppWindow, state: &SharedState) {
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_del_row(move |proj_idx, dev_idx| {
         {
-            let mut rc = row_counts.borrow_mut();
-            let entry = rc.entry((proj_idx, dev_idx)).or_insert(0);
-            if *entry > 0 {
-                *entry -= 1;
-            }
+            app.borrow_mut()
+                .projects
+                .del_row(ProjectId(proj_idx as usize), DevId(dev_idx as usize));
         }
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();

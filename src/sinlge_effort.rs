@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::workers::WorkerId;
+use crate::workers::{WORKER_ID_ZERO, WorkerId};
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Default)]
 pub struct Effort(pub usize);
@@ -48,6 +48,10 @@ impl SingleEffortWeek {
         Self {
             worker_id: HashMap::new(),
         }
+    }
+
+    pub fn remove_zero(&mut self) {
+        self.worker_id.remove(&WORKER_ID_ZERO);
     }
 
     // pub fn reset_effort(&mut self) {

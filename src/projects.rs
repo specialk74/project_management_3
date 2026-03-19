@@ -28,6 +28,10 @@ impl Project {
         }
     }
 
+    pub fn del_row(&mut self, id_dev: DevId) {
+        self.dev_id.get_mut(&id_dev).unwrap().del_row();
+    }
+
     pub fn reset_effort(&mut self, id_dev: DevId, week: WeekId) {
         self.dev_id.get_mut(&id_dev).unwrap().reset_effort(week);
     }
@@ -98,6 +102,10 @@ impl Projects {
             .collect();
         items.sort_by_key(|(id, _)| *id);
         items
+    }
+
+    pub fn del_row(&mut self, project_id: ProjectId, id_dev: DevId) {
+        self.projects.get_mut(&project_id).unwrap().del_row(id_dev);
     }
 
     /// Returns (id, name, visible, enable)

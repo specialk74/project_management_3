@@ -24,6 +24,10 @@ impl SingleDev {
         }
     }
 
+    pub fn del_row(&mut self) {
+        self.weeks.iter_mut().for_each(|(_, s)| s.remove_zero());
+    }
+
     pub fn get_week_with_max_worker(&self) -> Option<WeekId> {
         if self.weeks.values().any(|s| s.has_worker_zero()) {
             return None;
