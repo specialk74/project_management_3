@@ -74,9 +74,10 @@ impl Workers {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id
             .iter()
+            .filter(|(w_id, _)| w_id != &&WORKER_ID_ZERO)
             .map(|(&id, w)| (id, w.name.clone()))
             .collect();
-        items.sort_by_key(|(id, _)| id.0);
+        items.sort_by_key(|(_, n)| n.clone());
         items
     }
 }

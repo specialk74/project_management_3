@@ -296,19 +296,19 @@ export component EffortByDataGui inherits Rectangle {
     property <bool> is_drag_dest:
         PjmCallback.drag_active && PjmCallback.drag_preview_offset != 0 && effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) && effort.week <= (PjmCallback.sel_end_week + PjmCallback.drag_preview_offset * 7);
 
-    popup := Rectangle {
-        x: cell.x;
-        y: cell.y + Styles.height;
-        visible: t.has-hover;
-        height: Styles.height;
-        width: Styles.width;
-        background: yellow;
-        Text {
-            font-weight: 800;
-            text: effort.remains;
-            color: Colors.black;
-        }
-    }
+    // popup := Rectangle {
+    //     x: cell.x;
+    //     y: cell.y + Styles.height;
+    //     visible: t.has-hover;
+    //     height: Styles.height;
+    //     width: Styles.width;
+    //     background: yellow;
+    //     Text {
+    //         font-weight: 800;
+    //         text: effort.remains;
+    //         color: Colors.black;
+    //     }
+    // }
 
     VerticalLayout {
         spacing: 0px;

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::app::App;
 use crate::single_dev::{SingleDev, WeekId};
 use crate::sinlge_effort::Effort;
-use crate::workers::{WorkerId, WORKER_ID_ZERO};
+use crate::workers::WorkerId;
 use crate::{DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SovraData};
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -81,7 +81,15 @@ pub fn build_project_data(
                         .get(&(pi as i32, dev_id.0 as i32))
                         .unwrap_or(&true);
                     if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
-                        build_dev(pi as i32, dev_id.0 as i32, sd, &workers, start_w, end_w, enable)
+                        build_dev(
+                            pi as i32,
+                            dev_id.0 as i32,
+                            sd,
+                            &workers,
+                            start_w,
+                            end_w,
+                            enable,
+                        )
                     } else {
                         empty_dev(pi as i32, dev_id.0 as i32, n_weeks, start_w, max)
                     }
@@ -211,7 +219,6 @@ pub fn build_sovra_data(app: &App) -> Vec<SovraData> {
         .map(|w| {
             let values: Vec<i32> = workers
                 .iter()
-                .filter(|(w_id, _)| w_id != &WORKER_ID_ZERO)
                 .map(|(wid, _)| {
                     let total_h: usize = projects
                         .iter()
