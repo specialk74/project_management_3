@@ -90,7 +90,7 @@ export global PjmCallback {
     callback add_dev(string);
     callback add_dev_to_project(int /*project*/, int /*dev*/, bool /*add*/);
     callback set_project_name(int /*project_idx*/, string);
-    callback find_completion(string) -> string;
+    callback find_completion(string, bool) -> string;
     callback remove_last_char(string) -> string;
     in property <string> testo-copiato;
     in property <string> last-search;
@@ -195,7 +195,7 @@ export component Cell-RW inherits Rectangle {
             key-pressed(event) => {
                 if event.text == Key.Backspace || event.text == Key.Delete {
                     typed_prefix = PjmCallback.remove_last_char(typed_prefix);
-                    root.text = PjmCallback.find_completion(typed_prefix);
+                    root.text = PjmCallback.find_completion(typed_prefix, true);
                     if root.text == "" {
                         root.text = typed_prefix;
                     } else {
@@ -214,7 +214,7 @@ export component Cell-RW inherits Rectangle {
                     return reject;
                 }
                 typed_prefix += event.text;
-                root.text = PjmCallback.find_completion(typed_prefix);
+                root.text = PjmCallback.find_completion(typed_prefix, true);
                 if root.text == "" {
                     root.text = typed_prefix;
                 } else {

@@ -52,7 +52,7 @@ fn common_prefix(strings: &[String]) -> String {
 
 fn register_find_completion(ui: &AppWindow, state: &SharedState) {
     let app = state.app.clone();
-    PjmCallback::get(ui).on_find_completion(move |prefix| {
+    PjmCallback::get(ui).on_find_completion(move |prefix, pipe| {
         let prefix: String = prefix.into();
         if prefix.is_empty() {
             return "".into();
@@ -68,7 +68,11 @@ fn register_find_completion(ui: &AppWindow, state: &SharedState) {
         if matches.is_empty() {
             "".into()
         } else if matches.len() == 1 {
-            format!("{}|", matches.into_iter().next().unwrap()).into()
+            if pipe {
+                format!("{}|", matches.into_iter().next().unwrap()).into()
+            } else {
+                matches.into_iter().next().unwrap().into()
+            }
         } else {
             common_prefix(&matches).into()
         }

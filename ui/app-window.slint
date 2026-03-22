@@ -281,9 +281,10 @@ export component AppWindow inherits Window {
                     return accept;
                 }
                 if (event.text == "f") {
-                    PjmCallback.show_modal = true;
-                    im.select_all();
-                    im.focus();
+                    //PjmCallback.show_modal = true;
+                    //im.select_all();
+                    //im.focus();
+                    im.show();
                     return accept;
                 }
                 if (event.text == "F") {
@@ -304,14 +305,70 @@ export component AppWindow inherits Window {
         }
     }
 
-    im := ModalWindow {
-        visible: PjmCallback.show_modal;
-        title: "Search the worker...";
-        closed(result) => {
-            PjmCallback.last-search = result;
-            PjmCallback.search(result);
-            PjmCallback.show_modal = false;
-            fs.focus();
+    im := PopupWindow {
+        in-out property <string> text;
+        property <string> typed_prefix: "";
+        Rectangle {
+            background: Colors.antiquewhite;
+            VerticalLayout {
+                Text {
+                    color: Colors.blue;
+                    text: "Search the worker...";
+                }
+
+                le := LineEdit {
+                    text: text;
+                    key-pressed(event) => {
+                        if event.text == Key.Backspace || event.text == Key.Delete {
+                            typed_prefix = PjmCallback.remove_last_char(typed_prefix);
+                            text = PjmCallback.find_completion(typed_prefix, false);
+                            if text == "" {
+                                text = typed_prefix;
+                            } else {
+                                typed_prefix = text;
+                            }
+                            self.set-selection-offsets(text.character-count, text.character-count);
+                            return accept;
+                        }
+                        if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
+                            return reject;
+                        }
+                        if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+                            return reject;
+                        }
+                        if event.text == "" {
+                            return reject;
+                        }
+                        typed_prefix += event.text;
+                        text = PjmCallback.find_completion(typed_prefix, false);
+                        if text == "" {
+                            text = typed_prefix;
+                        } else {
+                            typed_prefix = text;
+                        }
+                        self.set-selection-offsets(text.character-count, text.character-count);
+                        accept
+                    }
+                }
+
+                HorizontalLayout {
+                    Button {
+                        text: "Search";
+                        clicked => {
+                            PjmCallback.last-search = text;
+                            PjmCallback.search(text);
+                            im.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Abort";
+                        clicked => {
+                            im.close();
+                        }
+                    }
+                }
+            }
         }
     }
 }
