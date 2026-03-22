@@ -93,6 +93,6 @@ impl SingleEffortWeek {
     }
 
     pub fn num_workers(&self) -> usize {
-        self.worker_id.iter().count()
+        self.worker_id.len()
     }
 }
