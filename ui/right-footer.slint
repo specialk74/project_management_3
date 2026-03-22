@@ -25,7 +25,7 @@ export component RightFooter inherits Rectangle {
 
                     VerticalLayout {
                         for value[index] in data.value: Rectangle {
-                            background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                            background: index.mod(2) == 0 ? Colors.gray : Colors.black;
                             width: Styles.width;
                             height: Styles.height;
                             Text {

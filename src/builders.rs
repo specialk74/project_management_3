@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::app::App;
 use crate::single_dev::{SingleDev, WeekId};
 use crate::sinlge_effort::Effort;
-use crate::workers::WorkerId;
 use crate::{DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SovraData};
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -60,7 +59,6 @@ pub fn build_project_data(
     row_counts: &HashMap<(i32, i32), i32>,
     visibility: &HashMap<(i32, i32), bool>,
 ) -> Vec<EffortByPrjData> {
-    let workers = app.workers.list();
     let projects = app.projects.list();
     let start_w = app.start_week;
     let end_w = find_end_week(app);
@@ -81,15 +79,7 @@ pub fn build_project_data(
                         .get(&(pi as i32, dev_id.0 as i32))
                         .unwrap_or(&true);
                     if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
-                        build_dev(
-                            pi as i32,
-                            dev_id.0 as i32,
-                            sd,
-                            &workers,
-                            start_w,
-                            end_w,
-                            enable,
-                        )
+                        build_dev(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, enable)
                     } else {
                         empty_dev(pi as i32, dev_id.0 as i32, n_weeks, start_w, max)
                     }
@@ -110,10 +100,10 @@ pub fn build_project_data(
 }
 
 fn build_dev(
+    app: &App,
     proj_idx: i32,
     dev_idx: i32,
     sd: &SingleDev,
-    workers: &[(WorkerId, String)],
     start_w: usize,
     end_w: usize,
     enable: bool,
@@ -130,11 +120,10 @@ fn build_dev(
                     .map(|s| {
                         s.worker_id
                             .iter()
-                            .filter(|(worker_id, _)| *worker_id != &WorkerId(0))
                             .map(|(worker_id, single_effort)| {
                                 SharedString::from(format!(
                                     "{}|{}",
-                                    &workers[worker_id.0].1,
+                                    app.workers.get_name_by_id(*worker_id),
                                     single_effort.get_effort()
                                 ))
                             })
@@ -145,10 +134,7 @@ fn build_dev(
                 v
             };
 
-            let week_total: i32 = workers
-                .iter()
-                .map(|(wid, _)| get_hours(sd.get_effort(WeekId(w), *wid)))
-                .sum();
+            let week_total = get_hours(sd.get_effort_by_week(WeekId(w)));
 
             EffortByDateData {
                 total: week_total,

@@ -1,6 +1,7 @@
-use slint::{ComponentHandle, Global};
+use slint::{ComponentHandle, Global, SharedString};
 
 use crate::ui_sync::{refresh, sync_project_texts};
+use crate::workers::WORKER_ID_ZERO;
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;
@@ -8,6 +9,8 @@ use super::SharedState;
 pub fn register(ui: &AppWindow, state: &SharedState) {
     register_add_worker(ui, state);
     register_add_dev(ui, state);
+    register_find_completion(ui, state);
+    register_remove_last_char(ui);
 }
 
 fn register_add_worker(ui: &AppWindow, state: &SharedState) {
@@ -27,6 +30,57 @@ fn register_add_worker(ui: &AppWindow, state: &SharedState) {
             refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
+    });
+}
+
+fn common_prefix(strings: &[String]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+    let first = &strings[0];
+    let mut len = first.len();
+    for s in &strings[1..] {
+        len = first
+            .chars()
+            .zip(s.chars())
+            .take_while(|(a, b)| a == b)
+            .count()
+            .min(len);
+    }
+    first[..len].to_string()
+}
+
+fn register_find_completion(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    PjmCallback::get(ui).on_find_completion(move |prefix| {
+        let prefix: String = prefix.into();
+        if prefix.is_empty() {
+            return "".into();
+        }
+        let app = app.borrow();
+        let matches: Vec<String> = app
+            .workers
+            .list()
+            .into_iter()
+            .filter(|(id, name)| id != &WORKER_ID_ZERO && name.starts_with(&prefix))
+            .map(|(_, name)| name)
+            .collect();
+        if matches.is_empty() {
+            "".into()
+        } else if matches.len() == 1 {
+            format!("{}|", matches.into_iter().next().unwrap()).into()
+        } else {
+            common_prefix(&matches).into()
+        }
+    });
+}
+
+fn register_remove_last_char(ui: &AppWindow) {
+    PjmCallback::get(ui).on_remove_last_char(|s| {
+        let s: String = s.into();
+        let mut chars = s.chars();
+        chars.next_back();
+        chars.as_str().to_string().into()
     });
 }
 

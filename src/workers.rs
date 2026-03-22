@@ -57,6 +57,13 @@ impl Workers {
             .map(|(id, _)| *id)
     }
 
+    pub fn get_name_by_id(&self, worker_id: WorkerId) -> &str {
+        self.worker_id
+            .get(&worker_id)
+            .map(|s| s.name.as_str())
+            .unwrap_or("")
+    }
+
     pub fn add(&mut self, name: &str) -> WorkerId {
         self.get_id_by_name(name).unwrap_or_else(|| {
             let id = self.last_id;

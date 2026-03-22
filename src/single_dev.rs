@@ -61,6 +61,10 @@ impl SingleDev {
         self.weeks.values().map(|single| single.effort_tot()).sum()
     }
 
+    pub fn get_effort_by_week(&self, week: WeekId) -> Effort {
+        self.weeks.get(&week).map_or(Effort(0), |f| f.effort_tot())
+    }
+
     pub fn get_effort(&self, week: WeekId, worker_id: WorkerId) -> Effort {
         self.weeks
             .get(&week)

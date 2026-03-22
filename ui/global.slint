@@ -90,6 +90,8 @@ export global PjmCallback {
     callback add_dev(string);
     callback add_dev_to_project(int /*project*/, int /*dev*/, bool /*add*/);
     callback set_project_name(int /*project_idx*/, string);
+    callback find_completion(string) -> string;
+    callback remove_last_char(string) -> string;
     in property <string> testo-copiato;
     in property <string> last-search;
     in property <bool> show_modal;
@@ -179,6 +181,7 @@ export component Cell-RW inherits Rectangle {
 
     property <bool> editing: false;
     property <bool> has-focus: fs.has-focus;
+    property <string> typed_prefix: "";
     height: self.visible ? Styles.height : 0px;
     width: Styles.width;
 
@@ -189,6 +192,37 @@ export component Cell-RW inherits Rectangle {
             height: 100%;
             width: 100%;
             text <=> root.text;
+            key-pressed(event) => {
+                if event.text == Key.Backspace || event.text == Key.Delete {
+                    typed_prefix = PjmCallback.remove_last_char(typed_prefix);
+                    root.text = PjmCallback.find_completion(typed_prefix);
+                    if root.text == "" {
+                        root.text = typed_prefix;
+                    } else {
+                        typed_prefix = root.text;
+                    }
+                    self.set-selection-offsets(root.text.character-count, root.text.character-count);
+                    return accept;
+                }
+                if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
+                    return reject;
+                }
+                if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+                    return reject;
+                }
+                if event.text == "" {
+                    return reject;
+                }
+                typed_prefix += event.text;
+                root.text = PjmCallback.find_completion(typed_prefix);
+                if root.text == "" {
+                    root.text = typed_prefix;
+                } else {
+                    typed_prefix = root.text;
+                }
+                self.set-selection-offsets(root.text.character-count, root.text.character-count);
+                accept
+            }
             accepted => {
                 root.double_clicked(root.text);
                 root.editing = false;
@@ -273,11 +307,13 @@ export component Cell-RW inherits Rectangle {
                 fs.focus();
             }
             if (event.text == Key.Return) {
+                typed_prefix = root.text;
                 root.editing = true;
                 le.focus();
             }
             if (event.text == Key.Delete || event.text == Key.Backspace) {
                 root.text = "";
+                typed_prefix = "";
                 root.double_clicked(root.text);
             }
             if (event.text == Key.Tab) {
