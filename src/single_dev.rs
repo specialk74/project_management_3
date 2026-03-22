@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -96,6 +99,12 @@ impl SingleDev {
 
     pub fn get_all(&self, week: WeekId) -> Option<&SingleEffortWeek> {
         self.weeks.get(&week)
+    }
+
+    pub fn has_worker(&self, worker_id: WorkerId) -> bool {
+        self.weeks
+            .values()
+            .any(|week| week.worker_id.contains_key(&worker_id))
     }
 
     pub fn get_workers(&self, week: WeekId) -> Vec<&WorkerId> {

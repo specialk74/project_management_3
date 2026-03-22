@@ -159,6 +159,7 @@ export component LeftColumn inherits Rectangle {
         VerticalLayout {
             // Per ogni progetto
             for project in root.app_project.projects: Rectangle {
+                visible: project.visible && project.enable;
                 VerticalLayout {
                     // Casella di testo per l'info del progetto
                     // + i vari Dev
@@ -172,7 +173,6 @@ export component LeftColumn inherits Rectangle {
                                 width: 60px * 2;
 
                                 Rectangle {
-                                    min-height: Styles.height;
                                     width: parent.width;
                                     TextEdit {
                                         wrap: TextWrap.word-wrap;
@@ -181,7 +181,7 @@ export component LeftColumn inherits Rectangle {
                                         width: parent.width;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size;
-                                        height: parent.height;
+                                        height: root.visible ? parent.height : 0px;
 
                                         edited(text) => {
                                             project.text = text;
@@ -194,7 +194,7 @@ export component LeftColumn inherits Rectangle {
                                 HorizontalLayout {
 
                                     add-dev-btn := Rectangle {
-                                        height: Styles.height;
+                                        height: root.visible ? Styles.height : 0px;
                                         background: add-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -206,10 +206,13 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            min-height: Styles.height;
+                                            min-height: root.visible ? Styles.height : 0px;
                                         }
 
                                         add-dev-ta := TouchArea {
+                                            height: parent.height;
+                                            width: parent.width;
+                                            visible: root.visible;
                                             clicked => {
                                                 dev-popup.x = add-dev-btn.absolute-position.x;
                                                 dev-popup.y = add-dev-btn.absolute-position.y + add-dev-btn.height;
@@ -219,7 +222,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     del-dev-btn := Rectangle {
-                                        height: Styles.height;
+                                        height: root.visible ? Styles.height : 0px;
                                         background: del-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -231,10 +234,14 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            min-height: Styles.height;
+                                            min-height: root.visible ? Styles.height : 0px;
                                         }
 
                                         del-dev-ta := TouchArea {
+                                            height: parent.height;
+                                            width: parent.width;
+                                            visible: root.visible;
+
                                             clicked => {
                                                 dev-popup.x = del-dev-btn.absolute-position.x;
                                                 dev-popup.y = del-dev-btn.absolute-position.y + del-dev-btn.height;
@@ -248,14 +255,13 @@ export component LeftColumn inherits Rectangle {
                             // I vari dev collegati al progetto
                             VerticalLayout {
                                 for data[index] in project.devs-of-the-project: Rectangle {
-                                    in property <bool> visibility;
-
-                                    visibility: data.visible && data.enable;
+                                    property <bool> visibility;
+                                    visibility: root.visible;
                                     // I vari dev collegati al progetto
                                     VerticalLayout {
                                         cell := Separatore {
                                             bgcolor: root.app_project.devs[data.dev].col;
-                                            height: 2px;
+                                            height: visibility ? 2px : 0px;
 
                                             TouchArea {
                                                 pointer-event(event) => {
@@ -273,8 +279,8 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            //height: visibility ? Styles.height * (data.max == 0 ? 2 : data.max + 2) : 0px;
-                                            height: Styles.height * (data.max + 1);
+                                            height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                            //height: Styles.height * (data.max + 1);
 
                                             HorizontalLayout {
                                                 Rectangle {
@@ -313,7 +319,7 @@ export component LeftColumn inherits Rectangle {
                                                 }
 
                                                 Rectangle {
-                                                    height: Styles.height * (data.max + 1);
+                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
                                                     VerticalLayout {
                                                         LineEdit {
                                                             width: Styles.width;
@@ -346,7 +352,7 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Separatore {
-                                            height: 2px;
+                                            height: visibility ? 2px : 0px;
                                             bgcolor: root.app_project.devs[data.dev].col;
 
                                             TouchArea {

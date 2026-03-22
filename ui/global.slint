@@ -326,7 +326,6 @@ export component Cell-RW inherits Rectangle {
 }
 
 export component EffortByDataGui inherits Rectangle {
-    in property <int> num_visible;
     in property <EffortByDateData> effort;
 
     property <bool> is_drag_dest:
@@ -488,20 +487,40 @@ export component EffortByDataGui inherits Rectangle {
 }
 
 export component EffortByDevGui inherits Rectangle {
-    in property <int> num_visible;
     in property <EffortByDevData> datas;
     in property <[DevInfo]> devs;
     visible: datas.visible && datas.enable;
+    // background: root.devs[root.datas.dev].col;
+    // HorizontalLayout {
+    //     spacing: root.visible ? 2px : 0px;
+    //     padding: 0px;
+    //     visible: root.visible;
+
+    //     for data in datas.datas: Rectangle {
+    //         HorizontalLayout {
+    //             Rectangle {
+    //                 background: data.week == PjmCallback.this_week ? #00ce3a : Colors.transparent;
+    //                 width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+    //             }
+
+    //             EffortByDataGui {
+    //                 background: Colors.white;
+    //                 effort: data;
+    //                 visible: datas.visible && datas.enable;
+    //             }
+    //         }
+    //     }
+    // }
     VerticalLayout {
         Rectangle {
-            height: 2px;
+            height: root.visible ? 2px : 0px;
             background: root.devs[root.datas.dev].col;
         }
 
         HorizontalLayout {
             spacing: 0px;
             padding: 0px;
-            //visible: datas.visible && datas.enable;
+            visible: datas.visible && datas.enable;
 
             for data in datas.datas: Rectangle {
                 HorizontalLayout {
@@ -511,23 +530,21 @@ export component EffortByDevGui inherits Rectangle {
                     }
 
                     EffortByDataGui {
-                        num_visible: root.num_visible;
                         effort: data;
-                        //visible: datas.visible && datas.enable;
+                        visible: datas.visible && datas.enable;
                     }
                 }
             }
         }
 
         Rectangle {
-            height: 2px;
+            height: root.visible ? 2px : 0px;
             background: root.devs[root.datas.dev].col;
         }
     }
 }
 
 export component EffortByPrjGui inherits Rectangle {
-    in property <int> num_visible;
     in property <EffortByPrjData> project;
     in property <[DevInfo]> devs;
     visible: project.visible && project.enable;
@@ -536,7 +553,6 @@ export component EffortByPrjGui inherits Rectangle {
         padding: 0px;
 
         for data in project.devs-of-the-project: EffortByDevGui {
-            num_visible: root.num_visible;
             datas: data;
             devs: root.devs;
         }

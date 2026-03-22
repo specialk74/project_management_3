@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![allow(dead_code)]
+
 use crate::{
     devs::DevId,
     single_dev::{SingleDev, WeekId},
@@ -41,9 +44,10 @@ impl Project {
     }
 
     pub fn add_dev(&mut self, id_dev: DevId) {
-        if !self.dev_id.contains_key(&id_dev) {
-            self.dev_id.insert(id_dev, SingleDev::new());
-        }
+        self.dev_id.entry(id_dev).or_insert_with(SingleDev::new);
+        // if !self.dev_id.contains_key(&id_dev) {
+        //     self.dev_id.insert(id_dev, SingleDev::new());
+        // }
     }
 
     pub fn add_dev_effort(&mut self, id_dev: DevId, effort: Effort) {

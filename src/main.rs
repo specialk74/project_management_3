@@ -65,7 +65,5 @@ fn main() {
     };
     callbacks::setup_all(&ui, &state);
 
-    PjmCallback::get(&ui).on_search(|_| {});
-
     ui.run().unwrap();
 }

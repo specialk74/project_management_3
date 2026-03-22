@@ -86,12 +86,13 @@ pub fn build_project_data(
                 })
                 .collect();
 
+            let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
             EffortByPrjData {
                 project_id: pi as i32,
                 text: SharedString::from(proj_name.as_str()),
                 start_week: start_w as i32,
                 end_week: end_w as i32,
-                visible: true,
+                visible: project_visible,
                 enable: true,
                 devs_of_the_project: mk(dev_data),
             }

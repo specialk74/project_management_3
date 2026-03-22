@@ -30,67 +30,67 @@ import { RightColumn } from "right-column.slint";
 import { LeftFooter } from "left-footer.slint";
 import { RightFooter } from "right-footer.slint";
 
-component ModalWindow inherits Window {
-    callback closed(string);
-    callback select_all();
+// component ModalWindow inherits Window {
+//     callback closed(string);
+//     callback select_all();
 
-    FocusScope {
-        VerticalLayout {
-            spacing: 0px;
-            padding: 0px;
+//     FocusScope {
+//         VerticalLayout {
+//             spacing: 0px;
+//             padding: 0px;
 
-            Cell-RO {
-                text: "Search...";
-            }
+//             Cell-RO {
+//                 text: "Search...";
+//             }
 
-            input_field := LineEdit {
-                placeholder-text: "Enter text...";
-                text: "";
-                accepted => {
-                    root.closed(input_field.text);
-                }
-            }
+//             input_field := LineEdit {
+//                 placeholder-text: "Enter text...";
+//                 text: "";
+//                 accepted => {
+//                     root.closed(input_field.text);
+//                 }
+//             }
 
-            HorizontalLayout {
-                spacing: 0px;
-                padding: 0px;
+//             HorizontalLayout {
+//                 spacing: 0px;
+//                 padding: 0px;
 
-                alignment: stretch;
-                Button {
-                    text: "Abort";
-                    clicked => {
-                        root.closed("");
-                    }
-                }
+//                 alignment: stretch;
+//                 Button {
+//                     text: "Abort";
+//                     clicked => {
+//                         root.closed("");
+//                     }
+//                 }
 
-                Button {
-                    text: "Search";
-                    clicked => {
-                        root.closed(input_field.text);
-                    }
-                }
-            }
-        }
+//                 Button {
+//                     text: "Search";
+//                     clicked => {
+//                         root.closed(input_field.text);
+//                     }
+//                 }
+//             }
+//         }
 
-        key-pressed(event) => {
-            if (event.text == Key.Escape) {
-                root.closed(PjmCallback.last-search);
-                accept
-            }
-            if (event.text == Key.Return) {
-                root.closed(input_field.text);
-                accept
-            }
-            reject
-        }
-    }
+//         key-pressed(event) => {
+//             if (event.text == Key.Escape) {
+//                 root.closed(PjmCallback.last-search);
+//                 accept
+//             }
+//             if (event.text == Key.Return) {
+//                 root.closed(input_field.text);
+//                 accept
+//             }
+//             reject
+//         }
+//     }
 
-    forward-focus: input_field;
+//     forward-focus: input_field;
 
-    select-all => {
-        input_field.select_all();
-    }
-}
+//     select-all => {
+//         input_field.select_all();
+//     }
+// }
 
 component Toolbar inherits Rectangle {
     height: 32px;
@@ -308,6 +308,10 @@ export component AppWindow inherits Window {
     im := PopupWindow {
         in-out property <string> text;
         property <string> typed_prefix: "";
+
+        init => {
+            le.focus();
+        }
         Rectangle {
             background: Colors.antiquewhite;
             VerticalLayout {
@@ -348,6 +352,11 @@ export component AppWindow inherits Window {
                         }
                         self.set-selection-offsets(text.character-count, text.character-count);
                         accept
+                    }
+                    accepted => {
+                        PjmCallback.last-search = text;
+                        PjmCallback.search(text);
+                        im.close();
                     }
                 }
 

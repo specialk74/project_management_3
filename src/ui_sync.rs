@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![allow(dead_code)]
+
 use slint::{Model, SharedString};
 use std::collections::HashMap;
 
@@ -7,7 +10,6 @@ use crate::builders::{
     build_dev_infos, build_project_data, build_sovra_data, build_weeks, find_end_week,
 };
 use crate::live_models::LiveModels;
-//use crate::workers::WORKER_ID_ZERO;
 
 pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
     let efforts = ui.get_app_project();
