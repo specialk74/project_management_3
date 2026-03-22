@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::app::App;
 use crate::single_dev::{SingleDev, WeekId};
 use crate::sinlge_effort::Effort;
+use crate::workers::WORKER_ID_ZERO;
 use crate::{DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SovraData};
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -73,8 +74,7 @@ pub fn build_project_data(
                 .list_devs(*proj_id)
                 .iter()
                 .map(|dev_id| {
-                    let extra = *row_counts.get(&(pi as i32, dev_id.0 as i32)).unwrap_or(&0);
-                    let max = extra;
+                    let max = *row_counts.get(&(pi as i32, dev_id.0 as i32)).unwrap_or(&0);
                     let enable = *visibility
                         .get(&(pi as i32, dev_id.0 as i32))
                         .unwrap_or(&true);
@@ -121,6 +121,7 @@ fn build_dev(
                     .map(|s| {
                         s.worker_id
                             .iter()
+                            .filter(|(worker_id, _)| **worker_id != WORKER_ID_ZERO)
                             .map(|(worker_id, single_effort)| {
                                 SharedString::from(format!(
                                     "{}|{}",
@@ -155,7 +156,7 @@ fn build_dev(
         total,
         effort: planned,
         remains: planned - total,
-        visible: true,
+        visible: enable,
         enable,
         max,
         datas: mk(week_data),
@@ -189,7 +190,7 @@ fn empty_dev(
         effort: 0,
         remains: 0,
         visible: true,
-        enable: false,
+        enable: true,
         max: (max - 1).max(0),
         datas: mk(week_data),
     }

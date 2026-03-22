@@ -9,7 +9,7 @@ export component LeftFooter inherits Rectangle {
     in property <AppProject> app_project;
 
     height: Styles.height * (max(app_project.devs.length, app_project.worker_names.length) + 1);
-    width: 60px * 4;
+    width: Styles.left-column-width;
     HorizontalLayout {
         // I vari dev
         Rectangle {

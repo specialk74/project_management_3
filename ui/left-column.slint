@@ -142,7 +142,8 @@ export component LeftColumn inherits Rectangle {
     in property <AppProject> app_project;
     in-out property <length> viewport_y;
 
-    width: 60px * 4;
+    width: Styles.left-column-width;
+
     popup := Devmenu {
         visible: false;
     }
@@ -157,23 +158,30 @@ export component LeftColumn inherits Rectangle {
         height: root.height;
         viewport-y <=> root.viewport_y;
         VerticalLayout {
+            spacing: 0px;
+            padding: 0px;
             // Per ogni progetto
             for project in root.app_project.projects: Rectangle {
                 visible: project.visible && project.enable;
+                height: self.visible ? self.preferred-height : 0px;
                 VerticalLayout {
+                    spacing: 0px;
+                    padding: 0px;
                     // Casella di testo per l'info del progetto
                     // + i vari Dev
                     Rectangle {
                         // Casella di testo per l'info del progetto
                         // + i vari Dev
                         HorizontalLayout {
+                            spacing: 0px;
+                            padding: 0px;
                             // Casella di testo per l'info del progetto
                             // + il pulsante "+ Dev"
                             VerticalLayout {
-                                width: 60px * 2;
+                                spacing: 0px;
+                                padding: 0px;
 
                                 Rectangle {
-                                    width: parent.width;
                                     TextEdit {
                                         wrap: TextWrap.word-wrap;
                                         horizontal-alignment: center;
@@ -192,6 +200,8 @@ export component LeftColumn inherits Rectangle {
                                 }
 
                                 HorizontalLayout {
+                                    spacing: 0px;
+                                    padding: 0px;
 
                                     add-dev-btn := Rectangle {
                                         height: root.visible ? Styles.height : 0px;
@@ -206,7 +216,7 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            min-height: root.visible ? Styles.height : 0px;
+                                            height: root.visible ? Styles.height : 0px;
                                         }
 
                                         add-dev-ta := TouchArea {
@@ -234,7 +244,7 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            min-height: root.visible ? Styles.height : 0px;
+                                            height: root.visible ? Styles.height : 0px;
                                         }
 
                                         del-dev-ta := TouchArea {
@@ -254,11 +264,15 @@ export component LeftColumn inherits Rectangle {
 
                             // I vari dev collegati al progetto
                             VerticalLayout {
-                                for data[index] in project.devs-of-the-project: Rectangle {
+                                spacing: 0px;
+                                padding: 0px;
+                                for data in project.devs-of-the-project: Rectangle {
                                     property <bool> visibility;
-                                    visibility: root.visible;
+                                    visibility: data.visible;
                                     // I vari dev collegati al progetto
                                     VerticalLayout {
+                                        spacing: 0px;
+                                        padding: 0px;
                                         cell := Separatore {
                                             bgcolor: root.app_project.devs[data.dev].col;
                                             height: visibility ? 2px : 0px;
@@ -280,15 +294,17 @@ export component LeftColumn inherits Rectangle {
 
                                         Rectangle {
                                             height: visibility ? Styles.height * (data.max + 1) : 0px;
-                                            //height: Styles.height * (data.max + 1);
 
                                             HorizontalLayout {
+                                                spacing: 0px;
+                                                padding: 0px;
+                                                // Text Dev1 or Dev2, ...
                                                 Rectangle {
                                                     background: root.app_project.devs[data.dev].col;
-                                                    width: Styles.width - 50px;
+                                                    width: Styles.width;
                                                     clip: true;
                                                     Text {
-                                                        width: Styles.width - 50px;
+                                                        width: Styles.width - 10px;
                                                         font-weight: 800;
                                                         color: root.app_project.devs[data.dev].text-color;
                                                         text: root.app_project.devs[data.dev].title;
@@ -320,9 +336,11 @@ export component LeftColumn inherits Rectangle {
 
                                                 Rectangle {
                                                     height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                                    width: Styles.width - 25px;
                                                     VerticalLayout {
+                                                        spacing: 0px;
+                                                        padding: 0px;
                                                         LineEdit {
-                                                            width: Styles.width;
                                                             horizontal-alignment: center;
                                                             text: data.effort;
                                                             height: Styles.height;
@@ -335,17 +353,14 @@ export component LeftColumn inherits Rectangle {
 
                                                         Rectangle {
                                                             background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
+                                                            height: visibility ? self.preferred-height : 0px;
                                                             Text {
+                                                                height: visibility ? self.preferred-height : 0px;
                                                                 horizontal-alignment: center;
                                                                 vertical-alignment: center;
                                                                 text: data.remains;
                                                             }
                                                         }
-
-                                                        // Rectangle {
-                                                        //     height: Styles.height * (data.max - 1);
-                                                        //     background: Colors.transparent;
-                                                        // }
                                                     }
                                                 }
                                             }
@@ -376,7 +391,7 @@ export component LeftColumn inherits Rectangle {
                     }
 
                     Rectangle {
-                        height: 2px;
+                        height: root.visible ? 2px : 0px;
                         background: Colors.cyan;
                     }
                 }
