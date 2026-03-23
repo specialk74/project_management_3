@@ -134,8 +134,8 @@ export component Cell-RO inherits Rectangle {
 
     clip: true;
     Rectangle {
-        width: parent.width - 5px;
-        height: parent.visible ? parent.height - 5px : 0px;
+        width: parent.width - 5px; // Sennò le scritte si sovrappongono
+        //height: self.visible ? parent.height - 5px : 0px;
 
         innerRect := Rectangle {
             property <length> parent_width: parent.width;
@@ -483,6 +483,13 @@ export component EffortByDataGui inherits Rectangle {
         border-color: Colors.steelblue;
         border-width: 2px;
         z: 10;
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                debug("6");
+            }
+        }
     }
 }
 
@@ -513,14 +520,13 @@ export component EffortByDevGui inherits Rectangle {
     // }
     VerticalLayout {
         Rectangle {
-            height: root.visible ? 2px : 0px;
+            height: root.visible ? Styles.dev-border : 0px;
             background: root.devs[root.datas.dev].col;
         }
 
         HorizontalLayout {
             spacing: 0px;
             padding: 0px;
-            visible: datas.visible && datas.enable;
 
             for data in datas.datas: Rectangle {
                 HorizontalLayout {
@@ -531,14 +537,14 @@ export component EffortByDevGui inherits Rectangle {
 
                     EffortByDataGui {
                         effort: data;
-                        visible: datas.visible && datas.enable;
+                        visible: root.visible;
                     }
                 }
             }
         }
 
         Rectangle {
-            height: root.visible ? 2px : 0px;
+            height: root.visible ? Styles.dev-border : 0px;
             background: root.devs[root.datas.dev].col;
         }
     }
@@ -557,8 +563,8 @@ export component EffortByPrjGui inherits Rectangle {
             devs: root.devs;
         }
         Rectangle {
-            height: 2px;
-            background: Colors.cyan;
+            height: root.visible ? Styles.dev-border : 0px;
+            background: Styles.color-between-projects;
         }
     }
 }

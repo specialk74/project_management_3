@@ -224,8 +224,8 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 2px;
-            background: Colors.yellow;
+            height: self.visible ? Styles.dev-border : 0px;
+            background: Styles.color-start-stop;
         }
 
         Rectangle {
@@ -251,8 +251,8 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            height: 2px;
-            background: Colors.yellow;
+            height: self.visible ? Styles.dev-border : 0px;
+            background: Styles.color-start-stop;
         }
 
         Header {

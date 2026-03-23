@@ -273,23 +273,9 @@ export component LeftColumn inherits Rectangle {
                                     VerticalLayout {
                                         spacing: 0px;
                                         padding: 0px;
-                                        cell := Separatore {
+                                        Separatore {
                                             bgcolor: root.app_project.devs[data.dev].col;
-                                            height: visibility ? 2px : 0px;
-
-                                            TouchArea {
-                                                pointer-event(event) => {
-                                                    if event.button == PointerEventButton.right {
-                                                        if event.kind == PointerEventKind.down {
-                                                            popup.x = cell.absolute-position.x;
-                                                            popup.y = cell.absolute-position.y;
-                                                            popup.visible = true;
-                                                            popup.show(project.project_id, data.dev, data.enable == false);
-                                                        } else {
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            height: visibility ? Styles.dev-border : 0px;
                                         }
 
                                         Rectangle {
@@ -311,7 +297,7 @@ export component LeftColumn inherits Rectangle {
                                                         horizontal-alignment: center;
                                                         vertical-alignment: center;
                                                         wrap: word-wrap;
-                                                        TouchArea {
+                                                        cell := TouchArea {
                                                             width: parent.width;
                                                             height: parent.height;
                                                             double-clicked => {
@@ -367,22 +353,8 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Separatore {
-                                            height: visibility ? 2px : 0px;
+                                            height: visibility ? Styles.dev-border : 0px;
                                             bgcolor: root.app_project.devs[data.dev].col;
-
-                                            TouchArea {
-                                                pointer-event(event) => {
-                                                    if event.button == PointerEventButton.right {
-                                                        if event.kind == PointerEventKind.down {
-                                                            popup.x = cell.absolute-position.x;
-                                                            popup.y = cell.absolute-position.y;
-                                                            popup.visible = true;
-                                                            popup.show(project.project_id, data.dev, data.enable == false);
-                                                        } else {
-                                                        }
-                                                    }
-                                                }
-                                            }
                                         }
                                     }
                                 }
@@ -391,8 +363,8 @@ export component LeftColumn inherits Rectangle {
                     }
 
                     Rectangle {
-                        height: root.visible ? 2px : 0px;
-                        background: Colors.cyan;
+                        height: root.visible ? Styles.dev-border : 0px;
+                        background: Styles.color-between-projects;
                     }
                 }
             }
