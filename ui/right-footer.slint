@@ -25,9 +25,11 @@ export component RightFooter inherits Rectangle {
 
                     VerticalLayout {
                         for value[index] in data.value: Rectangle {
+                            property <bool> worker-visible: PjmCallback.last-search == "" || root.app_project.worker_names[index] == PjmCallback.last-search;
                             background: index.mod(2) == 0 ? Colors.gray : Colors.black;
                             width: Styles.width;
-                            height: Styles.height;
+                            height: worker-visible ? Styles.height : 0px;
+                            visible: worker-visible;
                             Text {
                                 font-weight: value == 80 ? 200 : 800;
                                 color: value > 80 ? Colors.red : (value < 40 ? Colors.yellow : (value < 80 ? Colors.orange : Colors.lightgreen));

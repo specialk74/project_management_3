@@ -49,7 +49,9 @@ export component LeftFooter inherits Rectangle {
         Rectangle {
             VerticalLayout {
                 for name[index] in app_project.worker_names: Rectangle {
-                    height: Styles.height;
+                    property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
+                    height: worker-visible ? Styles.height : 0px;
+                    visible: worker-visible;
                     background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
                     Cell-RO {
                         width: Styles.width;
