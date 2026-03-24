@@ -17,6 +17,8 @@ pub struct WeekId(pub usize);
 pub struct SingleDev {
     weeks: HashMap<WeekId, SingleEffortWeek>,
     effort: Effort,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 impl SingleDev {
@@ -24,6 +26,7 @@ impl SingleDev {
         Self {
             weeks: HashMap::new(),
             effort: Effort(0),
+            note: None,
         }
     }
 
