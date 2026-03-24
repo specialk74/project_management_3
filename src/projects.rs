@@ -16,7 +16,6 @@ pub struct ProjectId(pub usize);
 #[derive(Serialize, Deserialize)]
 pub struct Project {
     info: String,
-    visible: bool,
     enable: bool,
     dev_id: HashMap<DevId, SingleDev>,
 }
@@ -26,7 +25,6 @@ impl Project {
         Self {
             info: info.to_string(),
             dev_id: HashMap::new(),
-            visible: true,
             enable: true,
         }
     }
@@ -113,20 +111,14 @@ impl Projects {
     }
 
     /// Returns (id, name, visible, enable)
-    pub fn list_full(&self) -> Vec<(ProjectId, String, bool, bool)> {
-        let mut items: Vec<(ProjectId, String, bool, bool)> = self
+    pub fn list_full(&self) -> Vec<(ProjectId, String, bool)> {
+        let mut items: Vec<(ProjectId, String, bool)> = self
             .projects
             .iter()
-            .map(|(&id, p)| (id, p.info.clone(), p.visible, p.enable))
+            .map(|(&id, p)| (id, p.info.clone(), p.enable))
             .collect();
-        items.sort_by_key(|(id, _, _, _)| *id);
+        items.sort_by_key(|(id, _, _)| *id);
         items
-    }
-
-    pub fn set_visible(&mut self, project_id: ProjectId, visible: bool) {
-        if let Some(p) = self.projects.get_mut(&project_id) {
-            p.visible = visible;
-        }
     }
 
     pub fn set_enable(&mut self, project_id: ProjectId, enable: bool) {
