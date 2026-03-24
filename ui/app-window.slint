@@ -273,6 +273,27 @@ export component AppWindow inherits Window {
         }
     }
 
+    if PjmCallback.note-popup-visible: Rectangle {
+        x: PjmCallback.note-popup-x;
+        y: PjmCallback.note-popup-y;
+        width: 200px;
+        height: note-tooltip-text.preferred-height + 12px;
+        background: #fffde7;
+        border-color: Colors.purple;
+        border-width: 1px;
+        z: 1000;
+
+        note-tooltip-text := Text {
+            x: 6px;
+            y: 6px;
+            width: 188px;
+            text: PjmCallback.note-popup-text;
+            wrap: word-wrap;
+            color: Colors.black;
+            font-size: 11px;
+        }
+    }
+
     fs := FocusScope {
         key-pressed(event) => {
             if (event.modifiers.control) {

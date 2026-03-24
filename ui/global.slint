@@ -20,6 +20,15 @@ export struct DevInfo {
     text-color: color,
 }
 
+export struct SingleEffortGui {
+    week: int,
+    dev: int,
+    project: int,
+    effort: int,
+    name: string,
+    note: string,
+}
+
 export struct EffortByDateData {
     total: int,
     remains: int,
@@ -27,7 +36,7 @@ export struct EffortByDateData {
     project: int,
     effort: int,
     week: int,
-    persons: [string],
+    persons: [SingleEffortGui],
 }
 
 export struct EffortByDevData {
@@ -39,6 +48,7 @@ export struct EffortByDevData {
     visible: bool,
     enable: bool,
     max: int,
+    note: string,
     datas: [EffortByDateData],
 }
 
@@ -111,6 +121,11 @@ export global PjmCallback {
     // Drag
     in-out property <bool> drag_active: false;
     in-out property <int> drag_preview_offset: 0;
+    // Note popup (gestito a livello AppWindow)
+    in-out property <bool> note-popup-visible: false;
+    in-out property <string> note-popup-text: "";
+    in-out property <length> note-popup-x: 0px;
+    in-out property <length> note-popup-y: 0px;
 }
 
 component InternalText inherits Text {
@@ -169,6 +184,7 @@ export component Cell-RO inherits Rectangle {
 
 export component Cell-RW inherits Rectangle {
     in-out property <string> text;
+    in property <string> note;
     in property <bool> selected: false;
     callback double_clicked(string);
     // Selezione
@@ -323,6 +339,44 @@ export component Cell-RW inherits Rectangle {
             }
         }
     }
+
+    note-indicator := Rectangle {
+        x: parent.width - 10px;
+        y: 0px;
+        width: root.note != "" ? 10px : 0px;
+        height: root.note != "" ? 10px : 0px;
+        clip: false;
+        background: Colors.transparent;
+
+        Path {
+            visible: root.note != "";
+            x: 0;
+            y: 0;
+            width: 10px;
+            height: 10px;
+            fill: Colors.purple;
+            MoveTo { x: 10; y: 0; }
+            LineTo { x: 10; y: 10; }
+            LineTo { x: 0; y: 0; }
+            Close { }
+        }
+
+        note-ta := TouchArea {
+            enabled: root.note != "";
+            width: 10px;
+            height: 10px;
+            changed has-hover => {
+                if self.has-hover {
+                    PjmCallback.note-popup-text = root.note;
+                    PjmCallback.note-popup-x = self.absolute-position.x - 140px;
+                    PjmCallback.note-popup-y = self.absolute-position.y + 11px;
+                    PjmCallback.note-popup-visible = true;
+                } else {
+                    PjmCallback.note-popup-visible = false;
+                }
+            }
+        }
+    }
 }
 
 export component EffortByDataGui inherits Rectangle {
@@ -395,12 +449,13 @@ export component EffortByDataGui inherits Rectangle {
         }
 
         for person[row_idx] in effort.persons: Cell-RW {
-            text: person;
+            text: person.name;
+            note: person.note;
             visible: root.visible;
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
 
             double_clicked(text) => {
-                person = text;
+                person.name = text;
                 PjmCallback.changed_effort(root.effort);
             }
 

@@ -5,7 +5,10 @@ use crate::app::App;
 use crate::single_dev::{SingleDev, WeekId};
 use crate::sinlge_effort::Effort;
 use crate::workers::WORKER_ID_ZERO;
-use crate::{DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SovraData};
+use crate::{
+    DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
+    SovraData,
+};
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -115,24 +118,29 @@ fn build_dev(
 
     let week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .map(|w| {
-            let workers_in_week: Vec<SharedString> = {
+            let workers_in_week: Vec<SingleEffortGui> = {
                 let mut v = sd
                     .get_all(WeekId(w))
                     .map(|s| {
                         s.worker_id
                             .iter()
                             .filter(|(worker_id, _)| **worker_id != WORKER_ID_ZERO)
-                            .map(|(worker_id, single_effort)| {
-                                SharedString::from(format!(
+                            .map(|(worker_id, single_effort)| SingleEffortGui {
+                                name: SharedString::from(format!(
                                     "{}|{}",
                                     app.workers.get_name_by_id(*worker_id),
                                     single_effort.get_effort()
-                                ))
+                                )),
+                                note: SharedString::from(single_effort.get_note()),
+                                week: w as i32,
+                                dev: dev_idx,
+                                project: proj_idx,
+                                effort: single_effort.get_effort() as i32,
                             })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
-                v.resize(max as usize, SharedString::from(""));
+                v.resize(max as usize, SingleEffortGui::default());
                 v
             };
 
@@ -159,6 +167,7 @@ fn build_dev(
         visible: enable,
         enable,
         max,
+        note: SharedString::from(""),
         datas: mk(week_data),
     }
 }
@@ -179,7 +188,7 @@ fn empty_dev(
             project: proj_idx,
             effort: 0,
             week: (start_w + i) as i32,
-            persons: mk(vec![SharedString::default(); n_persons]),
+            persons: mk(vec![SingleEffortGui::default(); n_persons]),
         })
         .collect();
 
@@ -191,6 +200,7 @@ fn empty_dev(
         remains: 0,
         visible: true,
         enable: true,
+        note: SharedString::from(""),
         max: (max - 1).max(0),
         datas: mk(week_data),
     }

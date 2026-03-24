@@ -34,7 +34,7 @@ fn register_changed_effort(ui: &AppWindow, state: &SharedState) {
         a.projects.reset_effort(proj_id, dev_id, WeekId(week));
 
         for person in effort.persons.iter() {
-            let lista: Vec<&str> = person.split("|").collect();
+            let lista: Vec<&str> = person.name.split("|").collect();
             if lista.len() != 2 {
                 return;
             }

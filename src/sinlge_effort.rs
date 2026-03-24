@@ -30,6 +30,10 @@ impl SingleEffort {
         self.note = Some(note.to_string());
     }
 
+    pub fn get_note(&self) -> String {
+        self.note.clone().unwrap_or(String::from(""))
+    }
+
     pub fn get_effort(&self) -> usize {
         self.effort.0
     }
