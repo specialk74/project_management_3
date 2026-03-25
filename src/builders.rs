@@ -167,7 +167,7 @@ fn build_dev(
         visible: enable,
         enable,
         max,
-        note: SharedString::from(""),
+        note: SharedString::from(sd.get_note()),
         datas: mk(week_data),
     }
 }

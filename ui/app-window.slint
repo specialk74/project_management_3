@@ -279,7 +279,7 @@ export component AppWindow inherits Window {
         width: 200px;
         height: note-tooltip-text.preferred-height + 12px;
         background: #fffde7;
-        border-color: Colors.purple;
+        border-color: Styles.note-color;
         border-width: 1px;
         z: 1000;
 
@@ -290,7 +290,8 @@ export component AppWindow inherits Window {
             text: PjmCallback.note-popup-text;
             wrap: word-wrap;
             color: Colors.black;
-            font-size: 11px;
+            font-size: Styles.font-size;
+            font-family: Styles.font-family;
         }
     }
 

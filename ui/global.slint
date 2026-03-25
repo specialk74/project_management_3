@@ -354,10 +354,22 @@ export component Cell-RW inherits Rectangle {
             y: 0;
             width: 10px;
             height: 10px;
-            fill: Colors.purple;
-            MoveTo { x: 10; y: 0; }
-            LineTo { x: 10; y: 10; }
-            LineTo { x: 0; y: 0; }
+            fill: Styles.note-color;
+            MoveTo {
+                x: 10;
+                y: 0;
+            }
+
+            LineTo {
+                x: 10;
+                y: 10;
+            }
+
+            LineTo {
+                x: 0;
+                y: 0;
+            }
+
             Close { }
         }
 

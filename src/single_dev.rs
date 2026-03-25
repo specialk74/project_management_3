@@ -100,6 +100,10 @@ impl SingleDev {
         }
     }
 
+    pub fn get_note(&self) -> String {
+        self.note.clone().unwrap_or(String::from(""))
+    }
+
     pub fn get_all(&self, week: WeekId) -> Option<&SingleEffortWeek> {
         self.weeks.get(&week)
     }
