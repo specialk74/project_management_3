@@ -1,9 +1,9 @@
 use slint::{ComponentHandle, Global, Model};
 
-use crate::single_dev::WeekId;
-use crate::sinlge_effort::Effort;
+use crate::single_dev::single_dev::WeekId;
+use crate::single_efforts::sinlge_effort::Effort;
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers::WorkerId;
+use crate::workers::worker::WorkerId;
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;

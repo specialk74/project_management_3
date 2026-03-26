@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::devs::Devs;
-use crate::projects::Projects;
-use crate::workers::Workers;
+use crate::{devs::devs::Devs, projects::projects::Projects, workers::workers::Workers};
 
 pub const SAVE_PATH: &str = "workers.ron";
 
@@ -26,8 +24,7 @@ impl App {
     }
 
     pub fn save(&self, path: &str) {
-        let content =
-            ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap();
+        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap();
         let _ = fs::write(path, content);
     }
 

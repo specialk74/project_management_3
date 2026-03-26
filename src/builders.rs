@@ -2,9 +2,9 @@ use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 
 use crate::app::App;
-use crate::single_dev::{SingleDev, WeekId};
-use crate::sinlge_effort::Effort;
-use crate::workers::WORKER_ID_ZERO;
+use crate::single_dev::single_dev::{SingleDev, WeekId};
+use crate::single_efforts::sinlge_effort::Effort;
+use crate::workers::worker::WORKER_ID_ZERO;
 use crate::{
     DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
     SovraData,
@@ -129,13 +129,13 @@ fn build_dev(
                                 name: SharedString::from(format!(
                                     "{}|{}",
                                     app.workers.get_name_by_id(*worker_id),
-                                    single_effort.get_effort()
+                                    single_effort.get_effort().0
                                 )),
                                 note: SharedString::from(single_effort.get_note()),
                                 week: w as i32,
                                 dev: dev_idx,
                                 project: proj_idx,
-                                effort: single_effort.get_effort() as i32,
+                                effort: single_effort.get_effort().0 as i32,
                             })
                             .collect::<Vec<_>>()
                     })

@@ -5,7 +5,7 @@ mod devs;
 mod live_models;
 mod projects;
 mod single_dev;
-mod sinlge_effort;
+mod single_efforts;
 mod ui_sync;
 mod workers;
 

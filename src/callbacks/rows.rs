@@ -1,10 +1,10 @@
 use slint::{ComponentHandle, Global};
 
-use crate::devs::DevId;
-use crate::projects::ProjectId;
-use crate::sinlge_effort::Effort;
+use crate::devs::dev::DevId;
+use crate::projects::project::ProjectId;
+use crate::single_efforts::sinlge_effort::Effort;
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers::WorkerId;
+use crate::workers::worker::WorkerId;
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;

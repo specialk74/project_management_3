@@ -1,89 +1,16 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
-use crate::{
-    devs::DevId,
-    single_dev::{SingleDev, WeekId},
-    sinlge_effort::Effort,
-    workers::WorkerId,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct ProjectId(pub usize);
-
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct Enable(pub bool);
-
-#[derive(Serialize, Deserialize)]
-pub struct Project {
-    info: String,
-    enable: Enable,
-    dev_id: HashMap<DevId, SingleDev>,
-}
-
-impl Project {
-    pub fn new(info: &str) -> Self {
-        Self {
-            info: info.to_string(),
-            dev_id: HashMap::new(),
-            enable: Enable(true),
-        }
-    }
-
-    pub fn del_row(&mut self, id_dev: DevId) {
-        self.dev_id.get_mut(&id_dev).unwrap().del_row();
-    }
-
-    pub fn reset_effort(&mut self, id_dev: DevId, week: WeekId) {
-        self.dev_id.get_mut(&id_dev).unwrap().reset_effort(week);
-    }
-
-    pub fn set_info(&mut self, info: &str) {
-        self.info = info.to_string();
-    }
-
-    pub fn add_dev(&mut self, id_dev: DevId) {
-        self.dev_id.entry(id_dev).or_insert_with(SingleDev::new);
-        // if !self.dev_id.contains_key(&id_dev) {
-        //     self.dev_id.insert(id_dev, SingleDev::new());
-        // }
-    }
-
-    pub fn add_dev_effort(&mut self, id_dev: DevId, effort: Effort) {
-        self.add_dev(id_dev);
-        self.dev_id.get_mut(&id_dev).unwrap().set_effort(effort);
-    }
-
-    pub fn set_note(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, note: &str) {
-        self.add_dev(id_dev);
-        self.dev_id
-            .get_mut(&id_dev)
-            .unwrap()
-            .set_note(week, id_worker, note);
-    }
-
-    pub fn add_effort(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, effort: Effort) {
-        self.add_dev(id_dev);
-        self.dev_id
-            .get_mut(&id_dev)
-            .unwrap()
-            .add(week, id_worker, effort);
-    }
-
-    pub fn del_dev(&mut self, id_dev: DevId) {
-        self.dev_id.remove(&id_dev);
-    }
-
-    pub fn list_dev_id(&self) -> Vec<DevId> {
-        self.dev_id.keys().copied().collect()
-    }
-
-    pub fn get_week_with_max_worker(&self, id_dev: DevId) -> Option<WeekId> {
-        self.dev_id.get(&id_dev).unwrap().get_week_with_max_worker()
-    }
-}
+use crate::{
+    devs::dev::DevId,
+    projects::project::{Enable, Project, ProjectId},
+    single_dev::single_dev::{SingleDev, WeekId},
+    single_efforts::sinlge_effort::Effort,
+    workers::worker::WorkerId,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct Projects {
@@ -103,7 +30,7 @@ impl Projects {
         let mut items: Vec<(ProjectId, String)> = self
             .projects
             .iter()
-            .map(|(&id, p)| (id, p.info.clone()))
+            .map(|(&id, p)| (id, p.get_info()))
             .collect();
         items.sort_by_key(|(id, _)| *id);
         items
@@ -118,7 +45,7 @@ impl Projects {
         let mut items: Vec<(ProjectId, String, Enable)> = self
             .projects
             .iter()
-            .map(|(&id, p)| (id, p.info.clone(), p.enable))
+            .map(|(&id, p)| (id, p.get_info(), p.get_enable()))
             .collect();
         items.sort_by_key(|(id, _, _)| *id);
         items
@@ -126,7 +53,7 @@ impl Projects {
 
     pub fn set_enable(&mut self, project_id: ProjectId, enable: Enable) {
         if let Some(p) = self.projects.get_mut(&project_id) {
-            p.enable = enable;
+            p.set_enable(enable);
         }
     }
 
@@ -204,7 +131,7 @@ impl Projects {
         self.projects
             .get(&project_id)
             .map(|p| {
-                let mut ids: Vec<DevId> = p.dev_id.keys().cloned().collect();
+                let mut ids: Vec<DevId> = p.get_keys().collect();
                 ids.sort();
                 ids
             })
@@ -212,7 +139,7 @@ impl Projects {
     }
 
     pub fn get_single_dev(&self, project_id: ProjectId, dev_id: DevId) -> Option<&SingleDev> {
-        self.projects.get(&project_id)?.dev_id.get(&dev_id)
+        self.projects.get(&project_id)?.get_dev_id(&dev_id)
     }
 
     pub fn get_week_with_max_worker(&self, project_id: ProjectId, id_dev: DevId) -> Option<WeekId> {

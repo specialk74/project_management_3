@@ -1,7 +1,7 @@
 use slint::{ComponentHandle, Global};
 
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers::WORKER_ID_ZERO;
+use crate::workers::worker::WORKER_ID_ZERO;
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;

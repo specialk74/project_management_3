@@ -1,13 +1,12 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    sinlge_effort::{Effort, SingleEffortWeek},
-    workers::WorkerId,
+    single_efforts::{sinlge_effort::Effort, sinlge_effort_week::SingleEffortWeek},
+    workers::worker::WorkerId,
 };
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]

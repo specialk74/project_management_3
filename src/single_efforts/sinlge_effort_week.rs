@@ -1,43 +1,13 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
-use crate::workers::{WORKER_ID_ZERO, WorkerId};
-
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Default)]
-pub struct Effort(pub usize);
-
-#[derive(Serialize, Deserialize)]
-pub struct SingleEffort {
-    effort: Effort,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-}
-
-impl SingleEffort {
-    pub fn new(effort: Effort) -> Self {
-        Self { effort, note: None }
-    }
-
-    pub fn set_effort(&mut self, effort: Effort) {
-        self.effort = effort;
-    }
-
-    pub fn set_note(&mut self, note: &str) {
-        self.note = Some(note.to_string());
-    }
-
-    pub fn get_note(&self) -> String {
-        self.note.clone().unwrap_or(String::from(""))
-    }
-
-    pub fn get_effort(&self) -> usize {
-        self.effort.0
-    }
-}
+use crate::{
+    single_efforts::sinlge_effort::{Effort, SingleEffort},
+    workers::worker::{WORKER_ID_ZERO, WorkerId},
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct SingleEffortWeek {
@@ -70,13 +40,13 @@ impl SingleEffortWeek {
     }
 
     pub fn effort_tot(&self) -> Effort {
-        self.worker_id.values().map(|f| f.effort).sum()
+        self.worker_id.values().map(|f| f.get_effort()).sum()
     }
 
     pub fn effort(&self, worker_id: WorkerId) -> Effort {
         self.worker_id
             .get(&worker_id)
-            .map_or(Effort(0), |f| f.effort)
+            .map_or(Effort(0), |f| f.get_effort())
     }
 
     pub fn add(&mut self, id_worker: WorkerId, effort: Effort) {
