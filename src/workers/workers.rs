@@ -60,3 +60,113 @@ impl Workers {
         items
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_initializes_with_zero_worker() {
+        let ws = Workers::new();
+        assert_eq!(ws.get_name_by_id(WORKER_ID_ZERO), "");
+    }
+
+    #[test]
+    fn new_list_is_empty() {
+        let ws = Workers::new();
+        assert!(ws.list().is_empty());
+    }
+
+    #[test]
+    fn add_returns_new_id() {
+        let mut ws = Workers::new();
+        let id = ws.add("Alice");
+        assert_eq!(id, WorkerId(1));
+    }
+
+    #[test]
+    fn add_increments_id() {
+        let mut ws = Workers::new();
+        let id1 = ws.add("Alice");
+        let id2 = ws.add("Bob");
+        assert_ne!(id1, id2);
+        assert_eq!(id1, WorkerId(1));
+        assert_eq!(id2, WorkerId(2));
+    }
+
+    #[test]
+    fn add_duplicate_returns_existing_id() {
+        let mut ws = Workers::new();
+        let id1 = ws.add("Alice");
+        let id2 = ws.add("Alice");
+        assert_eq!(id1, id2);
+        assert_eq!(ws.list().len(), 1);
+    }
+
+    #[test]
+    fn get_id_by_name_found() {
+        let mut ws = Workers::new();
+        let id = ws.add("Alice");
+        assert_eq!(ws.get_id_by_name("Alice"), Some(id));
+    }
+
+    #[test]
+    fn get_id_by_name_not_found() {
+        let ws = Workers::new();
+        assert_eq!(ws.get_id_by_name("Ghost"), None);
+    }
+
+    #[test]
+    fn get_name_by_id_found() {
+        let mut ws = Workers::new();
+        let id = ws.add("Alice");
+        assert_eq!(ws.get_name_by_id(id), "Alice");
+    }
+
+    #[test]
+    fn get_name_by_id_not_found_returns_empty() {
+        let ws = Workers::new();
+        assert_eq!(ws.get_name_by_id(WorkerId(99)), "");
+    }
+
+    #[test]
+    fn del_removes_worker() {
+        let mut ws = Workers::new();
+        let id = ws.add("Alice");
+        ws.del(id);
+        assert_eq!(ws.get_id_by_name("Alice"), None);
+        assert!(ws.list().is_empty());
+    }
+
+    #[test]
+    fn del_nonexistent_does_not_panic() {
+        let mut ws = Workers::new();
+        ws.del(WorkerId(99)); // should not panic
+    }
+
+    #[test]
+    fn list_excludes_worker_id_zero() {
+        let ws = Workers::new();
+        let list = ws.list();
+        assert!(list.iter().all(|(id, _)| *id != WORKER_ID_ZERO));
+    }
+
+    #[test]
+    fn list_is_sorted_alphabetically() {
+        let mut ws = Workers::new();
+        ws.add("Charlie");
+        ws.add("Alice");
+        ws.add("Bob");
+        let list = ws.list();
+        let names: Vec<&str> = list.iter().map(|(_, n)| n.as_str()).collect();
+        assert_eq!(names, vec!["Alice", "Bob", "Charlie"]);
+    }
+
+    #[test]
+    fn list_contains_all_workers() {
+        let mut ws = Workers::new();
+        ws.add("Alice");
+        ws.add("Bob");
+        assert_eq!(ws.list().len(), 2);
+    }
+}
