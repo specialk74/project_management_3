@@ -285,7 +285,7 @@ export component LeftColumn inherits Rectangle {
                                                 spacing: 0px;
                                                 padding: 0px;
                                                 // Text Dev1 or Dev2, ...
-                                                Rectangle {
+                                                dev-rect := Rectangle {
                                                     background: root.app_project.devs[data.dev].col;
                                                     width: Styles.width;
                                                     clip: true;
@@ -298,8 +298,8 @@ export component LeftColumn inherits Rectangle {
                                                         vertical-alignment: center;
                                                         wrap: word-wrap;
                                                         cell := TouchArea {
-                                                            width: parent.width;
-                                                            height: parent.height;
+                                                            width: dev-rect.width;
+                                                            height: dev-rect.height;
                                                             double-clicked => {
                                                                 debug("add_row");
                                                                 PjmCallback.add_row(project.project_id, data.dev);

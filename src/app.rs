@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::{devs::devs::Devs, projects::projects::Projects, workers::workers::Workers};
+use crate::{
+    devs::devs::Devs, projects::projects::Projects, single_dev::single_dev::WeekId,
+    workers::workers::Workers,
+};
 
 pub const SAVE_PATH: &str = "workers.ron";
 
@@ -11,6 +14,7 @@ pub struct App {
     pub workers: Workers,
     pub devs: Devs,
     pub projects: Projects,
+    pub holidays: Vec<WeekId>,
 }
 
 impl App {
@@ -20,6 +24,7 @@ impl App {
             workers: Workers::new(),
             devs: Devs::new(),
             projects: Projects::new(),
+            holidays: Vec::new(),
         }
     }
 
