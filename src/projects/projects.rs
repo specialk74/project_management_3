@@ -148,6 +148,12 @@ impl Projects {
         self.projects.get(&project_id)?.get_dev_id(&dev_id)
     }
 
+    pub fn get_enable(&self, project_id: &ProjectId) -> Enable {
+        self.projects
+            .get(project_id)
+            .map_or(Enable(false), |f| f.get_enable())
+    }
+
     pub fn get_week_with_max_worker(&self, project_id: ProjectId, id_dev: DevId) -> Option<WeekId> {
         self.projects
             .get(&project_id)?

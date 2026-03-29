@@ -80,7 +80,8 @@ pub fn build_project_data(
                     let max = *row_counts.get(&(pi as i32, dev_id.0 as i32)).unwrap_or(&0);
                     let enable = *visibility
                         .get(&(pi as i32, dev_id.0 as i32))
-                        .unwrap_or(&true);
+                        .unwrap_or(&true)
+                        & app.projects.get_enable(proj_id).0;
                     if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
                         build_dev(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, enable)
                     } else {
@@ -89,6 +90,7 @@ pub fn build_project_data(
                 })
                 .collect();
 
+            let enable = app.projects.get_enable(proj_id).0;
             let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
             EffortByPrjData {
                 project_id: pi as i32,
@@ -96,7 +98,7 @@ pub fn build_project_data(
                 start_week: start_w as i32,
                 end_week: end_w as i32,
                 visible: project_visible,
-                enable: true,
+                enable,
                 devs_of_the_project: mk(dev_data),
             }
         })

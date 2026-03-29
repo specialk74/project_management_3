@@ -497,7 +497,9 @@ export component Cell-RW inherits Rectangle {
 export component EffortByDataGui inherits Rectangle {
     in property <EffortByDateData> effort;
 
-    note-editor := NoteEditorWindow { visible: false; }
+    note-editor := NoteEditorWindow {
+        visible: false;
+    }
 
     property <bool> is_drag_dest:
         PjmCallback.drag_active && PjmCallback.drag_preview_offset != 0 && effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) && effort.week <= (PjmCallback.sel_end_week + PjmCallback.drag_preview_offset * 7);
@@ -673,27 +675,6 @@ export component EffortByDevGui inherits Rectangle {
     in property <EffortByDevData> datas;
     in property <[DevInfo]> devs;
     visible: datas.visible && datas.enable;
-    // background: root.devs[root.datas.dev].col;
-    // HorizontalLayout {
-    //     spacing: root.visible ? 2px : 0px;
-    //     padding: 0px;
-    //     visible: root.visible;
-
-    //     for data in datas.datas: Rectangle {
-    //         HorizontalLayout {
-    //             Rectangle {
-    //                 background: data.week == PjmCallback.this_week ? #00ce3a : Colors.transparent;
-    //                 width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
-    //             }
-
-    //             EffortByDataGui {
-    //                 background: Colors.white;
-    //                 effort: data;
-    //                 visible: datas.visible && datas.enable;
-    //             }
-    //         }
-    //     }
-    // }
     VerticalLayout {
         Rectangle {
             height: root.visible ? Styles.dev-border : 0px;
