@@ -15,6 +15,7 @@ import {
     PjmCallback,
     AppProject,
     DevInfo,
+    NoteEditorWindow,
 } from "global.slint";
 import { Styles } from "styles.slint";
 
@@ -78,12 +79,15 @@ component Devmenu inherits Window {
     in-out property <int> project;
     in-out property <int> dev;
     in-out property <bool> enable;
+    in-out property <string> dev-note: "";
+    callback request-note-edit(int /*project*/, int /*dev*/, string /*current-note*/);
 
-    public function show(project: int, dev: int, enable: bool) {
+    public function show(project: int, dev: int, enable: bool, note: string) {
         popup.show();
         root.project = project;
         root.dev = dev;
         root.enable = enable;
+        root.dev-note = note;
     }
     popup := PopupWindow {
         VerticalLayout {
@@ -117,6 +121,20 @@ component Devmenu inherits Window {
                 }
             }
 
+            Rectangle {
+                background: Colors.grey;
+                Text {
+                    text: "Nota Dev...";
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.request-note-edit(root.project, root.dev, root.dev-note);
+                        popup.close();
+                    }
+                }
+            }
+
             // Rectangle {
             //     background: Colors.grey;
             //     Text {
@@ -144,8 +162,13 @@ export component LeftColumn inherits Rectangle {
 
     width: Styles.left-column-width;
 
+    dev-note-editor := NoteEditorWindow { visible: false; }
+
     popup := Devmenu {
         visible: false;
+        request-note-edit(project, dev, current-note) => {
+            dev-note-editor.show-for-dev(project, dev, current-note);
+        }
     }
 
     dev-popup := DevSelectPopup {
@@ -311,7 +334,7 @@ export component LeftColumn inherits Rectangle {
                                                                         popup.x = self.absolute-position.x;
                                                                         popup.y = self.absolute-position.y - 50px;
                                                                         popup.visible = true;
-                                                                        popup.show(project.project_id, data.dev, !data.enable);
+                                                                        popup.show(project.project_id, data.dev, !data.enable, data.note);
                                                                     } else {
                                                                     }
                                                                 }

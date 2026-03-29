@@ -99,6 +99,10 @@ impl SingleDev {
         }
     }
 
+    pub fn set_dev_note(&mut self, note: &str) {
+        self.note = if note.is_empty() { None } else { Some(note.to_string()) };
+    }
+
     pub fn get_note(&self) -> String {
         self.note.clone().unwrap_or(String::from(""))
     }

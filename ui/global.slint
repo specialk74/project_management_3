@@ -126,6 +126,101 @@ export global PjmCallback {
     in-out property <string> note-popup-text: "";
     in-out property <length> note-popup-x: 0px;
     in-out property <length> note-popup-y: 0px;
+    // Note editor callbacks
+    callback set_note(int /*project*/, int /*dev*/, int /*week*/, string /*person_name_effort*/, string /*note*/);
+    callback set_dev_note(int /*project*/, int /*dev*/, string /*note*/);
+}
+
+export component NoteEditorWindow inherits Window {
+    in-out property <string> note-text: "";
+    property <bool> is-dev: false;
+    property <int> edit-project: -1;
+    property <int> edit-dev: -1;
+    property <int> edit-week: -1;
+    property <string> edit-worker: "";
+
+    public function show-for-effort(project: int, dev: int, week: int, worker: string, current-note: string) {
+        edit-project = project;
+        edit-dev = dev;
+        edit-week = week;
+        edit-worker = worker;
+        is-dev = false;
+        note-text = current-note;
+        popup.show();
+    }
+
+    public function show-for-dev(project: int, dev: int, current-note: string) {
+        edit-project = project;
+        edit-dev = dev;
+        is-dev = true;
+        note-text = current-note;
+        popup.show();
+    }
+
+    popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 320px;
+
+        FocusScope {
+            key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    popup.close();
+                    return accept;
+                }
+                reject
+            }
+
+            Rectangle {
+                background: #1e1e1e;
+                border-color: #555555;
+                border-width: 1px;
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    Text {
+                        text: is-dev ? "Nota Dev:" : "Nota:";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                    }
+
+                    note-te := TextEdit {
+                        text <=> note-text;
+                        width: 300px;
+                        height: 120px;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+
+                        Button {
+                            text: "Salva";
+                            clicked => {
+                                if (is-dev) {
+                                    PjmCallback.set_dev_note(edit-project, edit-dev, note-text);
+                                } else {
+                                    PjmCallback.set_note(edit-project, edit-dev, edit-week, edit-worker, note-text);
+                                }
+                                popup.close();
+                            }
+                        }
+
+                        Button {
+                            text: "Annulla";
+                            clicked => {
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 component InternalText inherits Text {
@@ -194,6 +289,8 @@ export component Cell-RW inherits Rectangle {
     // Drag
     callback drag_delta(length);
     callback drag_end();
+    // Note
+    callback edit_note();
 
     property <bool> editing: false;
     property <bool> has-focus: fs.has-focus;
@@ -316,6 +413,12 @@ export component Cell-RW inherits Rectangle {
                     PjmCallback.search("");
                     return accept;
                 }
+                if (event.text == "m" || event.text == "M") {
+                    if (root.text != "") {
+                        root.edit_note();
+                    }
+                    return accept;
+                }
             }
             if (event.text == Key.Escape) {
                 root.editing = false;
@@ -394,6 +497,8 @@ export component Cell-RW inherits Rectangle {
 export component EffortByDataGui inherits Rectangle {
     in property <EffortByDateData> effort;
 
+    note-editor := NoteEditorWindow { visible: false; }
+
     property <bool> is_drag_dest:
         PjmCallback.drag_active && PjmCallback.drag_preview_offset != 0 && effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) && effort.week <= (PjmCallback.sel_end_week + PjmCallback.drag_preview_offset * 7);
 
@@ -469,6 +574,10 @@ export component EffortByDataGui inherits Rectangle {
             double_clicked(text) => {
                 person.name = text;
                 PjmCallback.changed_effort(root.effort);
+            }
+
+            edit_note() => {
+                note-editor.show-for-effort(effort.project, effort.dev, effort.week, person.name, person.note);
             }
 
             sel_plain() => {

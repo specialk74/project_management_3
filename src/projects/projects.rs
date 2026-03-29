@@ -80,6 +80,12 @@ impl Projects {
         self.projects.get(&id_project).unwrap().list_dev_id()
     }
 
+    pub fn set_dev_note(&mut self, id_project: ProjectId, id_dev: DevId, note: &str) {
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.set_dev_note(id_dev, note);
+        }
+    }
+
     pub fn set_note(
         &mut self,
         id_project: ProjectId,
