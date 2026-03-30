@@ -1,6 +1,6 @@
 use slint::{ComponentHandle, Global};
 
-use crate::devs::dev::DevId;
+use crate::dev_utils::dev::DevId;
 use crate::projects::project::ProjectId;
 use crate::single_efforts::sinlge_effort::Effort;
 use crate::ui_sync::{refresh, sync_project_texts};

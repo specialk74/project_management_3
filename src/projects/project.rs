@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    devs::dev::DevId,
+    dev_utils::dev::DevId,
     single_dev::single_dev::{SingleDev, WeekId},
     single_efforts::sinlge_effort::Effort,
     workers::worker::WorkerId,

@@ -3529,6 +3529,7 @@ dependencies = [
 name = "project_management_app_2"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ron",
  "serde",
  "slint",

@@ -9,7 +9,9 @@ use crate::{
     workers::worker::WorkerId,
 };
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
+#[derive(
+    Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug, Default,
+)]
 pub struct WeekId(pub usize);
 
 #[derive(Serialize, Deserialize)]
@@ -100,7 +102,11 @@ impl SingleDev {
     }
 
     pub fn set_dev_note(&mut self, note: &str) {
-        self.note = if note.is_empty() { None } else { Some(note.to_string()) };
+        self.note = if note.is_empty() {
+            None
+        } else {
+            Some(note.to_string())
+        };
     }
 
     pub fn get_note(&self) -> String {

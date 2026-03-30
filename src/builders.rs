@@ -2,6 +2,7 @@ use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 
 use crate::app::App;
+use crate::date_utils::dates::{days_to_local, get_default_weeks, primo_giorno_settimana_corrente};
 use crate::single_dev::single_dev::{SingleDev, WeekId};
 use crate::single_efforts::sinlge_effort::Effort;
 use crate::workers::worker::WORKER_ID_ZERO;
@@ -30,28 +31,15 @@ fn get_hours(effort: Effort) -> i32 {
 
 // ── Calcolo range settimane ───────────────────────────────────────────────────
 
-pub fn find_end_week(app: &App) -> usize {
-    let start = app.start_week;
-    let mut end = start + 51;
-    for (proj_id, _) in app.projects.list() {
-        for dev_id in app.projects.get_dev_ids(proj_id) {
-            if let Some(sd) = app.projects.get_single_dev(proj_id, dev_id) {
-                for w in sd.get_weeks() {
-                    if w.0 > end {
-                        end = w.0;
-                    }
-                }
-            }
-        }
-    }
-    end
-}
-
 pub fn build_weeks(start: usize, end: usize) -> Vec<DayData> {
     (start..=end)
         .map(|w| DayData {
             week: w as i32,
-            text: SharedString::from(format!("W{:02}", (w.saturating_sub(1)) % 52 + 1)),
+            text: SharedString::from(
+                primo_giorno_settimana_corrente(&days_to_local(w as i32))
+                    .format("%y-%m-%d")
+                    .to_string(),
+            ),
         })
         .collect()
 }
@@ -64,9 +52,7 @@ pub fn build_project_data(
     visibility: &HashMap<(i32, i32), bool>,
 ) -> Vec<EffortByPrjData> {
     let projects = app.projects.list();
-    let start_w = app.start_week;
-    let end_w = find_end_week(app);
-    let n_weeks = end_w - start_w + 1;
+    let (n_weeks, start_w, end_w) = get_default_weeks(Some(app.start_week.0 as i32));
 
     projects
         .iter()
@@ -83,9 +69,23 @@ pub fn build_project_data(
                         .unwrap_or(&true)
                         & app.projects.get_enable(proj_id).0;
                     if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
-                        build_dev(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, enable)
+                        build_dev(
+                            app,
+                            pi as i32,
+                            dev_id.0 as i32,
+                            sd,
+                            start_w as usize,
+                            end_w as usize,
+                            enable,
+                        )
                     } else {
-                        empty_dev(pi as i32, dev_id.0 as i32, n_weeks, start_w, max)
+                        empty_dev(
+                            pi as i32,
+                            dev_id.0 as i32,
+                            n_weeks as usize,
+                            start_w as usize,
+                            max,
+                        )
                     }
                 })
                 .collect();
@@ -212,8 +212,8 @@ pub fn build_sovra_data(app: &App) -> Vec<SovraData> {
     let workers = app.workers.list();
     let projects = app.projects.list();
     let devs = app.devs.list();
-    let start_w = app.start_week;
-    let end_w = find_end_week(app);
+    let start_w = app.start_week.0;
+    let end_w = app.end_week.0;
 
     (start_w..=end_w)
         .map(|w| {
