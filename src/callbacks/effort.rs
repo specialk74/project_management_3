@@ -38,7 +38,7 @@ fn register_changed_effort(ui: &AppWindow, state: &SharedState) {
         for person in effort.persons.iter() {
             let lista: Vec<&str> = person.name.split("|").collect();
             if lista.len() != 2 {
-                return;
+                continue;
             }
             if let Some(worker_id) = a.workers.get_id_by_name(lista[0]) {
                 let e = lista[1].trim().parse::<usize>().unwrap_or(0);

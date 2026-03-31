@@ -12,6 +12,7 @@ mod workers;
 
 slint::include_modules!();
 
+use chrono::Utc;
 use slint::{ModelRc, SharedString};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -19,17 +20,18 @@ use std::rc::Rc;
 
 use crate::app::{App, SAVE_PATH};
 use crate::callbacks::SharedState;
+use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
 use crate::live_models::LiveModels;
 
-fn current_week() -> usize {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let days = secs / 86400;
-    ((days + 3) / 7 % 52 + 1) as usize
-}
+// fn current_week() -> usize {
+//     use std::time::{SystemTime, UNIX_EPOCH};
+//     let secs = SystemTime::now()
+//         .duration_since(UNIX_EPOCH)
+//         .unwrap_or_default()
+//         .as_secs();
+//     let days = secs / 86400;
+//     ((days + 3) / 7 % 52 + 1) as usize
+// }
 
 fn main() {
     let app = Rc::new(RefCell::new(
@@ -54,8 +56,11 @@ fn main() {
     {
         let pcb = PjmCallback::get(&ui);
         pcb.set_current_file(SharedString::from(SAVE_PATH));
-        pcb.set_this_week(current_week() as i32);
+        //pcb.set_this_week(current_week() as i32);
         pcb.set_changed(false);
+        let this_week = local_to_days(&primo_giorno_settimana_corrente(&Utc::now().date_naive()));
+        //println!("this_week: {}", this_week);
+        pcb.set_this_week(this_week);
     }
 
     let state = SharedState {

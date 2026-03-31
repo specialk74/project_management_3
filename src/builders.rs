@@ -32,7 +32,12 @@ fn get_hours(effort: Effort) -> i32 {
 // ── Calcolo range settimane ───────────────────────────────────────────────────
 
 pub fn build_weeks(start: usize, end: usize) -> Vec<DayData> {
+    // println!("start: {}", start);
+    // println!("end: {}", end);
+
     (start..=end)
+        .step_by(7)
+        //.inspect(|w| println!("week: {}", w)) // 👈 stampa ogni valore
         .map(|w| DayData {
             week: w as i32,
             text: SharedString::from(
@@ -82,7 +87,7 @@ pub fn build_project_data(
                         empty_dev(
                             pi as i32,
                             dev_id.0 as i32,
-                            n_weeks as usize,
+                            (n_weeks * 7) as usize,
                             start_w as usize,
                             max,
                         )
@@ -119,6 +124,8 @@ fn build_dev(
     let max = (sd.max_num_efforts() as i32).max(1);
 
     let week_data: Vec<EffortByDateData> = (start_w..=end_w)
+        .step_by(7)
+        //.inspect(|f| println!("build_dev-{}: {}", proj_idx, f))
         .map(|w| {
             let workers_in_week: Vec<SingleEffortGui> = {
                 let mut v = sd
@@ -183,6 +190,8 @@ fn empty_dev(
 ) -> EffortByDevData {
     let n_persons = max.max(0) as usize;
     let week_data: Vec<EffortByDateData> = (0..n_weeks)
+        .step_by(7)
+        //.inspect(|f| println!("empty: {}", f))
         .map(|i| EffortByDateData {
             total: 0,
             remains: 0,
@@ -216,6 +225,7 @@ pub fn build_sovra_data(app: &App) -> Vec<SovraData> {
     let end_w = app.end_week.0;
 
     (start_w..=end_w)
+        .step_by(7)
         .map(|w| {
             let values: Vec<i32> = workers
                 .iter()

@@ -19,7 +19,7 @@ export component RightFooter inherits Rectangle {
             for data in root.app_project.sovra: Rectangle {
                 HorizontalLayout {
                     Rectangle {
-                        background: data.week == PjmCallback.this_week ? #00ce3a : Colors.transparent;
+                        background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
                         width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
                     }
 
