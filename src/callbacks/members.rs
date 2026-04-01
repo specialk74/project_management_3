@@ -28,7 +28,7 @@ fn register_add_worker(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             a.workers.add(&name);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -114,7 +114,7 @@ fn register_search(ui: &AppWindow, state: &SharedState) {
             }
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
         }
     });
 }
@@ -142,7 +142,7 @@ fn register_add_dev(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             a.devs.add(&name);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });

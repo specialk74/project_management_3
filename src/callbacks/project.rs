@@ -22,7 +22,7 @@ fn register_new_project(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             a.projects.add("Nuovo Progetto");
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -67,7 +67,7 @@ fn register_add_dev_to_project(ui: &AppWindow, state: &SharedState) {
             } else {
                 a.projects.del_dev(proj_id, dev_id);
             }
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });

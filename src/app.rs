@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{collections::HashMap, fs};
 
 use crate::{
-    date_utils::dates::get_default_weeks, dev_utils::devs::Devs, projects::projects::Projects,
-    single_dev::single_dev::WeekId, workers::workers::Workers,
+    date_utils::dates::get_default_weeks,
+    dev_utils::devs::Devs,
+    projects::projects::Projects,
+    single_dev::single_dev::WeekId,
+    single_efforts::sinlge_effort::Effort,
+    workers::{worker::WorkerId, workers::Workers},
 };
 
 pub const SAVE_PATH: &str = "workers.ron";
@@ -19,6 +23,8 @@ pub struct App {
     pub devs: Devs,
     pub projects: Projects,
     pub holidays: Vec<WeekId>,
+    #[serde(skip)]
+    pub sovra: HashMap<(WeekId, WorkerId), Effort>,
 }
 
 impl App {
@@ -33,6 +39,7 @@ impl App {
             devs: Devs::new(),
             projects: Projects::new(),
             holidays: Vec::new(),
+            sovra: HashMap::new(),
         }
     }
 
@@ -51,5 +58,25 @@ impl App {
         app.start_week.0 = start_week as usize;
         app.end_week.0 = end_week as usize;
         Ok(app)
+    }
+
+    pub fn compute_sovra(&mut self) {
+        self.sovra.clear();
+        let projects = self.projects.list();
+        let devs = self.devs.list();
+        for (proj_id, _) in &projects {
+            for (dev_id, _) in &devs {
+                if let Some(sd) = self.projects.get_single_dev(*proj_id, *dev_id) {
+                    for week in sd.get_weeks() {
+                        if let Some(sew) = sd.get_all(week) {
+                            for (worker_id, single_effort) in &sew.worker_id {
+                                let e = self.sovra.entry((week, *worker_id)).or_insert(Effort(0));
+                                e.0 += single_effort.get_effort().0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -34,7 +34,7 @@ fn register_add_row(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -55,7 +55,7 @@ fn register_del_row(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -74,7 +74,7 @@ fn register_hide_dev(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });

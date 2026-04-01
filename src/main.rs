@@ -23,16 +23,6 @@ use crate::callbacks::SharedState;
 use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
 use crate::live_models::LiveModels;
 
-// fn current_week() -> usize {
-//     use std::time::{SystemTime, UNIX_EPOCH};
-//     let secs = SystemTime::now()
-//         .duration_since(UNIX_EPOCH)
-//         .unwrap_or_default()
-//         .as_secs();
-//     let days = secs / 86400;
-//     ((days + 3) / 7 % 52 + 1) as usize
-// }
-
 fn main() {
     let app = Rc::new(RefCell::new(
         App::load(SAVE_PATH).unwrap_or_else(|_| App::new()),
@@ -47,7 +37,7 @@ fn main() {
 
     ui_sync::refresh(
         &ui,
-        &app.borrow(),
+        &mut app.borrow_mut(),
         &live,
         &row_counts.borrow(),
         &visibility.borrow(),

@@ -48,7 +48,7 @@ fn register_changed_effort(ui: &AppWindow, state: &SharedState) {
         }
         if let Some(ui) = ui_w.upgrade() {
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -73,7 +73,7 @@ fn register_set_dev_effort(ui: &AppWindow, state: &SharedState) {
             };
             a.projects
                 .add_dev_effort(proj_id, dev_id, Effort(effort as usize));
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -105,7 +105,7 @@ fn register_set_note(ui: &AppWindow, state: &SharedState) {
                 .set_note(proj_id, dev_id, WeekId(week as usize), worker_id, &note);
         }
         if let Some(ui) = ui_w.upgrade() {
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -129,7 +129,7 @@ fn register_set_dev_note(ui: &AppWindow, state: &SharedState) {
         };
         a.projects.set_dev_note(proj_id, dev_id, &note);
         if let Some(ui) = ui_w.upgrade() {
-            refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -192,7 +192,7 @@ fn register_move_effort(ui: &AppWindow, state: &SharedState) {
 
             if let Some(ui) = ui_w.upgrade() {
                 sync_project_texts(&ui, &mut a);
-                refresh(&ui, &a, &live, &row_counts.borrow(), &visibility.borrow());
+                refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
                 PjmCallback::get(&ui).set_changed(true);
             }
         },

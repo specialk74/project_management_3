@@ -41,7 +41,7 @@ fn register_open_file(ui: &AppWindow, state: &SharedState) {
                     visibility.borrow_mut().clear();
                     refresh(
                         &ui,
-                        &app.borrow(),
+                        &mut app.borrow_mut(),
                         &live,
                         &row_counts.borrow(),
                         &visibility.borrow(),

@@ -4,6 +4,8 @@ use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::date_utils::day::DayDto;
 
+const NUM_DEFAULT_WEEK: i64 = 52 * 4;
+
 /// Converts a NaiveDate to days since Unix epoch.
 ///
 /// # Arguments
@@ -104,7 +106,7 @@ pub fn weeks_list(start_date: &chrono::NaiveDate, end_date: &chrono::NaiveDate) 
     weeks
 }
 
-/// Returns default week range (52 weeks from current week).
+/// Returns default week range (NUM_DEFAULT_WEEK weeks from current week).
 ///
 /// # Returns
 /// A tuple of (number_of_weeks, start_week_days, end_week_days)
@@ -113,7 +115,7 @@ pub fn weeks_list(start_date: &chrono::NaiveDate, end_date: &chrono::NaiveDate) 
 /// ```
 /// # use project_app::date_utils::get_default_weeks;
 /// let (num_weeks, start, end) = get_default_weeks();
-/// assert_eq!(num_weeks, 52);
+/// assert_eq!(num_weeks, NUM_DEFAULT_WEEK);
 /// assert!(end > start);
 /// ```
 pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
@@ -121,7 +123,7 @@ pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
     let start_date = local_to_days(&primo_giorno_settimana_corrente(&today));
     let start_date = start.map_or(start_date, |s| start_date.min(s));
     let end_date = local_to_days(&primo_giorno_settimana_corrente(
-        &(today + chrono::Duration::weeks(52)),
+        &(today + chrono::Duration::weeks(NUM_DEFAULT_WEEK)),
     ));
 
     ((end_date - start_date) / 7, start_date, end_date)

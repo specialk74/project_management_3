@@ -5,7 +5,7 @@ use crate::app::App;
 use crate::date_utils::dates::{days_to_local, get_default_weeks, primo_giorno_settimana_corrente};
 use crate::single_dev::single_dev::{SingleDev, WeekId};
 use crate::single_efforts::sinlge_effort::Effort;
-use crate::workers::worker::WORKER_ID_ZERO;
+use crate::workers::worker::{WORKER_ID_ZERO, WorkerId};
 use crate::{
     DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
     SovraData,
@@ -134,17 +134,24 @@ fn build_dev(
                         s.worker_id
                             .iter()
                             .filter(|(worker_id, _)| **worker_id != WORKER_ID_ZERO)
-                            .map(|(worker_id, single_effort)| SingleEffortGui {
-                                name: SharedString::from(format!(
-                                    "{}|{}",
-                                    app.workers.get_name_by_id(*worker_id),
-                                    single_effort.get_effort().0
-                                )),
-                                note: SharedString::from(single_effort.get_note()),
-                                week: w as i32,
-                                dev: dev_idx,
-                                project: proj_idx,
-                                effort: single_effort.get_effort().0 as i32,
+                            .map(|(worker_id, single_effort)| {
+                                let sovra_effort = app
+                                    .sovra
+                                    .get(&(WeekId(w), *worker_id))
+                                    .map_or(0, |e| get_hours(*e));
+                                SingleEffortGui {
+                                    name: SharedString::from(format!(
+                                        "{}|{}",
+                                        app.workers.get_name_by_id(*worker_id),
+                                        single_effort.get_effort().0
+                                    )),
+                                    note: SharedString::from(single_effort.get_note()),
+                                    week: w as i32,
+                                    dev: dev_idx,
+                                    project: proj_idx,
+                                    effort: single_effort.get_effort().0 as i32,
+                                    sovra: sovra_effort,
+                                }
                             })
                             .collect::<Vec<_>>()
                     })
@@ -215,6 +222,10 @@ fn empty_dev(
         max: (max - 1).max(0),
         datas: mk(week_data),
     }
+}
+
+struct SovraByWeekAndWorker {
+    by_week: HashMap<(WeekId, WorkerId), Effort>,
 }
 
 pub fn build_sovra_data(app: &App) -> Vec<SovraData> {

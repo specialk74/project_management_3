@@ -27,6 +27,7 @@ export struct SingleEffortGui {
     effort: int,
     name: string,
     note: string,
+    sovra: int,
 }
 
 export struct EffortByDateData {
@@ -281,6 +282,7 @@ export component Cell-RW inherits Rectangle {
     in-out property <string> text;
     in property <string> note;
     in property <bool> selected: false;
+    in property <color> text-color;
     callback double_clicked(string);
     // Selezione
     callback sel_plain();
@@ -388,6 +390,7 @@ export component Cell-RW inherits Rectangle {
 
                 Cell-RO {
                     text: root.text;
+                    text_color: root.text-color;
                 }
             }
         }
@@ -571,6 +574,7 @@ export component EffortByDataGui inherits Rectangle {
             text: person.name;
             note: person.note;
             visible: root.visible;
+            text-color: person.sovra > 32 ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
 
             double_clicked(text) => {

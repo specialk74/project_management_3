@@ -21,11 +21,12 @@ pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
 
 pub fn refresh(
     _ui: &AppWindow,
-    app: &App,
+    app: &mut App,
     live: &LiveModels,
     row_counts: &HashMap<(i32, i32), i32>,
     visibility: &HashMap<(i32, i32), bool>,
 ) {
+    app.compute_sovra();
     live.projects
         .set_vec(build_project_data(app, row_counts, visibility));
     live.worker_names.set_vec({
