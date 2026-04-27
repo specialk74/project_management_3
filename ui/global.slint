@@ -438,6 +438,36 @@ export component Cell-RW inherits Rectangle {
                 typed_prefix = "";
                 root.double_clicked(root.text);
             }
+            // Typing any printable character enters edit mode immediately (like Excel)
+            if (!root.editing
+                && !event.modifiers.control
+                && !event.modifiers.alt
+                && !event.modifiers.meta
+                && event.text != ""
+                && event.text != Key.Escape
+                && event.text != Key.Return
+                && event.text != Key.Tab
+                && event.text != Key.Shift
+                && event.text != Key.ShiftR
+                && event.text != Key.Delete
+                && event.text != Key.Backspace
+                && event.text != Key.UpArrow
+                && event.text != Key.DownArrow
+                && event.text != Key.LeftArrow
+                && event.text != Key.RightArrow
+            ) {
+                typed_prefix = event.text;
+                root.text = PjmCallback.find_completion(event.text, true);
+                if root.text == "" {
+                    root.text = typed_prefix;
+                } else {
+                    typed_prefix = root.text;
+                }
+                root.editing = true;
+                le.focus();
+                le.set-selection-offsets(root.text.character-count, root.text.character-count);
+                return accept;
+            }
             if (event.text == Key.Tab) {
                 reject
             } else {

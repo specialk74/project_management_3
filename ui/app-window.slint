@@ -206,6 +206,8 @@ export component AppWindow inherits Window {
     property <length> width1: 150px;
     in property <[DayData]> weeks;
 
+    forward-focus: fs;
+
     default-font-size: Styles.font-size;
     default-font-family: Styles.font-family;
     title: "Project Management Effort Tracker App [" + PjmCallback.current_file + "]" + (PjmCallback.changed ? " (*)" : "");
@@ -296,6 +298,9 @@ export component AppWindow inherits Window {
     }
 
     fs := FocusScope {
+        init => {
+            self.focus();
+        }
         key-pressed(event) => {
             if (event.modifiers.control) {
                 if (event.text == "S" || event.text == "s") {
