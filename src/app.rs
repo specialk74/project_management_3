@@ -60,6 +60,38 @@ impl App {
         Ok(app)
     }
 
+    /// Global max hours for the worker at sorted index `idx` (None → 40).
+    pub fn get_worker_max_hours_by_idx(&self, idx: usize) -> u32 {
+        self.workers
+            .list()
+            .get(idx)
+            .map(|(id, _)| self.workers.get_max_hours(*id))
+            .unwrap_or(40)
+    }
+
+    /// Effective max hours (per-week override → global → 40) for worker at sorted index.
+    pub fn get_effective_max_hours_by_idx(&self, idx: usize, week: usize) -> u32 {
+        self.workers
+            .list()
+            .get(idx)
+            .map(|(id, _)| self.workers.get_effective_max_hours(*id, week))
+            .unwrap_or(40)
+    }
+
+    pub fn set_worker_max_hours_by_idx(&mut self, idx: usize, hours: u32) {
+        let workers = self.workers.list();
+        if let Some((id, _)) = workers.get(idx) {
+            self.workers.set_max_hours(*id, hours);
+        }
+    }
+
+    pub fn set_worker_week_override_by_idx(&mut self, idx: usize, week: usize, hours: u32) {
+        let workers = self.workers.list();
+        if let Some((id, _)) = workers.get(idx) {
+            self.workers.set_week_override(*id, week, hours);
+        }
+    }
+
     pub fn compute_sovra(&mut self) {
         self.sovra.clear();
         let projects = self.projects.list();

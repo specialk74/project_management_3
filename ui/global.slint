@@ -28,6 +28,7 @@ export struct SingleEffortGui {
     name: string,
     note: string,
     sovra: int,
+    max_hours: int,
 }
 
 export struct EffortByDateData {
@@ -65,11 +66,13 @@ export struct EffortByPrjData {
 
 export struct SovraData {
     value: [int],
+    max_hours: [int],
     week: int,
 }
 
 export struct AppProject {
     worker_names: [string],
+    worker_max_hours: [int],
     week_off: [int],
     sovra: [SovraData],
     projects: [EffortByPrjData],
@@ -130,6 +133,9 @@ export global PjmCallback {
     // Note editor callbacks
     callback set_note(int /*project*/, int /*dev*/, int /*week*/, string /*person_name_effort*/, string /*note*/);
     callback set_dev_note(int /*project*/, int /*dev*/, string /*note*/);
+    // Worker max hours callbacks
+    callback set_worker_max_hours(int /*worker_idx*/, string /*hours_text*/);
+    callback set_worker_week_override(int /*worker_idx*/, int /*week*/, string /*hours_text*/);
 }
 
 export component NoteEditorWindow inherits Window {
@@ -604,7 +610,7 @@ export component EffortByDataGui inherits Rectangle {
             text: person.name;
             note: person.note;
             visible: root.visible;
-            text-color: person.sovra > 32 ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
+            text-color: (person.name != "" && person.max_hours > 0 && person.sovra > person.max_hours) ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
 
             double_clicked(text) => {

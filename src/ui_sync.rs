@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::AppWindow;
 use crate::app::App;
-use crate::builders::{build_dev_infos, build_project_data, build_sovra_data, build_weeks};
+use crate::builders::{build_dev_infos, build_project_data, build_sovra_data, build_weeks, build_worker_max_hours};
 use crate::live_models::LiveModels;
 
 pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
@@ -36,6 +36,7 @@ pub fn refresh(
             .map(|(_, n)| SharedString::from(n.as_str()))
             .collect::<Vec<_>>()
     });
+    live.worker_max_hours.set_vec(build_worker_max_hours(app));
     live.sovra.set_vec(build_sovra_data(app));
     live.weeks
         .set_vec(build_weeks(app.start_week.0, app.end_week.0));

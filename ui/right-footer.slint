@@ -5,11 +5,76 @@ import {
     PjmCallback,
 } from "global.slint";
 import { Styles } from "styles.slint";
-import { StyleMetrics, HorizontalBox } from "std-widgets.slint";
+import { StyleMetrics, HorizontalBox, Button, LineEdit } from "std-widgets.slint";
 
 export component RightFooter inherits Rectangle {
     in property <AppProject> app_project;
     in-out property <length> viewport-x;
+
+    // State for the week-override dialog
+    property <int> override-worker-idx: -1;
+    property <int> override-week: -1;
+    property <string> override-worker-name: "";
+    property <string> override-hours-text: "40";
+    property <length> popup-pos-x: 0px;
+    property <length> popup-pos-y: 0px;
+
+    override-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.popup-pos-x;
+        y: root.popup-pos-y;
+        width: 280px;
+        height: 150px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 280px;
+            height: 150px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Override settimana - " + override-worker-name;
+                }
+
+                override-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    input-type: InputType.number;
+                    text <=> root.override-hours-text;
+                    accepted => {
+                        PjmCallback.set_worker_week_override(override-worker-idx, override-week, self.text);
+                        override-popup.close();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.set_worker_week_override(override-worker-idx, override-week, override-le.text);
+                            override-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => { override-popup.close(); }
+                    }
+                }
+            }
+        }
+    }
 
     Flickable {
         viewport-x <=> root.viewport-x;
@@ -26,14 +91,29 @@ export component RightFooter inherits Rectangle {
                     VerticalLayout {
                         for value[index] in data.value: Rectangle {
                             property <bool> worker-visible: PjmCallback.last-search == "" || root.app_project.worker_names[index] == PjmCallback.last-search;
+                            property <int> eff-max: data.max_hours[index];
                             background: index.mod(2) == 0 ? Colors.gray : Colors.black;
                             width: Styles.width;
                             height: worker-visible ? Styles.height : 0px;
                             visible: worker-visible;
                             Text {
-                                font-weight: value == 80 ? 200 : 800;
-                                color: value > 80 ? Colors.red : (value < 40 ? Colors.yellow : (value < 80 ? Colors.orange : Colors.lightgreen));
+                                font-weight: value == eff-max ? 200 : 800;
+                                color: value > eff-max ? Colors.red : (value < 40 ? Colors.yellow : (value < eff-max ? Colors.orange : Colors.lightgreen));
                                 text: value;
+                            }
+
+                            TouchArea {
+                                pointer-event(event) => {
+                                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                        root.override-worker-idx = index;
+                                        root.override-week = data.week;
+                                        root.override-worker-name = root.app_project.worker_names[index];
+                                        root.override-hours-text = "\{eff-max}";
+                                        root.popup-pos-x = self.absolute-position.x;
+                                        root.popup-pos-y = self.absolute-position.y;
+                                        override-popup.show();
+                                    }
+                                }
                             }
                         }
                     }

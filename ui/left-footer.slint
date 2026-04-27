@@ -4,16 +4,81 @@ import {
     Cell-RO,
 } from "global.slint";
 import { Styles } from "styles.slint";
+import { Button, LineEdit } from "std-widgets.slint";
 
 export component LeftFooter inherits Rectangle {
     in property <AppProject> app_project;
 
     height: Styles.height * (max(app_project.devs.length, app_project.worker_names.length) + 1);
     width: Styles.left-column-width;
+
+    // State for the max-hours dialog
+    property <int> editing-worker-idx: -1;
+    property <string> editing-worker-name: "";
+    property <string> editing-hours-text: "40";
+    property <length> popup-pos-x: 0px;
+    property <length> popup-pos-y: 0px;
+
+    max-hours-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.popup-pos-x;
+        y: root.popup-pos-y;
+        width: 260px;
+        height: 130px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 260px;
+            height: 130px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Ore max: " + editing-worker-name;
+                }
+
+                hours-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    input-type: InputType.number;
+                    text <=> root.editing-hours-text;
+                    accepted => {
+                        PjmCallback.set_worker_max_hours(editing-worker-idx, self.text);
+                        max-hours-popup.close();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.set_worker_max_hours(editing-worker-idx, hours-le.text);
+                            max-hours-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => { max-hours-popup.close(); }
+                    }
+                }
+            }
+        }
+    }
+
     HorizontalLayout {
         // I vari dev
         Rectangle {
-            //width: Styles.width;
             VerticalLayout {
                 for data in app_project.devs: Rectangle {
                     height: Styles.height;
@@ -28,7 +93,6 @@ export component LeftFooter inherits Rectangle {
                                     text_color: data.text-color;
                                     text: data.title;
                                     horizontal-alignment: center;
-                                    //vertical-alignment: center;
                                 }
 
                                 Text {
@@ -50,12 +114,42 @@ export component LeftFooter inherits Rectangle {
             VerticalLayout {
                 for name[index] in app_project.worker_names: Rectangle {
                     property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
+                    property <bool> has-reduced-hours: app_project.worker_max_hours[index] < 40;
                     height: worker-visible ? Styles.height : 0px;
                     visible: worker-visible;
                     background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                    clip: true;
+
+                    // Left triangle: worker has global max hours < 40
+                    Path {
+                        visible: has-reduced-hours;
+                        x: 0px;
+                        y: 0px;
+                        width: 10px;
+                        height: 10px;
+                        fill: Colors.orange;
+                        MoveTo { x: 0; y: 0; }
+                        LineTo { x: 0; y: 10; }
+                        LineTo { x: 10; y: 0; }
+                        Close {}
+                    }
+
                     Cell-RO {
                         width: Styles.width;
                         text: name;
+                    }
+
+                    TouchArea {
+                        pointer-event(event) => {
+                            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                root.editing-worker-idx = index;
+                                root.editing-worker-name = name;
+                                root.editing-hours-text = "\{app_project.worker_max_hours[index]}";
+                                root.popup-pos-x = self.absolute-position.x;
+                                root.popup-pos-y = self.absolute-position.y;
+                                max-hours-popup.show();
+                            }
+                        }
                     }
                 }
             }

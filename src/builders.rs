@@ -139,6 +139,8 @@ fn build_dev(
                                     .sovra
                                     .get(&(WeekId(w), *worker_id))
                                     .map_or(0, |e| get_hours(*e));
+                                let max_hours =
+                                    app.workers.get_effective_max_hours(*worker_id, w) as i32;
                                 SingleEffortGui {
                                     name: SharedString::from(format!(
                                         "{}|{}",
@@ -151,6 +153,7 @@ fn build_dev(
                                     project: proj_idx,
                                     effort: single_effort.get_effort().0 as i32,
                                     sovra: sovra_effort,
+                                    max_hours,
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -254,11 +257,24 @@ pub fn build_sovra_data(app: &App) -> Vec<SovraData> {
                     get_hours(Effort(total_h))
                 })
                 .collect();
+            let max_hours: Vec<i32> = workers
+                .iter()
+                .map(|(wid, _)| app.workers.get_effective_max_hours(*wid, w) as i32)
+                .collect();
             SovraData {
                 week: w as i32,
                 value: mk(values),
+                max_hours: mk(max_hours),
             }
         })
+        .collect()
+}
+
+pub fn build_worker_max_hours(app: &App) -> Vec<i32> {
+    app.workers
+        .list()
+        .iter()
+        .map(|(id, _)| app.workers.get_max_hours(*id) as i32)
         .collect()
 }
 

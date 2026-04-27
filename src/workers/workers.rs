@@ -49,6 +49,28 @@ impl Workers {
         self.worker_id.remove(&id);
     }
 
+    pub fn get_max_hours(&self, id: WorkerId) -> u32 {
+        self.worker_id.get(&id).map_or(40, |w| w.get_max_hours())
+    }
+
+    pub fn set_max_hours(&mut self, id: WorkerId, hours: u32) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_max_hours(hours);
+        }
+    }
+
+    pub fn get_effective_max_hours(&self, id: WorkerId, week: usize) -> u32 {
+        self.worker_id
+            .get(&id)
+            .map_or(40, |w| w.get_effective_max_hours_for_week(week))
+    }
+
+    pub fn set_week_override(&mut self, id: WorkerId, week: usize, hours: u32) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_week_override(week, hours);
+        }
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id

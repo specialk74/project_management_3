@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const WORKER_ID_ZERO: WorkerId = WorkerId(0);
+pub const DEFAULT_MAX_HOURS: u32 = 40;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct WorkerId(pub usize);
@@ -16,6 +17,12 @@ pub struct Worker {
     pub bg_color: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_color: Option<usize>,
+    /// Global max hours per week for this worker. None = 40h default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_weekly_hours: Option<u32>,
+    /// Per-week overrides: WeekId.0 → max hours for that specific week.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub week_overrides: HashMap<usize, u32>,
 }
 
 impl Worker {
@@ -24,6 +31,33 @@ impl Worker {
             name: name.to_string(),
             bg_color: None,
             font_color: None,
+            max_weekly_hours: None,
+            week_overrides: HashMap::new(),
+        }
+    }
+
+    pub fn get_max_hours(&self) -> u32 {
+        self.max_weekly_hours.unwrap_or(DEFAULT_MAX_HOURS)
+    }
+
+    pub fn set_max_hours(&mut self, hours: u32) {
+        self.max_weekly_hours = if hours == DEFAULT_MAX_HOURS { None } else { Some(hours) };
+    }
+
+    /// Returns effective max hours for the given week (override → global → default).
+    pub fn get_effective_max_hours_for_week(&self, week: usize) -> u32 {
+        self.week_overrides
+            .get(&week)
+            .copied()
+            .unwrap_or_else(|| self.get_max_hours())
+    }
+
+    /// Sets a per-week override. Removes it if equal to the global max (no-op override).
+    pub fn set_week_override(&mut self, week: usize, hours: u32) {
+        if hours == self.get_max_hours() {
+            self.week_overrides.remove(&week);
+        } else {
+            self.week_overrides.insert(week, hours);
         }
     }
 

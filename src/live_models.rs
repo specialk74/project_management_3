@@ -10,6 +10,7 @@ use crate::{AppProject, DayData, DevInfo, EffortByPrjData, SovraData};
 pub struct LiveModels {
     pub projects: Rc<VecModel<EffortByPrjData>>,
     pub worker_names: Rc<VecModel<SharedString>>,
+    pub worker_max_hours: Rc<VecModel<i32>>,
     pub sovra: Rc<VecModel<SovraData>>,
     pub weeks: Rc<VecModel<DayData>>,
     pub devs: Rc<VecModel<DevInfo>>,
@@ -20,6 +21,7 @@ impl LiveModels {
         Self {
             projects: Rc::new(VecModel::default()),
             worker_names: Rc::new(VecModel::default()),
+            worker_max_hours: Rc::new(VecModel::default()),
             sovra: Rc::new(VecModel::default()),
             weeks: Rc::new(VecModel::default()),
             devs: Rc::new(VecModel::default()),
@@ -31,6 +33,7 @@ impl LiveModels {
         AppProject {
             projects: ModelRc::from(self.projects.clone()),
             worker_names: ModelRc::from(self.worker_names.clone()),
+            worker_max_hours: ModelRc::from(self.worker_max_hours.clone()),
             sovra: ModelRc::from(self.sovra.clone()),
             week_off: ModelRc::new(VecModel::from(vec![])),
             devs: ModelRc::from(self.devs.clone()),
