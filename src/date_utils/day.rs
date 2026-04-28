@@ -17,21 +17,3 @@ impl DayDto {
     }
 }
 
-// Conversion implementations for DayData (from Slint)
-impl From<crate::DayData> for DayDto {
-    fn from(d: crate::DayData) -> Self {
-        Self {
-            week: d.week,
-            text: d.text.to_string(),
-        }
-    }
-}
-
-impl From<DayDto> for crate::DayData {
-    fn from(d: DayDto) -> Self {
-        Self {
-            week: d.week,
-            text: d.text.into(),
-        }
-    }
-}

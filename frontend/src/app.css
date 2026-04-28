@@ -1,0 +1,521 @@
+:root {
+  --bg: #1a1a1a;
+  --bg2: #242424;
+  --bg3: #2e2e2e;
+  --border: #444;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --accent: #4a9eff;
+  --red: #ff4444;
+  --yellow: #ffcc00;
+  --orange: #ff8800;
+  --green: #44cc44;
+  --cell-h: 22px;
+  --left-w: 220px;
+  --col-w: 58px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.error-banner {
+  background: #660000;
+  color: #ffaaaa;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* ─── Toolbar ──────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.toolbar button {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 2px;
+}
+
+.toolbar button:hover {
+  background: var(--bg3);
+  border-color: var(--accent);
+}
+
+.toolbar .file-info {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.toolbar .changed-dot {
+  color: var(--orange);
+  font-weight: bold;
+}
+
+.toolbar input {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 2px;
+  width: 140px;
+}
+
+.toolbar input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.toolbar .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+/* ─── Grid layout ─────────────────────────────────────────── */
+.grid-outer {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.grid-left {
+  flex-shrink: 0;
+  width: var(--left-w);
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-right {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* header row */
+.header-row {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.header-left {
+  width: var(--left-w);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  height: var(--cell-h);
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.header-weeks {
+  flex: 1;
+  display: flex;
+  overflow-x: hidden;
+}
+
+.week-header-cell {
+  flex-shrink: 0;
+  width: var(--col-w);
+  height: var(--cell-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.week-header-cell.this-week {
+  background: #1a3a5a;
+  color: var(--accent);
+}
+
+/* scrollable body */
+.body-left {
+  flex: 1;
+  overflow-y: hidden;
+  overflow-x: hidden;
+}
+
+.body-right {
+  flex: 1;
+  overflow: auto;
+}
+
+/* ─── Rows ────────────────────────────────────────────────── */
+.project-block {
+  border-bottom: 1px solid var(--border);
+}
+
+.project-header-left {
+  display: flex;
+  align-items: center;
+  height: var(--cell-h);
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.project-header-left input {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  cursor: pointer;
+}
+
+.project-header-left input:focus {
+  cursor: text;
+  border-bottom: 1px solid var(--accent);
+}
+
+.dev-row-left {
+  display: flex;
+  align-items: center;
+  height: var(--cell-h);
+  border-bottom: 1px solid #333;
+  padding: 0 2px 0 8px;
+  gap: 4px;
+}
+
+.dev-label {
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+.dev-effort-input {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  width: 36px;
+  text-align: right;
+  outline: none;
+  cursor: pointer;
+}
+
+.dev-effort-input:focus {
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+}
+
+.dev-total {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+  padding-right: 2px;
+}
+
+.worker-row-left {
+  height: var(--cell-h);
+  border-bottom: 1px solid #2a2a2a;
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 12px;
+  gap: 4px;
+  background: transparent;
+}
+
+/* worker cell in right column */
+.cell-row {
+  display: flex;
+  height: var(--cell-h);
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.week-cell {
+  flex-shrink: 0;
+  width: var(--col-w);
+  height: 100%;
+  border-right: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  font-size: 11px;
+}
+
+.week-cell.this-week-col {
+  background: #141e2a;
+}
+
+.week-cell:hover {
+  background: #2a3a4a;
+}
+
+.week-cell.editing {
+  background: #1a2a3a;
+}
+
+.week-cell input {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  width: 100%;
+  text-align: center;
+  outline: none;
+}
+
+.dev-week-cell {
+  flex-shrink: 0;
+  width: var(--col-w);
+  height: var(--cell-h);
+  border-right: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.dev-week-cell.this-week-col {
+  background: #141e2a;
+}
+
+/* note indicator dot */
+.note-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  background: var(--yellow);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ─── Footer (sovra) ──────────────────────────────────────── */
+.footer-left {
+  flex-shrink: 0;
+  width: var(--left-w);
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  overflow-y: hidden;
+  background: var(--bg2);
+}
+
+.footer-right {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+}
+
+.footer-worker-row {
+  height: var(--cell-h);
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 8px;
+  border-bottom: 1px solid #2a2a2a;
+  gap: 4px;
+  cursor: context-menu;
+}
+
+.footer-worker-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.footer-worker-max {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.footer-cell-row {
+  display: flex;
+  height: var(--cell-h);
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.footer-week-cell {
+  flex-shrink: 0;
+  width: var(--col-w);
+  height: 100%;
+  border-right: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: context-menu;
+}
+
+.footer-week-cell.this-week-col {
+  background: #141e2a;
+}
+
+/* colour coding */
+.c-red    { color: var(--red); }
+.c-yellow { color: var(--yellow); }
+.c-orange { color: var(--orange); }
+.c-green  { color: var(--green); }
+.c-dim    { color: var(--text-dim); }
+.c-white  { color: var(--text); }
+
+/* ─── Dialogs ─────────────────────────────────────────────── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog-box {
+  background: #1e1e1e;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 16px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog-title {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dialog-box input, .dialog-box textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 2px;
+  outline: none;
+  width: 100%;
+}
+
+.dialog-box textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.dialog-box input:focus, .dialog-box textarea:focus {
+  border-color: var(--accent);
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.dialog-buttons button {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 2px;
+}
+
+.dialog-buttons button:hover {
+  background: var(--bg3);
+  border-color: var(--accent);
+}
+
+/* ─── Context menu ────────────────────────────────────────── */
+.ctx-menu {
+  position: fixed;
+  background: #2a2a2a;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  z-index: 2000;
+  min-width: 160px;
+  box-shadow: 2px 4px 12px rgba(0,0,0,0.5);
+}
+
+.ctx-menu-item {
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.ctx-menu-item:hover {
+  background: #3a4a5a;
+}
+
+.ctx-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+
+/* ─── Triangle indicator ──────────────────────────────────── */
+.tri-reduced {
+  width: 0;
+  height: 0;
+  border-top: 7px solid var(--orange);
+  border-right: 7px solid transparent;
+  flex-shrink: 0;
+}
