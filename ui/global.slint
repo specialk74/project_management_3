@@ -82,6 +82,7 @@ export struct AppProject {
 export struct DayData  {
     week: int,
     text: string,
+    all_limited: bool,
 }
 
 export struct ProjectListItem {
@@ -132,6 +133,7 @@ export global PjmCallback {
     // Worker max hours callbacks
     callback set_worker_max_hours(int /*worker_idx*/, string /*hours_text*/);
     callback set_worker_week_override(int /*worker_idx*/, int /*week*/, string /*hours_text*/);
+    callback set_bulk_week_limit(int /*week*/, string /*hours_text*/);
 }
 
 export component NoteEditorWindow inherits Window {

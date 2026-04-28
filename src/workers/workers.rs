@@ -71,6 +71,18 @@ impl Workers {
         }
     }
 
+    pub fn all_workers_have_override(&self, week: usize) -> bool {
+        let workers = self.list();
+        if workers.is_empty() {
+            return false;
+        }
+        workers.iter().all(|(id, _)| {
+            self.worker_id
+                .get(id)
+                .map_or(false, |w| w.week_overrides.contains_key(&week))
+        })
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id

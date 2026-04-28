@@ -85,6 +85,24 @@ impl App {
         }
     }
 
+    /// Applies a bulk week limit to all workers: min(hours, effective_current) wins.
+    /// If hours >= 40, removes the week override for every worker (reset).
+    pub fn set_bulk_week_limit(&mut self, week: usize, hours: u32) {
+        let worker_ids: Vec<_> = self.workers.list().iter().map(|(id, _)| *id).collect();
+        if hours >= 40 {
+            for wid in worker_ids {
+                let global_max = self.workers.get_max_hours(wid);
+                self.workers.set_week_override(wid, week, global_max);
+            }
+        } else {
+            for wid in worker_ids {
+                let current_eff = self.workers.get_effective_max_hours(wid, week);
+                let new_val = hours.min(current_eff);
+                self.workers.set_week_override(wid, week, new_val);
+            }
+        }
+    }
+
     pub fn set_worker_week_override_by_idx(&mut self, idx: usize, week: usize, hours: u32) {
         let workers = self.workers.list();
         if let Some((id, _)) = workers.get(idx) {

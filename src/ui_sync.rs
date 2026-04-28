@@ -39,6 +39,6 @@ pub fn refresh(
     live.worker_max_hours.set_vec(build_worker_max_hours(app));
     live.sovra.set_vec(build_sovra_data(app));
     live.weeks
-        .set_vec(build_weeks(app.start_week.0, app.end_week.0));
+        .set_vec(build_weeks(app.start_week.0, app.end_week.0, app));
     live.devs.set_vec(build_dev_infos(app));
 }

@@ -31,13 +31,9 @@ fn get_hours(effort: Effort) -> i32 {
 
 // ── Calcolo range settimane ───────────────────────────────────────────────────
 
-pub fn build_weeks(start: usize, end: usize) -> Vec<DayData> {
-    // println!("start: {}", start);
-    // println!("end: {}", end);
-
+pub fn build_weeks(start: usize, end: usize, app: &App) -> Vec<DayData> {
     (start..=end)
         .step_by(7)
-        //.inspect(|w| println!("week: {}", w)) // 👈 stampa ogni valore
         .map(|w| DayData {
             week: w as i32,
             text: SharedString::from(
@@ -45,6 +41,7 @@ pub fn build_weeks(start: usize, end: usize) -> Vec<DayData> {
                     .format("%y-%m-%d")
                     .to_string(),
             ),
+            all_limited: app.workers.all_workers_have_override(w),
         })
         .collect()
 }

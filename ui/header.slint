@@ -4,12 +4,75 @@ import {
     DayData,
 } from "global.slint";
 import { Styles } from "styles.slint";
-import { HorizontalBox } from "std-widgets.slint";
+import { HorizontalBox, Button, LineEdit } from "std-widgets.slint";
 
 export component Header inherits Rectangle {
     in-out property <length> viewport_x;
     in property <AppProject> app_project;
     in property <[DayData]> weeks;
+
+    // State for bulk-limit dialog
+    property <int> bulk-week: -1;
+    property <string> bulk-hours-text: "40";
+    property <length> popup-pos-x: 0px;
+    property <length> popup-pos-y: 0px;
+
+    bulk-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.popup-pos-x;
+        y: root.popup-pos-y;
+        width: 280px;
+        height: 150px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 280px;
+            height: 150px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Limite settimana (tutti i lavoratori)";
+                }
+
+                bulk-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    input-type: InputType.number;
+                    text <=> root.bulk-hours-text;
+                    accepted => {
+                        PjmCallback.set_bulk_week_limit(bulk-week, self.text);
+                        bulk-popup.close();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.set_bulk_week_limit(bulk-week, bulk-le.text);
+                            bulk-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => { bulk-popup.close(); }
+                    }
+                }
+            }
+        }
+    }
 
     height: Styles.height;
     HorizontalLayout {
@@ -29,8 +92,38 @@ export component Header inherits Rectangle {
 
                         Rectangle {
                             width: Styles.width;
+                            clip: true;
+
                             Text {
                                 text: data.text;
+                                font-family: Styles.font-family;
+                                font-size: Styles.font-size;
+                            }
+
+                            // Yellow triangle top-right when all workers are limited this week
+                            Path {
+                                visible: data.all_limited;
+                                x: parent.width - 8px;
+                                y: 0px;
+                                width: 8px;
+                                height: 8px;
+                                fill: Colors.yellow;
+                                MoveTo { x: 0; y: 0; }
+                                LineTo { x: 8; y: 0; }
+                                LineTo { x: 8; y: 8; }
+                                Close {}
+                            }
+
+                            TouchArea {
+                                pointer-event(event) => {
+                                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                        root.bulk-week = data.week;
+                                        root.bulk-hours-text = "40";
+                                        root.popup-pos-x = self.absolute-position.x;
+                                        root.popup-pos-y = self.absolute-position.y + Styles.height;
+                                        bulk-popup.show();
+                                    }
+                                }
                             }
                         }
                     }

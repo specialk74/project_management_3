@@ -32,6 +32,7 @@ impl From<DayDto> for crate::DayData {
         Self {
             week: d.week,
             text: d.text.into(),
+            all_limited: false,
         }
     }
 }
