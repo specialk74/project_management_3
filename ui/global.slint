@@ -94,7 +94,6 @@ export global PjmCallback {
     callback set_dev_effort(int /*project*/, int /*dev*/, int /*effort*/);
     callback save_file();
     callback open_file();
-    callback move_effort(int /*project*/, int /*dev*/, int /*start_week*/, int /*end_week*/, int /*start_row*/, int /*end_row*/, int /*offset_weeks*/);
     callback search(string);
     callback new_project();
     callback add_row(int, int);
@@ -122,9 +121,6 @@ export global PjmCallback {
     in-out property <int> sel_end_week: -1;
     in-out property <int> sel_start_row: -1;
     in-out property <int> sel_end_row: -1;
-    // Drag
-    in-out property <bool> drag_active: false;
-    in-out property <int> drag_preview_offset: 0;
     // Note popup (gestito a livello AppWindow)
     in-out property <bool> note-popup-visible: false;
     in-out property <string> note-popup-text: "";
@@ -294,9 +290,6 @@ export component Cell-RW inherits Rectangle {
     callback sel_plain();
     callback sel_shift();
     callback sel_ctrl();
-    // Drag
-    callback drag_delta(length);
-    callback drag_end();
     // Note
     callback edit_note();
 
@@ -353,44 +346,28 @@ export component Cell-RW inherits Rectangle {
 
         Rectangle {
             visible: !editing;
-            background: (root.selected && PjmCallback.drag_active) ? Colors.orange.with-alpha(0.5) : root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
+            background: root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
             border-color: fs.has-focus ? Colors.orangered : Colors.transparent;
             border-width: parent.visible ? 1px : 0px;
 
             TouchArea {
-                property <length> press_x;
-                property <bool> may_drag: false;
-                mouse-cursor: root.selected ? move : default;
+                mouse-cursor: default;
 
                 pointer-event(event) => {
                     if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
-                        press_x = self.mouse-x;
-                        may_drag = false;
                         if event.modifiers.shift {
                             root.sel_shift();
                         } else if event.modifiers.control {
                             root.sel_ctrl();
-                        } else if root.selected {
-                            may_drag = true;
-                            PjmCallback.drag_active = false;
-                            PjmCallback.drag_preview_offset = 0;
-                            fs.focus();
                         } else {
                             root.sel_plain();
                             fs.focus();
                         }
                     }
-                    if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
-                        if may_drag {
-                            root.drag_end();
-                            may_drag = false;
+                    if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                        if root.text != "" {
+                            root.edit_note();
                         }
-                    }
-                }
-
-                moved => {
-                    if may_drag {
-                        root.drag_delta(self.mouse-x - press_x);
                     }
                 }
 
@@ -540,9 +517,6 @@ export component EffortByDataGui inherits Rectangle {
         visible: false;
     }
 
-    property <bool> is_drag_dest:
-        PjmCallback.drag_active && PjmCallback.drag_preview_offset != 0 && effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= (PjmCallback.sel_start_week + PjmCallback.drag_preview_offset * 7) && effort.week <= (PjmCallback.sel_end_week + PjmCallback.drag_preview_offset * 7);
-
     // popup := Rectangle {
     //     x: cell.x;
     //     y: cell.y + Styles.height;
@@ -668,45 +642,6 @@ export component EffortByDataGui inherits Rectangle {
                 }
             }
 
-            drag_delta(delta) => {
-                PjmCallback.drag_active = true;
-                PjmCallback.drag_preview_offset = Math.round(delta / Styles.width);
-            }
-
-            drag_end() => {
-                if PjmCallback.drag_preview_offset != 0 {
-                    PjmCallback.move_effort(
-                        PjmCallback.sel_project,
-                        PjmCallback.sel_dev,
-                        PjmCallback.sel_start_week,
-                        PjmCallback.sel_end_week,
-                        PjmCallback.sel_start_row,
-                        PjmCallback.sel_end_row,
-                        PjmCallback.drag_preview_offset);
-                }
-                PjmCallback.drag_active = false;
-                PjmCallback.drag_preview_offset = 0;
-            }
-        }
-    }
-
-    // Ghost preview rectangle shown at destination during drag
-    Rectangle {
-        visible: is_drag_dest;
-        x: 0;
-        y: Styles.height * (PjmCallback.sel_start_row + 1);
-        width: Styles.width;
-        height: (PjmCallback.sel_end_row - PjmCallback.sel_start_row + 1) * Styles.height;
-        background: Colors.steelblue.with-alpha(0.25);
-        border-color: Colors.steelblue;
-        border-width: 2px;
-        z: 10;
-        TouchArea {
-            width: parent.width;
-            height: parent.height;
-            clicked => {
-                debug("6");
-            }
         }
     }
 }

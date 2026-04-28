@@ -92,14 +92,31 @@ export component RightFooter inherits Rectangle {
                         for value[index] in data.value: Rectangle {
                             property <bool> worker-visible: PjmCallback.last-search == "" || root.app_project.worker_names[index] == PjmCallback.last-search;
                             property <int> eff-max: data.max_hours[index];
+                            property <bool> has-override: eff-max != root.app_project.worker_max_hours[index];
                             background: index.mod(2) == 0 ? Colors.gray : Colors.black;
                             width: Styles.width;
                             height: worker-visible ? Styles.height : 0px;
                             visible: worker-visible;
+                            clip: true;
+
                             Text {
                                 font-weight: value == eff-max ? 200 : 800;
                                 color: value > eff-max ? Colors.red : (value < 40 ? Colors.yellow : (value < eff-max ? Colors.orange : Colors.lightgreen));
                                 text: value;
+                            }
+
+                            // Yellow triangle in top-right corner when a week override is active
+                            Path {
+                                visible: has-override;
+                                x: parent.width - 8px;
+                                y: 0px;
+                                width: 8px;
+                                height: 8px;
+                                fill: Colors.yellow;
+                                MoveTo { x: 0; y: 0; }
+                                LineTo { x: 8; y: 0; }
+                                LineTo { x: 8; y: 8; }
+                                Close {}
                             }
 
                             TouchArea {
