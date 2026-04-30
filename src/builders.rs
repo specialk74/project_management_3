@@ -120,7 +120,7 @@ fn build_dev(
     let total = get_hours(sd.get_effort_tot());
     let max = (sd.max_num_efforts() as i32).max(1);
 
-    let week_data: Vec<EffortByDateData> = (start_w..=end_w)
+    let mut week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .step_by(7)
         //.inspect(|f| println!("build_dev-{}: {}", proj_idx, f))
         .map(|w| {
@@ -164,6 +164,7 @@ fn build_dev(
 
             EffortByDateData {
                 total: week_total,
+                cumulative: 0,
                 remains: planned - week_total,
                 dev: dev_idx,
                 project: proj_idx,
@@ -173,6 +174,12 @@ fn build_dev(
             }
         })
         .collect();
+
+    let mut running = 0i32;
+    for wd in &mut week_data {
+        running += wd.total;
+        wd.cumulative = running;
+    }
 
     EffortByDevData {
         project: proj_idx,
@@ -201,6 +208,7 @@ fn empty_dev(
         //.inspect(|f| println!("empty: {}", f))
         .map(|i| EffortByDateData {
             total: 0,
+            cumulative: 0,
             remains: 0,
             dev: dev_idx,
             project: proj_idx,

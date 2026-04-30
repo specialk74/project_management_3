@@ -33,6 +33,7 @@ export struct SingleEffortGui {
 
 export struct EffortByDateData {
     total: int,
+    cumulative: int,
     remains: int,
     dev: int,
     project: int,
@@ -573,7 +574,7 @@ export component EffortByDataGui inherits Rectangle {
 
         cell := Cell-RO {
             visible: root.visible;
-            text: effort.total;
+            text: effort.cumulative != effort.total ? "\{effort.cumulative} | \{effort.total}" : "\{effort.total}";
             text_color: my-function(effort);
 
             t := TouchArea {
