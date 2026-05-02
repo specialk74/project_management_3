@@ -67,7 +67,9 @@ export component Header inherits Rectangle {
 
                     Button {
                         text: "Annulla";
-                        clicked => { bulk-popup.close(); }
+                        clicked => {
+                            bulk-popup.close();
+                        }
                     }
                 }
             }
@@ -107,11 +109,23 @@ export component Header inherits Rectangle {
                                 y: 0px;
                                 width: 8px;
                                 height: 8px;
-                                fill: Colors.yellow;
-                                MoveTo { x: 0; y: 0; }
-                                LineTo { x: 8; y: 0; }
-                                LineTo { x: 8; y: 8; }
-                                Close {}
+                                fill: Styles.effort-color;
+                                MoveTo {
+                                    x: 0;
+                                    y: 0;
+                                }
+
+                                LineTo {
+                                    x: 8;
+                                    y: 0;
+                                }
+
+                                LineTo {
+                                    x: 8;
+                                    y: 8;
+                                }
+
+                                Close { }
                             }
 
                             TouchArea {

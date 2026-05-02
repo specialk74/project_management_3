@@ -69,7 +69,9 @@ export component LeftFooter inherits Rectangle {
 
                     Button {
                         text: "Annulla";
-                        clicked => { max-hours-popup.close(); }
+                        clicked => {
+                            max-hours-popup.close();
+                        }
                     }
                 }
             }
@@ -127,11 +129,23 @@ export component LeftFooter inherits Rectangle {
                         y: 0px;
                         width: 10px;
                         height: 10px;
-                        fill: Colors.orange;
-                        MoveTo { x: 0; y: 0; }
-                        LineTo { x: 0; y: 10; }
-                        LineTo { x: 10; y: 0; }
-                        Close {}
+                        fill: Styles.effort-color;
+                        MoveTo {
+                            x: 0;
+                            y: 0;
+                        }
+
+                        LineTo {
+                            x: 0;
+                            y: 10;
+                        }
+
+                        LineTo {
+                            x: 10;
+                            y: 0;
+                        }
+
+                        Close { }
                     }
 
                     Cell-RO {
