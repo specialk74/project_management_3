@@ -138,7 +138,7 @@ fn register_set_worker_max_hours(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_worker_max_hours(move |worker_idx, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(1, 40);
+        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(0, 40);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_worker_max_hours_by_idx(worker_idx as usize, hours);
@@ -155,7 +155,7 @@ fn register_set_worker_week_override(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_worker_week_override(move |worker_idx, week, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(1, 40);
+        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(0, 40);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_worker_week_override_by_idx(worker_idx as usize, week as usize, hours);
@@ -172,7 +172,7 @@ fn register_set_bulk_week_limit(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_bulk_week_limit(move |week, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(1, 40);
+        let hours: u32 = hours_text.parse::<u32>().unwrap_or(40).clamp(0, 40);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_bulk_week_limit(week as usize, hours);
