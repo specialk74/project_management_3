@@ -5,7 +5,12 @@ import {
     PjmCallback,
 } from "global.slint";
 import { Styles } from "styles.slint";
-import { StyleMetrics, HorizontalBox, Button, LineEdit } from "std-widgets.slint";
+import {
+    StyleMetrics,
+    HorizontalBox,
+    Button,
+    LineEdit,
+} from "std-widgets.slint";
 
 export component RightFooter inherits Rectangle {
     in property <AppProject> app_project;
@@ -69,7 +74,9 @@ export component RightFooter inherits Rectangle {
 
                     Button {
                         text: "Annulla";
-                        clicked => { override-popup.close(); }
+                        clicked => {
+                            override-popup.close();
+                        }
                     }
                 }
             }
@@ -101,8 +108,8 @@ export component RightFooter inherits Rectangle {
 
                             Text {
                                 font-weight: value == eff-max ? 200 : 800;
-                                color: value > eff-max ? Colors.red : (value < 40 ? Colors.yellow : (value < eff-max ? Colors.orange : Colors.lightgreen));
-                                text: value;
+                                color: value > eff-max ? Colors.red : (value == 0 ? Colors.yellow : Colors.lightgreen);
+                                text: eff-max != root.app_project.worker_max_hours[index] ? "\{value} | \{eff-max}" : "\{value}";
                             }
 
                             // Yellow triangle in top-right corner when a week override is active
@@ -113,10 +120,22 @@ export component RightFooter inherits Rectangle {
                                 width: 8px;
                                 height: 8px;
                                 fill: Colors.yellow;
-                                MoveTo { x: 0; y: 0; }
-                                LineTo { x: 8; y: 0; }
-                                LineTo { x: 8; y: 8; }
-                                Close {}
+                                MoveTo {
+                                    x: 0;
+                                    y: 0;
+                                }
+
+                                LineTo {
+                                    x: 8;
+                                    y: 0;
+                                }
+
+                                LineTo {
+                                    x: 8;
+                                    y: 8;
+                                }
+
+                                Close { }
                             }
 
                             TouchArea {
