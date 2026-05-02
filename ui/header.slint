@@ -14,7 +14,7 @@ export component Header inherits Rectangle {
 
     // State for bulk-limit dialog
     property <int> bulk-week: -1;
-    property <string> bulk-hours-text: "40";
+    property <string> bulk-hours-text: "\{Styles.default-max-hours}";
     property <length> popup-pos-x: 0px;
     property <length> popup-pos-y: 0px;
 
@@ -112,7 +112,7 @@ export component Header inherits Rectangle {
                                 pointer-event(event) => {
                                     if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
                                         root.bulk-week = data.week;
-                                        root.bulk-hours-text = "40";
+                                        root.bulk-hours-text = "\{Styles.default-max-hours}";
                                         root.popup-pos-x = self.absolute-position.x;
                                         root.popup-pos-y = self.absolute-position.y + Styles.height;
                                         bulk-popup.show();

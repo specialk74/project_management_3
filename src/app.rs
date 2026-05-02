@@ -7,7 +7,7 @@ use crate::{
     projects::projects::Projects,
     single_dev::single_dev::WeekId,
     single_efforts::sinlge_effort::Effort,
-    workers::{worker::WorkerId, workers::Workers},
+    workers::{worker::{WorkerId, DEFAULT_MAX_HOURS}, workers::Workers},
 };
 
 pub const SAVE_PATH: &str = "workers.ron";
@@ -66,7 +66,7 @@ impl App {
             .list()
             .get(idx)
             .map(|(id, _)| self.workers.get_max_hours(*id))
-            .unwrap_or(40)
+            .unwrap_or(DEFAULT_MAX_HOURS)
     }
 
     /// Effective max hours (per-week override → global → 40) for worker at sorted index.
@@ -75,7 +75,7 @@ impl App {
             .list()
             .get(idx)
             .map(|(id, _)| self.workers.get_effective_max_hours(*id, week))
-            .unwrap_or(40)
+            .unwrap_or(DEFAULT_MAX_HOURS)
     }
 
     pub fn set_worker_max_hours_by_idx(&mut self, idx: usize, hours: u32) {
@@ -89,7 +89,7 @@ impl App {
     /// If hours >= 40, removes the week override for every worker (reset).
     pub fn set_bulk_week_limit(&mut self, week: usize, hours: u32) {
         let worker_ids: Vec<_> = self.workers.list().iter().map(|(id, _)| *id).collect();
-        if hours >= 40 {
+        if hours >= DEFAULT_MAX_HOURS {
             for wid in worker_ids {
                 let global_max = self.workers.get_max_hours(wid);
                 self.workers.set_week_override(wid, week, global_max);

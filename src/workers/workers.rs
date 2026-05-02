@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use crate::workers::{
-    worker::{WORKER_ID_ZERO, Worker, WorkerId},
+    worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, Worker, WorkerId},
     *,
 };
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,7 @@ impl Workers {
     }
 
     pub fn get_max_hours(&self, id: WorkerId) -> u32 {
-        self.worker_id.get(&id).map_or(40, |w| w.get_max_hours())
+        self.worker_id.get(&id).map_or(DEFAULT_MAX_HOURS, |w| w.get_max_hours())
     }
 
     pub fn set_max_hours(&mut self, id: WorkerId, hours: u32) {
@@ -62,7 +62,7 @@ impl Workers {
     pub fn get_effective_max_hours(&self, id: WorkerId, week: usize) -> u32 {
         self.worker_id
             .get(&id)
-            .map_or(40, |w| w.get_effective_max_hours_for_week(week))
+            .map_or(DEFAULT_MAX_HOURS, |w| w.get_effective_max_hours_for_week(week))
     }
 
     pub fn set_week_override(&mut self, id: WorkerId, week: usize, hours: u32) {

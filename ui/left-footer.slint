@@ -16,7 +16,7 @@ export component LeftFooter inherits Rectangle {
     // State for the max-hours dialog
     property <int> editing-worker-idx: -1;
     property <string> editing-worker-name: "";
-    property <string> editing-hours-text: "40";
+    property <string> editing-hours-text: "\{Styles.default-max-hours}";
     property <length> popup-pos-x: 0px;
     property <length> popup-pos-y: 0px;
 
@@ -117,7 +117,7 @@ export component LeftFooter inherits Rectangle {
             VerticalLayout {
                 for name[index] in app_project.worker_names: Rectangle {
                     property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
-                    property <bool> has-reduced-hours: app_project.worker_max_hours[index] < 40;
+                    property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
                     height: worker-visible ? Styles.height : 0px;
                     visible: worker-visible;
                     background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
