@@ -59,7 +59,7 @@ export struct EffortByPrjData {
     project_id: int,
     text: string,
     start_week: int,
-    end_week:int,
+    end_week: int,
     visible: bool,
     enable: bool,
     devs_of_the_project: [EffortByDevData]
@@ -80,7 +80,7 @@ export struct AppProject {
     devs: [DevInfo],
 }
 
-export struct DayData  {
+export struct DayData {
     week: int,
     text: string,
     all_limited: bool,
@@ -234,6 +234,34 @@ component InternalText inherits Text {
     vertical-alignment: center;
     horizontal-alignment: center;
     wrap: word-wrap;
+}
+
+export component CornerTriangle inherits Rectangle {
+    background: transparent;
+
+    Path {
+        x: parent.width - 10px;
+        y: 0px;
+        width: 10px;
+        height: 10px;
+        fill: Styles.effort-color;
+        MoveTo {
+            x: 10;
+            y: 0;
+        }
+
+        LineTo {
+            x: 10;
+            y: 10;
+        }
+
+        LineTo {
+            x: 0;
+            y: 0;
+        }
+
+        Close { }
+    }
 }
 
 export component Cell-RO inherits Rectangle {
@@ -425,23 +453,7 @@ export component Cell-RW inherits Rectangle {
                 root.double_clicked(root.text);
             }
             // Typing any printable character enters edit mode immediately (like Excel)
-            if (!root.editing
-                && !event.modifiers.control
-                && !event.modifiers.alt
-                && !event.modifiers.meta
-                && event.text != ""
-                && event.text != Key.Escape
-                && event.text != Key.Return
-                && event.text != Key.Tab
-                && event.text != Key.Shift
-                && event.text != Key.ShiftR
-                && event.text != Key.Delete
-                && event.text != Key.Backspace
-                && event.text != Key.UpArrow
-                && event.text != Key.DownArrow
-                && event.text != Key.LeftArrow
-                && event.text != Key.RightArrow
-            ) {
+            if (!root.editing && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && event.text != "" && event.text != Key.Escape && event.text != Key.Return && event.text != Key.Tab && event.text != Key.Shift && event.text != Key.ShiftR && event.text != Key.Delete && event.text != Key.Backspace && event.text != Key.UpArrow && event.text != Key.DownArrow && event.text != Key.LeftArrow && event.text != Key.RightArrow) {
                 typed_prefix = event.text;
                 root.text = PjmCallback.find_completion(event.text, true);
                 if root.text == "" {
@@ -470,29 +482,8 @@ export component Cell-RW inherits Rectangle {
         clip: false;
         background: Colors.transparent;
 
-        Path {
+        CornerTriangle {
             visible: root.note != "";
-            x: 0;
-            y: 0;
-            width: 10px;
-            height: 10px;
-            fill: Styles.note-color;
-            MoveTo {
-                x: 10;
-                y: 0;
-            }
-
-            LineTo {
-                x: 10;
-                y: 10;
-            }
-
-            LineTo {
-                x: 0;
-                y: 0;
-            }
-
-            Close { }
         }
 
         note-ta := TouchArea {
@@ -644,7 +635,6 @@ export component EffortByDataGui inherits Rectangle {
                     PjmCallback.sel_end_row = row_idx;
                 }
             }
-
         }
     }
 }

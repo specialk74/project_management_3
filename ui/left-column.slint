@@ -16,6 +16,7 @@ import {
     AppProject,
     DevInfo,
     NoteEditorWindow,
+    CornerTriangle,
 } from "global.slint";
 import { Styles } from "styles.slint";
 
@@ -162,7 +163,9 @@ export component LeftColumn inherits Rectangle {
 
     width: Styles.left-column-width;
 
-    dev-note-editor := NoteEditorWindow { visible: false; }
+    dev-note-editor := NoteEditorWindow {
+        visible: false;
+    }
 
     popup := Devmenu {
         visible: false;
@@ -350,29 +353,8 @@ export component LeftColumn inherits Rectangle {
                                                         clip: false;
                                                         background: Colors.transparent;
 
-                                                        Path {
+                                                        CornerTriangle {
                                                             visible: data.note != "";
-                                                            x: 0;
-                                                            y: 0;
-                                                            width: 10px;
-                                                            height: 10px;
-                                                            fill: Styles.note-color;
-                                                            MoveTo {
-                                                                x: 10;
-                                                                y: 0;
-                                                            }
-
-                                                            LineTo {
-                                                                x: 10;
-                                                                y: 10;
-                                                            }
-
-                                                            LineTo {
-                                                                x: 0;
-                                                                y: 0;
-                                                            }
-
-                                                            Close { }
                                                         }
 
                                                         note-ta := TouchArea {

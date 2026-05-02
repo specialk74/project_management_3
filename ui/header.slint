@@ -2,6 +2,7 @@ import {
     PjmCallback,
     AppProject,
     DayData,
+    CornerTriangle,
 } from "global.slint";
 import { Styles } from "styles.slint";
 import { HorizontalBox, Button, LineEdit } from "std-widgets.slint";
@@ -103,29 +104,8 @@ export component Header inherits Rectangle {
                             }
 
                             // Yellow triangle top-right when all workers are limited this week
-                            Path {
+                            CornerTriangle {
                                 visible: data.all_limited;
-                                x: parent.width - 8px;
-                                y: 0px;
-                                width: 8px;
-                                height: 8px;
-                                fill: Styles.effort-color;
-                                MoveTo {
-                                    x: 0;
-                                    y: 0;
-                                }
-
-                                LineTo {
-                                    x: 8;
-                                    y: 0;
-                                }
-
-                                LineTo {
-                                    x: 8;
-                                    y: 8;
-                                }
-
-                                Close { }
                             }
 
                             TouchArea {

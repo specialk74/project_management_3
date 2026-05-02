@@ -2,6 +2,7 @@ import {
     AppProject,
     PjmCallback,
     Cell-RO,
+    CornerTriangle,
 } from "global.slint";
 import { Styles } from "styles.slint";
 import { Button, LineEdit } from "std-widgets.slint";
@@ -123,29 +124,8 @@ export component LeftFooter inherits Rectangle {
                     clip: true;
 
                     // Left triangle: worker has global max hours < 40
-                    Path {
+                    CornerTriangle {
                         visible: has-reduced-hours;
-                        x: 0px;
-                        y: 0px;
-                        width: 10px;
-                        height: 10px;
-                        fill: Styles.effort-color;
-                        MoveTo {
-                            x: 0;
-                            y: 0;
-                        }
-
-                        LineTo {
-                            x: 0;
-                            y: 10;
-                        }
-
-                        LineTo {
-                            x: 10;
-                            y: 0;
-                        }
-
-                        Close { }
                     }
 
                     Cell-RO {

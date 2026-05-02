@@ -3,6 +3,7 @@ import {
     AppProject,
     DayData,
     PjmCallback,
+    CornerTriangle,
 } from "global.slint";
 import { Styles } from "styles.slint";
 import {
@@ -113,29 +114,8 @@ export component RightFooter inherits Rectangle {
                             }
 
                             // Yellow triangle in top-right corner when a week override is active
-                            Path {
+                            CornerTriangle {
                                 visible: has-override;
-                                x: parent.width - 8px;
-                                y: 0px;
-                                width: 8px;
-                                height: 8px;
-                                fill: Styles.effort-color;
-                                MoveTo {
-                                    x: 0;
-                                    y: 0;
-                                }
-
-                                LineTo {
-                                    x: 8;
-                                    y: 0;
-                                }
-
-                                LineTo {
-                                    x: 8;
-                                    y: 8;
-                                }
-
-                                Close { }
                             }
 
                             TouchArea {
