@@ -96,6 +96,74 @@ component Toolbar inherits Rectangle {
     height: 32px;
     background: #2a2a2a;
 
+    // State for new-project dialog
+    property <string> new-proj-name: "Nuovo Progetto";
+    property <string> new-proj-start: PjmCallback.current-week-text;
+
+    new-proj-popup := PopupWindow {
+        close-policy: no-auto-close;
+        width: 300px;
+        height: 170px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 300px;
+            height: 170px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Nuovo Progetto";
+                }
+
+                proj-name-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text <=> new-proj-name;
+                    placeholder-text: "Nome progetto...";
+                }
+
+                proj-start-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text <=> new-proj-start;
+                    placeholder-text: "Data inizio yy-mm-dd";
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.new_project(new-proj-name, new-proj-start);
+                            new-proj-name = "Nuovo Progetto";
+                            new-proj-start = PjmCallback.current-week-text;
+                            new-proj-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => {
+                            new-proj-name = "Nuovo Progetto";
+                            new-proj-start = PjmCallback.current-week-text;
+                            new-proj-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     HorizontalLayout {
         spacing: 4px;
         padding-left: 6px;
@@ -106,7 +174,9 @@ component Toolbar inherits Rectangle {
             text: "+ Progetto";
             height: 26px;
             clicked => {
-                PjmCallback.new_project();
+                new-proj-name = "Nuovo Progetto";
+                new-proj-start = PjmCallback.current-week-text;
+                new-proj-popup.show();
             }
         }
 
@@ -320,7 +390,7 @@ export component AppWindow inherits Window {
                     return accept;
                 }
                 if (event.text == "N" || event.text == "n") {
-                    PjmCallback.new_project();
+                    PjmCallback.new_project("Nuovo Progetto", "");
                     return accept;
                 }
                 if (event.text == "O" || event.text == "o") {

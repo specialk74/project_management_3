@@ -52,6 +52,7 @@ export struct EffortByDevData {
     enable: bool,
     max: int,
     note: string,
+    deadline_week: int,
     datas: [EffortByDateData],
 }
 
@@ -60,6 +61,7 @@ export struct EffortByPrjData {
     text: string,
     start_week: int,
     end_week: int,
+    deadline_text: string,
     visible: bool,
     enable: bool,
     devs_of_the_project: [EffortByDevData]
@@ -97,7 +99,8 @@ export global PjmCallback {
     callback save_file();
     callback open_file();
     callback search(string);
-    callback new_project();
+    callback new_project(string /*name*/, string /*start_date_yy_mm_dd*/);
+    callback set_project_end_week(int /*project_idx*/, string /*date_str*/);
     callback add_row(int, int);
     callback del_row(int, int);
     callback hide_dev(int, int, bool);
@@ -107,6 +110,7 @@ export global PjmCallback {
     callback set_project_name(int /*project_idx*/, string);
     callback find_completion(string, bool) -> string;
     callback remove_last_char(string) -> string;
+    in property <string> current-week-text: "";
     in property <string> testo-copiato;
     in property <string> last-search;
     in property <bool> show_modal;
@@ -654,6 +658,7 @@ export component EffortByDevGui inherits Rectangle {
             padding: 0px;
 
             for data in datas.datas: Rectangle {
+                background: datas.deadline_week >= 0 && data.week == datas.deadline_week ? Colors.green : Colors.transparent;
                 HorizontalLayout {
                     Rectangle {
                         background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;

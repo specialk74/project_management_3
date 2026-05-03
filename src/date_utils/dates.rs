@@ -4,7 +4,7 @@ use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::date_utils::day::DayDto;
 
-const NUM_DEFAULT_WEEK: i64 = 52 * 4;
+const NUM_DEFAULT_WEEK: i64 = 52 * 2;
 
 /// Converts a NaiveDate to days since Unix epoch.
 ///
@@ -118,6 +118,22 @@ pub fn weeks_list(start_date: &chrono::NaiveDate, end_date: &chrono::NaiveDate) 
 /// assert_eq!(num_weeks, NUM_DEFAULT_WEEK);
 /// assert!(end > start);
 /// ```
+/// Parses a date string in "yy-mm-dd" or "yyyy-mm-dd" format and returns the
+/// Monday of that week as days since Unix epoch. Returns None on parse failure.
+pub fn parse_date_str(s: &str) -> Option<i32> {
+    let parts: Vec<&str> = s.trim().split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let year: i32 = parts[0].parse().ok()?;
+    let month: u32 = parts[1].parse().ok()?;
+    let day: u32 = parts[2].parse().ok()?;
+    let year = if year < 100 { year + 2000 } else { year };
+    let date = NaiveDate::from_ymd_opt(year, month, day)?;
+    let monday = primo_giorno_settimana_corrente(&date);
+    Some(local_to_days(&monday))
+}
+
 pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
     let today = Utc::now().date_naive();
     let start_date = local_to_days(&primo_giorno_settimana_corrente(&today));

@@ -22,6 +22,10 @@ pub struct Project {
     info: String,
     enable: Enable,
     dev_id: HashMap<DevId, SingleDev>,
+    #[serde(default)]
+    pub start_week: Option<WeekId>,
+    #[serde(default)]
+    pub end_week: Option<WeekId>,
 }
 
 impl Project {
@@ -30,8 +34,24 @@ impl Project {
             info: info.to_string(),
             dev_id: HashMap::new(),
             enable: Enable(true),
+            start_week: None,
+            end_week: None,
         }
     }
+
+    pub fn new_with_start(info: &str, start_week: Option<WeekId>) -> Self {
+        Self {
+            info: info.to_string(),
+            dev_id: HashMap::new(),
+            enable: Enable(true),
+            start_week,
+            end_week: None,
+        }
+    }
+
+    pub fn get_start_week(&self) -> Option<WeekId> { self.start_week }
+    pub fn get_end_week(&self) -> Option<WeekId> { self.end_week }
+    pub fn set_end_week(&mut self, week: Option<WeekId>) { self.end_week = week; }
 
     pub fn del_row(&mut self, id_dev: DevId) {
         self.dev_id.get_mut(&id_dev).unwrap().del_row();

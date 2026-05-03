@@ -46,11 +46,14 @@ fn main() {
     {
         let pcb = PjmCallback::get(&ui);
         pcb.set_current_file(SharedString::from(SAVE_PATH));
-        //pcb.set_this_week(current_week() as i32);
         pcb.set_changed(false);
-        let this_week = local_to_days(&primo_giorno_settimana_corrente(&Utc::now().date_naive()));
-        //println!("this_week: {}", this_week);
+        let today = Utc::now().date_naive();
+        let this_week_date = primo_giorno_settimana_corrente(&today);
+        let this_week = local_to_days(&this_week_date);
         pcb.set_this_week(this_week);
+        pcb.set_current_week_text(SharedString::from(
+            this_week_date.format("%y-%m-%d").to_string(),
+        ));
     }
 
     let state = SharedState {

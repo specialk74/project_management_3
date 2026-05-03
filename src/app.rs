@@ -51,12 +51,7 @@ impl App {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let mut app: App = ron::from_str(&content)?;
-
-        let (n_week, start_week, end_week) = get_default_weeks(Some(app.start_week.0 as i32));
-
-        app.n_week.0 = n_week as usize;
-        app.start_week.0 = start_week as usize;
-        app.end_week.0 = end_week as usize;
+        app.recompute_week_range();
         Ok(app)
     }
 
@@ -108,6 +103,18 @@ impl App {
         if let Some((id, _)) = workers.get(idx) {
             self.workers.set_week_override(*id, week, hours);
         }
+    }
+
+    /// Recomputes the grid week range from project start weeks (or falls back to
+    /// the existing app.start_week for backward compatibility with old save files).
+    pub fn recompute_week_range(&mut self) {
+        let min_start = self.projects.min_start_week()
+            .map(|w| w.0 as i32)
+            .or(Some(self.start_week.0 as i32));
+        let (n_week, start_week, end_week) = get_default_weeks(min_start);
+        self.n_week = WeekId(n_week as usize);
+        self.start_week = WeekId(start_week as usize);
+        self.end_week = WeekId(end_week as usize);
     }
 
     pub fn compute_sovra(&mut self) {

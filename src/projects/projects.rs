@@ -57,11 +57,29 @@ impl Projects {
         }
     }
 
-    pub fn add(&mut self, info: &str) -> ProjectId {
+    pub fn add(&mut self, info: &str, start_week: Option<WeekId>) -> ProjectId {
         let id = self.last_id;
-        self.projects.insert(id, Project::new(info));
+        self.projects.insert(id, Project::new_with_start(info, start_week));
         self.last_id.0 += 1;
         id
+    }
+
+    pub fn min_start_week(&self) -> Option<WeekId> {
+        self.projects.values().filter_map(|p| p.get_start_week()).min()
+    }
+
+    pub fn get_project_start_week(&self, id: ProjectId) -> Option<WeekId> {
+        self.projects.get(&id)?.get_start_week()
+    }
+
+    pub fn get_project_end_week(&self, id: ProjectId) -> Option<WeekId> {
+        self.projects.get(&id)?.get_end_week()
+    }
+
+    pub fn set_project_end_week(&mut self, id: ProjectId, week: Option<WeekId>) {
+        if let Some(p) = self.projects.get_mut(&id) {
+            p.set_end_week(week);
+        }
     }
 
     pub fn del(&mut self, id_project: ProjectId) {

@@ -26,6 +26,7 @@ pub fn refresh(
     row_counts: &HashMap<(i32, i32), i32>,
     visibility: &HashMap<(i32, i32), bool>,
 ) {
+    app.recompute_week_range();
     app.compute_sovra();
     live.projects
         .set_vec(build_project_data(app, row_counts, visibility));

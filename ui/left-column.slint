@@ -163,6 +163,79 @@ export component LeftColumn inherits Rectangle {
 
     width: Styles.left-column-width;
 
+    // State for deadline editor popup
+    property <int> editing-proj-idx: -1;
+    property <string> editing-deadline-text: "";
+    property <length> deadline-popup-x: 0px;
+    property <length> deadline-popup-y: 0px;
+
+    deadline-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.deadline-popup-x;
+        y: root.deadline-popup-y;
+        width: 260px;
+        height: 130px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 260px;
+            height: 130px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Data fine progetto (yy-mm-dd)";
+                }
+
+                deadline-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text <=> root.editing-deadline-text;
+                    placeholder-text: "yy-mm-dd";
+                    accepted => {
+                        PjmCallback.set_project_end_week(root.editing-proj-idx, self.text);
+                        deadline-popup.close();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.set_project_end_week(root.editing-proj-idx, deadline-le.text);
+                            deadline-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Rimuovi";
+                        clicked => {
+                            PjmCallback.set_project_end_week(root.editing-proj-idx, "");
+                            deadline-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => {
+                            deadline-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     dev-note-editor := NoteEditorWindow {
         visible: false;
     }
@@ -222,6 +295,35 @@ export component LeftColumn inherits Rectangle {
                                             PjmCallback.changed = true;
                                             PjmCallback.set_project_name(project.project_id, text);
                                         }
+                                    }
+                                }
+
+                                // Deadline display row
+                                Rectangle {
+                                    height: root.visible ? Styles.height : 0px;
+                                    //background: project.end_week >= 0 ? #00440020 : Colors.transparent;
+
+                                    deadline-label-ta := TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        pointer-event(event) => {
+                                            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                                root.editing-proj-idx = project.project_id;
+                                                root.editing-deadline-text = project.deadline_text;
+                                                root.deadline-popup-x = self.absolute-position.x;
+                                                root.deadline-popup-y = self.absolute-position.y + Styles.height;
+                                                deadline-popup.show();
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        //color: project.end_week >= 0 ? Colors.lightgreen : Colors.gray;
+                                        font-family: Styles.font-family;
+                                        font-size: Styles.font-size - 2px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        text: project.end_week >= 0 ? "Fine: " + project.deadline_text : "Fine: —";
                                     }
                                 }
 

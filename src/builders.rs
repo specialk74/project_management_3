@@ -2,7 +2,7 @@ use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 
 use crate::app::App;
-use crate::date_utils::dates::{days_to_local, get_default_weeks, primo_giorno_settimana_corrente};
+use crate::date_utils::dates::{days_to_local, primo_giorno_settimana_corrente};
 use crate::single_dev::single_dev::{SingleDev, WeekId};
 use crate::single_efforts::sinlge_effort::Effort;
 use crate::workers::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WorkerId};
@@ -54,12 +54,28 @@ pub fn build_project_data(
     visibility: &HashMap<(i32, i32), bool>,
 ) -> Vec<EffortByPrjData> {
     let projects = app.projects.list();
-    let (n_weeks, start_w, end_w) = get_default_weeks(Some(app.start_week.0 as i32));
+    let start_w = app.start_week.0;
+    let end_w = app.end_week.0;
+    let n_weeks = (end_w - start_w) / 7;
 
     projects
         .iter()
         .enumerate()
         .map(|(pi, (proj_id, proj_name))| {
+            let deadline_week = app.projects.get_project_end_week(*proj_id)
+                .map(|w| w.0 as i32)
+                .unwrap_or(-1);
+
+            let deadline_text = if deadline_week >= 0 {
+                SharedString::from(
+                    primo_giorno_settimana_corrente(&days_to_local(deadline_week))
+                        .format("%y-%m-%d")
+                        .to_string(),
+                )
+            } else {
+                SharedString::default()
+            };
+
             let dev_data: Vec<EffortByDevData> = app
                 .projects
                 .list_devs(*proj_id)
@@ -76,17 +92,19 @@ pub fn build_project_data(
                             pi as i32,
                             dev_id.0 as i32,
                             sd,
-                            start_w as usize,
-                            end_w as usize,
+                            start_w,
+                            end_w,
                             enable,
+                            deadline_week,
                         )
                     } else {
                         empty_dev(
                             pi as i32,
                             dev_id.0 as i32,
-                            (n_weeks * 7) as usize,
-                            start_w as usize,
+                            n_weeks * 7,
+                            start_w,
                             max,
+                            deadline_week,
                         )
                     }
                 })
@@ -94,11 +112,15 @@ pub fn build_project_data(
 
             let enable = app.projects.get_enable(proj_id).0;
             let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
+            let proj_start = app.projects.get_project_start_week(*proj_id)
+                .map(|w| w.0 as i32)
+                .unwrap_or(-1);
             EffortByPrjData {
                 project_id: pi as i32,
                 text: SharedString::from(proj_name.as_str()),
-                start_week: start_w as i32,
-                end_week: end_w as i32,
+                start_week: proj_start,
+                end_week: deadline_week,
+                deadline_text,
                 visible: project_visible,
                 enable,
                 devs_of_the_project: mk(dev_data),
@@ -115,6 +137,7 @@ fn build_dev(
     start_w: usize,
     end_w: usize,
     enable: bool,
+    deadline_week: i32,
 ) -> EffortByDevData {
     let planned = sd.planned_effort().0 as i32;
     let total = get_hours(sd.get_effort_tot());
@@ -191,6 +214,7 @@ fn build_dev(
         enable,
         max,
         note: SharedString::from(sd.get_note()),
+        deadline_week,
         datas: mk(week_data),
     }
 }
@@ -201,6 +225,7 @@ fn empty_dev(
     n_weeks: usize,
     start_w: usize,
     max: i32,
+    deadline_week: i32,
 ) -> EffortByDevData {
     let n_persons = max.max(0) as usize;
     let week_data: Vec<EffortByDateData> = (0..n_weeks)
@@ -228,6 +253,7 @@ fn empty_dev(
         enable: true,
         note: SharedString::from(""),
         max: (max - 1).max(0),
+        deadline_week,
         datas: mk(week_data),
     }
 }
