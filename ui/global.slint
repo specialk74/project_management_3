@@ -423,7 +423,13 @@ export component Cell-RW inherits Rectangle {
                     root.double_clicked(root.text);
                 }
                 if (event.text == "S" || event.text == "s") {
+                    if (root.editing) {
+                        root.double_clicked(root.text);
+                        root.editing = false;
+                        fs.focus();
+                    }
                     PjmCallback.save_file();
+                    return accept;
                 }
                 if (event.text == "f") {
                     PjmCallback.show_modal = true;

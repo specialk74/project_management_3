@@ -12,6 +12,8 @@ use crate::{
 
 pub const SAVE_PATH: &str = "workers.ron";
 
+fn default_projects() -> Projects { Projects::new() }
+
 #[derive(Serialize, Deserialize)]
 pub struct App {
     pub start_week: WeekId,
@@ -21,7 +23,9 @@ pub struct App {
     pub n_week: WeekId,
     pub workers: Workers,
     pub devs: Devs,
+    #[serde(default = "default_projects")]
     pub projects: Projects,
+    #[serde(default)]
     pub holidays: Vec<WeekId>,
     #[serde(skip)]
     pub sovra: HashMap<(WeekId, WorkerId), Effort>,
