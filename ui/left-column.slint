@@ -406,6 +406,7 @@ export component LeftColumn inherits Rectangle {
                                 for data in project.devs-of-the-project: Rectangle {
                                     property <bool> visibility;
                                     visibility: data.visible;
+
                                     // I vari dev collegati al progetto
                                     VerticalLayout {
                                         spacing: 0px;
@@ -495,7 +496,7 @@ export component LeftColumn inherits Rectangle {
                                                         LineEdit {
                                                             horizontal-alignment: center;
                                                             text: data.effort;
-                                                            height: Styles.height;
+                                                            height: visibility ? Styles.height : 0px;
 
                                                             accepted(text) => {
                                                                 data.effort = text.to-float();
@@ -507,7 +508,7 @@ export component LeftColumn inherits Rectangle {
                                                             background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
                                                             height: visibility ? self.preferred-height : 0px;
                                                             Text {
-                                                                height: visibility ? self.preferred-height : 0px;
+                                                                height: parent.height;
                                                                 horizontal-alignment: center;
                                                                 vertical-alignment: center;
                                                                 text: data.remains;
