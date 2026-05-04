@@ -19,7 +19,7 @@ cargo test <test_name>
 # e.g.: cargo test workers::workers::tests::add_returns_new_id
 ```
 
-The data file `workers.ron` is loaded/saved at runtime in the working directory. The app auto-loads it on startup.
+The default data file is `workers.ron`, loaded from the working directory on startup. A different file can be specified as a CLI argument: `cargo run -- myfile.ron`. The "Apri" button opens a native file-picker dialog (via the `rfd` crate) filtered to `.ron` files; the chosen file becomes the new `current_file`.
 
 ## Architecture
 
@@ -63,9 +63,9 @@ App (Rust state)
 All Slint→Rust callbacks are registered in `src/callbacks/`. Each file handles a domain:
 - `effort.rs` — effort changes, note setting, drag/move
 - `members.rs` — add/search workers and devs, autocomplete
-- `project.rs` — new project, rename
+- `project.rs` — new project, rename, enable/disable, add/remove dev, set end week
 - `rows.rs` — add/delete worker rows per dev
-- `file_ops.rs` — save/load RON file
+- `file_ops.rs` — save/load RON file (load uses native file dialog via `rfd`)
 
 Every callback follows this pattern:
 1. Clone `Rc<RefCell<App>>` and `Rc<LiveModels>` before the closure
@@ -76,8 +76,8 @@ Every callback follows this pattern:
 ### UI Files
 
 - `global.slint` — all exported types (`SingleEffortGui`, `EffortByDateData`, etc.), `PjmCallback` global singleton, reusable components (`Cell-RW`, `Cell-RO`, `NoteEditorWindow`, `EffortByDataGui`, `EffortByDevGui`, `EffortByPrjGui`)
-- `app-window.slint` — root `AppWindow`, toolbar, search popup (`im`)
-- `left-column.slint` — project list with dev rows, `Devmenu` context menu, dev note editing
+- `app-window.slint` — root `AppWindow`, `Toolbar` (includes "Progetti ▼" popup for enable/disable), search popup (`im`)
+- `left-column.slint` — project list with dev rows, project ID label above each TextEdit, `Devmenu` context menu, dev note editing
 - `right-column.slint` — scrollable effort grid
 - `header.slint` / `left-footer.slint` / `right-footer.slint` — week headers and totals
 - `styles.slint` — global `Styles` singleton (sizes, colors, fonts)
@@ -91,3 +91,7 @@ Every callback follows this pattern:
 **Viewport sync**: Left column (project names) and right column (effort grid) share `viewport_y` via two-way binding in `AppWindow` to scroll in sync.
 
 **Row counts / visibility**: Two `HashMap<(project_idx, dev_idx), _>` maps in `SharedState` track how many worker rows to show per dev and which devs are visible (used by the search filter). These are passed to `builders.rs` on every refresh.
+
+**Project IDs in the UI**: `EffortByPrjData.project_id` is the 0-based sorted-position index (`pi` in `builders.rs`), not the internal `ProjectId(usize)` key. All callbacks (`set_project_name`, `set_project_end_week`, `set_project_enabled`, etc.) receive this index and resolve it via `projects.list().get(idx)`.
+
+**Project enable/disable**: `Project.enable: Enable(bool)` persisted in RON. The "Progetti ▼" button in the toolbar opens a `PopupWindow` with a `ListView` listing all projects (enabled and disabled) with a checkbox per row. Toggling calls `PjmCallback.set_project_enabled(project_id, bool)` → `projects.set_enable(ProjectId, Enable)` → `refresh`. Disabled projects are hidden in the main grid (`visible: project.visible && project.enable`) but always appear in the popup list.
