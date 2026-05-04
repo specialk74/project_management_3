@@ -24,8 +24,9 @@ use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
 use crate::live_models::LiveModels;
 
 fn main() {
+    let file_path = std::env::args().nth(1).unwrap_or_else(|| SAVE_PATH.to_string());
     let app = Rc::new(RefCell::new(
-        App::load(SAVE_PATH).unwrap_or_else(|_| App::new()),
+        App::load(&file_path).unwrap_or_else(|_| App::new()),
     ));
     let row_counts: Rc<RefCell<HashMap<(i32, i32), i32>>> = Rc::default();
     let visibility: Rc<RefCell<HashMap<(i32, i32), bool>>> = Rc::default();
@@ -45,7 +46,7 @@ fn main() {
 
     {
         let pcb = PjmCallback::get(&ui);
-        pcb.set_current_file(SharedString::from(SAVE_PATH));
+        pcb.set_current_file(SharedString::from(file_path.as_str()));
         pcb.set_changed(false);
         let today = Utc::now().date_naive();
         let this_week_date = primo_giorno_settimana_corrente(&today);

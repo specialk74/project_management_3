@@ -1,4 +1,4 @@
-use slint::{ComponentHandle, Global};
+use slint::{ComponentHandle, Global, SharedString};
 
 use crate::app::App;
 use crate::ui_sync::{refresh, sync_project_texts};
@@ -32,13 +32,20 @@ fn register_open_file(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_open_file(move || {
+        let Some(path_buf) = rfd::FileDialog::new()
+            .add_filter("RON files", &["ron"])
+            .pick_file()
+        else {
+            return;
+        };
+        let path = path_buf.to_string_lossy().to_string();
         if let Some(ui) = ui_w.upgrade() {
-            let path = PjmCallback::get(&ui).get_current_file().to_string();
             match App::load(&path) {
                 Ok(loaded) => {
                     *app.borrow_mut() = loaded;
                     row_counts.borrow_mut().clear();
                     visibility.borrow_mut().clear();
+                    PjmCallback::get(&ui).set_current_file(SharedString::from(path.as_str()));
                     refresh(
                         &ui,
                         &mut app.borrow_mut(),
