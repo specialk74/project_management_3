@@ -1,8 +1,8 @@
 use slint::{ComponentHandle, Global};
 
 use crate::date_utils::dates::parse_date_str;
-use crate::projects::project::Enable;
-use crate::single_dev::single_dev::WeekId;
+use crate::project_utils::project::Enable;
+use crate::single_dev_utils::single_dev::WeekId;
 use crate::ui_sync::{refresh, sync_project_texts};
 use crate::{AppWindow, PjmCallback};
 
@@ -27,9 +27,19 @@ fn register_new_project(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             let start_week = parse_date_str(&start_date).map(|d| WeekId(d as usize));
-            let proj_name = if name.is_empty() { "Nuovo Progetto" } else { &name };
+            let proj_name = if name.is_empty() {
+                "Nuovo Progetto"
+            } else {
+                &name
+            };
             a.projects.add(proj_name, start_week);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -54,7 +64,13 @@ fn register_set_project_end_week(ui: &AppWindow, state: &SharedState) {
                 parse_date_str(&date_str).map(|d| WeekId(d as usize))
             };
             a.projects.set_project_end_week(proj_id, end_week);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -90,7 +106,13 @@ fn register_set_project_enabled(ui: &AppWindow, state: &SharedState) {
                 return;
             };
             a.projects.set_enable(proj_id, Enable(enabled));
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -119,7 +141,13 @@ fn register_add_dev_to_project(ui: &AppWindow, state: &SharedState) {
             } else {
                 a.projects.del_dev(proj_id, dev_id);
             }
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });

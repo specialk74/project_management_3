@@ -3,9 +3,9 @@ use std::collections::HashMap;
 
 use crate::app::App;
 use crate::date_utils::dates::{days_to_local, primo_giorno_settimana_corrente};
-use crate::single_dev::single_dev::{SingleDev, WeekId};
-use crate::single_efforts::sinlge_effort::Effort;
-use crate::workers::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WorkerId};
+use crate::single_dev_utils::single_dev::{SingleDev, WeekId};
+use crate::single_effort_utils::sinlge_effort::Effort;
+use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO};
 use crate::{
     DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
     SovraData,
@@ -62,7 +62,9 @@ pub fn build_project_data(
         .iter()
         .enumerate()
         .map(|(pi, (proj_id, proj_name))| {
-            let deadline_week = app.projects.get_project_end_week(*proj_id)
+            let deadline_week = app
+                .projects
+                .get_project_end_week(*proj_id)
                 .map(|w| w.0 as i32)
                 .unwrap_or(-1);
 
@@ -112,7 +114,9 @@ pub fn build_project_data(
 
             let enable = app.projects.get_enable(proj_id).0;
             let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
-            let proj_start = app.projects.get_project_start_week(*proj_id)
+            let proj_start = app
+                .projects
+                .get_project_start_week(*proj_id)
                 .map(|w| w.0 as i32)
                 .unwrap_or(-1);
             EffortByPrjData {
@@ -256,10 +260,6 @@ fn empty_dev(
         deadline_week,
         datas: mk(week_data),
     }
-}
-
-struct SovraByWeekAndWorker {
-    by_week: HashMap<(WeekId, WorkerId), Effort>,
 }
 
 pub fn build_sovra_data(app: &App) -> Vec<SovraData> {

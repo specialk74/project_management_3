@@ -6,9 +6,9 @@ use std::collections::HashMap;
 
 use crate::{
     dev_utils::dev::DevId,
-    single_dev::single_dev::{SingleDev, WeekId},
-    single_efforts::sinlge_effort::Effort,
-    workers::worker::WorkerId,
+    single_dev_utils::single_dev::{SingleDev, WeekId},
+    single_effort_utils::sinlge_effort::Effort,
+    workers_utils::worker::WorkerId,
 };
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
@@ -49,9 +49,15 @@ impl Project {
         }
     }
 
-    pub fn get_start_week(&self) -> Option<WeekId> { self.start_week }
-    pub fn get_end_week(&self) -> Option<WeekId> { self.end_week }
-    pub fn set_end_week(&mut self, week: Option<WeekId>) { self.end_week = week; }
+    pub fn get_start_week(&self) -> Option<WeekId> {
+        self.start_week
+    }
+    pub fn get_end_week(&self) -> Option<WeekId> {
+        self.end_week
+    }
+    pub fn set_end_week(&mut self, week: Option<WeekId>) {
+        self.end_week = week;
+    }
 
     pub fn del_row(&mut self, id_dev: DevId) {
         self.dev_id.get_mut(&id_dev).unwrap().del_row();
@@ -130,6 +136,6 @@ impl Project {
     }
 
     pub fn get_dev_id(&self, dev_id: &DevId) -> std::option::Option<&SingleDev> {
-        self.dev_id.get(&dev_id)
+        self.dev_id.get(dev_id)
     }
 }

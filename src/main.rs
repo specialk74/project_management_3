@@ -4,11 +4,11 @@ mod callbacks;
 mod date_utils;
 mod dev_utils;
 mod live_models;
-mod projects;
-mod single_dev;
-mod single_efforts;
+mod project_utils;
+mod single_dev_utils;
+mod single_effort_utils;
 mod ui_sync;
-mod workers;
+mod workers_utils;
 
 slint::include_modules!();
 
@@ -24,7 +24,9 @@ use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
 use crate::live_models::LiveModels;
 
 fn main() {
-    let file_path = std::env::args().nth(1).unwrap_or_else(|| SAVE_PATH.to_string());
+    let file_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| SAVE_PATH.to_string());
     let app = Rc::new(RefCell::new(
         App::load(&file_path).unwrap_or_else(|_| App::new()),
     ));

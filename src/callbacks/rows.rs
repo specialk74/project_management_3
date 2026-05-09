@@ -1,10 +1,10 @@
 use slint::{ComponentHandle, Global};
 
 use crate::dev_utils::dev::DevId;
-use crate::projects::project::ProjectId;
-use crate::single_efforts::sinlge_effort::Effort;
+use crate::project_utils::project::ProjectId;
+use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers::worker::WorkerId;
+use crate::workers_utils::worker::WorkerId;
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;
@@ -34,7 +34,13 @@ fn register_add_row(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -55,7 +61,13 @@ fn register_del_row(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -74,7 +86,13 @@ fn register_hide_dev(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });

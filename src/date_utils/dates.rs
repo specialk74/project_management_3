@@ -2,8 +2,6 @@
 
 use chrono::{Datelike, NaiveDate, Utc};
 
-use crate::date_utils::day::DayDto;
-
 const NUM_DEFAULT_WEEK: i64 = 52 * 2;
 
 /// Converts a NaiveDate to days since Unix epoch.
@@ -73,38 +71,38 @@ pub fn primo_giorno_settimana_corrente(data: &chrono::NaiveDate) -> chrono::Naiv
     *data - chrono::Duration::days(giorni_da_lunedi as i64)
 }
 
-/// Generates a list of weeks between two dates.
-///
-/// # Arguments
-/// * `start_date` - Start date for the week list
-/// * `end_date` - End date for the week list
-///
-/// # Returns
-/// A vector of DayDto representing each Monday between the dates
-///
-/// # Examples
-/// ```
-/// # use chrono::NaiveDate;
-/// # use project_app::date_utils::weeks_list;
-/// let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
-/// let end = NaiveDate::from_ymd_opt(2024, 1, 29).unwrap();
-/// let weeks = weeks_list(&start, &end);
-/// assert_eq!(weeks.len(), 4); // 4 Mondays in this range
-/// ```
-pub fn weeks_list(start_date: &chrono::NaiveDate, end_date: &chrono::NaiveDate) -> Vec<DayDto> {
-    let mut weeks: Vec<DayDto> = Vec::new();
+// Generates a list of weeks between two dates.
+//
+// # Arguments
+// * `start_date` - Start date for the week list
+// * `end_date` - End date for the week list
+//
+// # Returns
+// A vector of DayDto representing each Monday between the dates
+//
+// # Examples
+// ```
+// # use chrono::NaiveDate;
+// # use project_app::date_utils::weeks_list;
+// let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+// let end = NaiveDate::from_ymd_opt(2024, 1, 29).unwrap();
+// let weeks = weeks_list(&start, &end);
+// assert_eq!(weeks.len(), 4); // 4 Mondays in this range
+// ```
+// pub fn weeks_list(start_date: &chrono::NaiveDate, end_date: &chrono::NaiveDate) -> Vec<DayDto> {
+//     let mut weeks: Vec<DayDto> = Vec::new();
 
-    let mut start_week = primo_giorno_settimana_corrente(start_date);
-    let end_week = primo_giorno_settimana_corrente(end_date);
+//     let mut start_week = primo_giorno_settimana_corrente(start_date);
+//     let end_week = primo_giorno_settimana_corrente(end_date);
 
-    while start_week < end_week {
-        weeks.push(DayDto::new(local_to_days(&start_week)));
-        start_week += chrono::Duration::days(7);
-        start_week = primo_giorno_settimana_corrente(&start_week);
-    }
+//     while start_week < end_week {
+//         weeks.push(DayDto::new(local_to_days(&start_week)));
+//         start_week += chrono::Duration::days(7);
+//         start_week = primo_giorno_settimana_corrente(&start_week);
+//     }
 
-    weeks
-}
+//     weeks
+// }
 
 /// Returns default week range (NUM_DEFAULT_WEEK weeks from current week).
 ///
@@ -184,11 +182,11 @@ mod tests {
         assert_eq!(result, monday);
     }
 
-    #[test]
-    fn test_weeks_list() {
-        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
-        let end = NaiveDate::from_ymd_opt(2024, 1, 29).unwrap();
-        let weeks = weeks_list(&start, &end);
-        assert_eq!(weeks.len(), 4);
-    }
+    // #[test]
+    // fn test_weeks_list() {
+    //     let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    //     let end = NaiveDate::from_ymd_opt(2024, 1, 29).unwrap();
+    //     let weeks = weeks_list(&start, &end);
+    //     assert_eq!(weeks.len(), 4);
+    // }
 }

@@ -1,7 +1,7 @@
 use slint::{ComponentHandle, Global};
 
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO};
+use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO};
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;
@@ -31,7 +31,13 @@ fn register_add_worker(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             a.workers.add(&name);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -117,7 +123,13 @@ fn register_search(ui: &AppWindow, state: &SharedState) {
             }
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
         }
     });
 }
@@ -138,11 +150,20 @@ fn register_set_worker_max_hours(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_worker_max_hours(move |worker_idx, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(DEFAULT_MAX_HOURS).clamp(0, DEFAULT_MAX_HOURS);
+        let hours: u32 = hours_text
+            .parse::<u32>()
+            .unwrap_or(DEFAULT_MAX_HOURS)
+            .clamp(0, DEFAULT_MAX_HOURS);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_worker_max_hours_by_idx(worker_idx as usize, hours);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -155,11 +176,20 @@ fn register_set_worker_week_override(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_worker_week_override(move |worker_idx, week, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(DEFAULT_MAX_HOURS).clamp(0, DEFAULT_MAX_HOURS);
+        let hours: u32 = hours_text
+            .parse::<u32>()
+            .unwrap_or(DEFAULT_MAX_HOURS)
+            .clamp(0, DEFAULT_MAX_HOURS);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_worker_week_override_by_idx(worker_idx as usize, week as usize, hours);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -172,11 +202,20 @@ fn register_set_bulk_week_limit(ui: &AppWindow, state: &SharedState) {
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
     PjmCallback::get(ui).on_set_bulk_week_limit(move |week, hours_text| {
-        let hours: u32 = hours_text.parse::<u32>().unwrap_or(DEFAULT_MAX_HOURS).clamp(0, DEFAULT_MAX_HOURS);
+        let hours: u32 = hours_text
+            .parse::<u32>()
+            .unwrap_or(DEFAULT_MAX_HOURS)
+            .clamp(0, DEFAULT_MAX_HOURS);
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             a.set_bulk_week_limit(week as usize, hours);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });
@@ -196,7 +235,13 @@ fn register_add_dev(ui: &AppWindow, state: &SharedState) {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             a.devs.add(&name);
-            refresh(&ui, &mut *a, &live, &row_counts.borrow(), &visibility.borrow());
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
             PjmCallback::get(&ui).set_changed(true);
         }
     });

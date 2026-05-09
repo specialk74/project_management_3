@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
-use crate::workers::{
+use crate::workers_utils::{
     worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, Worker, WorkerId},
     *,
 };
@@ -50,7 +50,9 @@ impl Workers {
     }
 
     pub fn get_max_hours(&self, id: WorkerId) -> u32 {
-        self.worker_id.get(&id).map_or(DEFAULT_MAX_HOURS, |w| w.get_max_hours())
+        self.worker_id
+            .get(&id)
+            .map_or(DEFAULT_MAX_HOURS, |w| w.get_max_hours())
     }
 
     pub fn set_max_hours(&mut self, id: WorkerId, hours: u32) {
@@ -60,9 +62,9 @@ impl Workers {
     }
 
     pub fn get_effective_max_hours(&self, id: WorkerId, week: usize) -> u32 {
-        self.worker_id
-            .get(&id)
-            .map_or(DEFAULT_MAX_HOURS, |w| w.get_effective_max_hours_for_week(week))
+        self.worker_id.get(&id).map_or(DEFAULT_MAX_HOURS, |w| {
+            w.get_effective_max_hours_for_week(week)
+        })
     }
 
     pub fn set_week_override(&mut self, id: WorkerId, week: usize, hours: u32) {
@@ -79,7 +81,7 @@ impl Workers {
         workers.iter().all(|(id, _)| {
             self.worker_id
                 .get(id)
-                .map_or(false, |w| w.week_overrides.contains_key(&week))
+                .is_some_and(|w| w.week_overrides.contains_key(&week))
         })
     }
 

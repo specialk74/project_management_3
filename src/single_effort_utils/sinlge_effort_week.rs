@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    single_efforts::sinlge_effort::{Effort, SingleEffort},
-    workers::worker::{WORKER_ID_ZERO, WorkerId},
+    single_effort_utils::sinlge_effort::{Effort, SingleEffort},
+    workers_utils::worker::{WORKER_ID_ZERO, WorkerId},
 };
 
 #[derive(Serialize, Deserialize)]

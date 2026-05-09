@@ -4,15 +4,20 @@ use std::{collections::HashMap, fs};
 use crate::{
     date_utils::dates::get_default_weeks,
     dev_utils::devs::Devs,
-    projects::projects::Projects,
-    single_dev::single_dev::WeekId,
-    single_efforts::sinlge_effort::Effort,
-    workers::{worker::{WorkerId, DEFAULT_MAX_HOURS}, workers::Workers},
+    project_utils::projects::Projects,
+    single_dev_utils::single_dev::WeekId,
+    single_effort_utils::sinlge_effort::Effort,
+    workers_utils::{
+        worker::{DEFAULT_MAX_HOURS, WorkerId},
+        workers::Workers,
+    },
 };
 
 pub const SAVE_PATH: &str = "workers.ron";
 
-fn default_projects() -> Projects { Projects::new() }
+fn default_projects() -> Projects {
+    Projects::new()
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct App {
@@ -59,23 +64,23 @@ impl App {
         Ok(app)
     }
 
-    /// Global max hours for the worker at sorted index `idx` (None → 40).
-    pub fn get_worker_max_hours_by_idx(&self, idx: usize) -> u32 {
-        self.workers
-            .list()
-            .get(idx)
-            .map(|(id, _)| self.workers.get_max_hours(*id))
-            .unwrap_or(DEFAULT_MAX_HOURS)
-    }
+    // Global max hours for the worker at sorted index `idx` (None → 40).
+    // pub fn get_worker_max_hours_by_idx(&self, idx: usize) -> u32 {
+    //     self.workers
+    //         .list()
+    //         .get(idx)
+    //         .map(|(id, _)| self.workers.get_max_hours(*id))
+    //         .unwrap_or(DEFAULT_MAX_HOURS)
+    // }
 
-    /// Effective max hours (per-week override → global → 40) for worker at sorted index.
-    pub fn get_effective_max_hours_by_idx(&self, idx: usize, week: usize) -> u32 {
-        self.workers
-            .list()
-            .get(idx)
-            .map(|(id, _)| self.workers.get_effective_max_hours(*id, week))
-            .unwrap_or(DEFAULT_MAX_HOURS)
-    }
+    // Effective max hours (per-week override → global → 40) for worker at sorted index.
+    // pub fn get_effective_max_hours_by_idx(&self, idx: usize, week: usize) -> u32 {
+    //     self.workers
+    //         .list()
+    //         .get(idx)
+    //         .map(|(id, _)| self.workers.get_effective_max_hours(*id, week))
+    //         .unwrap_or(DEFAULT_MAX_HOURS)
+    // }
 
     pub fn set_worker_max_hours_by_idx(&mut self, idx: usize, hours: u32) {
         let workers = self.workers.list();
@@ -112,7 +117,9 @@ impl App {
     /// Recomputes the grid week range from project start weeks (or falls back to
     /// the existing app.start_week for backward compatibility with old save files).
     pub fn recompute_week_range(&mut self) {
-        let min_start = self.projects.min_start_week()
+        let min_start = self
+            .projects
+            .min_start_week()
             .map(|w| w.0 as i32)
             .or(Some(self.start_week.0 as i32));
         let (n_week, start_week, end_week) = get_default_weeks(min_start);

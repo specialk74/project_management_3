@@ -6,10 +6,10 @@ use std::collections::HashMap;
 
 use crate::{
     dev_utils::dev::DevId,
-    projects::project::{Enable, Project, ProjectId},
-    single_dev::single_dev::{SingleDev, WeekId},
-    single_efforts::sinlge_effort::Effort,
-    workers::worker::WorkerId,
+    project_utils::project::{Enable, Project, ProjectId},
+    single_dev_utils::single_dev::{SingleDev, WeekId},
+    single_effort_utils::sinlge_effort::Effort,
+    workers_utils::worker::WorkerId,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -59,13 +59,17 @@ impl Projects {
 
     pub fn add(&mut self, info: &str, start_week: Option<WeekId>) -> ProjectId {
         let id = self.last_id;
-        self.projects.insert(id, Project::new_with_start(info, start_week));
+        self.projects
+            .insert(id, Project::new_with_start(info, start_week));
         self.last_id.0 += 1;
         id
     }
 
     pub fn min_start_week(&self) -> Option<WeekId> {
-        self.projects.values().filter_map(|p| p.get_start_week()).min()
+        self.projects
+            .values()
+            .filter_map(|p| p.get_start_week())
+            .min()
     }
 
     pub fn get_project_start_week(&self, id: ProjectId) -> Option<WeekId> {
