@@ -59,6 +59,7 @@ export struct EffortByDevData {
 export struct EffortByPrjData {
     project_id: int,
     text: string,
+    tripletta: string,
     start_week: int,
     end_week: int,
     deadline_text: string,
@@ -99,7 +100,7 @@ export global PjmCallback {
     callback save_file();
     callback open_file();
     callback search(string);
-    callback new_project(string /*name*/, string /*start_date_yy_mm_dd*/);
+    callback new_project(string /*tripletta*/, string /*name*/, string /*start_date_yy_mm_dd*/);
     callback set_project_end_week(int /*project_idx*/, string /*date_str*/);
     callback add_row(int, int);
     callback del_row(int, int);
@@ -354,7 +355,7 @@ export component Cell-RW inherits Rectangle {
                     self.set-selection-offsets(root.text.character-count, root.text.character-count);
                     return accept;
                 }
-                if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
+                if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Shift || event.text == Key.ShiftR {
                     return reject;
                 }
                 if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
@@ -362,6 +363,12 @@ export component Cell-RW inherits Rectangle {
                 }
                 if event.text == "" {
                     return reject;
+                }
+                if event.text == Key.Tab {
+                    root.double_clicked(root.text);
+                    root.editing = false;
+                    fs.focus();
+                    return accept;
                 }
                 typed_prefix += event.text;
                 root.text = PjmCallback.find_completion(typed_prefix, true);
@@ -382,7 +389,7 @@ export component Cell-RW inherits Rectangle {
 
         Rectangle {
             visible: !editing;
-            background: root.selected ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
+            background: fs.has-focus ? Colors.steelblue.with-alpha(0.35) : Colors.transparent;
             border-color: fs.has-focus ? Colors.orangered : Colors.transparent;
             border-width: parent.visible ? 1px : 0px;
 

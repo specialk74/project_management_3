@@ -26,6 +26,8 @@ pub struct Project {
     pub start_week: Option<WeekId>,
     #[serde(default)]
     pub end_week: Option<WeekId>,
+    #[serde(default)]
+    tripletta: Option<String>,
 }
 
 impl Project {
@@ -36,6 +38,7 @@ impl Project {
             enable: Enable(true),
             start_week: None,
             end_week: None,
+            tripletta: None,
         }
     }
 
@@ -46,6 +49,7 @@ impl Project {
             enable: Enable(true),
             start_week,
             end_week: None,
+            tripletta: None,
         }
     }
 
@@ -115,6 +119,14 @@ impl Project {
 
     pub fn get_week_with_max_worker(&self, id_dev: DevId) -> Option<WeekId> {
         self.dev_id.get(&id_dev).unwrap().get_week_with_max_worker()
+    }
+
+    pub fn get_tripletta(&self) -> Option<&str> {
+        self.tripletta.as_deref()
+    }
+
+    pub fn set_tripletta(&mut self, tripletta: &str) {
+        self.tripletta = if tripletta.is_empty() { None } else { Some(tripletta.to_string()) };
     }
 
     pub fn get_info(&self) -> String {

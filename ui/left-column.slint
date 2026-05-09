@@ -290,6 +290,21 @@ export component LeftColumn inherits Rectangle {
                                 // }
 
                                 Rectangle {
+                                    height: project.tripletta != "" ? Styles.height : 0px;
+                                    Text {
+                                        text: project.tripletta;
+                                        color: Styles.effort-color;
+                                        font-family: Styles.font-family;
+                                        font-size: Styles.font-size;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+
+                                Rectangle {
                                     TextEdit {
                                         wrap: TextWrap.word-wrap;
                                         horizontal-alignment: center;
@@ -498,6 +513,14 @@ export component LeftColumn inherits Rectangle {
                                                             text: data.effort;
                                                             height: visibility ? Styles.height : 0px;
 
+                                                            key-pressed(event) => {
+                                                                if event.text == Key.Tab {
+                                                                    data.effort = self.text.to-float();
+                                                                    PjmCallback.set_dev_effort(project.project_id, data.dev, self.text.to-float());
+                                                                    return accept;
+                                                                }
+                                                                reject
+                                                            }
                                                             accepted(text) => {
                                                                 data.effort = text.to-float();
                                                                 PjmCallback.set_dev_effort(project.project_id, data.dev, text.to-float());

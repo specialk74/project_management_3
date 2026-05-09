@@ -98,6 +98,7 @@ component Toolbar inherits Rectangle {
     background: #2a2a2a;
 
     // State for new-project dialog
+    property <string> new-proj-tripletta: "";
     property <string> new-proj-name: "Nuovo Progetto";
     property <string> new-proj-start: PjmCallback.current-week-text;
     property <length> proj-list-popup-x: 0px;
@@ -105,14 +106,14 @@ component Toolbar inherits Rectangle {
     new-proj-popup := PopupWindow {
         close-policy: no-auto-close;
         width: 300px;
-        height: 170px;
+        height: 210px;
 
         Rectangle {
             background: #1e1e1e;
             border-color: #555555;
             border-width: 1px;
             width: 300px;
-            height: 170px;
+            height: 210px;
 
             VerticalLayout {
                 padding: 10px;
@@ -123,6 +124,13 @@ component Toolbar inherits Rectangle {
                     font-family: Styles.font-family;
                     font-size: Styles.font-size;
                     text: "Nuovo Progetto";
+                }
+
+                proj-tripletta-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text <=> new-proj-tripletta;
+                    placeholder-text: "Tripletta (opzionale)...";
                 }
 
                 proj-name-le := LineEdit {
@@ -146,7 +154,8 @@ component Toolbar inherits Rectangle {
                     Button {
                         text: "OK";
                         clicked => {
-                            PjmCallback.new_project(new-proj-name, new-proj-start);
+                            PjmCallback.new_project(new-proj-tripletta, new-proj-name, new-proj-start);
+                            new-proj-tripletta = "";
                             new-proj-name = "Nuovo Progetto";
                             new-proj-start = PjmCallback.current-week-text;
                             new-proj-popup.close();
@@ -156,6 +165,7 @@ component Toolbar inherits Rectangle {
                     Button {
                         text: "Annulla";
                         clicked => {
+                            new-proj-tripletta = "";
                             new-proj-name = "Nuovo Progetto";
                             new-proj-start = PjmCallback.current-week-text;
                             new-proj-popup.close();
@@ -217,7 +227,7 @@ component Toolbar inherits Rectangle {
                         y: 0px;
                         width: parent.width - cb.x - cb.width - 10px;
                         height: parent.height;
-                        text: "\{project.project_id}";
+                        text: project.tripletta == "" ? "\{project.project_id}" : "\{project.project_id} \{project.tripletta}";
                         color: project.enable ? Colors.lightgray : #666666;
                         font-family: Styles.font-family;
                         font-size: Styles.font-size;
@@ -471,7 +481,7 @@ export component AppWindow inherits Window {
                     return accept;
                 }
                 if (event.text == "N" || event.text == "n") {
-                    PjmCallback.new_project("Nuovo Progetto", "");
+                    PjmCallback.new_project("", "Nuovo Progetto", "");
                     return accept;
                 }
                 if (event.text == "O" || event.text == "o") {

@@ -22,17 +22,14 @@ fn register_new_project(ui: &AppWindow, state: &SharedState) {
     let row_counts = state.row_counts.clone();
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
-    PjmCallback::get(ui).on_new_project(move |name, start_date| {
+    PjmCallback::get(ui).on_new_project(move |tripletta, name, start_date| {
         if let Some(ui) = ui_w.upgrade() {
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
             let start_week = parse_date_str(&start_date).map(|d| WeekId(d as usize));
-            let proj_name = if name.is_empty() {
-                "Nuovo Progetto"
-            } else {
-                &name
-            };
-            a.projects.add(proj_name, start_week);
+            let proj_name = if name.is_empty() { "Nuovo Progetto" } else { &name };
+            let trip = if tripletta.is_empty() { None } else { Some(tripletta.as_str()) };
+            a.projects.add(proj_name, trip, start_week);
             refresh(
                 &ui,
                 &mut a,

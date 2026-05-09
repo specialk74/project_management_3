@@ -57,12 +57,23 @@ impl Projects {
         }
     }
 
-    pub fn add(&mut self, info: &str, start_week: Option<WeekId>) -> ProjectId {
+    pub fn add(&mut self, info: &str, tripletta: Option<&str>, start_week: Option<WeekId>) -> ProjectId {
         let id = self.last_id;
-        self.projects
-            .insert(id, Project::new_with_start(info, start_week));
+        let mut project = Project::new_with_start(info, start_week);
+        if let Some(t) = tripletta {
+            project.set_tripletta(t);
+        }
+        self.projects.insert(id, project);
         self.last_id.0 += 1;
         id
+    }
+
+    pub fn get_tripletta(&self, project_id: ProjectId) -> String {
+        self.projects
+            .get(&project_id)
+            .and_then(|p| p.get_tripletta())
+            .unwrap_or("")
+            .to_string()
     }
 
     pub fn min_start_week(&self) -> Option<WeekId> {

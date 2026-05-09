@@ -122,6 +122,7 @@ pub fn build_project_data(
             EffortByPrjData {
                 project_id: pi as i32,
                 text: SharedString::from(proj_name.as_str()),
+                tripletta: SharedString::from(app.projects.get_tripletta(*proj_id).as_str()),
                 start_week: proj_start,
                 end_week: deadline_week,
                 deadline_text,
