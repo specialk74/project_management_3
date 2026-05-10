@@ -5,7 +5,7 @@ use crate::app::App;
 use crate::date_utils::dates::{days_to_local, primo_giorno_settimana_corrente};
 use crate::single_dev_utils::single_dev::{SingleDev, WeekId};
 use crate::single_effort_utils::sinlge_effort::Effort;
-use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO};
+use crate::workers_utils::worker::WORKER_ID_ZERO;
 use crate::{
     DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
     SovraData,
@@ -26,7 +26,7 @@ pub fn mk<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
 }
 
 fn get_hours(effort: Effort) -> i32 {
-    (effort.0 * DEFAULT_MAX_HOURS as usize / 100) as i32
+    effort.0 as i32
 }
 
 // ── Calcolo range settimane ───────────────────────────────────────────────────
