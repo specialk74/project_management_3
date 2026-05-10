@@ -114,7 +114,9 @@ impl Project {
     }
 
     pub fn list_dev_id(&self) -> Vec<DevId> {
-        self.dev_id.keys().copied().collect()
+        let mut ids: Vec<DevId> = self.dev_id.keys().copied().collect();
+        ids.sort();
+        ids
     }
 
     pub fn get_week_with_max_worker(&self, id_dev: DevId) -> Option<WeekId> {
