@@ -166,6 +166,12 @@ impl Projects {
         }
     }
 
+    pub fn set_tripletta(&mut self, project_id: ProjectId, tripletta: &str) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_tripletta(tripletta);
+        }
+    }
+
     pub fn get_dev_ids(&self, project_id: ProjectId) -> Vec<DevId> {
         self.projects
             .get(&project_id)

@@ -44,7 +44,7 @@ App (workers.ron)
 ```
 
 - `WeekId(usize)` is an absolute week number
-- `Effort(usize)` stores percentage points (not hours); `get_hours()` converts via `* 40 / 100`
+- `Effort(usize)` stores hours directly (not percentage points); `get_hours()` in `builders.rs` is an identity function
 - Cell display format: `"WorkerName|effort_value"` (the `|` separator is parsed in Rust callbacks)
 
 ### UI ↔ Rust Data Flow
@@ -63,7 +63,7 @@ App (Rust state)
 All Slint→Rust callbacks are registered in `src/callbacks/`. Each file handles a domain:
 - `effort.rs` — effort changes, note setting, drag/move
 - `members.rs` — add/search workers and devs, autocomplete
-- `project.rs` — new project, rename, enable/disable, add/remove dev, set end week
+- `project.rs` — new project, rename, set tripletta, enable/disable, add/remove dev, set end week
 - `rows.rs` — add/delete worker rows per dev
 - `file_ops.rs` — save/load RON file (load uses native file dialog via `rfd`)
 
@@ -77,7 +77,7 @@ Every callback follows this pattern:
 
 - `global.slint` — all exported types (`SingleEffortGui`, `EffortByDateData`, etc.), `PjmCallback` global singleton, reusable components (`Cell-RW`, `Cell-RO`, `NoteEditorWindow`, `EffortByDataGui`, `EffortByDevGui`, `EffortByPrjGui`)
 - `app-window.slint` — root `AppWindow`, `Toolbar` (includes "Progetti ▼" popup for enable/disable), search popup (`im`)
-- `left-column.slint` — project list with dev rows, project ID label above each TextEdit, `Devmenu` context menu, dev note editing
+- `left-column.slint` — project list with dev rows; per-project: tripletta `TextEdit` (editable, always visible), project name `TextEdit`, deadline row (right-click to edit), `Devmenu` context menu, dev note editing
 - `right-column.slint` — scrollable effort grid
 - `header.slint` / `left-footer.slint` / `right-footer.slint` — week headers and totals
 - `styles.slint` — global `Styles` singleton (sizes, colors, fonts)
@@ -95,3 +95,5 @@ Every callback follows this pattern:
 **Project IDs in the UI**: `EffortByPrjData.project_id` is the 0-based sorted-position index (`pi` in `builders.rs`), not the internal `ProjectId(usize)` key. All callbacks (`set_project_name`, `set_project_end_week`, `set_project_enabled`, etc.) receive this index and resolve it via `projects.list().get(idx)`.
 
 **Project enable/disable**: `Project.enable: Enable(bool)` persisted in RON. The "Progetti ▼" button in the toolbar opens a `PopupWindow` with a `ListView` listing all projects (enabled and disabled) with a checkbox per row. Toggling calls `PjmCallback.set_project_enabled(project_id, bool)` → `projects.set_enable(ProjectId, Enable)` → `refresh`. Disabled projects are hidden in the main grid (`visible: project.visible && project.enable`) but always appear in the popup list.
+
+**Tripletta**: `Project.tripletta: Option<String>` persisted in RON (`#[serde(default)]`, backward-compatible). Set at project creation and edited via right-click popup in the left column (same pattern as deadline). When non-empty shows styled `Text` (bold, `Styles.effort-color`); when empty shows a dim `"—"` placeholder — always `Styles.height` tall so right-click is always reachable. Editing calls `PjmCallback.set_project_tripletta(project_id, text)` → `projects.set_tripletta(ProjectId, &str)` → `refresh`. Displayed in "Progetti ▼" popup as `"index tripletta"` when non-empty.

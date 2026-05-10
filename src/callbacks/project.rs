@@ -11,6 +11,7 @@ use super::SharedState;
 pub fn register(ui: &AppWindow, state: &SharedState) {
     register_new_project(ui, state);
     register_set_project_name(ui, state);
+    register_set_project_tripletta(ui, state);
     register_add_dev_to_project(ui, state);
     register_set_project_end_week(ui, state);
     register_set_project_enabled(ui, state);
@@ -85,6 +86,26 @@ fn register_set_project_name(ui: &AppWindow, state: &SharedState) {
             };
             a.projects.set_project_info(proj_id, name.as_str());
             PjmCallback::get(&_ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_project_tripletta(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_project_tripletta(move |proj_idx, tripletta| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let projects = a.projects.list();
+            let Some(&(proj_id, _)) = projects.get(proj_idx as usize) else {
+                return;
+            };
+            a.projects.set_tripletta(proj_id, tripletta.as_str());
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
+            PjmCallback::get(&ui).set_changed(true);
         }
     });
 }

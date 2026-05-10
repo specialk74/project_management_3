@@ -109,6 +109,7 @@ export global PjmCallback {
     callback add_dev(string);
     callback add_dev_to_project(int /*project*/, int /*dev*/, bool /*add*/);
     callback set_project_name(int /*project_idx*/, string);
+    callback set_project_tripletta(int /*project_idx*/, string);
     callback find_completion(string, bool) -> string;
     callback remove_last_char(string) -> string;
     in property <string> current-week-text: "";
@@ -583,7 +584,7 @@ export component EffortByDataGui inherits Rectangle {
 
         cell := Cell-RO {
             visible: root.visible;
-            text: effort.cumulative != effort.total ? "\{effort.cumulative} | \{effort.total}" : "\{effort.total}";
+            text: effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}";
             text_color: my-function(effort);
 
             t := TouchArea {

@@ -169,6 +169,12 @@ export component LeftColumn inherits Rectangle {
     property <length> deadline-popup-x: 0px;
     property <length> deadline-popup-y: 0px;
 
+    // State for tripletta editor popup
+    property <int> editing-tripletta-proj-idx: -1;
+    property <string> editing-tripletta-text: "";
+    property <length> tripletta-popup-x: 0px;
+    property <length> tripletta-popup-y: 0px;
+
     deadline-popup := PopupWindow {
         close-policy: no-auto-close;
         x: root.deadline-popup-x;
@@ -236,6 +242,65 @@ export component LeftColumn inherits Rectangle {
         }
     }
 
+    tripletta-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: root.tripletta-popup-x;
+        y: root.tripletta-popup-y;
+        width: 260px;
+        height: 110px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 260px;
+            height: 110px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Tripletta";
+                }
+
+                tripletta-le := LineEdit {
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text <=> root.editing-tripletta-text;
+                    placeholder-text: "Tripletta...";
+                    accepted => {
+                        PjmCallback.set_project_tripletta(root.editing-tripletta-proj-idx, self.text);
+                        tripletta-popup.close();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "OK";
+                        clicked => {
+                            PjmCallback.set_project_tripletta(root.editing-tripletta-proj-idx, tripletta-le.text);
+                            tripletta-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => {
+                            tripletta-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     dev-note-editor := NoteEditorWindow {
         visible: false;
     }
@@ -290,13 +355,28 @@ export component LeftColumn inherits Rectangle {
                                 // }
 
                                 Rectangle {
-                                    height: project.tripletta != "" ? Styles.height : 0px;
+                                    height: Styles.height;
+
+                                    TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        pointer-event(event) => {
+                                            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                                root.editing-tripletta-proj-idx = project.project_id;
+                                                root.editing-tripletta-text = project.tripletta;
+                                                root.tripletta-popup-x = self.absolute-position.x;
+                                                root.tripletta-popup-y = self.absolute-position.y + Styles.height;
+                                                tripletta-popup.show();
+                                            }
+                                        }
+                                    }
+
                                     Text {
-                                        text: project.tripletta;
-                                        color: Styles.effort-color;
+                                        text: project.tripletta != "" ? project.tripletta : "—";
+                                        color: project.tripletta != "" ? Styles.effort-color : #555555;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size;
-                                        font-weight: 700;
+                                        font-weight: project.tripletta != "" ? 700 : 400;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                         width: parent.width;
