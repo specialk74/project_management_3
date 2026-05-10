@@ -31,10 +31,16 @@ component DevSelectPopup inherits Window {
     in property <[DevInfo]> devs;
     in-out property <int> project;
     in-out property <bool> add;
+    in-out property <[bool]> dev-in-project: [];
+    in-out property <[bool]> dev-has-data: [];
 
-    public function show(project: int, add: bool) {
+    callback confirm-remove(int /*project*/, int /*dev-idx*/);
+
+    public function show(project: int, add: bool, in-proj: [bool], has-data: [bool]) {
         root.add = add;
         root.project = project;
+        root.dev-in-project = in-proj;
+        root.dev-has-data = has-data;
         popup.show();
     }
 
@@ -52,7 +58,10 @@ component DevSelectPopup inherits Window {
                 spacing: 1px;
 
                 for dev[dev-idx] in root.devs: Rectangle {
-                    height: Styles.height;
+                    visible: root.add
+                        ? (dev-idx < root.dev-in-project.length && !root.dev-in-project[dev-idx])
+                        : (dev-idx < root.dev-in-project.length && root.dev-in-project[dev-idx]);
+                    height: self.visible ? Styles.height : 0px;
                     background: dev.col;
                     border-radius: 2px;
 
@@ -66,8 +75,16 @@ component DevSelectPopup inherits Window {
 
                     TouchArea {
                         clicked => {
-                            PjmCallback.add_dev_to_project(root.project, dev-idx, root.add);
-                            popup.close();
+                            if root.add {
+                                PjmCallback.add_dev_to_project(root.project, dev-idx, true);
+                                popup.close();
+                            } else if dev-idx < root.dev-has-data.length && root.dev-has-data[dev-idx] {
+                                root.confirm-remove(root.project, dev-idx);
+                                popup.close();
+                            } else {
+                                PjmCallback.add_dev_to_project(root.project, dev-idx, false);
+                                popup.close();
+                            }
                         }
                     }
                 }
@@ -174,6 +191,10 @@ export component LeftColumn inherits Rectangle {
     property <string> editing-tripletta-text: "";
     property <length> tripletta-popup-x: 0px;
     property <length> tripletta-popup-y: 0px;
+
+    // State for dev removal confirmation
+    property <int> confirm-dev-proj: -1;
+    property <int> confirm-dev-idx: -1;
 
     deadline-popup := PopupWindow {
         close-policy: no-auto-close;
@@ -301,6 +322,55 @@ export component LeftColumn inherits Rectangle {
         }
     }
 
+    confirm-dev-popup := PopupWindow {
+        close-policy: no-auto-close;
+        x: 10px;
+        y: 150px;
+        width: 260px;
+        height: 110px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #d9534f;
+            border-width: 1px;
+            width: 260px;
+            height: 110px;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+
+                Text {
+                    color: Colors.lightgray;
+                    font-family: Styles.font-family;
+                    font-size: Styles.font-size;
+                    text: "Questo dev ha già dati inseriti.\nRimuovere comunque?";
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: "Sì, rimuovi";
+                        clicked => {
+                            PjmCallback.add_dev_to_project(root.confirm-dev-proj, root.confirm-dev-idx, false);
+                            confirm-dev-popup.close();
+                        }
+                    }
+
+                    Button {
+                        text: "Annulla";
+                        clicked => {
+                            confirm-dev-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     dev-note-editor := NoteEditorWindow {
         visible: false;
     }
@@ -315,6 +385,11 @@ export component LeftColumn inherits Rectangle {
     dev-popup := DevSelectPopup {
         devs: root.app_project.devs;
         visible: false;
+        confirm-remove(proj, dev) => {
+            root.confirm-dev-proj = proj;
+            root.confirm-dev-idx = dev;
+            confirm-dev-popup.show();
+        }
     }
 
     Flickable {
@@ -458,7 +533,7 @@ export component LeftColumn inherits Rectangle {
                                             clicked => {
                                                 dev-popup.x = add-dev-btn.absolute-position.x;
                                                 dev-popup.y = add-dev-btn.absolute-position.y + add-dev-btn.height;
-                                                dev-popup.show(project.project_id, true);
+                                                dev-popup.show(project.project_id, true, project.dev_in_project, project.dev_has_data);
                                             }
                                         }
                                     }
@@ -487,7 +562,7 @@ export component LeftColumn inherits Rectangle {
                                             clicked => {
                                                 dev-popup.x = del-dev-btn.absolute-position.x;
                                                 dev-popup.y = del-dev-btn.absolute-position.y + del-dev-btn.height;
-                                                dev-popup.show(project.project_id, false);
+                                                dev-popup.show(project.project_id, false, project.dev_in_project, project.dev_has_data);
                                             }
                                         }
                                     }

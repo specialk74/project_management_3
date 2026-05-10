@@ -119,6 +119,23 @@ pub fn build_project_data(
                 .get_project_start_week(*proj_id)
                 .map(|w| w.0 as i32)
                 .unwrap_or(-1);
+
+            let all_devs = app.devs.list();
+            let project_dev_ids = app.projects.list_devs(*proj_id);
+            let dev_in_project: Vec<bool> = all_devs
+                .iter()
+                .map(|(dev_id, _)| project_dev_ids.contains(dev_id))
+                .collect();
+            let dev_has_data: Vec<bool> = all_devs
+                .iter()
+                .map(|(dev_id, _)| {
+                    app.projects
+                        .get_single_dev(*proj_id, *dev_id)
+                        .map(|sd| sd.planned_effort().0 > 0 || !sd.get_weeks().is_empty())
+                        .unwrap_or(false)
+                })
+                .collect();
+
             EffortByPrjData {
                 project_id: pi as i32,
                 text: SharedString::from(proj_name.as_str()),
@@ -129,6 +146,8 @@ pub fn build_project_data(
                 visible: project_visible,
                 enable,
                 devs_of_the_project: mk(dev_data),
+                dev_in_project: mk(dev_in_project),
+                dev_has_data: mk(dev_has_data),
             }
         })
         .collect()
