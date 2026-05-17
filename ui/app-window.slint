@@ -566,9 +566,6 @@ export component AppWindow inherits Window {
                     return accept;
                 }
                 if (event.text == "f") {
-                    //PjmCallback.show_modal = true;
-                    //im.select_all();
-                    //im.focus();
                     im.show();
                     return accept;
                 }
@@ -619,7 +616,12 @@ export component AppWindow inherits Window {
                             self.set-selection-offsets(text.character-count, text.character-count);
                             return accept;
                         }
-                        if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
+                        if event.text == Key.Escape {
+                            typed_prefix = "";
+                            text = "";
+                            return reject;
+                        }
+                        if event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
                             return reject;
                         }
                         if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
@@ -641,6 +643,8 @@ export component AppWindow inherits Window {
                     accepted => {
                         PjmCallback.last-search = text;
                         PjmCallback.search(text);
+                        typed_prefix = "";
+                        text = "";
                         im.close();
                     }
                 }
@@ -651,6 +655,8 @@ export component AppWindow inherits Window {
                         clicked => {
                             PjmCallback.last-search = text;
                             PjmCallback.search(text);
+                            typed_prefix = "";
+                            text = "";
                             im.close();
                         }
                     }
@@ -658,6 +664,8 @@ export component AppWindow inherits Window {
                     Button {
                         text: "Abort";
                         clicked => {
+                            typed_prefix = "";
+                            text = "";
                             im.close();
                         }
                     }
