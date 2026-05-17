@@ -239,6 +239,7 @@ fn build_dev(
         max,
         note: SharedString::from(sd.get_note()),
         deadline_week,
+        hide_effort: sd.get_hide_effort(),
         datas: mk(week_data),
     }
 }
@@ -278,6 +279,7 @@ fn empty_dev(
         note: SharedString::from(""),
         max: (max - 1).max(0),
         deadline_week,
+        hide_effort: false,
         datas: mk(week_data),
     }
 }

@@ -152,4 +152,14 @@ impl Project {
     pub fn get_dev_id(&self, dev_id: &DevId) -> std::option::Option<&SingleDev> {
         self.dev_id.get(dev_id)
     }
+
+    pub fn set_dev_hide_effort(&mut self, id_dev: DevId, hide: bool) {
+        if let Some(sd) = self.dev_id.get_mut(&id_dev) {
+            sd.set_hide_effort(hide);
+        }
+    }
+
+    pub fn get_dev_hide_effort(&self, id_dev: DevId) -> bool {
+        self.dev_id.get(&id_dev).map(|sd| sd.get_hide_effort()).unwrap_or(false)
+    }
 }

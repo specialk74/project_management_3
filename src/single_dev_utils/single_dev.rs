@@ -14,12 +14,18 @@ use crate::{
 )]
 pub struct WeekId(pub usize);
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct SingleDev {
     weeks: HashMap<WeekId, SingleEffortWeek>,
     effort: Effort,
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    hide_effort: bool,
 }
 
 impl SingleDev {
@@ -28,6 +34,7 @@ impl SingleDev {
             weeks: HashMap::new(),
             effort: Effort(0),
             note: None,
+            hide_effort: false,
         }
     }
 
@@ -128,5 +135,13 @@ impl SingleDev {
             .get(&week)
             .map(|s| s.get_workers())
             .unwrap_or_default()
+    }
+
+    pub fn set_hide_effort(&mut self, hide: bool) {
+        self.hide_effort = hide;
+    }
+
+    pub fn get_hide_effort(&self) -> bool {
+        self.hide_effort
     }
 }

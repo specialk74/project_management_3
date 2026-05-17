@@ -53,6 +53,7 @@ export struct EffortByDevData {
     max: int,
     note: string,
     deadline_week: int,
+    hide_effort: bool,
     datas: [EffortByDateData],
 }
 
@@ -147,6 +148,7 @@ export global PjmCallback {
     callback set_all_projects_enabled(bool /*enabled*/);
     in property <bool> all_projects_enabled: false;
     in property <bool> all_projects_disabled: false;
+    callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);
 }
 
 export component NoteEditorWindow inherits Window {
@@ -531,6 +533,7 @@ export component Cell-RW inherits Rectangle {
 export component EffortByDataGui inherits Rectangle {
     in property <EffortByDateData> effort;
     in property <bool> after-deadline: false;
+    in property <bool> hide-effort: false;
 
     note-editor := NoteEditorWindow {
         visible: false;
@@ -590,7 +593,7 @@ export component EffortByDataGui inherits Rectangle {
 
         cell := Cell-RO {
             visible: root.visible && !root.after-deadline;
-            text: effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}";
+            text: root.hide-effort ? "" : (effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}");
             text_color: my-function(effort);
 
             t := TouchArea {
@@ -690,6 +693,7 @@ export component EffortByDevGui inherits Rectangle {
                         effort: data;
                         visible: root.visible;
                         after-deadline: datas.deadline_week >= 0 && data.week > datas.deadline_week;
+                        hide-effort: datas.hide_effort;
                     }
                 }
             }

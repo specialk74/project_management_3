@@ -198,4 +198,10 @@ impl Projects {
             .get(&project_id)?
             .get_week_with_max_worker(id_dev)
     }
+
+    pub fn set_dev_hide_effort(&mut self, id_project: ProjectId, id_dev: DevId, hide: bool) {
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.set_dev_hide_effort(id_dev, hide);
+        }
+    }
 }

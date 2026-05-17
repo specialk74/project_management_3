@@ -1,6 +1,7 @@
 use slint::{ComponentHandle, Global};
 
 use crate::date_utils::dates::parse_date_str;
+use crate::dev_utils::dev::DevId;
 use crate::project_utils::project::Enable;
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::ui_sync::{refresh, sync_project_texts};
@@ -16,6 +17,7 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_set_project_end_week(ui, state);
     register_set_project_enabled(ui, state);
     register_set_all_projects_enabled(ui, state);
+    register_set_dev_hide_effort(ui, state);
 }
 
 fn register_new_project(ui: &AppWindow, state: &SharedState) {
@@ -132,6 +134,27 @@ fn register_set_project_enabled(ui: &AppWindow, state: &SharedState) {
                 &row_counts.borrow(),
                 &visibility.borrow(),
             );
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_dev_hide_effort(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_dev_hide_effort(move |proj_idx, dev_idx, hide| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let projects = a.projects.list();
+            let Some(&(proj_id, _)) = projects.get(proj_idx as usize) else {
+                return;
+            };
+            let dev_id = DevId(dev_idx as usize);
+            a.projects.set_dev_hide_effort(proj_id, dev_id, hide);
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });
