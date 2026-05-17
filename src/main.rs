@@ -57,6 +57,18 @@ fn main() {
         pcb.set_current_week_text(SharedString::from(
             this_week_date.format("%y-%m-%d").to_string(),
         ));
+
+        let start_week = app.borrow().start_week.0 as i32;
+        let col_index = (this_week - start_week) / 7;
+        if col_index > 0 {
+            const COL_WIDTH: f32 = 90.0;
+            const LEFT_COL_WIDTH: f32 = 300.0;
+            const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
+            let visible_width = INITIAL_WINDOW_WIDTH - LEFT_COL_WIDTH;
+            let col_center = col_index as f32 * COL_WIDTH + COL_WIDTH / 2.0;
+            let scroll_x = (col_center - visible_width / 2.0).max(0.0);
+            ui.set_viewport_x(-scroll_x);
+        }
     }
 
     let state = SharedState {

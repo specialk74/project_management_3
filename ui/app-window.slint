@@ -361,7 +361,7 @@ export component AppWindow inherits Window {
     in property <int> num_visible: 1;
     in property <bool> loading: true;
     property <length> viewport_y;
-    property <length> viewport_x;
+    in-out property <length> viewport_x;
     property <length> width1: 150px;
     in property <[DayData]> weeks;
 
