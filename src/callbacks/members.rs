@@ -130,6 +130,7 @@ fn register_search(ui: &AppWindow, state: &SharedState) {
                 &row_counts.borrow(),
                 &visibility.borrow(),
             );
+            PjmCallback::get(&ui).set_filter_active(!worker_name.is_empty());
         }
     });
 }

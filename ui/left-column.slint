@@ -575,7 +575,7 @@ export component LeftColumn inherits Rectangle {
                                     padding: 0px;
 
                                     add-dev-btn := Rectangle {
-                                        height: root.visible ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
                                         background: add-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -587,13 +587,13 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            height: root.visible ? Styles.height : 0px;
+                                            height: parent.height;
                                         }
 
                                         add-dev-ta := TouchArea {
                                             height: parent.height;
                                             width: parent.width;
-                                            visible: root.visible;
+                                            visible: root.visible && !PjmCallback.filter_active;
                                             clicked => {
                                                 dev-popup.x = add-dev-btn.absolute-position.x;
                                                 dev-popup.y = add-dev-btn.absolute-position.y + add-dev-btn.height;
@@ -603,7 +603,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     del-dev-btn := Rectangle {
-                                        height: root.visible ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
                                         background: del-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -615,13 +615,13 @@ export component LeftColumn inherits Rectangle {
                                             font-family: Styles.font-family;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            height: root.visible ? Styles.height : 0px;
+                                            height: parent.height;
                                         }
 
                                         del-dev-ta := TouchArea {
                                             height: parent.height;
                                             width: parent.width;
-                                            visible: root.visible;
+                                            visible: root.visible && !PjmCallback.filter_active;
 
                                             clicked => {
                                                 dev-popup.x = del-dev-btn.absolute-position.x;

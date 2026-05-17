@@ -149,6 +149,7 @@ export global PjmCallback {
     in property <bool> all_projects_enabled: false;
     in property <bool> all_projects_disabled: false;
     callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);
+    in property <bool> filter_active: false;
 }
 
 export component NoteEditorWindow inherits Window {
