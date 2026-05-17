@@ -15,6 +15,7 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_add_dev_to_project(ui, state);
     register_set_project_end_week(ui, state);
     register_set_project_enabled(ui, state);
+    register_set_all_projects_enabled(ui, state);
 }
 
 fn register_new_project(ui: &AppWindow, state: &SharedState) {
@@ -131,6 +132,25 @@ fn register_set_project_enabled(ui: &AppWindow, state: &SharedState) {
                 &row_counts.borrow(),
                 &visibility.borrow(),
             );
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_all_projects_enabled(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_all_projects_enabled(move |enabled| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let project_ids: Vec<_> = a.projects.list().iter().map(|(id, _)| *id).collect();
+            for proj_id in project_ids {
+                a.projects.set_enable(proj_id, Enable(enabled));
+            }
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
         }
     });

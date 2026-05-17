@@ -144,6 +144,9 @@ export global PjmCallback {
     callback set_worker_week_override(int /*worker_idx*/, int /*week*/, string /*hours_text*/);
     callback set_bulk_week_limit(int /*week*/, string /*hours_text*/);
     callback set_project_enabled(int /*project_id*/, bool /*enabled*/);
+    callback set_all_projects_enabled(bool /*enabled*/);
+    in property <bool> all_projects_enabled: false;
+    in property <bool> all_projects_disabled: false;
 }
 
 export component NoteEditorWindow inherits Window {

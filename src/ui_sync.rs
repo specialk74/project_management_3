@@ -1,10 +1,11 @@
 #![allow(unused)]
 #![allow(dead_code)]
 
-use slint::{Model, SharedString};
+use slint::{Global, Model, SharedString};
 use std::collections::HashMap;
 
 use crate::AppWindow;
+use crate::PjmCallback;
 use crate::app::App;
 use crate::builders::{build_dev_infos, build_project_data, build_sovra_data, build_weeks, build_worker_max_hours};
 use crate::live_models::LiveModels;
@@ -20,7 +21,7 @@ pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
 }
 
 pub fn refresh(
-    _ui: &AppWindow,
+    ui: &AppWindow,
     app: &mut App,
     live: &LiveModels,
     row_counts: &HashMap<(i32, i32), i32>,
@@ -42,4 +43,11 @@ pub fn refresh(
     live.weeks
         .set_vec(build_weeks(app.start_week.0, app.end_week.0, app));
     live.devs.set_vec(build_dev_infos(app));
+
+    let projects = app.projects.list_full();
+    let all_enabled = !projects.is_empty() && projects.iter().all(|(_, _, e)| e.0);
+    let all_disabled = !projects.is_empty() && projects.iter().all(|(_, _, e)| !e.0);
+    let pcb = PjmCallback::get(ui);
+    pcb.set_all_projects_enabled(all_enabled);
+    pcb.set_all_projects_disabled(all_disabled);
 }

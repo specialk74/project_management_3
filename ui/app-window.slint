@@ -190,17 +190,20 @@ component Toolbar inherits Rectangle {
             width: 160px;
             height: 300px;
 
-            ListView {
+            VerticalLayout {
                 x: 1px;
                 y: 1px;
                 width: parent.width - 2px;
                 height: parent.height - 2px;
+                spacing: 0px;
+                padding: 0px;
 
-                for project in root.app_project.projects: Rectangle {
+                // Select All row
+                Rectangle {
                     height: 26px;
-                    background: row-ta.has-hover ? #2a2a2a : Colors.transparent;
+                    background: select-all-ta.has-hover ? #2a2a2a : Colors.transparent;
 
-                    cb := Rectangle {
+                    cb-select-all := Rectangle {
                         x: 6px;
                         y: (parent.height - 13px) / 2;
                         width: 13px;
@@ -208,10 +211,10 @@ component Toolbar inherits Rectangle {
                         border-width: 1px;
                         border-color: #888888;
                         border-radius: 2px;
-                        background: project.enable ? #4a90d9 : Colors.transparent;
+                        background: PjmCallback.all_projects_enabled ? #4a90d9 : Colors.transparent;
 
                         Text {
-                            visible: project.enable;
+                            visible: PjmCallback.all_projects_enabled;
                             text: "✓";
                             font-size: 9px;
                             color: Colors.white;
@@ -223,20 +226,114 @@ component Toolbar inherits Rectangle {
                     }
 
                     Text {
-                        x: cb.x + cb.width + 6px;
+                        x: cb-select-all.x + cb-select-all.width + 6px;
                         y: 0px;
-                        width: parent.width - cb.x - cb.width - 10px;
+                        width: parent.width - cb-select-all.x - cb-select-all.width - 10px;
                         height: parent.height;
-                        text: project.tripletta == "" ? "\{project.project_id}" : "\{project.project_id} \{project.tripletta}";
-                        color: project.enable ? Colors.lightgray : #666666;
+                        text: "Select All";
+                        color: Colors.lightgray;
                         font-family: Styles.font-family;
                         font-size: Styles.font-size;
                         vertical-alignment: center;
                     }
 
-                    row-ta := TouchArea {
+                    select-all-ta := TouchArea {
                         clicked => {
-                            PjmCallback.set_project_enabled(project.project_id, !project.enable);
+                            PjmCallback.set_all_projects_enabled(true);
+                        }
+                    }
+                }
+
+                // Deselect All row
+                Rectangle {
+                    height: 26px;
+                    background: deselect-all-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                    cb-deselect-all := Rectangle {
+                        x: 6px;
+                        y: (parent.height - 13px) / 2;
+                        width: 13px;
+                        height: 13px;
+                        border-width: 1px;
+                        border-color: #888888;
+                        border-radius: 2px;
+                        background: PjmCallback.all_projects_disabled ? #4a90d9 : Colors.transparent;
+
+                        Text {
+                            visible: PjmCallback.all_projects_disabled;
+                            text: "✓";
+                            font-size: 9px;
+                            color: Colors.white;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    Text {
+                        x: cb-deselect-all.x + cb-deselect-all.width + 6px;
+                        y: 0px;
+                        width: parent.width - cb-deselect-all.x - cb-deselect-all.width - 10px;
+                        height: parent.height;
+                        text: "Deselect All";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        vertical-alignment: center;
+                    }
+
+                    deselect-all-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_all_projects_enabled(false);
+                        }
+                    }
+                }
+
+                // Project list
+                ListView {
+                    for project in root.app_project.projects: Rectangle {
+                        height: 26px;
+                        background: row-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                        cb := Rectangle {
+                            x: 6px;
+                            y: (parent.height - 13px) / 2;
+                            width: 13px;
+                            height: 13px;
+                            border-width: 1px;
+                            border-color: #888888;
+                            border-radius: 2px;
+                            background: project.enable ? #4a90d9 : Colors.transparent;
+
+                            Text {
+                                visible: project.enable;
+                                text: "✓";
+                                font-size: 9px;
+                                color: Colors.white;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+
+                        Text {
+                            x: cb.x + cb.width + 6px;
+                            y: 0px;
+                            width: parent.width - cb.x - cb.width - 10px;
+                            height: parent.height;
+                            text: project.tripletta == "" ? "\{project.project_id}" : "\{project.project_id} \{project.tripletta}";
+                            color: project.enable ? Colors.lightgray : #666666;
+                            font-family: Styles.font-family;
+                            font-size: Styles.font-size;
+                            vertical-alignment: center;
+                        }
+
+                        row-ta := TouchArea {
+                            clicked => {
+                                PjmCallback.set_project_enabled(project.project_id, !project.enable);
+                            }
                         }
                     }
                 }
