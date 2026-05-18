@@ -555,6 +555,101 @@ export component AppWindow inherits Window {
         }
     }
 
+    if PjmCallback.editor-active: Rectangle {
+        x: PjmCallback.editor-x;
+        y: PjmCallback.editor-y;
+        z: 999;
+        width: Styles.width;
+        height: Styles.height;
+        background: Colors.transparent;
+
+        property <string> typed_prefix: PjmCallback.editor-typed-prefix;
+
+        init => {
+            floating-le.focus();
+            floating-le.set-selection-offsets(PjmCallback.editor-text.character-count, PjmCallback.editor-text.character-count);
+        }
+
+        floating-le := LineEdit {
+            height: 100%;
+            width: 100%;
+            text <=> PjmCallback.editor-text;
+
+            key-pressed(event) => {
+                if event.text == Key.Backspace || event.text == Key.Delete {
+                    typed_prefix = PjmCallback.remove_last_char(typed_prefix);
+                    PjmCallback.editor-text = PjmCallback.find_completion(typed_prefix, true);
+                    if PjmCallback.editor-text == "" {
+                        PjmCallback.editor-text = typed_prefix;
+                    } else {
+                        typed_prefix = PjmCallback.editor-text;
+                    }
+                    self.set-selection-offsets(PjmCallback.editor-text.character-count, PjmCallback.editor-text.character-count);
+                    return accept;
+                }
+                if event.text == Key.Escape {
+                    PjmCallback.editor-active = false;
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == Key.Shift || event.text == Key.ShiftR {
+                    return reject;
+                }
+                if event.modifiers.control {
+                    if event.text == "S" || event.text == "s" {
+                        PjmCallback.editor-accept();
+                        PjmCallback.save_file();
+                        return accept;
+                    }
+                    if event.text == "C" || event.text == "c" {
+                        PjmCallback.testo-copiato = PjmCallback.editor-text;
+                        return accept;
+                    }
+                    if event.text == "V" || event.text == "v" {
+                        PjmCallback.editor-text = PjmCallback.testo-copiato;
+                        typed_prefix = PjmCallback.editor-text;
+                        self.set-selection-offsets(PjmCallback.editor-text.character-count, PjmCallback.editor-text.character-count);
+                        return accept;
+                    }
+                    if event.text == "f" {
+                        PjmCallback.editor-active = false;
+                        PjmCallback.show_modal = true;
+                        return accept;
+                    }
+                    if event.text == "F" {
+                        PjmCallback.editor-active = false;
+                        PjmCallback.last-search = "";
+                        PjmCallback.search("");
+                        return accept;
+                    }
+                    return reject;
+                }
+                if event.modifiers.alt || event.modifiers.meta {
+                    return reject;
+                }
+                if event.text == "" {
+                    return reject;
+                }
+                if event.text == Key.Tab {
+                    PjmCallback.editor-accept();
+                    return accept;
+                }
+                typed_prefix += event.text;
+                PjmCallback.editor-text = PjmCallback.find_completion(typed_prefix, true);
+                if PjmCallback.editor-text == "" {
+                    PjmCallback.editor-text = typed_prefix;
+                } else {
+                    typed_prefix = PjmCallback.editor-text;
+                }
+                self.set-selection-offsets(PjmCallback.editor-text.character-count, PjmCallback.editor-text.character-count);
+                accept
+            }
+
+            accepted => {
+                PjmCallback.editor-accept();
+            }
+        }
+    }
+
     fs := FocusScope {
         init => {
             self.focus();

@@ -150,6 +150,18 @@ export global PjmCallback {
     in property <bool> all_projects_disabled: false;
     callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);
     in property <bool> filter_active: false;
+    // Floating cell editor
+    in-out property <bool> editor-active: false;
+    in-out property <length> editor-x: 0px;
+    in-out property <length> editor-y: 0px;
+    in-out property <string> editor-text: "";
+    in-out property <string> editor-typed-prefix: "";
+    in-out property <int> editor-project: -1;
+    in-out property <int> editor-dev: -1;
+    in-out property <int> editor-week: -1;
+    in-out property <int> editor-row: -1;
+    in-out property <EffortByDateData> editor-effort;
+    callback editor-accept();
 }
 
 export component NoteEditorWindow inherits Window {
@@ -331,6 +343,10 @@ export component Cell-RW inherits Rectangle {
     in property <string> note;
     in property <bool> selected: false;
     in property <color> text-color;
+    in property <int> cell-project: -1;
+    in property <int> cell-dev: -1;
+    in property <int> cell-week: -1;
+    in property <int> cell-row: -1;
     callback double_clicked(string);
     // Selezione
     callback sel_plain();
@@ -338,8 +354,14 @@ export component Cell-RW inherits Rectangle {
     callback sel_ctrl();
     // Note
     callback edit_note();
+    // Richiesta apertura floating editor: (abs-x, abs-y, testo-corrente, typed-prefix)
+    callback request-edit(length, length, string, string);
 
-    property <bool> editing: false;
+    property <bool> editing: PjmCallback.editor-active
+        && PjmCallback.editor-project == cell-project
+        && PjmCallback.editor-dev == cell-dev
+        && PjmCallback.editor-week == cell-week
+        && PjmCallback.editor-row == cell-row;
     property <bool> has-focus: fs.has-focus;
     property <string> typed_prefix: "";
     height: self.visible ? Styles.height : 0px;
@@ -347,54 +369,6 @@ export component Cell-RW inherits Rectangle {
 
     fs := FocusScope {
         focus-on-tab-navigation: true;
-        le := LineEdit {
-            visible: editing;
-            height: 100%;
-            width: 100%;
-            text <=> root.text;
-            key-pressed(event) => {
-                if event.text == Key.Backspace || event.text == Key.Delete {
-                    typed_prefix = PjmCallback.remove_last_char(typed_prefix);
-                    root.text = PjmCallback.find_completion(typed_prefix, true);
-                    if root.text == "" {
-                        root.text = typed_prefix;
-                    } else {
-                        typed_prefix = root.text;
-                    }
-                    self.set-selection-offsets(root.text.character-count, root.text.character-count);
-                    return accept;
-                }
-                if event.text == Key.Escape || event.text == Key.Return || event.text == Key.Shift || event.text == Key.ShiftR {
-                    return reject;
-                }
-                if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
-                    return reject;
-                }
-                if event.text == "" {
-                    return reject;
-                }
-                if event.text == Key.Tab {
-                    root.double_clicked(root.text);
-                    root.editing = false;
-                    fs.focus();
-                    return accept;
-                }
-                typed_prefix += event.text;
-                root.text = PjmCallback.find_completion(typed_prefix, true);
-                if root.text == "" {
-                    root.text = typed_prefix;
-                } else {
-                    typed_prefix = root.text;
-                }
-                self.set-selection-offsets(root.text.character-count, root.text.character-count);
-                accept
-            }
-            accepted => {
-                root.double_clicked(root.text);
-                root.editing = false;
-                fs.focus();
-            }
-        }
 
         Rectangle {
             visible: !editing;
@@ -441,11 +415,6 @@ export component Cell-RW inherits Rectangle {
                     root.double_clicked(root.text);
                 }
                 if (event.text == "S" || event.text == "s") {
-                    if (root.editing) {
-                        root.double_clicked(root.text);
-                        root.editing = false;
-                        fs.focus();
-                    }
                     PjmCallback.save_file();
                     return accept;
                 }
@@ -466,14 +435,11 @@ export component Cell-RW inherits Rectangle {
                 }
             }
             if (event.text == Key.Escape) {
-                root.editing = false;
-                le.clear-focus();
-                fs.focus();
+                PjmCallback.editor-active = false;
             }
             if (event.text == Key.Return) {
                 typed_prefix = root.text;
-                root.editing = true;
-                le.focus();
+                root.request-edit(fs.absolute-position.x, fs.absolute-position.y, root.text, typed_prefix);
             }
             if (event.text == Key.Delete || event.text == Key.Backspace) {
                 root.text = "";
@@ -489,9 +455,7 @@ export component Cell-RW inherits Rectangle {
                 } else {
                     typed_prefix = root.text;
                 }
-                root.editing = true;
-                le.focus();
-                le.set-selection-offsets(root.text.character-count, root.text.character-count);
+                root.request-edit(fs.absolute-position.x, fs.absolute-position.y, root.text, typed_prefix);
                 return accept;
             }
             if (event.text == Key.Tab) {
@@ -610,6 +574,23 @@ export component EffortByDataGui inherits Rectangle {
             visible: root.visible && !root.after-deadline;
             text-color: (person.name != "" && person.sovra > person.max_hours) ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
+            cell-project: effort.project;
+            cell-dev: effort.dev;
+            cell-week: effort.week;
+            cell-row: row_idx;
+
+            request-edit(ax, ay, text, tp) => {
+                PjmCallback.editor-project = effort.project;
+                PjmCallback.editor-dev = effort.dev;
+                PjmCallback.editor-week = effort.week;
+                PjmCallback.editor-row = row_idx;
+                PjmCallback.editor-effort = root.effort;
+                PjmCallback.editor-text = text;
+                PjmCallback.editor-typed-prefix = tp;
+                PjmCallback.editor-x = ax;
+                PjmCallback.editor-y = ay;
+                PjmCallback.editor-active = true;
+            }
 
             double_clicked(text) => {
                 person.name = text;
