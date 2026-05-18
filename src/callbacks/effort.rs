@@ -42,6 +42,10 @@ fn register_changed_effort(ui: &AppWindow, state: &SharedState) {
                 let e = lista[1].trim().parse::<usize>().unwrap_or(0);
                 a.projects
                     .add_effort(proj_id, dev_id, WeekId(week), worker_id, Effort(e));
+                if !person.note.is_empty() {
+                    a.projects
+                        .set_note(proj_id, dev_id, WeekId(week), worker_id, &person.note);
+                }
             }
         }
         if let Some(ui) = ui_w.upgrade() {
