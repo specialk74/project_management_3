@@ -114,9 +114,7 @@ export component RightFooter inherits Rectangle {
                             }
 
                             // Yellow triangle in top-right corner when a week override is active
-                            CornerTriangle {
-                                visible: has-override;
-                            }
+                            if has-override: CornerTriangle {}
 
                             TouchArea {
                                 pointer-event(event) => {

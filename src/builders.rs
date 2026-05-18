@@ -91,7 +91,13 @@ pub fn build_project_data(
                         let dev_enable = *visibility
                             .get(&(pi as i32, dev_id.0 as i32))
                             .unwrap_or(&true);
-                        if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
+                        if !dev_enable {
+                            if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
+                                build_dev_hidden(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, deadline_week)
+                            } else {
+                                empty_dev_hidden(pi as i32, dev_id.0 as i32, n_weeks * 7, start_w, max, deadline_week)
+                            }
+                        } else if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
                             build_dev(
                                 app,
                                 pi as i32,
@@ -99,7 +105,7 @@ pub fn build_project_data(
                                 sd,
                                 start_w,
                                 end_w,
-                                dev_enable,
+                                true,
                                 deadline_week,
                             )
                         } else {
@@ -291,6 +297,86 @@ fn empty_dev(
         enable: true,
         note: SharedString::from(""),
         max: (max - 1).max(0),
+        deadline_week,
+        hide_effort: false,
+        datas: mk(week_data),
+    }
+}
+
+// Dev filtrato dalla ricerca: mantiene la struttura delle settimane (per l'allineamento
+// con la colonna sinistra) ma con persons vuote — zero Cell-RW istanziati.
+fn build_dev_hidden(
+    _app: &App,
+    proj_idx: i32,
+    dev_idx: i32,
+    sd: &SingleDev,
+    start_w: usize,
+    end_w: usize,
+    deadline_week: i32,
+) -> EffortByDevData {
+    let planned = sd.planned_effort().0 as i32;
+    let total = get_hours(sd.get_effort_tot());
+    let max = (sd.max_num_efforts() as i32).max(1);
+    let week_data: Vec<EffortByDateData> = (start_w..=end_w)
+        .step_by(7)
+        .map(|w| EffortByDateData {
+            total: 0,
+            cumulative: 0,
+            remains: 0,
+            dev: dev_idx,
+            project: proj_idx,
+            effort: planned,
+            week: w as i32,
+            persons: mk(vec![]),
+        })
+        .collect();
+    EffortByDevData {
+        project: proj_idx,
+        dev: dev_idx,
+        total,
+        effort: planned,
+        remains: planned - total,
+        visible: false,
+        enable: false,
+        max,
+        note: SharedString::from(sd.get_note()),
+        deadline_week,
+        hide_effort: sd.get_hide_effort(),
+        datas: mk(week_data),
+    }
+}
+
+fn empty_dev_hidden(
+    proj_idx: i32,
+    dev_idx: i32,
+    n_weeks: usize,
+    start_w: usize,
+    max: i32,
+    deadline_week: i32,
+) -> EffortByDevData {
+    let week_data: Vec<EffortByDateData> = (0..n_weeks)
+        .step_by(7)
+        .map(|i| EffortByDateData {
+            total: 0,
+            cumulative: 0,
+            remains: 0,
+            dev: dev_idx,
+            project: proj_idx,
+            effort: 0,
+            week: (start_w + i) as i32,
+            persons: mk(vec![]),
+        })
+        .collect();
+    EffortByDevData {
+        project: proj_idx,
+        dev: dev_idx,
+        total: 0,
+        effort: 0,
+        remains: 0,
+        visible: false,
+        enable: false,
+        max: (max - 1).max(0),
+        note: SharedString::default(),
         deadline_week,
         hide_effort: false,
         datas: mk(week_data),

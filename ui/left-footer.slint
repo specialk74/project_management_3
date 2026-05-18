@@ -124,9 +124,7 @@ export component LeftFooter inherits Rectangle {
                     clip: true;
 
                     // Left triangle: worker has global max hours < 40
-                    CornerTriangle {
-                        visible: has-reduced-hours;
-                    }
+                    if has-reduced-hours: CornerTriangle {}
 
                     Cell-RO {
                         width: Styles.width;

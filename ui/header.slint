@@ -104,9 +104,7 @@ export component Header inherits Rectangle {
                             }
 
                             // Yellow triangle top-right when all workers are limited this week
-                            CornerTriangle {
-                                visible: data.all_limited;
-                            }
+                            if data.all_limited: CornerTriangle {}
 
                             TouchArea {
                                 pointer-event(event) => {

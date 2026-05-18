@@ -699,12 +699,9 @@ export component LeftColumn inherits Rectangle {
                                                         clip: false;
                                                         background: Colors.transparent;
 
-                                                        CornerTriangle {
-                                                            visible: data.note != "";
-                                                        }
+                                                        if data.note != "": CornerTriangle {}
 
-                                                        note-ta := TouchArea {
-                                                            enabled: data.note != "";
+                                                        if data.note != "": TouchArea {
                                                             width: 10px;
                                                             height: 10px;
                                                             changed has-hover => {

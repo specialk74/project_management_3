@@ -485,12 +485,9 @@ export component Cell-RW inherits Rectangle {
         clip: false;
         background: Colors.transparent;
 
-        CornerTriangle {
-            visible: root.note != "";
-        }
+        if root.note != "": CornerTriangle {}
 
-        note-ta := TouchArea {
-            enabled: root.note != "";
+        if root.note != "": TouchArea {
             width: 10px;
             height: 10px;
             changed has-hover => {
