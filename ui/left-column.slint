@@ -435,14 +435,14 @@ export component LeftColumn inherits Rectangle {
         }
     }
 
-    dev-note-editor := NoteEditorWindow {
-        visible: false;
-    }
-
     popup := Devmenu {
         visible: false;
         request-note-edit(project, dev, current-note) => {
-            dev-note-editor.show-for-dev(project, dev, current-note);
+            PjmCallback.note-editor-project = project;
+            PjmCallback.note-editor-dev = dev;
+            PjmCallback.note-editor-text = current-note;
+            PjmCallback.note-editor-is-dev = true;
+            PjmCallback.note-editor-active = true;
         }
     }
 

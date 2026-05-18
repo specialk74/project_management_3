@@ -20,6 +20,7 @@ import {
     PjmCallback,
     AppProject,
     DayData,
+    NoteEditorWindow,
 } from "global.slint";
 
 export { PjmCallback }
@@ -552,6 +553,34 @@ export component AppWindow inherits Window {
             color: Colors.black;
             font-size: Styles.font-size;
             font-family: Styles.font-family;
+        }
+    }
+
+    // Unica istanza globale del note editor (sostituisce le N istanze in EffortByDataGui)
+    global-note-editor := NoteEditorWindow {
+        visible: false;
+        container-width: root.width;
+        container-height: root.height;
+        property <bool> _trigger: PjmCallback.note-editor-active;
+        changed _trigger => {
+            if (_trigger) {
+                if (PjmCallback.note-editor-is-dev) {
+                    self.show-for-dev(
+                        PjmCallback.note-editor-project,
+                        PjmCallback.note-editor-dev,
+                        PjmCallback.note-editor-text
+                    );
+                } else {
+                    self.show-for-effort(
+                        PjmCallback.note-editor-project,
+                        PjmCallback.note-editor-dev,
+                        PjmCallback.note-editor-week,
+                        PjmCallback.note-editor-worker,
+                        PjmCallback.note-editor-text
+                    );
+                }
+                PjmCallback.note-editor-active = false;
+            }
         }
     }
 

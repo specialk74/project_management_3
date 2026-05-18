@@ -162,6 +162,14 @@ export global PjmCallback {
     in-out property <int> editor-row: -1;
     in-out property <EffortByDateData> editor-effort;
     callback editor-accept();
+    // Note editor globale
+    in-out property <bool> note-editor-active: false;
+    in-out property <bool> note-editor-is-dev: false;
+    in-out property <int> note-editor-project: -1;
+    in-out property <int> note-editor-dev: -1;
+    in-out property <int> note-editor-week: -1;
+    in-out property <string> note-editor-worker: "";
+    in-out property <string> note-editor-text: "";
 }
 
 export component NoteEditorWindow inherits Window {
@@ -171,6 +179,8 @@ export component NoteEditorWindow inherits Window {
     property <int> edit-dev: -1;
     property <int> edit-week: -1;
     property <string> edit-worker: "";
+    in property <length> container-width: 1024px;
+    in property <length> container-height: 768px;
 
     public function show-for-effort(project: int, dev: int, week: int, worker: string, current-note: string) {
         edit-project = project;
@@ -193,6 +203,8 @@ export component NoteEditorWindow inherits Window {
     popup := PopupWindow {
         close-policy: close-on-click-outside;
         width: 320px;
+        x: (root.container-width - self.width) / 2;
+        y: (root.container-height - self.height) / 2;
 
         FocusScope {
             key-pressed(event) => {
@@ -501,10 +513,6 @@ export component EffortByDataGui inherits Rectangle {
     in property <bool> after-deadline: false;
     in property <bool> hide-effort: false;
 
-    note-editor := NoteEditorWindow {
-        visible: false;
-    }
-
     // popup := Rectangle {
     //     x: cell.x;
     //     y: cell.y + Styles.height;
@@ -598,7 +606,13 @@ export component EffortByDataGui inherits Rectangle {
             }
 
             edit_note() => {
-                note-editor.show-for-effort(effort.project, effort.dev, effort.week, person.name, person.note);
+                PjmCallback.note-editor-project = effort.project;
+                PjmCallback.note-editor-dev = effort.dev;
+                PjmCallback.note-editor-week = effort.week;
+                PjmCallback.note-editor-worker = person.name;
+                PjmCallback.note-editor-text = person.note;
+                PjmCallback.note-editor-is-dev = false;
+                PjmCallback.note-editor-active = true;
             }
 
             sel_plain() => {
