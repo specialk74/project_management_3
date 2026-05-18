@@ -170,6 +170,8 @@ export global PjmCallback {
     in-out property <int> note-editor-week: -1;
     in-out property <string> note-editor-worker: "";
     in-out property <string> note-editor-text: "";
+    // Ticker globale per l'animazione marquee di Cell-RO
+    in-out property <int> marquee-tick: 0;
 }
 
 export component NoteEditorWindow inherits Window {
@@ -321,22 +323,19 @@ export component Cell-RO inherits Rectangle {
         //height: self.visible ? parent.height - 5px : 0px;
 
         innerRect := Rectangle {
-            property <length> parent_width: parent.width;
-            property <length> position: (parent.width - self.width) / 2;
-            property <length> start_position: (parent.width - self.width) / 2;
-            property <bool> running: self.width > parent.width;
-            x: position;
+            property <bool> overflowing: self.width > parent.width;
+            property <bool> at-start: true;
+            x: overflowing ? (at-start ? 0px : (parent.width - self.width)) : (parent.width - self.width) / 2;
             width: myText.width;
             animate x {
                 duration: 1000ms;
                 easing: ease-in-out;
             }
-            Timer {
-                interval: 5000ms;
-                running: running;
 
-                triggered => {
-                    position = position == 0 ? (parent_width - innerRect.width) : 0;
+            property <int> _tick: PjmCallback.marquee-tick;
+            changed _tick => {
+                if (overflowing) {
+                    at-start = !at-start;
                 }
             }
 

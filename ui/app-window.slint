@@ -711,6 +711,14 @@ export component AppWindow inherits Window {
         }
     }
 
+    Timer {
+        interval: 5000ms;
+        running: true;
+        triggered => {
+            PjmCallback.marquee-tick += 1;
+        }
+    }
+
     im := PopupWindow {
         in-out property <string> text;
         property <string> typed_prefix: "";
