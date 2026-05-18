@@ -78,41 +78,43 @@ pub fn build_project_data(
                 SharedString::default()
             };
 
-            let dev_data: Vec<EffortByDevData> = app
-                .projects
-                .list_devs(*proj_id)
-                .iter()
-                .map(|dev_id| {
-                    let max = *row_counts.get(&(pi as i32, dev_id.0 as i32)).unwrap_or(&0);
-                    let enable = *visibility
-                        .get(&(pi as i32, dev_id.0 as i32))
-                        .unwrap_or(&true)
-                        & app.projects.get_enable(proj_id).0;
-                    if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
-                        build_dev(
-                            app,
-                            pi as i32,
-                            dev_id.0 as i32,
-                            sd,
-                            start_w,
-                            end_w,
-                            enable,
-                            deadline_week,
-                        )
-                    } else {
-                        empty_dev(
-                            pi as i32,
-                            dev_id.0 as i32,
-                            n_weeks * 7,
-                            start_w,
-                            max,
-                            deadline_week,
-                        )
-                    }
-                })
-                .collect();
-
             let enable = app.projects.get_enable(proj_id).0;
+
+            let dev_data: Vec<EffortByDevData> = if !enable {
+                vec![]
+            } else {
+                app.projects
+                    .list_devs(*proj_id)
+                    .iter()
+                    .map(|dev_id| {
+                        let max = *row_counts.get(&(pi as i32, dev_id.0 as i32)).unwrap_or(&0);
+                        let dev_enable = *visibility
+                            .get(&(pi as i32, dev_id.0 as i32))
+                            .unwrap_or(&true);
+                        if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
+                            build_dev(
+                                app,
+                                pi as i32,
+                                dev_id.0 as i32,
+                                sd,
+                                start_w,
+                                end_w,
+                                dev_enable,
+                                deadline_week,
+                            )
+                        } else {
+                            empty_dev(
+                                pi as i32,
+                                dev_id.0 as i32,
+                                n_weeks * 7,
+                                start_w,
+                                max,
+                                deadline_week,
+                            )
+                        }
+                    })
+                    .collect()
+            };
             let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
             let proj_start = app
                 .projects
@@ -171,7 +173,10 @@ fn build_dev(
         .step_by(7)
         //.inspect(|f| println!("build_dev-{}: {}", proj_idx, f))
         .map(|w| {
-            let workers_in_week: Vec<SingleEffortGui> = {
+            let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
+            let workers_in_week: Vec<SingleEffortGui> = if post_deadline {
+                vec![]
+            } else {
                 let mut v = sd
                     .get_all(WeekId(w))
                     .map(|s| {
@@ -256,15 +261,23 @@ fn empty_dev(
     let week_data: Vec<EffortByDateData> = (0..n_weeks)
         .step_by(7)
         //.inspect(|f| println!("empty: {}", f))
-        .map(|i| EffortByDateData {
-            total: 0,
-            cumulative: 0,
-            remains: 0,
-            dev: dev_idx,
-            project: proj_idx,
-            effort: 0,
-            week: (start_w + i) as i32,
-            persons: mk(vec![SingleEffortGui::default(); n_persons]),
+        .map(|i| {
+            let w = start_w + i;
+            let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
+            EffortByDateData {
+                total: 0,
+                cumulative: 0,
+                remains: 0,
+                dev: dev_idx,
+                project: proj_idx,
+                effort: 0,
+                week: w as i32,
+                persons: mk(if post_deadline {
+                    vec![]
+                } else {
+                    vec![SingleEffortGui::default(); n_persons]
+                }),
+            }
         })
         .collect();
 
