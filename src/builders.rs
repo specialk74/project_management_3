@@ -78,6 +78,22 @@ pub fn build_project_data(
                 SharedString::default()
             };
 
+            let proj_start = app
+                .projects
+                .get_project_start_week(*proj_id)
+                .map(|w| w.0 as i32)
+                .unwrap_or(-1);
+
+            let start_text = if proj_start >= 0 {
+                SharedString::from(
+                    primo_giorno_settimana_corrente(&days_to_local(proj_start))
+                        .format("%y-%m-%d")
+                        .to_string(),
+                )
+            } else {
+                SharedString::default()
+            };
+
             let enable = app.projects.get_enable(proj_id).0;
 
             let dev_data: Vec<EffortByDevData> = if !enable {
@@ -93,9 +109,9 @@ pub fn build_project_data(
                             .unwrap_or(&true);
                         if !dev_enable {
                             if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
-                                build_dev_hidden(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, deadline_week)
+                                build_dev_hidden(app, pi as i32, dev_id.0 as i32, sd, start_w, end_w, proj_start, deadline_week)
                             } else {
-                                empty_dev_hidden(pi as i32, dev_id.0 as i32, n_weeks * 7, start_w, max, deadline_week)
+                                empty_dev_hidden(pi as i32, dev_id.0 as i32, n_weeks * 7, start_w, max, proj_start, deadline_week)
                             }
                         } else if let Some(sd) = app.projects.get_single_dev(*proj_id, *dev_id) {
                             build_dev(
@@ -106,6 +122,7 @@ pub fn build_project_data(
                                 start_w,
                                 end_w,
                                 true,
+                                proj_start,
                                 deadline_week,
                             )
                         } else {
@@ -115,6 +132,7 @@ pub fn build_project_data(
                                 n_weeks * 7,
                                 start_w,
                                 max,
+                                proj_start,
                                 deadline_week,
                             )
                         }
@@ -122,11 +140,6 @@ pub fn build_project_data(
                     .collect()
             };
             let project_visible = dev_data.is_empty() || dev_data.iter().any(|d| d.enable);
-            let proj_start = app
-                .projects
-                .get_project_start_week(*proj_id)
-                .map(|w| w.0 as i32)
-                .unwrap_or(-1);
 
             let all_devs = app.devs.list();
             let project_dev_ids = app.projects.list_devs(*proj_id);
@@ -149,6 +162,7 @@ pub fn build_project_data(
                 text: SharedString::from(proj_name.as_str()),
                 tripletta: SharedString::from(app.projects.get_tripletta(*proj_id).as_str()),
                 start_week: proj_start,
+                start_text,
                 end_week: deadline_week,
                 deadline_text,
                 visible: project_visible,
@@ -169,6 +183,7 @@ fn build_dev(
     start_w: usize,
     end_w: usize,
     enable: bool,
+    proj_start: i32,
     deadline_week: i32,
 ) -> EffortByDevData {
     let planned = sd.planned_effort().0 as i32;
@@ -180,7 +195,8 @@ fn build_dev(
         //.inspect(|f| println!("build_dev-{}: {}", proj_idx, f))
         .map(|w| {
             let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
-            let workers_in_week: Vec<SingleEffortGui> = if post_deadline {
+            let pre_start = proj_start >= 0 && (w as i32) < proj_start;
+            let workers_in_week: Vec<SingleEffortGui> = if post_deadline || pre_start {
                 vec![]
             } else {
                 let mut v = sd
@@ -249,6 +265,7 @@ fn build_dev(
         enable,
         max,
         note: SharedString::from(sd.get_note()),
+        start_week: proj_start,
         deadline_week,
         hide_effort: sd.get_hide_effort(),
         datas: mk(week_data),
@@ -261,6 +278,7 @@ fn empty_dev(
     n_weeks: usize,
     start_w: usize,
     max: i32,
+    proj_start: i32,
     deadline_week: i32,
 ) -> EffortByDevData {
     let n_persons = max.max(0) as usize;
@@ -270,6 +288,7 @@ fn empty_dev(
         .map(|i| {
             let w = start_w + i;
             let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
+            let pre_start = proj_start >= 0 && (w as i32) < proj_start;
             EffortByDateData {
                 total: 0,
                 cumulative: 0,
@@ -278,7 +297,7 @@ fn empty_dev(
                 project: proj_idx,
                 effort: 0,
                 week: w as i32,
-                persons: mk(if post_deadline {
+                persons: mk(if post_deadline || pre_start {
                     vec![]
                 } else {
                     vec![SingleEffortGui::default(); n_persons]
@@ -297,6 +316,7 @@ fn empty_dev(
         enable: true,
         note: SharedString::from(""),
         max: (max - 1).max(0),
+        start_week: proj_start,
         deadline_week,
         hide_effort: false,
         datas: mk(week_data),
@@ -312,6 +332,7 @@ fn build_dev_hidden(
     sd: &SingleDev,
     start_w: usize,
     end_w: usize,
+    proj_start: i32,
     deadline_week: i32,
 ) -> EffortByDevData {
     let planned = sd.planned_effort().0 as i32;
@@ -340,6 +361,7 @@ fn build_dev_hidden(
         enable: false,
         max,
         note: SharedString::from(sd.get_note()),
+        start_week: proj_start,
         deadline_week,
         hide_effort: sd.get_hide_effort(),
         datas: mk(week_data),
@@ -352,6 +374,7 @@ fn empty_dev_hidden(
     n_weeks: usize,
     start_w: usize,
     max: i32,
+    proj_start: i32,
     deadline_week: i32,
 ) -> EffortByDevData {
     let week_data: Vec<EffortByDateData> = (0..n_weeks)
@@ -377,6 +400,7 @@ fn empty_dev_hidden(
         enable: false,
         max: (max - 1).max(0),
         note: SharedString::default(),
+        start_week: proj_start,
         deadline_week,
         hide_effort: false,
         datas: mk(week_data),

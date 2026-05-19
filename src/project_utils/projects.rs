@@ -97,6 +97,12 @@ impl Projects {
         }
     }
 
+    pub fn set_project_start_week(&mut self, id: ProjectId, week: Option<WeekId>) {
+        if let Some(p) = self.projects.get_mut(&id) {
+            p.set_start_week(week);
+        }
+    }
+
     pub fn del(&mut self, id_project: ProjectId) {
         self.projects.remove(&id_project);
     }

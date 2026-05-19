@@ -56,6 +56,9 @@ impl Project {
     pub fn get_start_week(&self) -> Option<WeekId> {
         self.start_week
     }
+    pub fn set_start_week(&mut self, week: Option<WeekId>) {
+        self.start_week = week;
+    }
     pub fn get_end_week(&self) -> Option<WeekId> {
         self.end_week
     }

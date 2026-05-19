@@ -14,6 +14,7 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_set_project_name(ui, state);
     register_set_project_tripletta(ui, state);
     register_add_dev_to_project(ui, state);
+    register_set_project_start_week(ui, state);
     register_set_project_end_week(ui, state);
     register_set_project_enabled(ui, state);
     register_set_all_projects_enabled(ui, state);
@@ -34,6 +35,37 @@ fn register_new_project(ui: &AppWindow, state: &SharedState) {
             let proj_name = if name.is_empty() { "Nuovo Progetto" } else { &name };
             let trip = if tripletta.is_empty() { None } else { Some(tripletta.as_str()) };
             a.projects.add(proj_name, trip, start_week);
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_project_start_week(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_project_start_week(move |proj_idx, date_str| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let projects = a.projects.list();
+            let Some(&(proj_id, _)) = projects.get(proj_idx as usize) else {
+                return;
+            };
+            let start_week = if date_str.is_empty() {
+                None
+            } else {
+                parse_date_str(&date_str).map(|d| WeekId(d as usize))
+            };
+            a.projects.set_project_start_week(proj_id, start_week);
             refresh(
                 &ui,
                 &mut a,

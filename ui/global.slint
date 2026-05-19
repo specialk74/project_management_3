@@ -52,6 +52,7 @@ export struct EffortByDevData {
     enable: bool,
     max: int,
     note: string,
+    start_week: int,
     deadline_week: int,
     hide_effort: bool,
     datas: [EffortByDateData],
@@ -62,6 +63,7 @@ export struct EffortByPrjData {
     text: string,
     tripletta: string,
     start_week: int,
+    start_text: string,
     end_week: int,
     deadline_text: string,
     visible: bool,
@@ -104,6 +106,7 @@ export global PjmCallback {
     callback open_file();
     callback search(string);
     callback new_project(string /*tripletta*/, string /*name*/, string /*start_date_yy_mm_dd*/);
+    callback set_project_start_week(int /*project_idx*/, string /*date_str*/);
     callback set_project_end_week(int /*project_idx*/, string /*date_str*/);
     callback add_row(int, int);
     callback del_row(int, int);
@@ -507,6 +510,7 @@ export component Cell-RW inherits Rectangle {
 export component EffortByDataGui inherits Rectangle {
     in property <EffortByDateData> effort;
     in property <bool> after-deadline: false;
+    in property <bool> before-start: false;
     in property <bool> hide-effort: false;
 
     // popup := Rectangle {
@@ -562,7 +566,7 @@ export component EffortByDataGui inherits Rectangle {
         }
 
         cell := Cell-RO {
-            visible: root.visible && !root.after-deadline;
+            visible: root.visible && !root.after-deadline && !root.before-start;
             text: root.hide-effort ? "" : (effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}");
             text_color: my-function(effort);
 
@@ -575,7 +579,7 @@ export component EffortByDataGui inherits Rectangle {
         for person[row_idx] in effort.persons: Cell-RW {
             text: person.name;
             note: person.note;
-            visible: root.visible && !root.after-deadline;
+            visible: root.visible && !root.after-deadline && !root.before-start;
             text-color: (person.name != "" && person.sovra > person.max_hours) ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
             cell-project: effort.project;
@@ -675,7 +679,9 @@ export component EffortByDevGui inherits Rectangle {
             padding: 0px;
 
             for data in datas.datas: Rectangle {
-                background: datas.deadline_week >= 0 && data.week == datas.deadline_week ? Colors.green : Colors.transparent;
+                background: datas.deadline_week >= 0 && data.week == datas.deadline_week ? Colors.green
+                          : datas.start_week >= 0 && data.week == datas.start_week ? Colors.steelblue
+                          : Colors.transparent;
                 HorizontalLayout {
                     Rectangle {
                         background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
@@ -686,6 +692,7 @@ export component EffortByDevGui inherits Rectangle {
                         effort: data;
                         visible: root.visible;
                         after-deadline: datas.deadline_week >= 0 && data.week > datas.deadline_week;
+                        before-start: datas.start_week >= 0 && data.week < datas.start_week;
                         hide-effort: datas.hide_effort;
                     }
                 }
