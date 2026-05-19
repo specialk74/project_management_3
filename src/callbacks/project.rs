@@ -19,6 +19,7 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_set_project_enabled(ui, state);
     register_set_all_projects_enabled(ui, state);
     register_set_dev_hide_effort(ui, state);
+    register_set_selected_year(ui, state);
 }
 
 fn register_new_project(ui: &AppWindow, state: &SharedState) {
@@ -207,6 +208,27 @@ fn register_set_all_projects_enabled(ui: &AppWindow, state: &SharedState) {
             }
             refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
             PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_selected_year(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_selected_year(move |year| {
+        if let Some(ui) = ui_w.upgrade() {
+            PjmCallback::get(&ui).set_selected_year(year);
+            let mut a = app.borrow_mut();
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
         }
     });
 }

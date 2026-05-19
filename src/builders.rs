@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use slint::{ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 
@@ -462,6 +463,47 @@ pub fn build_dev_infos(app: &App) -> Vec<DevInfo> {
             title: SharedString::from(name.as_str()),
             col: packed_to_color(bg),
             text_color: packed_to_color(font),
+        })
+        .collect()
+}
+
+pub fn build_available_years(app: &App) -> Vec<i32> {
+    use std::collections::BTreeSet;
+    let mut years = BTreeSet::new();
+    for (proj_id, _) in app.projects.list() {
+        if let Some(w) = app.projects.get_project_start_week(proj_id) {
+            years.insert(days_to_local(w.0 as i32).year());
+        }
+        if let Some(w) = app.projects.get_project_end_week(proj_id) {
+            years.insert(days_to_local(w.0 as i32).year());
+        }
+    }
+    years.into_iter().collect()
+}
+
+pub fn build_dev_year_totals(app: &App, year: i32) -> Vec<i32> {
+    let devs = app.devs.list();
+    let projects = app.projects.list();
+    devs.iter()
+        .map(|(dev_id, _)| {
+            if year == 0 {
+                return 0;
+            }
+            projects
+                .iter()
+                .map(|(proj_id, _)| {
+                    app.projects
+                        .get_single_dev(*proj_id, *dev_id)
+                        .map(|sd| {
+                            sd.get_weeks()
+                                .iter()
+                                .filter(|w| days_to_local(w.0 as i32).year() == year)
+                                .map(|w| sd.get_effort_by_week(*w).0 as i32)
+                                .sum::<i32>()
+                        })
+                        .unwrap_or(0)
+                })
+                .sum()
         })
         .collect()
 }

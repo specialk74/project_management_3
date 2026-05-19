@@ -12,7 +12,7 @@ mod workers_utils;
 
 slint::include_modules!();
 
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use slint::{ModelRc, SharedString};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -57,6 +57,7 @@ fn main() {
         pcb.set_current_week_text(SharedString::from(
             this_week_date.format("%y-%m-%d").to_string(),
         ));
+        pcb.set_selected_year(today.year());
 
         let start_week = app.borrow().start_week.0 as i32;
         let col_index = (this_week - start_week) / 7;

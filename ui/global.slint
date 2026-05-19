@@ -86,6 +86,8 @@ export struct AppProject {
     sovra: [SovraData],
     projects: [EffortByPrjData],
     devs: [DevInfo],
+    years: [int],
+    dev_year_totals: [int],
 }
 
 export struct DayData {
@@ -107,6 +109,8 @@ export global PjmCallback {
     callback search(string);
     callback new_project(string /*tripletta*/, string /*name*/, string /*start_date_yy_mm_dd*/);
     callback set_project_start_week(int /*project_idx*/, string /*date_str*/);
+    callback set_selected_year(int /*year*/);
+    in property <int> selected_year: 0;
     callback set_project_end_week(int /*project_idx*/, string /*date_str*/);
     callback add_row(int, int);
     callback del_row(int, int);

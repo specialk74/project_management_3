@@ -14,6 +14,8 @@ pub struct LiveModels {
     pub sovra: Rc<VecModel<SovraData>>,
     pub weeks: Rc<VecModel<DayData>>,
     pub devs: Rc<VecModel<DevInfo>>,
+    pub years: Rc<VecModel<i32>>,
+    pub dev_year_totals: Rc<VecModel<i32>>,
 }
 
 impl LiveModels {
@@ -25,6 +27,8 @@ impl LiveModels {
             sovra: Rc::new(VecModel::default()),
             weeks: Rc::new(VecModel::default()),
             devs: Rc::new(VecModel::default()),
+            years: Rc::new(VecModel::default()),
+            dev_year_totals: Rc::new(VecModel::default()),
         }
     }
 
@@ -37,6 +41,8 @@ impl LiveModels {
             sovra: ModelRc::from(self.sovra.clone()),
             week_off: ModelRc::new(VecModel::from(vec![])),
             devs: ModelRc::from(self.devs.clone()),
+            years: ModelRc::from(self.years.clone()),
+            dev_year_totals: ModelRc::from(self.dev_year_totals.clone()),
         }
     }
 }
