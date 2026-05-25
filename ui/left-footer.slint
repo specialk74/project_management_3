@@ -127,77 +127,69 @@ export component LeftFooter inherits Rectangle {
         }
     }
 
-    VerticalLayout {
+    HorizontalLayout {
         spacing: 0px;
         padding: 0px;
 
-        // Anno selector row (above dev list)
-        HorizontalLayout {
-            spacing: 0px;
-            padding: 0px;
+        Rectangle {
+            VerticalLayout {
+                spacing: 0px;
+                padding: 0px;
+                year-btn-rect := Rectangle {
+                    height: Styles.height;
+                    background: year-btn-ta.has-hover ? #3a3a3a : #2a2a2a;
+                    border-color: #555555;
+                    border-width: 1px;
 
-            year-btn-rect := Rectangle {
-                height: Styles.height;
-                background: year-btn-ta.has-hover ? #3a3a3a : #2a2a2a;
-                border-color: #555555;
-                border-width: 1px;
+                    Text {
+                        text: PjmCallback.selected_year > 0 ? "\{PjmCallback.selected_year} ▼" : "Anno ▼";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
 
-                Text {
-                    text: PjmCallback.selected_year > 0 ? "\{PjmCallback.selected_year} ▼" : "Anno ▼";
-                    color: Colors.lightgray;
-                    font-family: Styles.font-family;
-                    font-size: Styles.font-size;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-
-                year-btn-ta := TouchArea {
-                    clicked => {
-                        root.year-popup-x = self.absolute-position.x;
-                        root.year-popup-y = self.absolute-position.y + Styles.height;
-                        year-popup.show();
+                    year-btn-ta := TouchArea {
+                        clicked => {
+                            root.year-popup-x = self.absolute-position.x;
+                            root.year-popup-y = self.absolute-position.y + Styles.height;
+                            year-popup.show();
+                        }
                     }
                 }
-            }
 
-            Rectangle {
-                horizontal-stretch: 1;
-                height: Styles.height;
-            }
-        }
+                // I vari dev
+                Rectangle {
+                    VerticalLayout {
+                        spacing: 0px;
+                        padding: 0px;
+                        for data[dev-idx] in app_project.devs: Rectangle {
+                            height: Styles.height;
+                            HorizontalLayout {
+                                Rectangle {
+                                    background: data.col;
+                                    HorizontalLayout {
 
-        HorizontalLayout {
-            spacing: 0px;
-            padding: 0px;
+                                        Cell-RO {
+                                            width: Styles.width - 20px;
+                                            font-weight: 800;
+                                            text_color: data.text-color;
+                                            text: data.title;
+                                            horizontal-alignment: center;
+                                        }
 
-            // I vari dev
-            Rectangle {
-                VerticalLayout {
-                    for data[dev-idx] in app_project.devs: Rectangle {
-                        height: Styles.height;
-                        HorizontalLayout {
-                            Rectangle {
-                                background: data.col;
-                                HorizontalLayout {
-
-                                    Cell-RO {
-                                        width: Styles.width - 20px;
-                                        font-weight: 800;
-                                        text_color: data.text-color;
-                                        text: data.title;
-                                        horizontal-alignment: center;
-                                    }
-
-                                    Text {
-                                        width: Styles.width - 20px;
-                                        color: data.text-color;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        text: PjmCallback.selected_year > 0
-                                            ? "\{app_project.dev_year_totals[dev-idx]}"
-                                            : "—";
+                                        Text {
+                                            width: Styles.width - 20px;
+                                            color: data.text-color;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            text: PjmCallback.selected_year > 0
+                                                ? "\{app_project.dev_year_totals[dev-idx]}"
+                                                : "—";
+                                        }
                                     }
                                 }
                             }
@@ -205,36 +197,39 @@ export component LeftFooter inherits Rectangle {
                     }
                 }
             }
+        }
 
-            // I vari worker
-            Rectangle {
-                VerticalLayout {
-                    for name[index] in app_project.worker_names: Rectangle {
-                        property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
-                        property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
-                        height: worker-visible ? Styles.height : 0px;
-                        visible: worker-visible;
-                        background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
-                        clip: true;
+        // I vari worker
+        Rectangle {
+            VerticalLayout {
+                spacing: 0px;
+                padding: 0px;
 
-                        // Left triangle: worker has global max hours < 40
-                        if has-reduced-hours: CornerTriangle {}
+                for name[index] in app_project.worker_names: Rectangle {
+                    property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
+                    property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
+                    height: worker-visible ? Styles.height : 0px;
+                    visible: worker-visible;
+                    background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                    clip: true;
 
-                        Cell-RO {
-                            width: Styles.width;
-                            text: name;
-                        }
+                    // Left triangle: worker has global max hours < 40
+                    if has-reduced-hours: CornerTriangle {}
 
-                        TouchArea {
-                            pointer-event(event) => {
-                                if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
-                                    root.editing-worker-idx = index;
-                                    root.editing-worker-name = name;
-                                    root.editing-hours-text = "\{app_project.worker_max_hours[index]}";
-                                    root.popup-pos-x = self.absolute-position.x;
-                                    root.popup-pos-y = self.absolute-position.y;
-                                    max-hours-popup.show();
-                                }
+                    Cell-RO {
+                        width: Styles.width;
+                        text: name;
+                    }
+
+                    TouchArea {
+                        pointer-event(event) => {
+                            if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                root.editing-worker-idx = index;
+                                root.editing-worker-name = name;
+                                root.editing-hours-text = "\{app_project.worker_max_hours[index]}";
+                                root.popup-pos-x = self.absolute-position.x;
+                                root.popup-pos-y = self.absolute-position.y;
+                                max-hours-popup.show();
                             }
                         }
                     }
