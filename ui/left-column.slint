@@ -476,6 +476,7 @@ export component LeftColumn inherits Rectangle {
                         font-size: Styles.font-size;
                         vertical-alignment: center;
                     }
+
                     show-effort-ta := TouchArea {
                         clicked => {
                             PjmCallback.set_dev_hide_effort(root.effort-menu-proj, root.effort-menu-dev, false);
@@ -497,6 +498,7 @@ export component LeftColumn inherits Rectangle {
                         font-size: Styles.font-size;
                         vertical-alignment: center;
                     }
+
                     hide-effort-ta := TouchArea {
                         clicked => {
                             PjmCallback.set_dev_hide_effort(root.effort-menu-proj, root.effort-menu-dev, true);
@@ -616,7 +618,7 @@ export component LeftColumn inherits Rectangle {
 
                                 // Start week display row
                                 Rectangle {
-                                    height: root.visible ? Styles.height : 0px;
+                                    height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
 
                                     start-label-ta := TouchArea {
                                         width: parent.width;
@@ -633,6 +635,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     Text {
+                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size - 2px;
                                         horizontal-alignment: center;
@@ -643,7 +646,7 @@ export component LeftColumn inherits Rectangle {
 
                                 // Deadline display row
                                 Rectangle {
-                                    height: root.visible ? Styles.height : 0px;
+                                    height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
                                     //background: project.end_week >= 0 ? #00440020 : Colors.transparent;
 
                                     deadline-label-ta := TouchArea {
@@ -661,7 +664,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     Text {
-                                        //color: project.end_week >= 0 ? Colors.lightgreen : Colors.gray;
+                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size - 2px;
                                         horizontal-alignment: center;
@@ -799,7 +802,7 @@ export component LeftColumn inherits Rectangle {
                                                         clip: false;
                                                         background: Colors.transparent;
 
-                                                        if data.note != "": CornerTriangle {}
+                                                        if data.note != "": CornerTriangle { }
 
                                                         if data.note != "": TouchArea {
                                                             width: 10px;
@@ -852,6 +855,7 @@ export component LeftColumn inherits Rectangle {
                                                                 vertical-alignment: center;
                                                                 text: data.remains;
                                                             }
+
                                                             TouchArea {
                                                                 pointer-event(event) => {
                                                                     if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
