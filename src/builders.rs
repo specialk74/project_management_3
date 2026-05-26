@@ -176,6 +176,13 @@ pub fn build_project_data(
         .collect()
 }
 
+fn activity_range(sd: &SingleDev) -> (i32, i32) {
+    let weeks = sd.get_weeks();
+    let start = weeks.iter().map(|w| w.0 as i32).min().unwrap_or(-1);
+    let end = weeks.iter().map(|w| w.0 as i32).max().unwrap_or(-1);
+    (start, end)
+}
+
 fn build_dev(
     app: &App,
     proj_idx: i32,
@@ -190,6 +197,7 @@ fn build_dev(
     let planned = sd.planned_effort().0 as i32;
     let total = get_hours(sd.get_effort_tot());
     let max = (sd.max_num_efforts() as i32).max(1);
+    let (activity_start, activity_end) = activity_range(sd);
 
     let mut week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .step_by(7)
@@ -271,6 +279,8 @@ fn build_dev(
         start_week: proj_start,
         deadline_week,
         hide_effort: sd.get_hide_effort(),
+        activity_start,
+        activity_end,
         datas: mk(week_data),
     }
 }
@@ -323,6 +333,8 @@ fn empty_dev(
         start_week: proj_start,
         deadline_week,
         hide_effort: false,
+        activity_start: -1,
+        activity_end: -1,
         datas: mk(week_data),
     }
 }
@@ -369,6 +381,8 @@ fn build_dev_hidden(
         start_week: proj_start,
         deadline_week,
         hide_effort: sd.get_hide_effort(),
+        activity_start: -1,
+        activity_end: -1,
         datas: mk(week_data),
     }
 }
@@ -409,6 +423,8 @@ fn empty_dev_hidden(
         start_week: proj_start,
         deadline_week,
         hide_effort: false,
+        activity_start: -1,
+        activity_end: -1,
         datas: mk(week_data),
     }
 }

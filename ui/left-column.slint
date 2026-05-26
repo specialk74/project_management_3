@@ -221,8 +221,8 @@ export component LeftColumn inherits Rectangle {
             height: 130px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -243,7 +243,7 @@ export component LeftColumn inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -288,8 +288,8 @@ export component LeftColumn inherits Rectangle {
             height: 130px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -310,7 +310,7 @@ export component LeftColumn inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -355,8 +355,8 @@ export component LeftColumn inherits Rectangle {
             height: 110px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -377,7 +377,7 @@ export component LeftColumn inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -414,8 +414,8 @@ export component LeftColumn inherits Rectangle {
             height: 110px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -426,7 +426,7 @@ export component LeftColumn inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -618,7 +618,7 @@ export component LeftColumn inherits Rectangle {
 
                                 // Start week display row
                                 Rectangle {
-                                    height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                    height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
 
                                     start-label-ta := TouchArea {
                                         width: parent.width;
@@ -635,7 +635,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     Text {
-                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size - 2px;
                                         horizontal-alignment: center;
@@ -646,7 +646,7 @@ export component LeftColumn inherits Rectangle {
 
                                 // Deadline display row
                                 Rectangle {
-                                    height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                    height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
                                     //background: project.end_week >= 0 ? #00440020 : Colors.transparent;
 
                                     deadline-label-ta := TouchArea {
@@ -664,7 +664,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     Text {
-                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size - 2px;
                                         horizontal-alignment: center;
@@ -678,7 +678,7 @@ export component LeftColumn inherits Rectangle {
                                     padding: 0px;
 
                                     add-dev-btn := Rectangle {
-                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
                                         background: add-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -706,7 +706,7 @@ export component LeftColumn inherits Rectangle {
                                     }
 
                                     del-dev-btn := Rectangle {
-                                        height: (root.visible && !PjmCallback.filter_active) ? Styles.height : 0px;
+                                        height: (root.visible && !PjmCallback.filter_active && !PjmCallback.compact-mode) ? Styles.height : 0px;
                                         background: del-dev-ta.has-hover ? #3a3a3a : #2a2a2a;
                                         border-color: #555;
                                         border-width: 1px;
@@ -754,7 +754,7 @@ export component LeftColumn inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                            height: visibility ? (PjmCallback.compact-mode ? Styles.height : Styles.height * (data.max + 1)) : 0px;
 
                                             HorizontalLayout {
                                                 spacing: 0px;
@@ -822,7 +822,8 @@ export component LeftColumn inherits Rectangle {
                                                 }
 
                                                 Rectangle {
-                                                    height: visibility ? Styles.height * (data.max + 1) : 0px;
+                                                    height: visibility ? (PjmCallback.compact-mode ? Styles.height : Styles.height * (data.max + 1)) : 0px;
+                                                    background: root.app_project.devs[data.dev].col;
                                                     width: Styles.width - 25px;
                                                     VerticalLayout {
                                                         spacing: 0px;
@@ -830,7 +831,7 @@ export component LeftColumn inherits Rectangle {
                                                         LineEdit {
                                                             horizontal-alignment: center;
                                                             text: data.effort;
-                                                            height: visibility ? Styles.height : 0px;
+                                                            height: visibility && !PjmCallback.compact-mode ? Styles.height : 0px;
 
                                                             key-pressed(event) => {
                                                                 if event.text == Key.Tab {
@@ -848,7 +849,7 @@ export component LeftColumn inherits Rectangle {
 
                                                         remains := Rectangle {
                                                             background: ((data.remains == data.effort && data.effort != 0) || (data.remains < 0)) ? Colors.red : Colors.transparent;
-                                                            height: visibility ? self.preferred-height : 0px;
+                                                            height: visibility && !PjmCallback.compact-mode ? self.preferred-height : 0px;
                                                             Text {
                                                                 height: parent.height;
                                                                 horizontal-alignment: center;

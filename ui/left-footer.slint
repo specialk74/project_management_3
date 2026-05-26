@@ -39,8 +39,8 @@ export component LeftFooter inherits Rectangle {
             height: 130px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -61,7 +61,7 @@ export component LeftFooter inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -108,9 +108,7 @@ export component LeftFooter inherits Rectangle {
                         }
                     }
 
-                    background: year == PjmCallback.selected_year ? #3a5a8a
-                              : year-row-ta.has-hover ? #3a3a3a
-                              : Colors.transparent;
+                    background: year == PjmCallback.selected_year ? #3a5a8a : year-row-ta.has-hover ? #3a3a3a : Colors.transparent;
 
                     Text {
                         text: "\{year}";
@@ -186,9 +184,7 @@ export component LeftFooter inherits Rectangle {
                                             color: data.text-color;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
-                                            text: PjmCallback.selected_year > 0
-                                                ? "\{app_project.dev_year_totals[dev-idx]}"
-                                                : "—";
+                                            text: PjmCallback.selected_year > 0 ? "\{app_project.dev_year_totals[dev-idx]}" : "—";
                                         }
                                     }
                                 }
@@ -214,7 +210,7 @@ export component LeftFooter inherits Rectangle {
                     clip: true;
 
                     // Left triangle: worker has global max hours < 40
-                    if has-reduced-hours: CornerTriangle {}
+                    if has-reduced-hours: CornerTriangle { }
 
                     Cell-RO {
                         width: Styles.width;

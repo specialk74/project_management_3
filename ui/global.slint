@@ -56,6 +56,8 @@ export struct EffortByDevData {
     start_week: int,
     deadline_week: int,
     hide_effort: bool,
+    activity_start: int,
+    activity_end: int,
     datas: [EffortByDateData],
 }
 
@@ -158,6 +160,7 @@ export global PjmCallback {
     in property <bool> all_projects_disabled: false;
     callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);
     in property <bool> filter_active: false;
+    in-out property <bool> compact-mode: false;
     // Floating cell editor
     in-out property <bool> editor-active: false;
     in-out property <length> editor-x: 0px;
@@ -231,8 +234,8 @@ export component NoteEditorWindow inherits Window {
                 border-width: 1px;
 
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 8px;
+                    padding: Styles.padding;
+                    spacing: Styles.spacing;
 
                     Text {
                         text: is-dev ? "Nota Dev:" : "Nota:";
@@ -250,7 +253,7 @@ export component NoteEditorWindow inherits Window {
                     }
 
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Styles.spacing;
                         alignment: end;
 
                         Button {
@@ -376,11 +379,7 @@ export component Cell-RW inherits Rectangle {
     // Richiesta apertura floating editor: (abs-x, abs-y, testo-corrente, typed-prefix)
     callback request-edit(length, length, string, string);
 
-    property <bool> editing: PjmCallback.editor-active
-        && PjmCallback.editor-project == cell-project
-        && PjmCallback.editor-dev == cell-dev
-        && PjmCallback.editor-week == cell-week
-        && PjmCallback.editor-row == cell-row;
+    property <bool> editing: PjmCallback.editor-active && PjmCallback.editor-project == cell-project && PjmCallback.editor-dev == cell-dev && PjmCallback.editor-week == cell-week && PjmCallback.editor-row == cell-row;
     property <bool> has-focus: fs.has-focus;
     property <string> typed_prefix: "";
     height: self.visible ? Styles.height : 0px;
@@ -493,7 +492,7 @@ export component Cell-RW inherits Rectangle {
         clip: false;
         background: Colors.transparent;
 
-        if root.note != "": CornerTriangle {}
+        if root.note != "": CornerTriangle { }
 
         if root.note != "": TouchArea {
             width: 10px;
@@ -518,20 +517,10 @@ export component EffortByDataGui inherits Rectangle {
     in property <bool> before-start: false;
     in property <bool> hide-effort: false;
     in property <bool> is-deadline: false;
+    in property <color> dev-color: Colors.transparent;
+    in property <bool> dev-in-activity: false;
 
-    // popup := Rectangle {
-    //     x: cell.x;
-    //     y: cell.y + Styles.height;
-    //     visible: t.has-hover;
-    //     height: Styles.height;
-    //     width: Styles.width;
-    //     background: yellow;
-    //     Text {
-    //         font-weight: 800;
-    //         text: effort.remains;
-    //         color: Colors.black;
-    //     }
-    // }
+    width: PjmCallback.compact-mode ? Styles.compact : Styles.width;
 
     VerticalLayout {
         spacing: 0px;
@@ -572,7 +561,7 @@ export component EffortByDataGui inherits Rectangle {
         }
 
         cell := Cell-RO {
-            visible: root.visible && !root.after-deadline && !root.before-start && (root.effort.has_workers || root.is-deadline);
+            visible: !PjmCallback.compact-mode && root.visible && !root.after-deadline && !root.before-start && (root.effort.has_workers || root.is-deadline);
             text: root.hide-effort ? "" : (effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}");
             text_color: root.is-deadline ? Colors.white : my-function(effort);
 
@@ -585,7 +574,7 @@ export component EffortByDataGui inherits Rectangle {
         for person[row_idx] in effort.persons: Cell-RW {
             text: person.name;
             note: person.note;
-            visible: root.visible && !root.after-deadline && !root.before-start;
+            visible: !PjmCallback.compact-mode && root.visible && !root.after-deadline && !root.before-start;
             text-color: (person.name != "" && person.sovra > person.max_hours) ? Colors.red : (Palette.color-scheme == ColorScheme.dark ? Colors.white : Colors.black);
             selected: effort.project == PjmCallback.sel_project && effort.dev == PjmCallback.sel_dev && effort.week >= PjmCallback.sel_start_week && effort.week <= PjmCallback.sel_end_week && row_idx >= PjmCallback.sel_start_row && row_idx <= PjmCallback.sel_end_row;
             cell-project: effort.project;
@@ -667,6 +656,18 @@ export component EffortByDataGui inherits Rectangle {
                 }
             }
         }
+
+        if PjmCallback.compact-mode && root.visible && !root.after-deadline && !root.before-start && root.dev-in-activity: Rectangle {
+            width: Styles.compact;
+            height: Styles.height;
+            Rectangle {
+                property <float> ratio: min(1.0, root.effort.total / 40.0);
+                width: parent.width;
+                height: root.effort.total == 0 ? 1px : max(1px, Styles.height * ratio);
+                y: parent.height - self.height;
+                background: root.dev-color;
+            }
+        }
     }
 }
 
@@ -677,7 +678,7 @@ export component EffortByDevGui inherits Rectangle {
     VerticalLayout {
         Rectangle {
             height: root.visible ? Styles.dev-border : 0px;
-            background: root.devs[root.datas.dev].col;
+            background: PjmCallback.compact-mode ? Colors.transparent : root.devs[root.datas.dev].col;
         }
 
         HorizontalLayout {
@@ -685,13 +686,11 @@ export component EffortByDevGui inherits Rectangle {
             padding: 0px;
 
             for data in datas.datas: Rectangle {
-                background: datas.deadline_week >= 0 && data.week == datas.deadline_week ? Colors.green
-                          : datas.start_week >= 0 && data.week == datas.start_week ? Colors.steelblue
-                          : Colors.transparent;
+                background: datas.deadline_week >= 0 && data.week == datas.deadline_week ? Colors.green : datas.start_week >= 0 && data.week == datas.start_week ? Colors.steelblue : Colors.transparent;
                 HorizontalLayout {
                     Rectangle {
-                        background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
-                        width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+                        background: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
+                        width: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
                     }
 
                     EffortByDataGui {
@@ -701,6 +700,8 @@ export component EffortByDevGui inherits Rectangle {
                         before-start: datas.start_week >= 0 && data.week < datas.start_week;
                         hide-effort: datas.hide_effort;
                         is-deadline: datas.deadline_week >= 0 && data.week == datas.deadline_week;
+                        dev-color: root.devs[root.datas.dev].col;
+                        dev-in-activity: datas.activity_start >= 0 && data.week >= datas.activity_start && datas.activity_end >= 0 && data.week <= datas.activity_end;
                     }
                 }
             }
@@ -708,7 +709,7 @@ export component EffortByDevGui inherits Rectangle {
 
         Rectangle {
             height: root.visible ? Styles.dev-border : 0px;
-            background: root.devs[root.datas.dev].col;
+            background: PjmCallback.compact-mode ? Colors.transparent : root.devs[root.datas.dev].col;
         }
     }
 }

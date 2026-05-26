@@ -40,8 +40,8 @@ export component RightFooter inherits Rectangle {
             height: 150px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -62,7 +62,7 @@ export component RightFooter inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -92,8 +92,8 @@ export component RightFooter inherits Rectangle {
             for data in root.app_project.sovra: Rectangle {
                 HorizontalLayout {
                     Rectangle {
-                        background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
-                        width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+                        background: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
+                        width: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
                     }
 
                     VerticalLayout {
@@ -102,7 +102,7 @@ export component RightFooter inherits Rectangle {
                             property <int> eff-max: data.max_hours[index];
                             property <bool> has-override: eff-max != root.app_project.worker_max_hours[index];
                             background: index.mod(2) == 0 ? Colors.gray : Colors.black;
-                            width: Styles.width;
+                            width: PjmCallback.compact-mode ? Styles.compact : Styles.width;
                             height: worker-visible ? Styles.height : 0px;
                             visible: worker-visible;
                             clip: true;
@@ -114,7 +114,7 @@ export component RightFooter inherits Rectangle {
                             }
 
                             // Yellow triangle in top-right corner when a week override is active
-                            if has-override: CornerTriangle {}
+                            if has-override: CornerTriangle { }
 
                             TouchArea {
                                 pointer-event(event) => {

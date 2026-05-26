@@ -33,8 +33,8 @@ export component Header inherits Rectangle {
             height: 150px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -55,7 +55,7 @@ export component Header inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -89,18 +89,19 @@ export component Header inherits Rectangle {
                 for data in weeks: Rectangle {
                     HorizontalLayout {
                         Rectangle {
-                            background: data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
-                            width: data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
+                            background: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? Styles.this-week-color : Colors.transparent;
+                            width: !PjmCallback.compact-mode && data.week == PjmCallback.this_week ? PjmCallback.this_week_width : 0px;
                         }
 
                         Rectangle {
-                            width: Styles.width;
+                            width: PjmCallback.compact-mode ? Styles.compact : Styles.width;
                             clip: true;
 
                             Text {
                                 text: data.text;
                                 font-family: Styles.font-family;
                                 font-size: Styles.font-size;
+                                visible: !PjmCallback.compact-mode;
                             }
 
                             // Yellow triangle top-right when all workers are limited this week

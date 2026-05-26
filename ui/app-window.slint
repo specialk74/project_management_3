@@ -117,8 +117,8 @@ component Toolbar inherits Rectangle {
             height: 210px;
 
             VerticalLayout {
-                padding: 10px;
-                spacing: 8px;
+                padding: Styles.padding;
+                spacing: Styles.spacing;
 
                 Text {
                     color: Colors.lightgray;
@@ -149,7 +149,7 @@ component Toolbar inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Styles.spacing;
                     alignment: end;
 
                     Button {
@@ -451,6 +451,14 @@ component Toolbar inherits Rectangle {
                 PjmCallback.open_file();
             }
         }
+
+        Button {
+            text: PjmCallback.compact-mode ? "Vista normale" : "Vista compatta";
+            height: 26px;
+            clicked => {
+                PjmCallback.compact-mode = !PjmCallback.compact-mode;
+            }
+        }
     }
 }
 
@@ -512,17 +520,20 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
+            visible: !PjmCallback.compact-mode;
             height: self.visible ? Styles.dev-border : 0px;
             background: Styles.color-start-stop;
         }
 
         Header {
+            visible: !PjmCallback.compact-mode;
             weeks: root.weeks;
             viewport_x <=> root.viewport_x;
             app_project: root.app_project;
         }
 
         HorizontalLayout {
+            visible: !PjmCallback.compact-mode;
             LeftFooter {
                 app_project: root.app_project;
             }
@@ -568,16 +579,14 @@ export component AppWindow inherits Window {
                     self.show-for-dev(
                         PjmCallback.note-editor-project,
                         PjmCallback.note-editor-dev,
-                        PjmCallback.note-editor-text
-                    );
+                        PjmCallback.note-editor-text);
                 } else {
                     self.show-for-effort(
                         PjmCallback.note-editor-project,
                         PjmCallback.note-editor-dev,
                         PjmCallback.note-editor-week,
                         PjmCallback.note-editor-worker,
-                        PjmCallback.note-editor-text
-                    );
+                        PjmCallback.note-editor-text);
                 }
                 PjmCallback.note-editor-active = false;
             }
