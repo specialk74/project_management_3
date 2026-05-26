@@ -197,8 +197,8 @@ fn build_dev(
         .map(|w| {
             let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
             let pre_start = proj_start >= 0 && (w as i32) < proj_start;
-            let workers_in_week: Vec<SingleEffortGui> = if post_deadline || pre_start {
-                vec![]
+            let (workers_in_week, has_workers) = if post_deadline || pre_start {
+                (vec![], false)
             } else {
                 let mut v = sd
                     .get_all(WeekId(w))
@@ -231,8 +231,9 @@ fn build_dev(
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
+                let has = !v.is_empty();
                 v.resize(max as usize, SingleEffortGui::default());
-                v
+                (v, has)
             };
 
             let week_total = get_hours(sd.get_effort_by_week(WeekId(w)));
@@ -245,6 +246,7 @@ fn build_dev(
                 project: proj_idx,
                 effort: planned,
                 week: w as i32,
+                has_workers,
                 persons: mk(workers_in_week),
             }
         })
@@ -298,6 +300,7 @@ fn empty_dev(
                 project: proj_idx,
                 effort: 0,
                 week: w as i32,
+                has_workers: false,
                 persons: mk(if post_deadline || pre_start {
                     vec![]
                 } else {
@@ -349,6 +352,7 @@ fn build_dev_hidden(
             project: proj_idx,
             effort: planned,
             week: w as i32,
+            has_workers: false,
             persons: mk(vec![]),
         })
         .collect();
@@ -388,6 +392,7 @@ fn empty_dev_hidden(
             project: proj_idx,
             effort: 0,
             week: (start_w + i) as i32,
+            has_workers: false,
             persons: mk(vec![]),
         })
         .collect();

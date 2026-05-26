@@ -39,6 +39,7 @@ export struct EffortByDateData {
     project: int,
     effort: int,
     week: int,
+    has_workers: bool,
     persons: [SingleEffortGui],
 }
 
@@ -516,6 +517,7 @@ export component EffortByDataGui inherits Rectangle {
     in property <bool> after-deadline: false;
     in property <bool> before-start: false;
     in property <bool> hide-effort: false;
+    in property <bool> is-deadline: false;
 
     // popup := Rectangle {
     //     x: cell.x;
@@ -570,9 +572,9 @@ export component EffortByDataGui inherits Rectangle {
         }
 
         cell := Cell-RO {
-            visible: root.visible && !root.after-deadline && !root.before-start;
+            visible: root.visible && !root.after-deadline && !root.before-start && (root.effort.has_workers || root.is-deadline);
             text: root.hide-effort ? "" : (effort.cumulative != (effort.effort - effort.cumulative) ? "\{effort.cumulative} | \{effort.effort - effort.cumulative}" : "\{effort.effort - effort.cumulative}");
-            text_color: my-function(effort);
+            text_color: root.is-deadline ? Colors.white : my-function(effort);
 
             t := TouchArea {
                 width: parent.width;
@@ -698,6 +700,7 @@ export component EffortByDevGui inherits Rectangle {
                         after-deadline: datas.deadline_week >= 0 && data.week > datas.deadline_week;
                         before-start: datas.start_week >= 0 && data.week < datas.start_week;
                         hide-effort: datas.hide_effort;
+                        is-deadline: datas.deadline_week >= 0 && data.week == datas.deadline_week;
                     }
                 }
             }
