@@ -85,6 +85,7 @@ export struct SovraData {
 export struct AppProject {
     worker_names: [string],
     worker_max_hours: [int],
+    worker_filter_selected: [bool],
     week_off: [int],
     sovra: [SovraData],
     projects: [EffortByPrjData],
@@ -110,6 +111,8 @@ export global PjmCallback {
     callback save_file();
     callback open_file();
     callback search(string);
+    callback set_worker_filter(int /*worker_idx*/, bool /*selected*/);
+    callback set_all_workers_filter(bool /*selected*/);
     callback new_project(string /*tripletta*/, string /*name*/, string /*start_date_yy_mm_dd*/);
     callback set_project_start_week(int /*project_idx*/, string /*date_str*/);
     callback set_selected_year(int /*year*/);
@@ -127,8 +130,9 @@ export global PjmCallback {
     callback remove_last_char(string) -> string;
     in property <string> current-week-text: "";
     in property <string> testo-copiato;
-    in property <string> last-search;
-    in property <bool> show_modal;
+    in-out property <bool> show-worker-filter: false;
+    in property <bool> all_workers_filter_on: false;
+    in property <bool> all_workers_filter_off: true;
     in property <bool> changed;
     in property <int> this_week;
     in property <length> this_week_width: 5px;
@@ -437,12 +441,11 @@ export component Cell-RW inherits Rectangle {
                     return accept;
                 }
                 if (event.text == "f") {
-                    PjmCallback.show_modal = true;
+                    PjmCallback.show-worker-filter = true;
                     return accept;
                 }
                 if (event.text == "F") {
-                    PjmCallback.last-search = "";
-                    PjmCallback.search("");
+                    PjmCallback.set_all_workers_filter(false);
                     return accept;
                 }
                 if (event.text == "m" || event.text == "M") {

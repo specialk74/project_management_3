@@ -1,4 +1,6 @@
 use slint::{ModelRc, SharedString, VecModel};
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::{AppProject, DayData, DevInfo, EffortByPrjData, SovraData};
@@ -11,6 +13,8 @@ pub struct LiveModels {
     pub projects: Rc<VecModel<EffortByPrjData>>,
     pub worker_names: Rc<VecModel<SharedString>>,
     pub worker_max_hours: Rc<VecModel<i32>>,
+    pub worker_filter_selected: Rc<VecModel<bool>>,
+    pub worker_filter: Rc<RefCell<HashSet<String>>>,
     pub sovra: Rc<VecModel<SovraData>>,
     pub weeks: Rc<VecModel<DayData>>,
     pub devs: Rc<VecModel<DevInfo>>,
@@ -24,6 +28,8 @@ impl LiveModels {
             projects: Rc::new(VecModel::default()),
             worker_names: Rc::new(VecModel::default()),
             worker_max_hours: Rc::new(VecModel::default()),
+            worker_filter_selected: Rc::new(VecModel::default()),
+            worker_filter: Rc::new(RefCell::new(HashSet::new())),
             sovra: Rc::new(VecModel::default()),
             weeks: Rc::new(VecModel::default()),
             devs: Rc::new(VecModel::default()),
@@ -38,6 +44,7 @@ impl LiveModels {
             projects: ModelRc::from(self.projects.clone()),
             worker_names: ModelRc::from(self.worker_names.clone()),
             worker_max_hours: ModelRc::from(self.worker_max_hours.clone()),
+            worker_filter_selected: ModelRc::from(self.worker_filter_selected.clone()),
             sovra: ModelRc::from(self.sovra.clone()),
             week_off: ModelRc::new(VecModel::from(vec![])),
             devs: ModelRc::from(self.devs.clone()),

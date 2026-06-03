@@ -1,7 +1,9 @@
 use slint::{ComponentHandle, Global};
+use std::collections::HashSet;
 
+use crate::app::App;
 use crate::ui_sync::{refresh, sync_project_texts};
-use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO};
+use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WorkerId, WORKER_ID_ZERO};
 use crate::{AppWindow, PjmCallback};
 
 use super::SharedState;
@@ -15,6 +17,8 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_set_worker_max_hours(ui, state);
     register_set_worker_week_override(ui, state);
     register_set_bulk_week_limit(ui, state);
+    register_set_worker_filter(ui, state);
+    register_set_all_workers_filter(ui, state);
 }
 
 fn register_add_worker(ui: &AppWindow, state: &SharedState) {
@@ -89,37 +93,43 @@ fn register_find_completion(ui: &AppWindow, state: &SharedState) {
     });
 }
 
+fn apply_worker_filter(
+    app: &App,
+    visibility: &mut std::collections::HashMap<(i32, i32), bool>,
+    worker_filter: &HashSet<String>,
+) {
+    if worker_filter.is_empty() {
+        visibility.clear();
+        return;
+    }
+    let worker_ids: Vec<WorkerId> = worker_filter
+        .iter()
+        .filter_map(|name| app.workers.get_id_by_name(name))
+        .collect();
+    for (pi, (proj_id, _)) in app.projects.list().iter().enumerate() {
+        for dev_id in app.projects.list_devs(*proj_id) {
+            let has_any = worker_ids.iter().any(|&wid| {
+                app.projects
+                    .get_single_dev(*proj_id, dev_id)
+                    .map(|sd| sd.has_worker(wid))
+                    .unwrap_or(false)
+            });
+            visibility.insert((pi as i32, dev_id.0 as i32), has_any);
+        }
+    }
+}
+
 fn register_search(ui: &AppWindow, state: &SharedState) {
     let app = state.app.clone();
     let live = state.live.clone();
     let row_counts = state.row_counts.clone();
     let visibility = state.visibility.clone();
     let ui_w = ui.as_weak();
-    PjmCallback::get(ui).on_search(move |worker_name| {
-        let worker_name: String = worker_name.into();
+    PjmCallback::get(ui).on_search(move |_| {
         if let Some(ui) = ui_w.upgrade() {
             {
-                let a = app.borrow();
-                let mut vis = visibility.borrow_mut();
-
-                if worker_name.is_empty() {
-                    vis.clear();
-                } else {
-                    let worker_id = a.workers.get_id_by_name(&worker_name);
-                    for (pi, (proj_id, _)) in a.projects.list().iter().enumerate() {
-                        for dev_id in a.projects.list_devs(*proj_id) {
-                            let has_worker = match worker_id {
-                                Some(wid) => a
-                                    .projects
-                                    .get_single_dev(*proj_id, dev_id)
-                                    .map(|sd| sd.has_worker(wid))
-                                    .unwrap_or(false),
-                                None => false,
-                            };
-                            vis.insert((pi as i32, dev_id.0 as i32), has_worker);
-                        }
-                    }
-                }
+                live.worker_filter.borrow_mut().clear();
+                visibility.borrow_mut().clear();
             }
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
@@ -130,7 +140,78 @@ fn register_search(ui: &AppWindow, state: &SharedState) {
                 &row_counts.borrow(),
                 &visibility.borrow(),
             );
-            PjmCallback::get(&ui).set_filter_active(!worker_name.is_empty());
+            PjmCallback::get(&ui).set_filter_active(false);
+        }
+    });
+}
+
+fn register_set_worker_filter(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_worker_filter(move |worker_idx, selected| {
+        if let Some(ui) = ui_w.upgrade() {
+            {
+                let a = app.borrow();
+                let workers = a.workers.list();
+                if let Some((_, name)) = workers.get(worker_idx as usize) {
+                    let mut filter = live.worker_filter.borrow_mut();
+                    if selected {
+                        filter.insert(name.clone());
+                    } else {
+                        filter.remove(name.as_str());
+                    }
+                    apply_worker_filter(&a, &mut visibility.borrow_mut(), &filter);
+                }
+            }
+            let mut a = app.borrow_mut();
+            sync_project_texts(&ui, &mut a);
+            let filter_active = !live.worker_filter.borrow().is_empty();
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
+            PjmCallback::get(&ui).set_filter_active(filter_active);
+        }
+    });
+}
+
+fn register_set_all_workers_filter(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_all_workers_filter(move |selected| {
+        if let Some(ui) = ui_w.upgrade() {
+            {
+                let a = app.borrow();
+                let workers = a.workers.list();
+                let mut filter = live.worker_filter.borrow_mut();
+                filter.clear();
+                if selected {
+                    for (_, name) in &workers {
+                        filter.insert(name.clone());
+                    }
+                }
+                apply_worker_filter(&a, &mut visibility.borrow_mut(), &filter);
+            }
+            let mut a = app.borrow_mut();
+            sync_project_texts(&ui, &mut a);
+            let filter_active = !live.worker_filter.borrow().is_empty();
+            refresh(
+                &ui,
+                &mut a,
+                &live,
+                &row_counts.borrow(),
+                &visibility.borrow(),
+            );
+            PjmCallback::get(&ui).set_filter_active(filter_active);
         }
     });
 }

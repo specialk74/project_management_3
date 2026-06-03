@@ -202,7 +202,7 @@ export component LeftFooter inherits Rectangle {
                 padding: 0px;
 
                 for name[index] in app_project.worker_names: Rectangle {
-                    property <bool> worker-visible: PjmCallback.last-search == "" || name == PjmCallback.last-search;
+                    property <bool> worker-visible: !PjmCallback.filter_active || app_project.worker_filter_selected[index];
                     property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
                     height: worker-visible ? Styles.height : 0px;
                     visible: worker-visible;

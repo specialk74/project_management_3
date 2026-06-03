@@ -50,7 +50,20 @@ pub fn refresh(
     let projects = app.projects.list_full();
     let all_enabled = !projects.is_empty() && projects.iter().all(|(_, _, e)| e.0);
     let all_disabled = !projects.is_empty() && projects.iter().all(|(_, _, e)| !e.0);
+
+    let workers = app.workers.list();
+    let filter = live.worker_filter.borrow();
+    let filter_selected: Vec<bool> = workers
+        .iter()
+        .map(|(_, name)| filter.contains(name.as_str()))
+        .collect();
+    let all_workers_on = !workers.is_empty() && filter_selected.iter().all(|&b| b);
+    let all_workers_off = filter_selected.iter().all(|&b| !b);
+    live.worker_filter_selected.set_vec(filter_selected);
+
     let pcb = PjmCallback::get(ui);
     pcb.set_all_projects_enabled(all_enabled);
     pcb.set_all_projects_disabled(all_disabled);
+    pcb.set_all_workers_filter_on(all_workers_on);
+    pcb.set_all_workers_filter_off(all_workers_off);
 }

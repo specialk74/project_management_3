@@ -103,6 +103,16 @@ component Toolbar inherits Rectangle {
     property <string> new-proj-name: "Nuovo Progetto";
     property <string> new-proj-start: PjmCallback.current-week-text;
     property <length> proj-list-popup-x: 0px;
+    property <length> worker-filter-popup-x: 0px;
+
+    // Watch PjmCallback.show-worker-filter to open popup from keyboard/cell shortcuts
+    property <bool> _show-wf: PjmCallback.show-worker-filter;
+    changed _show-wf => {
+        if (_show-wf) {
+            worker-filter-popup.show();
+            PjmCallback.show-worker-filter = false;
+        }
+    }
 
     new-proj-popup := PopupWindow {
         close-policy: no-auto-close;
@@ -342,6 +352,171 @@ component Toolbar inherits Rectangle {
         }
     }
 
+    worker-filter-popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        x: root.worker-filter-popup-x;
+        y: root.height;
+        width: 180px;
+        height: 300px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+            width: 180px;
+            height: 300px;
+
+            VerticalLayout {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                spacing: 0px;
+                padding: 0px;
+
+                // Seleziona tutti
+                Rectangle {
+                    height: 26px;
+                    background: seleziona-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                    cb-seleziona := Rectangle {
+                        x: 6px;
+                        y: (parent.height - 13px) / 2;
+                        width: 13px;
+                        height: 13px;
+                        border-width: 1px;
+                        border-color: #888888;
+                        border-radius: 2px;
+                        background: PjmCallback.all_workers_filter_on ? #4a90d9 : Colors.transparent;
+
+                        Text {
+                            visible: PjmCallback.all_workers_filter_on;
+                            text: "✓";
+                            font-size: 9px;
+                            color: Colors.white;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    Text {
+                        x: cb-seleziona.x + cb-seleziona.width + 6px;
+                        y: 0px;
+                        width: parent.width - cb-seleziona.x - cb-seleziona.width - 10px;
+                        height: parent.height;
+                        text: "Seleziona tutti";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        vertical-alignment: center;
+                    }
+
+                    seleziona-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_all_workers_filter(true);
+                        }
+                    }
+                }
+
+                // Deseleziona tutti
+                Rectangle {
+                    height: 26px;
+                    background: deseleziona-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                    cb-deseleziona := Rectangle {
+                        x: 6px;
+                        y: (parent.height - 13px) / 2;
+                        width: 13px;
+                        height: 13px;
+                        border-width: 1px;
+                        border-color: #888888;
+                        border-radius: 2px;
+                        background: PjmCallback.all_workers_filter_off ? #4a90d9 : Colors.transparent;
+
+                        Text {
+                            visible: PjmCallback.all_workers_filter_off;
+                            text: "✓";
+                            font-size: 9px;
+                            color: Colors.white;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    Text {
+                        x: cb-deseleziona.x + cb-deseleziona.width + 6px;
+                        y: 0px;
+                        width: parent.width - cb-deseleziona.x - cb-deseleziona.width - 10px;
+                        height: parent.height;
+                        text: "Deseleziona tutti";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        vertical-alignment: center;
+                    }
+
+                    deseleziona-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_all_workers_filter(false);
+                        }
+                    }
+                }
+
+                // Lista workers
+                ListView {
+                    for worker[idx] in root.app_project.worker_names: Rectangle {
+                        height: 26px;
+                        background: worker-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                        cb-worker := Rectangle {
+                            x: 6px;
+                            y: (parent.height - 13px) / 2;
+                            width: 13px;
+                            height: 13px;
+                            border-width: 1px;
+                            border-color: #888888;
+                            border-radius: 2px;
+                            background: root.app_project.worker_filter_selected[idx] ? #4a90d9 : Colors.transparent;
+
+                            Text {
+                                visible: root.app_project.worker_filter_selected[idx];
+                                text: "✓";
+                                font-size: 9px;
+                                color: Colors.white;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+
+                        Text {
+                            x: cb-worker.x + cb-worker.width + 6px;
+                            y: 0px;
+                            width: parent.width - cb-worker.x - cb-worker.width - 10px;
+                            height: parent.height;
+                            text: worker;
+                            color: root.app_project.worker_filter_selected[idx] ? Colors.lightgray : #666666;
+                            font-family: Styles.font-family;
+                            font-size: Styles.font-size;
+                            vertical-alignment: center;
+                        }
+
+                        worker-ta := TouchArea {
+                            clicked => {
+                                PjmCallback.set_worker_filter(idx, !root.app_project.worker_filter_selected[idx]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     HorizontalLayout {
         spacing: 4px;
         padding-left: 6px;
@@ -364,6 +539,15 @@ component Toolbar inherits Rectangle {
             clicked => {
                 root.proj-list-popup-x = self.absolute-position.x - root.absolute-position.x;
                 proj-list-popup.show();
+            }
+        }
+
+        btn-workers := Button {
+            text: "Workers ▼";
+            height: 26px;
+            clicked => {
+                root.worker-filter-popup-x = self.absolute-position.x - root.absolute-position.x;
+                worker-filter-popup.show();
             }
         }
 
@@ -650,13 +834,12 @@ export component AppWindow inherits Window {
                     }
                     if event.text == "f" {
                         PjmCallback.editor-active = false;
-                        PjmCallback.show_modal = true;
+                        PjmCallback.show-worker-filter = true;
                         return accept;
                     }
                     if event.text == "F" {
                         PjmCallback.editor-active = false;
-                        PjmCallback.last-search = "";
-                        PjmCallback.search("");
+                        PjmCallback.set_all_workers_filter(false);
                         return accept;
                     }
                     return reject;
@@ -699,12 +882,11 @@ export component AppWindow inherits Window {
                     return accept;
                 }
                 if (event.text == "f") {
-                    im.show();
+                    PjmCallback.show-worker-filter = true;
                     return accept;
                 }
                 if (event.text == "F") {
-                    PjmCallback.last-search = "";
-                    PjmCallback.search("");
+                    PjmCallback.set_all_workers_filter(false);
                     return accept;
                 }
                 if (event.text == "N" || event.text == "n") {
@@ -728,90 +910,4 @@ export component AppWindow inherits Window {
         }
     }
 
-    im := PopupWindow {
-        in-out property <string> text;
-        property <string> typed_prefix: "";
-
-        init => {
-            le.focus();
-        }
-        Rectangle {
-            background: Colors.antiquewhite;
-            VerticalLayout {
-                Text {
-                    color: Colors.blue;
-                    text: "Search the worker...";
-                }
-
-                le := LineEdit {
-                    text: text;
-                    key-pressed(event) => {
-                        if event.text == Key.Backspace || event.text == Key.Delete {
-                            typed_prefix = PjmCallback.remove_last_char(typed_prefix);
-                            text = PjmCallback.find_completion(typed_prefix, false);
-                            if text == "" {
-                                text = typed_prefix;
-                            } else {
-                                typed_prefix = text;
-                            }
-                            self.set-selection-offsets(text.character-count, text.character-count);
-                            return accept;
-                        }
-                        if event.text == Key.Escape {
-                            typed_prefix = "";
-                            text = "";
-                            return reject;
-                        }
-                        if event.text == Key.Return || event.text == Key.Tab || event.text == Key.Shift || event.text == Key.ShiftR {
-                            return reject;
-                        }
-                        if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
-                            return reject;
-                        }
-                        if event.text == "" {
-                            return reject;
-                        }
-                        typed_prefix += event.text;
-                        text = PjmCallback.find_completion(typed_prefix, false);
-                        if text == "" {
-                            text = typed_prefix;
-                        } else {
-                            typed_prefix = text;
-                        }
-                        self.set-selection-offsets(text.character-count, text.character-count);
-                        accept
-                    }
-                    accepted => {
-                        PjmCallback.last-search = text;
-                        PjmCallback.search(text);
-                        typed_prefix = "";
-                        text = "";
-                        im.close();
-                    }
-                }
-
-                HorizontalLayout {
-                    Button {
-                        text: "Search";
-                        clicked => {
-                            PjmCallback.last-search = text;
-                            PjmCallback.search(text);
-                            typed_prefix = "";
-                            text = "";
-                            im.close();
-                        }
-                    }
-
-                    Button {
-                        text: "Abort";
-                        clicked => {
-                            typed_prefix = "";
-                            text = "";
-                            im.close();
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
