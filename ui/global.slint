@@ -165,6 +165,8 @@ export global PjmCallback {
     in property <bool> all_projects_disabled: false;
     callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);
     in property <bool> filter_active: false;
+    // 0 = tutti gli effort, 1 = solo nulli, 2 = solo >= 40
+    in-out property <int> effort-filter-mode: 0;
     in-out property <bool> compact-mode: false;
     // Floating cell editor
     in-out property <bool> editor-active: false;
