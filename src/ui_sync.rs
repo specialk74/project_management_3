@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use crate::AppWindow;
 use crate::PjmCallback;
 use crate::app::App;
-use crate::builders::{build_available_years, build_dev_infos, build_dev_year_totals, build_project_data, build_sovra_data, build_weeks, build_worker_max_hours};
+use crate::builders::{
+    build_available_years, build_dev_infos, build_dev_year_totals, build_project_data,
+    build_sovra_data, build_weeks, build_worker_max_hours,
+};
 use crate::live_models::LiveModels;
 
 pub fn sync_project_texts(ui: &AppWindow, app: &mut App) {
@@ -30,7 +33,7 @@ pub fn refresh(
     app.recompute_week_range();
     app.compute_sovra();
     live.projects
-        .set_vec(build_project_data(app, row_counts, visibility));
+        .set_vec(build_project_data(app, row_counts, visibility, &live.worker_filter.borrow()));
     live.worker_names.set_vec({
         app.workers
             .list()
@@ -53,12 +56,18 @@ pub fn refresh(
 
     let workers = app.workers.list();
     let filter = live.worker_filter.borrow();
-    let filter_selected: Vec<bool> = workers
-        .iter()
-        .map(|(_, name)| filter.contains(name.as_str()))
-        .collect();
+    // When the visibility map is empty no filter is active: show every worker as selected.
+    // When a filter has been applied, reflect the actual filter membership.
+    let filter_selected: Vec<bool> = if visibility.is_empty() {
+        workers.iter().map(|_| true).collect()
+    } else {
+        workers
+            .iter()
+            .map(|(_, name)| filter.contains(name.as_str()))
+            .collect()
+    };
     let all_workers_on = !workers.is_empty() && filter_selected.iter().all(|&b| b);
-    let all_workers_off = filter_selected.iter().all(|&b| !b);
+    let all_workers_off = !workers.is_empty() && !visibility.is_empty() && filter_selected.iter().all(|&b| !b);
     live.worker_filter_selected.set_vec(filter_selected);
 
     let pcb = PjmCallback::get(ui);

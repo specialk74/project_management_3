@@ -98,16 +98,16 @@ fn apply_worker_filter(
     visibility: &mut std::collections::HashMap<(i32, i32), bool>,
     worker_filter: &HashSet<String>,
 ) {
-    if worker_filter.is_empty() {
-        visibility.clear();
-        return;
-    }
+    // Empty filter = "Deseleziona tutti": impose visibility all-false so nothing is shown.
+    // Clearing visibility (the old behaviour) would instead make everything visible via
+    // unwrap_or(&true) in build_project_data.
     let worker_ids: Vec<WorkerId> = worker_filter
         .iter()
         .filter_map(|name| app.workers.get_id_by_name(name))
         .collect();
     for (pi, (proj_id, _)) in app.projects.list().iter().enumerate() {
         for dev_id in app.projects.list_devs(*proj_id) {
+            // any() on empty iterator returns false → all devs hidden when no workers selected
             let has_any = worker_ids.iter().any(|&wid| {
                 app.projects
                     .get_single_dev(*proj_id, dev_id)
@@ -158,6 +158,14 @@ fn register_set_worker_filter(ui: &AppWindow, state: &SharedState) {
                 let workers = a.workers.list();
                 if let Some((_, name)) = workers.get(worker_idx as usize) {
                     let mut filter = live.worker_filter.borrow_mut();
+                    // Deselecting a worker while in the initial "all shown" state (empty filter +
+                    // empty visibility) means we are implicitly starting from "all selected".
+                    // Populate the filter with every worker first, then remove the deselected one.
+                    if !selected && filter.is_empty() && visibility.borrow().is_empty() {
+                        for (_, n) in &workers {
+                            filter.insert(n.clone());
+                        }
+                    }
                     if selected {
                         filter.insert(name.clone());
                     } else {
@@ -168,7 +176,7 @@ fn register_set_worker_filter(ui: &AppWindow, state: &SharedState) {
             }
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            let filter_active = !live.worker_filter.borrow().is_empty();
+            let filter_active = !visibility.borrow().is_empty();
             refresh(
                 &ui,
                 &mut a,
@@ -191,19 +199,18 @@ fn register_set_all_workers_filter(ui: &AppWindow, state: &SharedState) {
         if let Some(ui) = ui_w.upgrade() {
             {
                 let a = app.borrow();
-                let workers = a.workers.list();
                 let mut filter = live.worker_filter.borrow_mut();
                 filter.clear();
                 if selected {
-                    for (_, name) in &workers {
-                        filter.insert(name.clone());
-                    }
+                    // "Seleziona tutti" = restore the no-filter state: every dev visible.
+                    visibility.borrow_mut().clear();
+                } else {
+                    apply_worker_filter(&a, &mut visibility.borrow_mut(), &filter);
                 }
-                apply_worker_filter(&a, &mut visibility.borrow_mut(), &filter);
             }
             let mut a = app.borrow_mut();
             sync_project_texts(&ui, &mut a);
-            let filter_active = !live.worker_filter.borrow().is_empty();
+            let filter_active = !visibility.borrow().is_empty();
             refresh(
                 &ui,
                 &mut a,

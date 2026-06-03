@@ -1,6 +1,6 @@
 use chrono::Datelike;
 use slint::{ModelRc, SharedString, VecModel};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::App;
 use crate::date_utils::dates::{days_to_local, primo_giorno_settimana_corrente};
@@ -53,6 +53,7 @@ pub fn build_project_data(
     app: &App,
     row_counts: &HashMap<(i32, i32), i32>,
     visibility: &HashMap<(i32, i32), bool>,
+    worker_filter: &HashSet<String>,
 ) -> Vec<EffortByPrjData> {
     let projects = app.projects.list();
     let start_w = app.start_week.0;
@@ -125,6 +126,7 @@ pub fn build_project_data(
                                 true,
                                 proj_start,
                                 deadline_week,
+                                worker_filter,
                             )
                         } else {
                             empty_dev(
@@ -193,15 +195,46 @@ fn build_dev(
     enable: bool,
     proj_start: i32,
     deadline_week: i32,
+    worker_filter: &HashSet<String>,
 ) -> EffortByDevData {
+    let filter_active = !worker_filter.is_empty();
     let planned = sd.planned_effort().0 as i32;
     let total = get_hours(sd.get_effort_tot());
     let max = (sd.max_num_efforts() as i32).max(1);
     let (activity_start, activity_end) = activity_range(sd);
 
+    // When filtering, compute how many selected workers appear per week (max across weeks)
+    // so that both left and right columns use the same row count.
+    let effective_max: i32 = if filter_active {
+        let vm = (start_w..=end_w)
+            .step_by(7)
+            .map(|w| {
+                let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
+                let pre_start = proj_start >= 0 && (w as i32) < proj_start;
+                if post_deadline || pre_start {
+                    return 0usize;
+                }
+                sd.get_all(WeekId(w))
+                    .map(|s| {
+                        s.worker_id
+                            .iter()
+                            .filter(|(wid, _)| **wid != WORKER_ID_ZERO)
+                            .filter(|(wid, _)| {
+                                worker_filter.contains(app.workers.get_name_by_id(**wid))
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0);
+        (vm as i32).max(1)
+    } else {
+        max
+    };
+
     let mut week_data: Vec<EffortByDateData> = (start_w..=end_w)
         .step_by(7)
-        //.inspect(|f| println!("build_dev-{}: {}", proj_idx, f))
         .map(|w| {
             let post_deadline = deadline_week >= 0 && w as i32 > deadline_week;
             let pre_start = proj_start >= 0 && (w as i32) < proj_start;
@@ -214,6 +247,11 @@ fn build_dev(
                         s.worker_id
                             .iter()
                             .filter(|(worker_id, _)| **worker_id != WORKER_ID_ZERO)
+                            .filter(|(worker_id, _)| {
+                                !filter_active
+                                    || worker_filter
+                                        .contains(app.workers.get_name_by_id(**worker_id))
+                            })
                             .map(|(worker_id, single_effort)| {
                                 let sovra_effort = app
                                     .sovra
@@ -221,10 +259,11 @@ fn build_dev(
                                     .map_or(0, |e| get_hours(*e));
                                 let max_hours =
                                     app.workers.get_effective_max_hours(*worker_id, w) as i32;
+                                let worker_name = app.workers.get_name_by_id(*worker_id);
                                 SingleEffortGui {
                                     name: SharedString::from(format!(
                                         "{}|{}",
-                                        app.workers.get_name_by_id(*worker_id),
+                                        worker_name,
                                         single_effort.get_effort().0
                                     )),
                                     note: SharedString::from(single_effort.get_note()),
@@ -234,13 +273,16 @@ fn build_dev(
                                     effort: single_effort.get_effort().0 as i32,
                                     sovra: sovra_effort,
                                     max_hours,
+                                    hidden_by_filter: false,
                                 }
                             })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
                 let has = !v.is_empty();
-                v.resize(max as usize, SingleEffortGui::default());
+                while v.len() < effective_max as usize {
+                    v.push(SingleEffortGui::default());
+                }
                 (v, has)
             };
 
@@ -274,7 +316,7 @@ fn build_dev(
         remains: planned - total,
         visible: enable,
         enable,
-        max,
+        max: effective_max,
         note: SharedString::from(sd.get_note()),
         start_week: proj_start,
         deadline_week,
