@@ -84,17 +84,9 @@ export component RightFooter inherits Rectangle {
         }
     }
 
-    // Blank spacer aligned with the filter-button row in left-footer
-    Rectangle {
-        y: 0px;
-        x: 0px;
-        height: Styles.height;
-        background: #1a1a1a;
-    }
-
     Flickable {
         y: Styles.height;
-        height: root.height - Styles.height;
+        height: root.height;
         viewport-x <=> root.viewport-x;
         HorizontalLayout {
             padding: 0px;
@@ -112,9 +104,7 @@ export component RightFooter inherits Rectangle {
                             property <int> eff-max: data.max_hours[index];
                             property <bool> has-override: eff-max != root.app_project.worker_max_hours[index];
                             property <bool> effort-shown:
-                                PjmCallback.effort-filter-mode == 0 ||
-                                (PjmCallback.effort-filter-mode == 1 && value == 0) ||
-                                (PjmCallback.effort-filter-mode == 2 && value >= 40);
+                                PjmCallback.effort-filter-mode == 0 || (PjmCallback.effort-filter-mode == 1 && value == 0) || (PjmCallback.effort-filter-mode == 2 && value >= 40);
                             background: index.mod(2) == 0 ? Colors.gray : Colors.black;
                             width: PjmCallback.compact-mode ? Styles.compact : Styles.width;
                             height: worker-visible ? Styles.height : 0px;

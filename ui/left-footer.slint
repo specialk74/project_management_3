@@ -125,32 +125,24 @@ export component LeftFooter inherits Rectangle {
         }
     }
 
-    VerticalLayout {
+    HorizontalLayout {
         spacing: 0px;
         padding: 0px;
 
-        // Riga filtro effort (larghezza piena, non scorre)
+        // I vari dev + select year
         Rectangle {
-            height: Styles.height;
-            background: #1a1a1a;
-
-            HorizontalLayout {
-                spacing: 3px;
-                padding: 3px;
-                alignment: start;
-
-                for btn-label[btn-idx] in ["Tutti", "Nulli", "≥ 40"]: Rectangle {
-                    property <bool> active: PjmCallback.effort-filter-mode == btn-idx;
-                    width: 60px;
-                    height: parent.height - 6px;
-                    border-radius: 3px;
+            VerticalLayout {
+                spacing: 0px;
+                padding: 0px;
+                year-btn-rect := Rectangle {
+                    height: Styles.height;
+                    background: year-btn-ta.has-hover ? #3a3a3a : #2a2a2a;
+                    border-color: #555555;
                     border-width: 1px;
-                    border-color: active ? #4a90d9 : #555555;
-                    background: active ? #2a5080 : #2a2a2a;
 
                     Text {
-                        text: btn-label;
-                        color: active ? Colors.white : Colors.lightgray;
+                        text: PjmCallback.selected_year > 0 ? "\{PjmCallback.selected_year} ▼" : "Anno ▼";
+                        color: Colors.lightgray;
                         font-family: Styles.font-family;
                         font-size: Styles.font-size;
                         horizontal-alignment: center;
@@ -159,77 +151,41 @@ export component LeftFooter inherits Rectangle {
                         height: parent.height;
                     }
 
-                    TouchArea {
+                    year-btn-ta := TouchArea {
                         clicked => {
-                            PjmCallback.effort-filter-mode = btn-idx;
+                            root.year-popup-x = self.absolute-position.x;
+                            root.year-popup-y = self.absolute-position.y + Styles.height;
+                            year-popup.show();
                         }
                     }
                 }
-            }
-        }
 
-        HorizontalLayout {
-            spacing: 0px;
-            padding: 0px;
-
-            // I vari dev + select year
-        Rectangle {
-                VerticalLayout {
-                    spacing: 0px;
-                    padding: 0px;
-                    year-btn-rect := Rectangle {
-                        height: Styles.height;
-                        background: year-btn-ta.has-hover ? #3a3a3a : #2a2a2a;
-                        border-color: #555555;
-                        border-width: 1px;
-
-                        Text {
-                            text: PjmCallback.selected_year > 0 ? "\{PjmCallback.selected_year} ▼" : "Anno ▼";
-                            color: Colors.lightgray;
-                            font-family: Styles.font-family;
-                            font-size: Styles.font-size;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-
-                        year-btn-ta := TouchArea {
-                            clicked => {
-                                root.year-popup-x = self.absolute-position.x;
-                                root.year-popup-y = self.absolute-position.y + Styles.height;
-                                year-popup.show();
-                            }
-                        }
-                    }
-
-                    // I vari dev
+                // I vari dev
                 Rectangle {
-                        VerticalLayout {
-                            spacing: 0px;
-                            padding: 0px;
-                            for data[dev-idx] in app_project.devs: Rectangle {
-                                height: Styles.height;
-                                HorizontalLayout {
-                                    Rectangle {
-                                        background: data.col;
-                                        HorizontalLayout {
+                    VerticalLayout {
+                        spacing: 0px;
+                        padding: 0px;
+                        for data[dev-idx] in app_project.devs: Rectangle {
+                            height: Styles.height;
+                            HorizontalLayout {
+                                Rectangle {
+                                    background: data.col;
+                                    HorizontalLayout {
 
-                                            Cell-RO {
-                                                width: Styles.width - 20px;
-                                                font-weight: 800;
-                                                text_color: data.text-color;
-                                                text: data.title;
-                                                horizontal-alignment: center;
-                                            }
+                                        Cell-RO {
+                                            width: Styles.width - 20px;
+                                            font-weight: 800;
+                                            text_color: data.text-color;
+                                            text: data.title;
+                                            horizontal-alignment: center;
+                                        }
 
-                                            Text {
-                                                width: Styles.width - 20px;
-                                                color: data.text-color;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                text: PjmCallback.selected_year > 0 ? "\{app_project.dev_year_totals[dev-idx]}" : "—";
-                                            }
+                                        Text {
+                                            width: Styles.width - 20px;
+                                            color: data.text-color;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            text: PjmCallback.selected_year > 0 ? "\{app_project.dev_year_totals[dev-idx]}" : "—";
                                         }
                                     }
                                 }
@@ -238,44 +194,88 @@ export component LeftFooter inherits Rectangle {
                     }
                 }
             }
+        }
 
-            // I vari worker
+        // I vari worker
         Rectangle {
-                VerticalLayout {
-                    spacing: 0px;
-                    padding: 0px;
+            VerticalLayout {
+                spacing: 0px;
+                padding: 0px;
+                    // Riga filtro effort (larghezza piena, non scorre)
+                    Rectangle {
+                    height: Styles.height;
+                    background: #1a1a1a;
 
-                    for name[index] in app_project.worker_names: Rectangle {
-                        property <bool> worker-visible: !PjmCallback.filter_active || app_project.worker_filter_selected[index];
-                        property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
-                        height: worker-visible ? Styles.height : 0px;
-                        visible: worker-visible;
-                        background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
-                        clip: true;
+                    HorizontalLayout {
+                        spacing: 3px;
+                        padding: 3px;
+                        alignment: start;
 
-                        // Left triangle: worker has global max hours < 40
+                        for btn-label[btn-idx] in ["Tutti", "Nulli", "≥ 40"]: Rectangle {
+                            property <bool> active: PjmCallback.effort-filter-mode == btn-idx;
+                            //width: 60px;
+                            height: parent.height - 6px;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: active ? #4a90d9 : #555555;
+                            background: active ? #2a5080 : #2a2a2a;
+
+                            Text {
+                                text: btn-label;
+                                color: active ? Colors.white : Colors.lightgray;
+                                font-family: Styles.font-family;
+                                font-size: Styles.font-size;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+
+                            TouchArea {
+                                clicked => {
+                                    PjmCallback.effort-filter-mode = btn-idx;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    VerticalLayout {
+                        spacing: 0px;
+                        padding: 0px;
+                        for name[index] in app_project.worker_names: Rectangle {
+                            property <bool> worker-visible: !PjmCallback.filter_active || app_project.worker_filter_selected[index];
+                            property <bool> has-reduced-hours: app_project.worker_max_hours[index] < Styles.default-max-hours;
+                            height: worker-visible ? Styles.height : 0px;
+                            visible: worker-visible;
+                            background: index.mod(2) == 0 ? Colors.gray : Colors.transparent;
+                            clip: true;
+
+                            // Left triangle: worker has global max hours < 40
                     if has-reduced-hours: CornerTriangle { }
 
-                        Cell-RO {
-                            width: Styles.width;
-                            text: name;
-                        }
+                            Cell-RO {
+                                width: Styles.width;
+                                text: name;
+                            }
 
-                        TouchArea {
-                            pointer-event(event) => {
-                                if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
-                                    root.editing-worker-idx = index;
-                                    root.editing-worker-name = name;
-                                    root.editing-hours-text = "\{app_project.worker_max_hours[index]}";
-                                    root.popup-pos-x = self.absolute-position.x;
-                                    root.popup-pos-y = self.absolute-position.y;
-                                    max-hours-popup.show();
+                            TouchArea {
+                                pointer-event(event) => {
+                                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                        root.editing-worker-idx = index;
+                                        root.editing-worker-name = name;
+                                        root.editing-hours-text = "\{app_project.worker_max_hours[index]}";
+                                        root.popup-pos-x = self.absolute-position.x;
+                                        root.popup-pos-y = self.absolute-position.y;
+                                        max-hours-popup.show();
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }  // HorizontalLayout
-    }  // VerticalLayout
+        }
+    }  // HorizontalLayout
 }
