@@ -8,8 +8,8 @@ use crate::single_dev_utils::single_dev::{SingleDev, WeekId};
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::workers_utils::worker::WORKER_ID_ZERO;
 use crate::{
-    DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData, SingleEffortGui,
-    SovraData,
+    CategoryInfo, DayData, DevInfo, EffortByDateData, EffortByDevData, EffortByPrjData,
+    SingleEffortGui, SovraData,
 };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -160,10 +160,19 @@ pub fn build_project_data(
                 })
                 .collect();
 
+            let cat = app.projects.get_category(*proj_id);
+            let category_id = cat.map(|c| c.0 as i32).unwrap_or(-1);
+            let category_name = cat
+                .and_then(|c| app.categories.get_name(c))
+                .map(SharedString::from)
+                .unwrap_or_default();
+
             EffortByPrjData {
                 project_id: pi as i32,
                 text: SharedString::from(proj_name.as_str()),
                 tripletta: SharedString::from(app.projects.get_tripletta(*proj_id).as_str()),
+                category_id,
+                category_name,
                 start_week: proj_start,
                 start_text,
                 end_week: deadline_week,
@@ -544,7 +553,7 @@ pub fn build_available_years(app: &App) -> Vec<i32> {
     years.into_iter().collect()
 }
 
-pub fn build_dev_year_totals(app: &App, year: i32) -> Vec<i32> {
+pub fn build_dev_year_totals(app: &App, year: i32, category_id: i32) -> Vec<i32> {
     let devs = app.devs.list();
     let projects = app.projects.list();
     devs.iter()
@@ -554,6 +563,16 @@ pub fn build_dev_year_totals(app: &App, year: i32) -> Vec<i32> {
             }
             projects
                 .iter()
+                .filter(|(proj_id, _)| {
+                    if category_id < 0 {
+                        true
+                    } else {
+                        app.projects
+                            .get_category(*proj_id)
+                            .map(|c| c.0 as i32 == category_id)
+                            .unwrap_or(false)
+                    }
+                })
                 .map(|(proj_id, _)| {
                     app.projects
                         .get_single_dev(*proj_id, *dev_id)
@@ -567,6 +586,17 @@ pub fn build_dev_year_totals(app: &App, year: i32) -> Vec<i32> {
                         .unwrap_or(0)
                 })
                 .sum()
+        })
+        .collect()
+}
+
+pub fn build_category_list(app: &App) -> Vec<CategoryInfo> {
+    app.categories
+        .list()
+        .iter()
+        .map(|(id, name)| CategoryInfo {
+            id: id.0 as i32,
+            title: SharedString::from(name.as_str()),
         })
         .collect()
 }

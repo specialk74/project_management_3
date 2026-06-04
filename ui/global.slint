@@ -20,6 +20,11 @@ export struct DevInfo {
     text-color: color,
 }
 
+export struct CategoryInfo {
+    id: int,
+    title: string,
+}
+
 export struct SingleEffortGui {
     week: int,
     dev: int,
@@ -66,6 +71,8 @@ export struct EffortByPrjData {
     project_id: int,
     text: string,
     tripletta: string,
+    category_id: int,
+    category_name: string,
     start_week: int,
     start_text: string,
     end_week: int,
@@ -93,6 +100,7 @@ export struct AppProject {
     devs: [DevInfo],
     years: [int],
     dev_year_totals: [int],
+    categories: [CategoryInfo],
 }
 
 export struct DayData {
@@ -161,6 +169,12 @@ export global PjmCallback {
     callback set_bulk_week_limit(int /*week*/, string /*hours_text*/);
     callback set_project_enabled(int /*project_id*/, bool /*enabled*/);
     callback set_all_projects_enabled(bool /*enabled*/);
+    callback add_category(string /*name*/);
+    callback del_category(int /*category_id*/);
+    callback set_project_category(int /*project_idx*/, int /*category_id*/);
+    callback set_selected_category(int /*category_id*/);
+    in-out property <int> selected_category_id: -1;
+    in property <string> selected_category_name: "";
     in property <bool> all_projects_enabled: false;
     in property <bool> all_projects_disabled: false;
     callback set_dev_hide_effort(int /*project*/, int /*dev*/, bool /*hide*/);

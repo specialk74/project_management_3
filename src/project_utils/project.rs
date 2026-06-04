@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
+    categories::CategoryId,
     dev_utils::dev::DevId,
     single_dev_utils::single_dev::{SingleDev, WeekId},
     single_effort_utils::sinlge_effort::Effort,
@@ -28,6 +29,8 @@ pub struct Project {
     pub end_week: Option<WeekId>,
     #[serde(default)]
     tripletta: Option<String>,
+    #[serde(default)]
+    category: Option<CategoryId>,
 }
 
 impl Project {
@@ -39,6 +42,7 @@ impl Project {
             start_week: None,
             end_week: None,
             tripletta: None,
+            category: None,
         }
     }
 
@@ -50,6 +54,7 @@ impl Project {
             start_week,
             end_week: None,
             tripletta: None,
+            category: None,
         }
     }
 
@@ -132,6 +137,14 @@ impl Project {
 
     pub fn set_tripletta(&mut self, tripletta: &str) {
         self.tripletta = if tripletta.is_empty() { None } else { Some(tripletta.to_string()) };
+    }
+
+    pub fn get_category(&self) -> Option<CategoryId> {
+        self.category
+    }
+
+    pub fn set_category(&mut self, category: Option<CategoryId>) {
+        self.category = category;
     }
 
     pub fn get_info(&self) -> String {

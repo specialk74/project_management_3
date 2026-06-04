@@ -1,6 +1,7 @@
 mod app;
 mod builders;
 mod callbacks;
+mod categories;
 mod date_utils;
 mod dev_utils;
 mod live_models;

@@ -606,6 +606,33 @@ component Toolbar inherits Rectangle {
         }
 
         Rectangle {
+            width: 8px;
+        }
+
+        cat-input := LineEdit {
+            placeholder-text: "Nome categoria…";
+            width: 130px;
+            height: 26px;
+            accepted => {
+                if (self.text != "") {
+                    PjmCallback.add_category(self.text);
+                    self.text = "";
+                }
+            }
+        }
+
+        Button {
+            text: "+ Project Category";
+            height: 26px;
+            clicked => {
+                if (cat-input.text != "") {
+                    PjmCallback.add_category(cat-input.text);
+                    cat-input.text = "";
+                }
+            }
+        }
+
+        Rectangle {
             horizontal-stretch: 1;
         }
 
@@ -909,5 +936,4 @@ export component AppWindow inherits Window {
             PjmCallback.marquee-tick += 1;
         }
     }
-
 }

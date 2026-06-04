@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
+    categories::CategoryId,
     dev_utils::dev::DevId,
     project_utils::project::{Enable, Project, ProjectId},
     single_dev_utils::single_dev::{SingleDev, WeekId},
@@ -208,6 +209,24 @@ impl Projects {
     pub fn set_dev_hide_effort(&mut self, id_project: ProjectId, id_dev: DevId, hide: bool) {
         if let Some(p) = self.projects.get_mut(&id_project) {
             p.set_dev_hide_effort(id_dev, hide);
+        }
+    }
+
+    pub fn get_category(&self, project_id: ProjectId) -> Option<CategoryId> {
+        self.projects.get(&project_id)?.get_category()
+    }
+
+    pub fn set_category(&mut self, project_id: ProjectId, category: Option<CategoryId>) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_category(category);
+        }
+    }
+
+    pub fn clear_category_from_all(&mut self, category_id: CategoryId) {
+        for project in self.projects.values_mut() {
+            if project.get_category() == Some(category_id) {
+                project.set_category(None);
+            }
         }
     }
 }

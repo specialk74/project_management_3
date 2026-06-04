@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::{AppProject, DayData, DevInfo, EffortByPrjData, SovraData};
+use crate::{AppProject, CategoryInfo, DayData, DevInfo, EffortByPrjData, SovraData};
 
 // Slint non propaga il cambio di `in-out property<Struct>` ai `for` che
 // guardano sotto-campi del tipo `root.efforts.projects`. Mantenendo stabili
@@ -20,6 +20,7 @@ pub struct LiveModels {
     pub devs: Rc<VecModel<DevInfo>>,
     pub years: Rc<VecModel<i32>>,
     pub dev_year_totals: Rc<VecModel<i32>>,
+    pub categories: Rc<VecModel<CategoryInfo>>,
 }
 
 impl LiveModels {
@@ -35,6 +36,7 @@ impl LiveModels {
             devs: Rc::new(VecModel::default()),
             years: Rc::new(VecModel::default()),
             dev_year_totals: Rc::new(VecModel::default()),
+            categories: Rc::new(VecModel::default()),
         }
     }
 
@@ -50,6 +52,7 @@ impl LiveModels {
             devs: ModelRc::from(self.devs.clone()),
             years: ModelRc::from(self.years.clone()),
             dev_year_totals: ModelRc::from(self.dev_year_totals.clone()),
+            categories: ModelRc::from(self.categories.clone()),
         }
     }
 }

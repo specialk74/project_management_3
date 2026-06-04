@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs};
 
 use crate::{
+    categories::Categories,
     date_utils::dates::get_default_weeks,
     dev_utils::devs::Devs,
     project_utils::projects::Projects,
@@ -31,6 +32,8 @@ pub struct App {
     #[serde(default = "default_projects")]
     pub projects: Projects,
     #[serde(default)]
+    pub categories: Categories,
+    #[serde(default)]
     pub holidays: Vec<WeekId>,
     #[serde(skip)]
     pub sovra: HashMap<(WeekId, WorkerId), Effort>,
@@ -47,6 +50,7 @@ impl App {
             workers: Workers::new(),
             devs: Devs::new(),
             projects: Projects::new(),
+            categories: Categories::new(),
             holidays: Vec::new(),
             sovra: HashMap::new(),
         }

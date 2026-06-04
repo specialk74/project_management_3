@@ -24,6 +24,10 @@ export component LeftFooter inherits Rectangle {
     property <length> year-popup-x: 0px;
     property <length> year-popup-y: 0px;
 
+    // State for category dropdown
+    property <length> cat-popup-x: 0px;
+    property <length> cat-popup-y: 0px;
+
     max-hours-popup := PopupWindow {
         close-policy: no-auto-close;
         x: root.popup-pos-x;
@@ -76,6 +80,70 @@ export component LeftFooter inherits Rectangle {
                         text: "Annulla";
                         clicked => {
                             max-hours-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    cat-filter-popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        x: root.cat-popup-x;
+        y: root.cat-popup-y;
+        width: 130px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+
+            VerticalLayout {
+                padding: 2px;
+                spacing: 0px;
+
+                Rectangle {
+                    height: Styles.height;
+                    background: cat-tutte-ta.has-hover ? #3a3a3a : (PjmCallback.selected_category_id == -1 ? #2a4060 : Colors.transparent);
+
+                    Text {
+                        text: "Tutte";
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+
+                    cat-tutte-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_selected_category(-1);
+                            cat-filter-popup.close();
+                        }
+                    }
+                }
+
+                for cat in root.app_project.categories: Rectangle {
+                    height: Styles.height;
+                    background: cat-filter-ta.has-hover ? #3a3a3a : (PjmCallback.selected_category_id == cat.id ? #2a4060 : Colors.transparent);
+
+                    Text {
+                        text: cat.title;
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+
+                    cat-filter-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_selected_category(cat.id);
+                            cat-filter-popup.close();
                         }
                     }
                 }
@@ -156,6 +224,35 @@ export component LeftFooter inherits Rectangle {
                             root.year-popup-x = self.absolute-position.x;
                             root.year-popup-y = self.absolute-position.y + Styles.height;
                             year-popup.show();
+                        }
+                    }
+                }
+
+                cat-btn-rect := Rectangle {
+                    height: Styles.height;
+                    background: cat-btn-ta.has-hover ? #3a3a3a : #2a2a2a;
+                    border-color: PjmCallback.selected_category_id >= 0 ? #4a90d9 : #555555;
+                    border-width: 1px;
+
+                    Text {
+                        text: PjmCallback.selected_category_id >= 0
+                            ? PjmCallback.selected_category_name + " ▼"
+                            : "Tutte ▼";
+                        color: PjmCallback.selected_category_id >= 0 ? #7ab0d4 : Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                        overflow: clip;
+                    }
+
+                    cat-btn-ta := TouchArea {
+                        clicked => {
+                            root.cat-popup-x = self.absolute-position.x;
+                            root.cat-popup-y = self.absolute-position.y + Styles.height;
+                            cat-filter-popup.show();
                         }
                     }
                 }

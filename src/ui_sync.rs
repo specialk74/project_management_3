@@ -8,8 +8,8 @@ use crate::AppWindow;
 use crate::PjmCallback;
 use crate::app::App;
 use crate::builders::{
-    build_available_years, build_dev_infos, build_dev_year_totals, build_project_data,
-    build_sovra_data, build_weeks, build_worker_max_hours,
+    build_available_years, build_category_list, build_dev_infos, build_dev_year_totals,
+    build_project_data, build_sovra_data, build_weeks, build_worker_max_hours,
 };
 use crate::live_models::LiveModels;
 
@@ -47,8 +47,10 @@ pub fn refresh(
         .set_vec(build_weeks(app.start_week.0, app.end_week.0, app));
     live.devs.set_vec(build_dev_infos(app));
     live.years.set_vec(build_available_years(app));
+    live.categories.set_vec(build_category_list(app));
     let selected_year = PjmCallback::get(ui).get_selected_year();
-    live.dev_year_totals.set_vec(build_dev_year_totals(app, selected_year));
+    let selected_category_id = PjmCallback::get(ui).get_selected_category_id();
+    live.dev_year_totals.set_vec(build_dev_year_totals(app, selected_year, selected_category_id));
 
     let projects = app.projects.list_full();
     let all_enabled = !projects.is_empty() && projects.iter().all(|(_, _, e)| e.0);

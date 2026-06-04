@@ -1,5 +1,6 @@
 use slint::{ComponentHandle, Global};
 
+use crate::categories::CategoryId;
 use crate::date_utils::dates::parse_date_str;
 use crate::dev_utils::dev::DevId;
 use crate::project_utils::project::Enable;
@@ -20,6 +21,10 @@ pub fn register(ui: &AppWindow, state: &SharedState) {
     register_set_all_projects_enabled(ui, state);
     register_set_dev_hide_effort(ui, state);
     register_set_selected_year(ui, state);
+    register_add_category(ui, state);
+    register_del_category(ui, state);
+    register_set_project_category(ui, state);
+    register_set_selected_category(ui, state);
 }
 
 fn register_new_project(ui: &AppWindow, state: &SharedState) {
@@ -229,6 +234,96 @@ fn register_set_selected_year(ui: &AppWindow, state: &SharedState) {
                 &row_counts.borrow(),
                 &visibility.borrow(),
             );
+        }
+    });
+}
+
+fn register_add_category(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_add_category(move |name| {
+        if let Some(ui) = ui_w.upgrade() {
+            if name.is_empty() {
+                return;
+            }
+            let mut a = app.borrow_mut();
+            a.categories.add(name.as_str());
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_del_category(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_del_category(move |category_id| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let cid = CategoryId(category_id as usize);
+            a.projects.clear_category_from_all(cid);
+            a.categories.remove(cid);
+            let pcb = PjmCallback::get(&ui);
+            if pcb.get_selected_category_id() == category_id {
+                pcb.set_selected_category_id(-1);
+                pcb.set_selected_category_name(slint::SharedString::default());
+            }
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_project_category(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_project_category(move |proj_idx, category_id| {
+        if let Some(ui) = ui_w.upgrade() {
+            let mut a = app.borrow_mut();
+            let projects = a.projects.list();
+            let Some(&(proj_id, _)) = projects.get(proj_idx as usize) else {
+                return;
+            };
+            let cat = if category_id < 0 { None } else { Some(CategoryId(category_id as usize)) };
+            a.projects.set_category(proj_id, cat);
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
+            PjmCallback::get(&ui).set_changed(true);
+        }
+    });
+}
+
+fn register_set_selected_category(ui: &AppWindow, state: &SharedState) {
+    let app = state.app.clone();
+    let live = state.live.clone();
+    let row_counts = state.row_counts.clone();
+    let visibility = state.visibility.clone();
+    let ui_w = ui.as_weak();
+    PjmCallback::get(ui).on_set_selected_category(move |category_id| {
+        if let Some(ui) = ui_w.upgrade() {
+            let pcb = PjmCallback::get(&ui);
+            pcb.set_selected_category_id(category_id);
+            let name = if category_id < 0 {
+                slint::SharedString::default()
+            } else {
+                let a = app.borrow();
+                slint::SharedString::from(
+                    a.categories
+                        .get_name(CategoryId(category_id as usize))
+                        .unwrap_or(""),
+                )
+            };
+            pcb.set_selected_category_name(name);
+            let mut a = app.borrow_mut();
+            refresh(&ui, &mut a, &live, &row_counts.borrow(), &visibility.borrow());
         }
     });
 }

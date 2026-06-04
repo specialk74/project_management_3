@@ -206,6 +206,11 @@ export component LeftColumn inherits Rectangle {
     property <length> effort-menu-x: 0px;
     property <length> effort-menu-y: 0px;
 
+    // State for category selector popup
+    property <int> category-menu-proj-idx: -1;
+    property <length> category-popup-x: 0px;
+    property <length> category-popup-y: 0px;
+
     start-popup := PopupWindow {
         close-policy: no-auto-close;
         x: root.start-popup-x;
@@ -448,6 +453,70 @@ export component LeftColumn inherits Rectangle {
         }
     }
 
+    category-popup := PopupWindow {
+        close-policy: close-on-click-outside;
+        x: root.category-popup-x;
+        y: root.category-popup-y;
+        width: 150px;
+
+        Rectangle {
+            background: #1e1e1e;
+            border-color: #555555;
+            border-width: 1px;
+
+            VerticalLayout {
+                padding: 2px;
+                spacing: 0px;
+
+                Rectangle {
+                    height: Styles.height;
+                    background: cat-none-ta.has-hover ? #3a3a3a : Colors.transparent;
+
+                    Text {
+                        text: "— Nessuna";
+                        color: #888888;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+
+                    cat-none-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_project_category(root.category-menu-proj-idx, -1);
+                            category-popup.close();
+                        }
+                    }
+                }
+
+                for cat in root.app_project.categories: Rectangle {
+                    height: Styles.height;
+                    background: cat-item-ta.has-hover ? #3a3a3a : Colors.transparent;
+
+                    Text {
+                        text: cat.title;
+                        color: Colors.lightgray;
+                        font-family: Styles.font-family;
+                        font-size: Styles.font-size;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+
+                    cat-item-ta := TouchArea {
+                        clicked => {
+                            PjmCallback.set_project_category(root.category-menu-proj-idx, cat.id);
+                            category-popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     effort-menu-popup := PopupWindow {
         close-policy: close-on-click-outside;
         x: root.effort-menu-x;
@@ -591,6 +660,36 @@ export component LeftColumn inherits Rectangle {
                                         font-family: Styles.font-family;
                                         font-size: Styles.font-size;
                                         font-weight: project.tripletta != "" ? 700 : 400;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+
+                                // Category row
+                                Rectangle {
+                                    height: (root.visible && !PjmCallback.compact-mode) ? Styles.height : 0px;
+                                    visible: root.visible && !PjmCallback.compact-mode;
+                                    background: cat-select-ta.has-hover ? #2a2a2a : Colors.transparent;
+
+                                    cat-select-ta := TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        clicked => {
+                                            root.category-menu-proj-idx = project.project_id;
+                                            root.category-popup-x = self.absolute-position.x;
+                                            root.category-popup-y = self.absolute-position.y + Styles.height;
+                                            category-popup.show();
+                                        }
+                                    }
+
+                                    Text {
+                                        text: project.category_name != "" ? project.category_name : "—";
+                                        color: project.category_name != "" ? #7ab0d4 : #444444;
+                                        font-family: Styles.font-family;
+                                        font-size: Styles.font-size;
+                                        font-weight: 400;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                         width: parent.width;
