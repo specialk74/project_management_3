@@ -139,6 +139,11 @@ export global PjmCallback {
     callback remove_last_char(string) -> string;
     in property <string> current-week-text: "";
     in property <string> testo-copiato;
+    in property <string> nota-copiata;
+    // Destinazione incolla: salvate prima di double_clicked per non perdere i valori dopo refresh()
+    in-out property <int> paste-proj: -1;
+    in-out property <int> paste-dev: -1;
+    in-out property <int> paste-week: -1;
     in-out property <bool> show-worker-filter: false;
     in property <bool> all_workers_filter_on: false;
     in property <bool> all_workers_filter_off: true;
@@ -448,10 +453,22 @@ export component Cell-RW inherits Rectangle {
             if (event.modifiers.control) {
                 if (event.text == "C" || event.text == "c") {
                     PjmCallback.testo-copiato = root.text;
+                    PjmCallback.nota-copiata = root.note;
+                }
+                if (event.text == "X" || event.text == "x") {
+                    PjmCallback.testo-copiato = root.text;
+                    PjmCallback.nota-copiata = root.note;
+                    root.text = "";
+                    root.double_clicked(root.text);
                 }
                 if (event.text == "V" || event.text == "v") {
+                    // Salva coordinate PRIMA di double_clicked: refresh() invalida i binding
+                    PjmCallback.paste-proj = cell-project;
+                    PjmCallback.paste-dev = cell-dev;
+                    PjmCallback.paste-week = cell-week;
                     root.text = PjmCallback.testo-copiato;
                     root.double_clicked(root.text);
+                    PjmCallback.set_note(PjmCallback.paste-proj, PjmCallback.paste-dev, PjmCallback.paste-week, PjmCallback.testo-copiato, PjmCallback.nota-copiata);
                 }
                 if (event.text == "S" || event.text == "s") {
                     PjmCallback.save_file();

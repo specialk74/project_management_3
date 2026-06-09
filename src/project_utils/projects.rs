@@ -134,10 +134,9 @@ impl Projects {
         id_worker: WorkerId,
         note: &str,
     ) {
-        self.projects
-            .get_mut(&id_project)
-            .unwrap()
-            .set_note(id_dev, week, id_worker, note);
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.set_note(id_dev, week, id_worker, note);
+        }
     }
 
     pub fn reset_effort(&mut self, id_project: ProjectId, id_dev: DevId, week: WeekId) {
