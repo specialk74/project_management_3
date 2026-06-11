@@ -23,6 +23,9 @@ pub struct Worker {
     /// Per-week overrides: WeekId.0 → max hours for that specific week.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub week_overrides: HashMap<usize, u32>,
+    /// When true, the worker row is hidden in the right-footer (totals are still counted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_in_footer: Option<bool>,
 }
 
 impl Worker {
@@ -33,7 +36,12 @@ impl Worker {
             font_color: None,
             max_weekly_hours: None,
             week_overrides: HashMap::new(),
+            hide_in_footer: None,
         }
+    }
+
+    pub fn is_hidden_in_footer(&self) -> bool {
+        self.hide_in_footer.unwrap_or(false)
     }
 
     pub fn get_max_hours(&self) -> u32 {

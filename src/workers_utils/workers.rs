@@ -85,6 +85,12 @@ impl Workers {
         })
     }
 
+    pub fn is_hidden_in_footer(&self, id: WorkerId) -> bool {
+        self.worker_id
+            .get(&id)
+            .map_or(false, |w| w.is_hidden_in_footer())
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id

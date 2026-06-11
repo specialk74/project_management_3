@@ -42,6 +42,13 @@ pub fn refresh(
             .collect::<Vec<_>>()
     });
     live.worker_max_hours.set_vec(build_worker_max_hours(app));
+    live.worker_footer_visible.set_vec(
+        app.workers
+            .list()
+            .iter()
+            .map(|(id, _)| !app.workers.is_hidden_in_footer(*id))
+            .collect::<Vec<_>>(),
+    );
     live.sovra.set_vec(build_sovra_data(app));
     live.weeks
         .set_vec(build_weeks(app.start_week.0, app.end_week.0, app));

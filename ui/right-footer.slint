@@ -100,7 +100,7 @@ export component RightFooter inherits Rectangle {
 
                     VerticalLayout {
                         for value[index] in data.value: Rectangle {
-                            property <bool> worker-visible: !PjmCallback.filter_active || root.app_project.worker_filter_selected[index];
+                            property <bool> worker-visible: (!PjmCallback.filter_active || root.app_project.worker_filter_selected[index]) && root.app_project.worker_footer_visible[index];
                             property <int> eff-max: data.max_hours[index];
                             property <bool> has-override: eff-max != root.app_project.worker_max_hours[index];
                             property <bool> effort-shown:
