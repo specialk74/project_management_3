@@ -7,8 +7,6 @@ edition = "2024"
 chrono = "0.4.44"
 ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }
-slint = "1.16.1"
 rfd = "0.17.2"
-
-[build-dependencies]
-slint-build = "1.16.1"
+eframe = "0.34.3"
+egui_extras = "0.34.3"
