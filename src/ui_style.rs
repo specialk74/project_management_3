@@ -78,3 +78,9 @@ pub fn mono(size: f32) -> FontId {
 pub fn cell_font() -> FontId {
     FontId::monospace(FONT_SIZE)
 }
+
+/// Font più piccolo per le celle worker della griglia (più testo entra nei 90px).
+#[inline]
+pub fn person_font() -> FontId {
+    FontId::monospace(11.0)
+}
