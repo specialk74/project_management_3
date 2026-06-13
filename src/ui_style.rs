@@ -5,6 +5,7 @@ use eframe::egui::{Color32, FontId};
 // Dimensioni (px logici), come Styles in styles.slint
 pub const ROW_H: f32 = 18.0;
 pub const COL_W: f32 = 90.0;
+pub const COMPACT_W: f32 = 25.0; // larghezza colonna in vista compatta
 pub const LEFT_W: f32 = 300.0;
 pub const DEV_BORDER: f32 = 3.0;
 pub const FONT_SIZE: f32 = 13.0;

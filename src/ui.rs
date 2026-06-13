@@ -77,6 +77,7 @@ pub struct UiState {
     copied_note: String,
     // 0 = tutti gli effort, 1 = solo nulli, 2 = solo >= 40
     effort_filter_mode: i32,
+    compact_mode: bool,
     // selettori per i totali-anno per dev nel footer
     selected_year: i32, // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
@@ -202,10 +203,12 @@ impl eframe::App for PjmApp {
                 .frame(egui::Frame::NONE.fill(BG_DARK))
                 .show_inside(ui, |ui| header(ui, app, state));
 
-            // Footer (worker / sovra) — aggiunto prima del CentralPanel.
-            egui::TopBottomPanel::bottom("footer")
-                .frame(egui::Frame::NONE.fill(BG_DARK))
-                .show_inside(ui, |ui| footer(ui, app, state));
+            // Footer (worker / sovra) — nascosto in vista compatta.
+            if !state.compact_mode {
+                egui::TopBottomPanel::bottom("footer")
+                    .frame(egui::Frame::NONE.fill(BG_DARK))
+                    .show_inside(ui, |ui| footer(ui, app, state));
+            }
 
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(BG_DARK))
@@ -512,8 +515,13 @@ fn filtered_dev_max_rows(app: &App, proj: ProjectId, dev: DevId, filter: &Filter
     }
 }
 
-fn dev_block_height(max_rows: usize) -> f32 {
-    DEV_BORDER + (max_rows as f32 + 1.0) * ROW_H + DEV_BORDER
+fn col_w(compact: bool) -> f32 {
+    if compact { COMPACT_W } else { COL_W }
+}
+
+fn dev_block_height(max_rows: usize, compact: bool) -> f32 {
+    let inner = if compact { ROW_H } else { (max_rows as f32 + 1.0) * ROW_H };
+    DEV_BORDER + inner + DEV_BORDER
 }
 
 /// Slot (testo "nome|effort", nota) per ogni riga della settimana, riempiti con vuoti.
@@ -615,6 +623,10 @@ fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<
         if ui.button("Apri").clicked() {
             actions.push(Action::Open);
         }
+        let compact_label = if state.compact_mode { "Vista normale" } else { "Vista compatta" };
+        if ui.button(compact_label).clicked() {
+            state.compact_mode = !state.compact_mode;
+        }
 
         ui.separator();
         // Selettore anno (per i totali-anno nel footer)
@@ -674,19 +686,24 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            let content_w = weeks.len() as f32 * COL_W;
+            let compact = state.compact_mode;
+            let cw = col_w(compact);
+            let content_w = weeks.len() as f32 * cw;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(content_w, ROW_H), Sense::hover());
             let painter = ui.painter_at(rect);
             for (i, w) in weeks.iter().enumerate() {
-                let x = rect.left() + i as f32 * COL_W;
-                let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
+                let x = rect.left() + i as f32 * cw;
+                let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
                 if *w == state.this_week {
                     painter.rect_filled(cell, 0.0, THIS_WEEK.gamma_multiply(0.5));
                 }
-                let txt = primo_giorno_settimana_corrente(&days_to_local(*w))
-                    .format("%y-%m-%d")
-                    .to_string();
-                painter.text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
+                // in compatta niente testo (colonne troppo strette)
+                if !compact {
+                    let txt = primo_giorno_settimana_corrente(&days_to_local(*w))
+                        .format("%y-%m-%d")
+                        .to_string();
+                    painter.text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
+                }
             }
         });
 }
@@ -1282,7 +1299,9 @@ struct ProjLayout {
     proj_h: f32,
 }
 
-fn project_layout(app: &App, filter: &Filter) -> Vec<ProjLayout> {
+fn project_layout(app: &App, filter: &Filter, compact: bool) -> Vec<ProjLayout> {
+    // in compatta l'info è solo tripletta + nome
+    let info_min = if compact { (1.0 + NAME_ROWS as f32) * ROW_H } else { INFO_MIN_H };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
         if !app.projects.get_enable(&proj_id).0 {
@@ -1298,8 +1317,8 @@ fn project_layout(app: &App, filter: &Filter) -> Vec<ProjLayout> {
         if filter.is_some() && devs.is_empty() {
             continue;
         }
-        let sum_devs: f32 = devs.iter().map(|(_, m)| dev_block_height(*m)).sum();
-        let proj_h = sum_devs.max(INFO_MIN_H);
+        let sum_devs: f32 = devs.iter().map(|(_, m)| dev_block_height(*m, compact)).sum();
+        let proj_h = sum_devs.max(info_min);
         out.push(ProjLayout { proj: proj_id, name, devs, proj_h });
     }
     out
@@ -1316,9 +1335,11 @@ fn paint_hstrip(ui: &egui::Ui, left: f32, w: f32, y: f32, color: Color32) {
 }
 
 fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
+    let compact = state.compact_mode;
+    let cw = col_w(compact);
     let weeks = weeks_vec(app);
-    let content_w = weeks.len() as f32 * COL_W;
-    let layout = project_layout(app, filter);
+    let content_w = weeks.len() as f32 * cw;
+    let layout = project_layout(app, filter, compact);
     let total_h = total_content_h(&layout);
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
@@ -1339,16 +1360,18 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
 
         for (dev_id, max_rows) in &p.devs {
             let color = dev_color(app, *dev_id);
-            paint_hstrip(ui, left, content_w, dy, color);
+            // i bordi dev sono trasparenti in compatta
+            let border = if compact { BG_DARK } else { color };
+            paint_hstrip(ui, left, content_w, dy, border);
             dy += DEV_BORDER;
-            let inner_h = (*max_rows as f32 + 1.0) * ROW_H;
+            let inner_h = if compact { ROW_H } else { (*max_rows as f32 + 1.0) * ROW_H };
             let block = Rect::from_min_size(egui::pos2(left, dy), Vec2::new(content_w, inner_h));
             draw_dev_cells(
                 ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &weeks, proj_start,
-                deadline, filter,
+                deadline, filter, compact, cw,
             );
             dy += inner_h;
-            paint_hstrip(ui, left, content_w, dy, color);
+            paint_hstrip(ui, left, content_w, dy, border);
             dy += DEV_BORDER;
         }
 
@@ -1372,6 +1395,8 @@ fn draw_dev_cells(
     proj_start: i32,
     deadline: i32,
     filter: &Filter,
+    compact: bool,
+    cw: f32,
 ) {
     let planned = app
         .projects
@@ -1380,21 +1405,35 @@ fn draw_dev_cells(
         .unwrap_or(0);
     let hide_effort = app.projects.get_single_dev(proj, dev).map(|sd| sd.get_hide_effort()).unwrap_or(false);
 
+    // range di attività del dev (per le barre della vista compatta)
+    let (act_start, act_end) = app
+        .projects
+        .get_single_dev(proj, dev)
+        .map(|sd| {
+            let ws = sd.get_weeks();
+            (
+                ws.iter().map(|w| w.0 as i32).min().unwrap_or(-1),
+                ws.iter().map(|w| w.0 as i32).max().unwrap_or(-1),
+            )
+        })
+        .unwrap_or((-1, -1));
+    let dcolor = dev_color(app, dev);
+
     let mut running = 0i32;
     for (ci, w) in weeks.iter().enumerate() {
-        let x = rect.left() + ci as f32 * COL_W;
+        let x = rect.left() + ci as f32 * cw;
         let before_start = proj_start >= 0 && *w < proj_start;
         let after_deadline = deadline >= 0 && *w > deadline;
         let is_deadline = deadline >= 0 && *w == deadline;
 
         // colonna settimana: bg deadline/start
-        let col_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
+        let col_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, rect.height()));
         if is_deadline {
             ui.painter().rect_filled(col_rect, 0.0, DEADLINE_BG);
         } else if proj_start >= 0 && *w == proj_start {
             ui.painter().rect_filled(col_rect, 0.0, START_BG);
         }
-        if *w == state.this_week {
+        if !compact && *w == state.this_week {
             ui.painter().rect_filled(col_rect, 0.0, THIS_WEEK.gamma_multiply(0.18));
         }
 
@@ -1403,11 +1442,29 @@ fn draw_dev_cells(
             .get_single_dev(proj, dev)
             .map(|sd| sd.get_effort_by_week(WeekId(*w as usize)).0 as i32)
             .unwrap_or(0);
+
+        // ── Vista compatta: una barra (altezza ∝ effort) per settimana attiva ──
+        if compact {
+            if !before_start && !after_deadline {
+                let in_activity = act_start >= 0 && *w >= act_start && *w <= act_end;
+                if in_activity {
+                    let ratio = (week_total as f32 / 40.0).min(1.0);
+                    let bar_h = if week_total == 0 { 1.0 } else { (ROW_H * ratio).max(1.0) };
+                    let bar = Rect::from_min_size(
+                        egui::pos2(x, rect.bottom() - bar_h),
+                        Vec2::new(cw, bar_h),
+                    );
+                    ui.painter().rect_filled(bar, 0.0, dcolor);
+                }
+            }
+            continue;
+        }
+
         running += week_total;
 
         // riga cumulativo (sola lettura)
         if !before_start && !after_deadline {
-            let cum_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
+            let cum_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
             let has_workers = app
                 .projects
                 .get_single_dev(proj, dev)
@@ -1433,7 +1490,7 @@ fn draw_dev_cells(
         let slots = gather_slots(app, proj, dev, *w, max_rows, filter);
         for (row, (text, note)) in slots.iter().enumerate() {
             let y = rect.top() + (row as f32 + 1.0) * ROW_H;
-            let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(COL_W, ROW_H));
+            let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(cw, ROW_H));
 
             let is_editing = state
                 .editing
@@ -1749,7 +1806,8 @@ fn dev_name(app: &App, dev: DevId) -> String {
 // ── Colonna sinistra ────────────────────────────────────────────────────────
 
 fn left_column(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
-    let layout = project_layout(app, filter);
+    let compact = state.compact_mode;
+    let layout = project_layout(app, filter, compact);
     let total_h = total_content_h(&layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
@@ -1762,9 +1820,9 @@ fn left_column(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut 
 
     for p in &layout {
         let proj_rect = Rect::from_min_size(egui::pos2(left, y), Vec2::new(LEFT_W, p.proj_h));
-        draw_project_info(ui, proj_rect, app, state, actions, p.proj, &p.name);
+        draw_project_info(ui, proj_rect, app, state, actions, p.proj, &p.name, compact);
         draw_left_dev_strip(ui, proj_rect, p.proj, state);
-        draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs);
+        draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs, compact);
 
         y += p.proj_h;
         paint_hstrip(ui, left, LEFT_W, y, BETWEEN_PROJECTS);
@@ -1780,6 +1838,7 @@ fn draw_project_info(
     actions: &mut Vec<Action>,
     proj: ProjectId,
     proj_name: &str,
+    compact: bool,
 ) {
     let x = rect.left();
     let w = LEFT_INFO_W;
@@ -1800,21 +1859,23 @@ fn draw_project_info(
     tr.on_hover_text("Tasto destro: modifica tripletta");
     y += ROW_H;
 
-    // categoria (click per scegliere)
-    let cat = app
-        .projects
-        .get_category(proj)
-        .and_then(|c| app.categories.get_name(c))
-        .unwrap_or("—")
-        .to_string();
-    let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-    let cat_col = if cat == "—" { TEXT_FAINT } else { CAT_BLUE };
-    ui.painter().text(cat_rect.center(), Align2::CENTER_CENTER, cat, cell_font(), cat_col);
-    let cr = ui.interact(cat_rect, egui::Id::new(("cat", proj.0)), Sense::click());
-    if cr.clicked() {
-        state.popup = Some(Popup::Category { proj });
+    // categoria (click per scegliere) — nascosta in compatta
+    if !compact {
+        let cat = app
+            .projects
+            .get_category(proj)
+            .and_then(|c| app.categories.get_name(c))
+            .unwrap_or("—")
+            .to_string();
+        let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
+        let cat_col = if cat == "—" { TEXT_FAINT } else { CAT_BLUE };
+        ui.painter().text(cat_rect.center(), Align2::CENTER_CENTER, cat, cell_font(), cat_col);
+        let cr = ui.interact(cat_rect, egui::Id::new(("cat", proj.0)), Sense::click());
+        if cr.clicked() {
+            state.popup = Some(Popup::Category { proj });
+        }
+        y += ROW_H;
     }
-    y += ROW_H;
 
     // nome progetto (editabile, multiriga)
     let name_top = y;
@@ -1837,6 +1898,11 @@ fn draw_project_info(
     }
     // inizio/fine vanno sotto il fondo REALE del campo (che può crescere su più righe)
     y = resp.rect.bottom().max(name_top + name_h);
+
+    // inizio/fine nascosti in compatta
+    if compact {
+        return;
+    }
 
     // inizio (right-click per modificare)
     let start_date = app
@@ -1923,6 +1989,7 @@ fn draw_left_devs(
     actions: &mut Vec<Action>,
     proj: ProjectId,
     devs: &[(DevId, usize)],
+    compact: bool,
 ) {
     let x0 = rect.left() + LEFT_INFO_W + DEV_STRIP_W;
     let mut y = rect.top();
@@ -1931,13 +1998,13 @@ fn draw_left_devs(
         let max_rows = *max_rows;
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
-        let block_h = dev_block_height(max_rows);
+        let block_h = dev_block_height(max_rows, compact);
 
         // bordo superiore
         let top_b = Rect::from_min_size(egui::pos2(x0, y), Vec2::new(LEFT_DEV_W, DEV_BORDER));
         ui.painter().rect_filled(top_b, 0.0, color);
         let inner_y = y + DEV_BORDER;
-        let inner_h = (max_rows as f32 + 1.0) * ROW_H;
+        let inner_h = if compact { ROW_H } else { (max_rows as f32 + 1.0) * ROW_H };
 
         // cella nome dev (90px, doppio click = add row)
         let name_rect = Rect::from_min_size(egui::pos2(x0, inner_y), Vec2::new(DEV_NAME_W, inner_h));
@@ -1979,36 +2046,38 @@ fn draw_left_devs(
             nresp.on_hover_text(dev_note);
         }
 
-        // area effort/remains (65px)
+        // area effort/remains (65px) — i campi sono nascosti in compatta
         let eff_x = x0 + DEV_NAME_W;
         let eff_area = Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, inner_h));
         ui.painter().rect_filled(eff_area, 0.0, color);
 
-        // effort pianificato (editabile)
-        let planned = app.projects.get_single_dev(proj, *dev).map(|sd| sd.planned_effort().0).unwrap_or(0);
-        let eff_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, ROW_H));
-        let key = (proj.0, dev.0);
-        let buf = state.effort_buffers.entry(key).or_insert_with(|| planned.to_string());
-        let resp = ui.put(
-            eff_rect,
-            egui::TextEdit::singleline(buf).font(cell_font()).frame(egui::Frame::NONE).horizontal_align(egui::Align::Center),
-        );
-        if resp.lost_focus() {
-            if let Ok(v) = buf.trim().parse::<usize>() {
-                actions.push(Action::SetDevEffort { proj, dev: *dev, effort: v });
+        if !compact {
+            // effort pianificato (editabile)
+            let planned = app.projects.get_single_dev(proj, *dev).map(|sd| sd.planned_effort().0).unwrap_or(0);
+            let eff_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, ROW_H));
+            let key = (proj.0, dev.0);
+            let buf = state.effort_buffers.entry(key).or_insert_with(|| planned.to_string());
+            let resp = ui.put(
+                eff_rect,
+                egui::TextEdit::singleline(buf).font(cell_font()).frame(egui::Frame::NONE).horizontal_align(egui::Align::Center),
+            );
+            if resp.lost_focus() {
+                if let Ok(v) = buf.trim().parse::<usize>() {
+                    actions.push(Action::SetDevEffort { proj, dev: *dev, effort: v });
+                }
+            } else if !resp.has_focus() && *buf != planned.to_string() {
+                *buf = planned.to_string();
             }
-        } else if !resp.has_focus() && *buf != planned.to_string() {
-            *buf = planned.to_string();
-        }
 
-        // remains
-        let total = app.projects.get_single_dev(proj, *dev).map(|sd| sd.get_effort_tot().0 as i32).unwrap_or(0);
-        let remains = planned as i32 - total;
-        let rem_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y + ROW_H), Vec2::new(DEV_EFFORT_W, ROW_H));
-        if (remains == planned as i32 && planned != 0) || remains < 0 {
-            ui.painter().rect_filled(rem_rect, 0.0, Color32::RED);
+            // remains
+            let total = app.projects.get_single_dev(proj, *dev).map(|sd| sd.get_effort_tot().0 as i32).unwrap_or(0);
+            let remains = planned as i32 - total;
+            let rem_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y + ROW_H), Vec2::new(DEV_EFFORT_W, ROW_H));
+            if (remains == planned as i32 && planned != 0) || remains < 0 {
+                ui.painter().rect_filled(rem_rect, 0.0, Color32::RED);
+            }
+            ui.painter().text(rem_rect.center(), Align2::CENTER_CENTER, remains.to_string(), cell_font(), TEXT_WHITE);
         }
-        ui.painter().text(rem_rect.center(), Align2::CENTER_CENTER, remains.to_string(), cell_font(), TEXT_WHITE);
 
         // bordo inferiore
         let bot_b = Rect::from_min_size(egui::pos2(x0, inner_y + inner_h), Vec2::new(LEFT_DEV_W, DEV_BORDER));
