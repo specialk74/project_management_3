@@ -155,15 +155,17 @@ impl PjmApp {
         let this_week = local_to_days(&primo_giorno_settimana_corrente(&today));
 
         // Scroll iniziale per centrare la settimana corrente (come nel main.rs Slint).
-        let start_week = app.start_week.0 as i32;
-        let col_index = (this_week - start_week) / 7;
-        let pending_scroll_x = if col_index > 0 {
-            const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
-            let visible_width = INITIAL_WINDOW_WIDTH - LEFT_W;
-            let col_center = col_index as f32 * COL_W + COL_W / 2.0;
-            Some((col_center - visible_width / 2.0).max(0.0))
-        } else {
-            None
+        // L'offset X tiene conto delle colonne di confine d'anno (più strette).
+        let cols = columns_vec(&app);
+        let col_pos = cols.iter().position(|c| matches!(c, Col::Week(w) if *w == this_week));
+        let pending_scroll_x = match col_pos {
+            Some(idx) if idx > 0 => {
+                const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
+                let visible_width = INITIAL_WINDOW_WIDTH - LEFT_W;
+                let col_center = col_x_offset(&cols, idx, COL_W) + COL_W / 2.0;
+                Some((col_center - visible_width / 2.0).max(0.0))
+            }
+            _ => None,
         };
 
         Self {
@@ -464,6 +466,80 @@ fn weeks_vec(app: &App) -> Vec<i32> {
     (app.start_week.0..=app.end_week.0).step_by(7).map(|w| w as i32).collect()
 }
 
+/// Una colonna della griglia: una settimana reale, oppure una colonna di
+/// confine d'anno (sola lettura, sfondo giallo canarino) inserita tra l'ultima
+/// settimana di un anno e la prima del successivo. `YearEnd(y)` rappresenta il
+/// confine tra l'anno `y` e l'anno `y+1`.
+#[derive(Clone, Copy, PartialEq)]
+enum Col {
+    Week(i32),
+    YearEnd(i32),
+}
+
+/// Larghezza (px) della colonna di confine d'anno: più stretta di una settimana,
+/// quel tanto che basta per il titolo "Effort residuo" e i valori.
+const BOUNDARY_W: f32 = 44.0;
+
+/// Larghezza di una colonna: le settimane usano `cw`, il confine è più stretto.
+fn col_width(c: &Col, cw: f32) -> f32 {
+    match c {
+        Col::YearEnd(_) => BOUNDARY_W,
+        Col::Week(_) => cw,
+    }
+}
+
+/// Larghezza totale dell'asse colonne.
+fn cols_width(cols: &[Col], cw: f32) -> f32 {
+    cols.iter().map(|c| col_width(c, cw)).sum()
+}
+
+/// Offset X (dal bordo sinistro) dell'inizio della colonna all'indice `idx`.
+fn col_x_offset(cols: &[Col], idx: usize, cw: f32) -> f32 {
+    cols[..idx].iter().map(|c| col_width(c, cw)).sum()
+}
+
+/// Asse colonne condiviso da header, griglia e footer: le settimane di
+/// `weeks_vec` con, dopo ogni transizione d'anno, una colonna di confine.
+fn columns_vec(app: &App) -> Vec<Col> {
+    let weeks = weeks_vec(app);
+    let mut cols = Vec::with_capacity(weeks.len() + 2);
+    for (i, w) in weeks.iter().enumerate() {
+        cols.push(Col::Week(*w));
+        if let Some(next) = weeks.get(i + 1) {
+            let y0 = days_to_local(*w).year();
+            let y1 = days_to_local(*next).year();
+            // di norma un solo confine; il ciclo copre eventuali salti d'anno.
+            for y in y0..y1 {
+                cols.push(Col::YearEnd(y));
+            }
+        }
+    }
+    cols
+}
+
+/// Ore mancanti al dev per finire il progetto, al confine di fine `year_ending`.
+/// `Some(_)` solo se il progetto è "a cavallo": il suo range inizio→fine
+/// attraversa il confine (inizio nell'anno `<= year_ending`, fine `>= year_ending+1`).
+/// Valore = effort pianificato del dev − effort assegnati nelle settimane di `year_ending`.
+fn dev_missing_at_year_end(app: &App, proj: ProjectId, dev: DevId, year_ending: i32) -> Option<i32> {
+    let start = app.projects.get_project_start_week(proj)?;
+    let end = app.projects.get_project_end_week(proj)?;
+    let start_y = days_to_local(start.0 as i32).year();
+    let end_y = days_to_local(end.0 as i32).year();
+    if !(start_y <= year_ending && end_y >= year_ending + 1) {
+        return None;
+    }
+    let sd = app.projects.get_single_dev(proj, dev)?;
+    let planned = sd.planned_effort().0 as i32;
+    let assigned: i32 = sd
+        .get_weeks()
+        .iter()
+        .filter(|w| days_to_local(w.0 as i32).year() == year_ending)
+        .map(|w| sd.get_effort_by_week(*w).0 as i32)
+        .sum();
+    Some(planned - assigned)
+}
+
 /// Anni disponibili (da inizio/fine progetti), ordinati.
 fn available_years(app: &App) -> Vec<i32> {
     use std::collections::BTreeSet;
@@ -669,7 +745,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
 // ── Header (date settimane) ─────────────────────────────────────────────────
 
 fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
-    let weeks = weeks_vec(app);
+    let cols = columns_vec(app);
     // Riserva i 300px sinistri con lo stesso meccanismo della griglia (SidePanel),
     // così l'origine X delle colonne coincide esattamente.
     egui::SidePanel::left("hdr_left")
@@ -687,20 +763,31 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let compact = state.compact_mode;
             let cw = col_w(compact);
-            let content_w = weeks.len() as f32 * cw;
+            let content_w = cols_width(&cols, cw);
             let (rect, _) = ui.allocate_exact_size(Vec2::new(content_w, ROW_H), Sense::hover());
-            for (i, w) in weeks.iter().enumerate() {
-                let x = rect.left() + i as f32 * cw;
-                let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
-                if *w == state.this_week {
+            let mut x = rect.left();
+            for c in cols.iter() {
+                let colw = col_width(c, cw);
+                let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, ROW_H));
+                x += colw;
+                let w = match c {
+                    Col::YearEnd(_) => {
+                        // colonna di confine: sfondo canarino + titolo "Effort residuo"
+                        ui.painter().rect_filled(cell, 0.0, CANARY);
+                        draw_boundary_title(ui, cell);
+                        continue;
+                    }
+                    Col::Week(w) => *w,
+                };
+                if w == state.this_week {
                     ui.painter().rect_filled(cell, 0.0, THIS_WEEK.gamma_multiply(0.5));
                 }
-                let txt = primo_giorno_settimana_corrente(&days_to_local(*w))
+                let txt = primo_giorno_settimana_corrente(&days_to_local(w))
                     .format("%y-%m-%d")
                     .to_string();
                 if compact {
                     // colonne troppo strette per il testo → la data nel tooltip
-                    ui.interact(cell, egui::Id::new(("hdr", *w)), Sense::hover())
+                    ui.interact(cell, egui::Id::new(("hdr", w)), Sense::hover())
                         .on_hover_text(txt);
                 } else {
                     ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
@@ -1176,7 +1263,7 @@ fn footer_workers(app: &App, filter: &Filter) -> Vec<(crate::workers_utils::work
 fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
     let filter = state.worker_filter.clone();
     let workers = footer_workers(app, &filter);
-    let weeks = weeks_vec(app);
+    let cols = columns_vec(app);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
     // striscia gialla in testa al footer
@@ -1206,10 +1293,10 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            let content_w = weeks.len() as f32 * COL_W;
+            let content_w = cols_width(&cols, COL_W);
             let (rrect, _) =
                 ui.allocate_exact_size(Vec2::new(content_w, footer_h), Sense::hover());
-            draw_right_footer(ui, rrect, app, state, &workers, &weeks);
+            draw_right_footer(ui, rrect, app, state, &workers, &cols);
         });
 }
 
@@ -1333,21 +1420,35 @@ fn draw_right_footer(
     app: &App,
     state: &mut UiState,
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
-    weeks: &[i32],
+    cols: &[Col],
 ) {
     let lightgreen = Color32::from_rgb(0x90, 0xEE, 0x90);
-    for (ci, w) in weeks.iter().enumerate() {
-        let x = rect.left() + ci as f32 * COL_W;
+    let mut next_x = rect.left();
+    for c in cols.iter() {
+        let colw = col_width(c, COL_W);
+        let x = next_x;
+        next_x += colw;
+
+        // colonna di confine d'anno: sfondo canarino su tutta l'altezza, niente valori
+        let w = match c {
+            Col::YearEnd(_) => {
+                let col =
+                    Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
+                ui.painter().rect_filled(col, 0.0, CANARY);
+                continue;
+            }
+            Col::Week(w) => *w,
+        };
 
         // tinta settimana corrente su tutta la colonna
-        if *w == state.this_week {
+        if w == state.this_week {
             let col = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
             ui.painter().rect_filled(col, 0.0, THIS_WEEK.gamma_multiply(0.18));
         }
 
         // header: data settimana
         let hdr = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
-        let date = primo_giorno_settimana_corrente(&days_to_local(*w)).format("%y-%m-%d").to_string();
+        let date = primo_giorno_settimana_corrente(&days_to_local(w)).format("%y-%m-%d").to_string();
         ui.painter().text(hdr.center(), Align2::CENTER_CENTER, date, cell_font(), TEXT_DIM);
 
         // celle sovra per worker
@@ -1358,8 +1459,8 @@ fn draw_right_footer(
             let bg = if idx % 2 == 0 { BETWEEN_PROJECTS } else { Color32::BLACK };
             ui.painter().rect_filled(cell, 0.0, bg);
 
-            let value = app.sovra.get(&(WeekId(*w as usize), *wid)).map_or(0, |e| e.0 as i32);
-            let eff_max = app.workers.get_effective_max_hours(*wid, *w as usize) as i32;
+            let value = app.sovra.get(&(WeekId(w as usize), *wid)).map_or(0, |e| e.0 as i32);
+            let eff_max = app.workers.get_effective_max_hours(*wid, w as usize) as i32;
             let global_max = app.workers.get_max_hours(*wid) as i32;
 
             let shown = state.effort_filter_mode == 0
@@ -1390,13 +1491,13 @@ fn draw_right_footer(
 
             // Click sulla cella → popup override ore max per quella settimana.
             let resp = ui
-                .interact(cell, ui.id().with(("wkmax", wid.0, *w)), Sense::click())
+                .interact(cell, ui.id().with(("wkmax", wid.0, w)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
                 state.popup = Some(Popup::WorkerWeekMax {
                     worker: *wid,
                     name: name.clone(),
-                    week: *w as usize,
+                    week: w as usize,
                     text: eff_max.to_string(),
                 });
             }
@@ -1461,6 +1562,27 @@ fn total_content_h(layout: &[ProjLayout]) -> f32 {
     DEV_BORDER + layout.iter().map(|p| p.proj_h + DEV_BORDER).sum::<f32>()
 }
 
+/// Titolo "Effort residuo" su due righe, centrato nella cella della colonna di
+/// confine (testo scuro su sfondo canarino).
+fn draw_boundary_title(ui: &egui::Ui, cell: Rect) {
+    let font = mono(7.0);
+    let cx = cell.center().x;
+    ui.painter().text(
+        egui::pos2(cx, cell.top() + cell.height() * 0.30),
+        Align2::CENTER_CENTER,
+        "Effort",
+        font.clone(),
+        BG_DARK,
+    );
+    ui.painter().text(
+        egui::pos2(cx, cell.top() + cell.height() * 0.72),
+        Align2::CENTER_CENTER,
+        "residuo",
+        font,
+        BG_DARK,
+    );
+}
+
 /// Striscia orizzontale piena (bordo dev / separatore progetto), disegnata a y assoluta.
 fn paint_hstrip(ui: &egui::Ui, left: f32, w: f32, y: f32, color: Color32) {
     ui.painter()
@@ -1473,7 +1595,7 @@ fn draw_compact_date_marker(
     ui: &egui::Ui,
     left: f32,
     cw: f32,
-    weeks: &[i32],
+    cols: &[Col],
     week: i32,
     top_y: f32,
     bg: Color32,
@@ -1481,10 +1603,10 @@ fn draw_compact_date_marker(
     if week < 0 {
         return;
     }
-    let Some(ci) = weeks.iter().position(|w| *w == week) else {
+    let Some(ci) = cols.iter().position(|c| matches!(c, Col::Week(w) if *w == week)) else {
         return;
     };
-    let cx = left + ci as f32 * cw + cw / 2.0;
+    let cx = left + col_x_offset(cols, ci, cw) + cw / 2.0;
     let date = primo_giorno_settimana_corrente(&days_to_local(week)).format("%y-%m-%d").to_string();
     let galley = ui.painter().layout_no_wrap(date, mono(9.0), TEXT_WHITE);
     let pos = egui::pos2(cx - galley.size().x / 2.0, top_y + 1.0);
@@ -1496,8 +1618,8 @@ fn draw_compact_date_marker(
 fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
     let compact = state.compact_mode;
     let cw = col_w(compact);
-    let weeks = weeks_vec(app);
-    let content_w = weeks.len() as f32 * cw;
+    let cols = columns_vec(app);
+    let content_w = cols_width(&cols, cw);
     let layout = project_layout(app, filter, compact);
     let total_h = total_content_h(&layout);
 
@@ -1526,7 +1648,7 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
             let inner_h = if compact { ROW_H } else { (*max_rows as f32 + 1.0) * ROW_H };
             let block = Rect::from_min_size(egui::pos2(left, dy), Vec2::new(content_w, inner_h));
             draw_dev_cells(
-                ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &weeks, proj_start,
+                ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols, proj_start,
                 deadline, filter, compact, cw,
             );
             dy += inner_h;
@@ -1536,8 +1658,8 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
 
         // in compatta: etichetta data sopra le colonne inizio (azzurra) e fine (verde)
         if compact {
-            draw_compact_date_marker(ui, left, cw, &weeks, proj_start, proj_top, START_BG);
-            draw_compact_date_marker(ui, left, cw, &weeks, deadline, proj_top, DEADLINE_BG);
+            draw_compact_date_marker(ui, left, cw, &cols, proj_start, proj_top, START_BG);
+            draw_compact_date_marker(ui, left, cw, &cols, deadline, proj_top, DEADLINE_BG);
         }
 
         y = proj_top + p.proj_h;
@@ -1556,7 +1678,7 @@ fn draw_dev_cells(
     proj: ProjectId,
     dev: DevId,
     max_rows: usize,
-    weeks: &[i32],
+    cols: &[Col],
     proj_start: i32,
     deadline: i32,
     filter: &Filter,
@@ -1585,8 +1707,36 @@ fn draw_dev_cells(
     let dcolor = dev_color(app, dev);
 
     let mut running = 0i32;
-    for (ci, w) in weeks.iter().enumerate() {
-        let x = rect.left() + ci as f32 * cw;
+    let mut next_x = rect.left();
+    for c in cols.iter() {
+        let colw = col_width(c, cw);
+        let x = next_x;
+        next_x += colw;
+
+        // ── Colonna di confine d'anno: sola lettura, sfondo canarino ──
+        if let Col::YearEnd(year_ending) = c {
+            let col_rect =
+                Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
+            ui.painter().rect_filled(col_rect, 0.0, CANARY);
+            // ore mancanti del dev (solo se il progetto è a cavallo del confine)
+            if let Some(missing) = dev_missing_at_year_end(app, proj, dev, *year_ending) {
+                if !hide_effort {
+                    ui.painter().text(
+                        col_rect.center(),
+                        Align2::CENTER_CENTER,
+                        missing.to_string(),
+                        cell_font(),
+                        BG_DARK,
+                    );
+                }
+            }
+            continue;
+        }
+        let w = match c {
+            Col::Week(w) => w,
+            Col::YearEnd(_) => unreachable!(),
+        };
+
         let before_start = proj_start >= 0 && *w < proj_start;
         let after_deadline = deadline >= 0 && *w > deadline;
         let is_deadline = deadline >= 0 && *w == deadline;

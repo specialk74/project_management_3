@@ -29,6 +29,7 @@ pub const EFFORT_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // Colors.green
 pub const START_BG: Color32 = Color32::from_rgb(70, 130, 180); // steelblue
+pub const CANARY: Color32 = Color32::from_rgb(0xff, 0xf0, 0x66); // giallo canarino (colonna confine anno)
 pub const TEXT_WHITE: Color32 = Color32::from_rgb(0xff, 0xff, 0xff);
 pub const TEXT_DIM: Color32 = Color32::from_rgb(0x88, 0x88, 0x88);
 pub const TEXT_FAINT: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
