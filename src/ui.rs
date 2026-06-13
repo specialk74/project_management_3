@@ -120,10 +120,27 @@ pub struct PjmApp {
     ui: UiState,
 }
 
+/// Rende disponibili i simboli geometrici (es. "▼") nei pulsanti (che usano il
+/// font proporzionale) aggiungendo come fallback i font monospace di egui —
+/// "Hack" include "▼". Soluzione portabile (nessun font di sistema, nessun file
+/// esterno): i font sono già impacchettati da egui su macOS/Windows/Linux.
+fn install_symbol_fallback(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let mono = fonts.families.get(&egui::FontFamily::Monospace).cloned().unwrap_or_default();
+    let prop = fonts.families.entry(egui::FontFamily::Proportional).or_default();
+    for name in mono {
+        if !prop.contains(&name) {
+            prop.push(name);
+        }
+    }
+    ctx.set_fonts(fonts);
+}
+
 impl PjmApp {
     pub fn new(app: App, current_file: String, cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         cc.egui_ctx.style_mut(|s| s.interaction.tooltip_delay = 0.0);
+        install_symbol_fallback(&cc.egui_ctx);
 
         let today = Utc::now().date_naive();
         let this_week = local_to_days(&primo_giorno_settimana_corrente(&today));
