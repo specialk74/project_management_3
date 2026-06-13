@@ -1518,11 +1518,17 @@ fn draw_corner_triangle_left(ui: &egui::Ui, cell: Rect) {
 
 // ── Griglia (colonna destra) ────────────────────────────────────────────────
 
-// Righe occupate dal nome progetto (campo multiriga).
+// Righe minime occupate dal nome progetto (campo multiriga; può crescere).
 const NAME_ROWS: usize = 2;
-// Altezza minima di un progetto: spazio per le righe info a sinistra
-// (tripletta + categoria + nome[NAME_ROWS] + inizio + fine).
-const INFO_MIN_H: f32 = (4.0 + NAME_ROWS as f32) * ROW_H;
+
+/// Altezza effettiva del blocco nome: il `TextEdit` multiriga cresce con testi
+/// lunghi, quindi misuriamo il galley wrappato a `LEFT_INFO_W` (mai meno di
+/// `NAME_ROWS` righe). Senza questo, l'altezza riservata al progetto sarebbe
+/// troppo piccola e inizio/fine sforerebbero nel progetto successivo.
+fn name_block_height(ui: &egui::Ui, name: &str) -> f32 {
+    let galley = ui.painter().layout(name.to_string(), cell_font(), TEXT_WHITE, LEFT_INFO_W);
+    galley.size().y.max(NAME_ROWS as f32 * ROW_H)
+}
 
 /// Layout condiviso da colonna sinistra e griglia: stessi progetti, stessi dev,
 /// stesse altezze. Garantisce che le due colonne non possano divergere.
@@ -1533,9 +1539,10 @@ struct ProjLayout {
     proj_h: f32,
 }
 
-fn project_layout(app: &App, filter: &Filter, compact: bool) -> Vec<ProjLayout> {
-    // in compatta l'info è solo tripletta + nome
-    let info_min = if compact { (1.0 + NAME_ROWS as f32) * ROW_H } else { INFO_MIN_H };
+fn project_layout(ui: &egui::Ui, app: &App, filter: &Filter, compact: bool) -> Vec<ProjLayout> {
+    // Righe info oltre al nome: compatta = solo tripletta; normale = tripletta +
+    // categoria + inizio + fine.
+    let extra_rows = if compact { 1.0 } else { 4.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
         if !app.projects.get_enable(&proj_id).0 {
@@ -1552,7 +1559,9 @@ fn project_layout(app: &App, filter: &Filter, compact: bool) -> Vec<ProjLayout> 
             continue;
         }
         let sum_devs: f32 = devs.iter().map(|(_, m)| dev_block_height(*m, compact)).sum();
-        let proj_h = sum_devs.max(info_min);
+        // l'info riserva lo spazio reale del nome (può crescere su più righe).
+        let info_h = extra_rows * ROW_H + name_block_height(ui, &name);
+        let proj_h = sum_devs.max(info_h);
         out.push(ProjLayout { proj: proj_id, name, devs, proj_h });
     }
     out
@@ -1620,7 +1629,7 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     let cw = col_w(compact);
     let cols = columns_vec(app);
     let content_w = cols_width(&cols, cw);
-    let layout = project_layout(app, filter, compact);
+    let layout = project_layout(ui, app, filter, compact);
     let total_h = total_content_h(&layout);
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
@@ -2128,7 +2137,7 @@ fn dev_name(app: &App, dev: DevId) -> String {
 
 fn left_column(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
     let compact = state.compact_mode;
-    let layout = project_layout(app, filter, compact);
+    let layout = project_layout(ui, app, filter, compact);
     let total_h = total_content_h(&layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
