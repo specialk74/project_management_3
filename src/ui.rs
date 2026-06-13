@@ -17,7 +17,7 @@ use crate::project_utils::project::{Enable, ProjectId};
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_style::*;
-use crate::workers_utils::worker::WORKER_ID_ZERO;
+use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
 
@@ -52,6 +52,10 @@ enum Popup {
     Start { proj: ProjectId, text: String },
     End { proj: ProjectId, text: String },
     Category { proj: ProjectId },
+    /// Ore max globali di un worker (click sul nome nel footer sinistro).
+    WorkerMax { worker: WorkerId, name: String, text: String },
+    /// Override ore max di un worker per una specifica settimana (click sulla cella sovra).
+    WorkerWeekMax { worker: WorkerId, name: String, week: usize, text: String },
 }
 
 #[derive(Default)]
@@ -114,6 +118,8 @@ enum Action {
     AddDevToProject { proj: ProjectId, dev: DevId, add: bool },
     SetProjectEnabled { proj: ProjectId, enabled: bool },
     SetAllProjectsEnabled { enabled: bool },
+    SetWorkerMaxHours { worker: WorkerId, hours: u32 },
+    SetWorkerWeekOverride { worker: WorkerId, week: usize, hours: u32 },
 }
 
 pub struct PjmApp {
@@ -380,6 +386,14 @@ impl PjmApp {
                 for id in ids {
                     self.app.projects.set_enable(id, Enable(enabled));
                 }
+                self.mark_changed();
+            }
+            Action::SetWorkerMaxHours { worker, hours } => {
+                self.app.workers.set_max_hours(worker, hours);
+                self.mark_changed();
+            }
+            Action::SetWorkerWeekOverride { worker, week, hours } => {
+                self.app.workers.set_week_override(worker, week, hours);
                 self.mark_changed();
             }
         }
@@ -690,19 +704,21 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
             let cw = col_w(compact);
             let content_w = weeks.len() as f32 * cw;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(content_w, ROW_H), Sense::hover());
-            let painter = ui.painter_at(rect);
             for (i, w) in weeks.iter().enumerate() {
                 let x = rect.left() + i as f32 * cw;
                 let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
                 if *w == state.this_week {
-                    painter.rect_filled(cell, 0.0, THIS_WEEK.gamma_multiply(0.5));
+                    ui.painter().rect_filled(cell, 0.0, THIS_WEEK.gamma_multiply(0.5));
                 }
-                // in compatta niente testo (colonne troppo strette)
-                if !compact {
-                    let txt = primo_giorno_settimana_corrente(&days_to_local(*w))
-                        .format("%y-%m-%d")
-                        .to_string();
-                    painter.text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
+                let txt = primo_giorno_settimana_corrente(&days_to_local(*w))
+                    .format("%y-%m-%d")
+                    .to_string();
+                if compact {
+                    // colonne troppo strette per il testo → la data nel tooltip
+                    ui.interact(cell, egui::Id::new(("hdr", *w)), Sense::hover())
+                        .on_hover_text(txt);
+                } else {
+                    ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
                 }
             }
         });
@@ -1053,6 +1069,34 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                     }
                 });
         }
+        Popup::WorkerMax { worker, name, text } => {
+            hours_popup_window(
+                ctx,
+                &format!("Ore max: {name}"),
+                text,
+                &mut open,
+                &mut close,
+                |hours| {
+                    actions.push(Action::SetWorkerMaxHours { worker: *worker, hours });
+                },
+                DEFAULT_MAX_HOURS,
+            );
+        }
+        Popup::WorkerWeekMax { worker, name, week, text } => {
+            // "Default" = max globale del worker (azzera l'override per la settimana).
+            let global_max = app.workers.get_max_hours(*worker);
+            hours_popup_window(
+                ctx,
+                &format!("Override settimana - {name}"),
+                text,
+                &mut open,
+                &mut close,
+                |hours| {
+                    actions.push(Action::SetWorkerWeekOverride { worker: *worker, week: *week, hours });
+                },
+                global_max,
+            );
+        }
     }
 
     if close || !open {
@@ -1086,6 +1130,45 @@ fn date_popup_window(
                 }
                 if ui.button("Rimuovi").clicked() {
                     on_confirm(String::new());
+                    *close = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    *close = true;
+                }
+            });
+        });
+}
+
+/// Finestra con campo numerico (ore max) + OK / Default / Annulla.
+/// `on_confirm` riceve le ore (u32); il pulsante "Default" conferma `default_hours`,
+/// che azzera l'override/limite (vedi `Worker::set_max_hours` / `set_week_override`).
+fn hours_popup_window(
+    ctx: &egui::Context,
+    title: &str,
+    text: &mut String,
+    open: &mut bool,
+    close: &mut bool,
+    mut on_confirm: impl FnMut(u32),
+    default_hours: u32,
+) {
+    egui::Window::new(title)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(open)
+        .show(ctx, |ui| {
+            let le =
+                ui.add(egui::TextEdit::singleline(text).desired_width(120.0).font(cell_font()));
+            let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.horizontal(|ui| {
+                if ui.button("OK").clicked() || entered {
+                    if let Ok(hours) = text.trim().parse::<u32>() {
+                        on_confirm(hours);
+                    }
+                    *close = true;
+                }
+                if ui.button("Default").clicked() {
+                    on_confirm(default_hours);
                     *close = true;
                 }
                 if ui.button("Annulla").clicked() {
@@ -1193,6 +1276,7 @@ fn draw_left_footer(
     }
 
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
+    // Click sul nome → popup "Ore max" (limite settimanale globale del worker).
     for (idx, (wid, name)) in workers.iter().enumerate() {
         let y = rect.top() + (idx as f32 + 1.0) * ROW_H;
         let cell = Rect::from_min_size(egui::pos2(wk_x, y), Vec2::new(COL_W, ROW_H));
@@ -1204,6 +1288,18 @@ fn draw_left_footer(
         }
         ui.painter()
             .text(cell.center(), Align2::CENTER_CENTER, name, cell_font(), TEXT_WHITE);
+
+        let resp = ui
+            .interact(cell, ui.id().with(("wmax", wid.0)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if resp.clicked() {
+            let cur = app.workers.get_max_hours(*wid);
+            state.popup = Some(Popup::WorkerMax {
+                worker: *wid,
+                name: name.clone(),
+                text: cur.to_string(),
+            });
+        }
     }
 }
 
@@ -1211,7 +1307,7 @@ fn draw_right_footer(
     ui: &egui::Ui,
     rect: Rect,
     app: &App,
-    state: &UiState,
+    state: &mut UiState,
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
     weeks: &[i32],
 ) {
@@ -1231,7 +1327,7 @@ fn draw_right_footer(
         ui.painter().text(hdr.center(), Align2::CENTER_CENTER, date, cell_font(), TEXT_DIM);
 
         // celle sovra per worker
-        for (idx, (wid, _)) in workers.iter().enumerate() {
+        for (idx, (wid, name)) in workers.iter().enumerate() {
             let y = rect.top() + (idx as f32 + 1.0) * ROW_H;
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(COL_W, ROW_H));
 
@@ -1267,6 +1363,19 @@ fn draw_right_footer(
                 value.to_string()
             };
             ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), color);
+
+            // Click sulla cella → popup override ore max per quella settimana.
+            let resp = ui
+                .interact(cell, ui.id().with(("wkmax", wid.0, *w)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.clicked() {
+                state.popup = Some(Popup::WorkerWeekMax {
+                    worker: *wid,
+                    name: name.clone(),
+                    week: *w as usize,
+                    text: eff_max.to_string(),
+                });
+            }
         }
     }
 }
@@ -1334,6 +1443,32 @@ fn paint_hstrip(ui: &egui::Ui, left: f32, w: f32, y: f32, color: Color32) {
         .rect_filled(Rect::from_min_size(egui::pos2(left, y), Vec2::new(w, DEV_BORDER)), 0.0, color);
 }
 
+/// Etichetta data (sempre visibile) sopra la colonna inizio/fine di un progetto
+/// in vista compatta. Sfondo colorato come la colonna, testo centrato sulla colonna.
+fn draw_compact_date_marker(
+    ui: &egui::Ui,
+    left: f32,
+    cw: f32,
+    weeks: &[i32],
+    week: i32,
+    top_y: f32,
+    bg: Color32,
+) {
+    if week < 0 {
+        return;
+    }
+    let Some(ci) = weeks.iter().position(|w| *w == week) else {
+        return;
+    };
+    let cx = left + ci as f32 * cw + cw / 2.0;
+    let date = primo_giorno_settimana_corrente(&days_to_local(week)).format("%y-%m-%d").to_string();
+    let galley = ui.painter().layout_no_wrap(date, mono(9.0), TEXT_WHITE);
+    let pos = egui::pos2(cx - galley.size().x / 2.0, top_y + 1.0);
+    let bgrect = Rect::from_min_size(pos, galley.size()).expand(1.5);
+    ui.painter().rect_filled(bgrect, 2.0, bg);
+    ui.painter().galley(pos, galley, TEXT_WHITE);
+}
+
 fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
     let compact = state.compact_mode;
     let cw = col_w(compact);
@@ -1373,6 +1508,12 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
             dy += inner_h;
             paint_hstrip(ui, left, content_w, dy, border);
             dy += DEV_BORDER;
+        }
+
+        // in compatta: etichetta data sopra le colonne inizio (azzurra) e fine (verde)
+        if compact {
+            draw_compact_date_marker(ui, left, cw, &weeks, proj_start, proj_top, START_BG);
+            draw_compact_date_marker(ui, left, cw, &weeks, deadline, proj_top, DEADLINE_BG);
         }
 
         y = proj_top + p.proj_h;
@@ -1455,6 +1596,12 @@ fn draw_dev_cells(
                         Vec2::new(cw, bar_h),
                     );
                     ui.painter().rect_filled(bar, 0.0, dcolor);
+                    // tooltip con data + effort della settimana
+                    let date = primo_giorno_settimana_corrente(&days_to_local(*w))
+                        .format("%y-%m-%d")
+                        .to_string();
+                    ui.interact(col_rect, egui::Id::new(("cbar", proj.0, dev.0, *w)), Sense::hover())
+                        .on_hover_text(format!("{}  ·  {}h", date, week_total));
                 }
             }
             continue;
