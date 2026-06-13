@@ -31,6 +31,10 @@ pub struct Project {
     tripletta: Option<String>,
     #[serde(default)]
     category: Option<CategoryId>,
+    /// Posizione di ordinamento nella colonna sinistra. I file vecchi (senza
+    /// campo) partono tutti da 0 → tie-break per ProjectId = ordine attuale.
+    #[serde(default)]
+    order: usize,
 }
 
 impl Project {
@@ -43,6 +47,7 @@ impl Project {
             end_week: None,
             tripletta: None,
             category: None,
+            order: 0,
         }
     }
 
@@ -55,6 +60,7 @@ impl Project {
             end_week: None,
             tripletta: None,
             category: None,
+            order: 0,
         }
     }
 
@@ -149,6 +155,14 @@ impl Project {
 
     pub fn get_info(&self) -> String {
         self.info.clone()
+    }
+
+    pub fn get_order(&self) -> usize {
+        self.order
+    }
+
+    pub fn set_order(&mut self, order: usize) {
+        self.order = order;
     }
 
     pub fn get_enable(&self) -> Enable {

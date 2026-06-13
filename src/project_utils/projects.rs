@@ -33,8 +33,57 @@ impl Projects {
             .iter()
             .map(|(&id, p)| (id, p.get_info()))
             .collect();
-        items.sort_by_key(|(id, _)| *id);
+        items.sort_by_key(|(id, _)| (self.order_of(*id), *id));
         items
+    }
+
+    /// Posizione di ordinamento del progetto (0 se assente).
+    fn order_of(&self, id: ProjectId) -> usize {
+        self.projects.get(&id).map_or(0, |p| p.get_order())
+    }
+
+    /// ProjectId nell'ordine di visualizzazione corrente (order, poi id).
+    fn ordered_ids(&self) -> Vec<ProjectId> {
+        let mut ids: Vec<ProjectId> = self.projects.keys().copied().collect();
+        ids.sort_by_key(|id| (self.order_of(*id), *id));
+        ids
+    }
+
+    /// Riassegna `order` = posizione, normalizzando i valori sull'ordine dato.
+    fn reindex(&mut self, ids: &[ProjectId]) {
+        for (pos, id) in ids.iter().enumerate() {
+            if let Some(p) = self.projects.get_mut(id) {
+                p.set_order(pos);
+            }
+        }
+    }
+
+    /// Sposta il progetto di una posizione verso l'alto. Ritorna `true` se ha
+    /// effettivamente cambiato l'ordine (no-op se già in cima).
+    pub fn move_up(&mut self, id: ProjectId) -> bool {
+        let mut ids = self.ordered_ids();
+        match ids.iter().position(|&p| p == id) {
+            Some(pos) if pos > 0 => {
+                ids.swap(pos, pos - 1);
+                self.reindex(&ids);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Sposta il progetto di una posizione verso il basso. Ritorna `true` se ha
+    /// effettivamente cambiato l'ordine (no-op se già in fondo).
+    pub fn move_down(&mut self, id: ProjectId) -> bool {
+        let mut ids = self.ordered_ids();
+        match ids.iter().position(|&p| p == id) {
+            Some(pos) if pos + 1 < ids.len() => {
+                ids.swap(pos, pos + 1);
+                self.reindex(&ids);
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn del_row(&mut self, project_id: ProjectId, id_dev: DevId) {
@@ -48,7 +97,7 @@ impl Projects {
             .iter()
             .map(|(&id, p)| (id, p.get_info(), p.get_enable()))
             .collect();
-        items.sort_by_key(|(id, _, _)| *id);
+        items.sort_by_key(|(id, _, _)| (self.order_of(*id), *id));
         items
     }
 
@@ -64,6 +113,9 @@ impl Projects {
         if let Some(t) = tripletta {
             project.set_tripletta(t);
         }
+        // In fondo all'ordinamento corrente.
+        let next_order = self.projects.values().map(|p| p.get_order()).max().map_or(0, |m| m + 1);
+        project.set_order(next_order);
         self.projects.insert(id, project);
         self.last_id.0 += 1;
         id
@@ -227,5 +279,64 @@ impl Projects {
                 project.set_category(None);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(ps: &Projects) -> Vec<String> {
+        ps.list().into_iter().map(|(_, n)| n).collect()
+    }
+
+    fn three() -> (Projects, ProjectId, ProjectId, ProjectId) {
+        let mut ps = Projects::new();
+        let a = ps.add("A", None, None);
+        let b = ps.add("B", None, None);
+        let c = ps.add("C", None, None);
+        (ps, a, b, c)
+    }
+
+    #[test]
+    fn list_default_order_is_insertion() {
+        let (ps, ..) = three();
+        assert_eq!(names(&ps), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn move_up_swaps_with_previous() {
+        let (mut ps, _, _, c) = three();
+        assert!(ps.move_up(c));
+        assert_eq!(names(&ps), vec!["A", "C", "B"]);
+    }
+
+    #[test]
+    fn move_down_swaps_with_next() {
+        let (mut ps, a, ..) = three();
+        assert!(ps.move_down(a));
+        assert_eq!(names(&ps), vec!["B", "A", "C"]);
+    }
+
+    #[test]
+    fn move_up_at_top_is_noop() {
+        let (mut ps, a, ..) = three();
+        assert!(!ps.move_up(a));
+        assert_eq!(names(&ps), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn move_down_at_bottom_is_noop() {
+        let (mut ps, _, _, c) = three();
+        assert!(!ps.move_down(c));
+        assert_eq!(names(&ps), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn new_project_appended_after_reorder() {
+        let (mut ps, a, ..) = three();
+        ps.move_down(a); // B, A, C
+        let d = ps.add("D", None, None);
+        assert_eq!(names(&ps), vec!["B", "A", "C", "D"]);
     }
 }

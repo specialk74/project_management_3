@@ -120,6 +120,8 @@ enum Action {
     SetAllProjectsEnabled { enabled: bool },
     SetWorkerMaxHours { worker: WorkerId, hours: u32 },
     SetWorkerWeekOverride { worker: WorkerId, week: usize, hours: u32 },
+    MoveProjectUp { proj: ProjectId },
+    MoveProjectDown { proj: ProjectId },
 }
 
 pub struct PjmApp {
@@ -395,6 +397,16 @@ impl PjmApp {
             Action::SetWorkerWeekOverride { worker, week, hours } => {
                 self.app.workers.set_week_override(worker, week, hours);
                 self.mark_changed();
+            }
+            Action::MoveProjectUp { proj } => {
+                if self.app.projects.move_up(proj) {
+                    self.mark_changed();
+                }
+            }
+            Action::MoveProjectDown { proj } => {
+                if self.app.projects.move_down(proj) {
+                    self.mark_changed();
+                }
             }
         }
     }
@@ -2004,6 +2016,25 @@ fn draw_project_info(
         state.popup = Some(Popup::Tripletta { proj, text: trip.clone() });
     }
     tr.on_hover_text("Tasto destro: modifica tripletta");
+
+    // Pulsanti sposta su/giù all'estrema destra della riga tripletta.
+    let btn_w = 16.0;
+    let up_rect = Rect::from_min_size(egui::pos2(x + w - 2.0 * btn_w, y), Vec2::new(btn_w, ROW_H));
+    let down_rect = Rect::from_min_size(egui::pos2(x + w - btn_w, y), Vec2::new(btn_w, ROW_H));
+    if ui
+        .put(up_rect, egui::Button::new("▲").frame(false).small())
+        .on_hover_text("Sposta progetto su")
+        .clicked()
+    {
+        actions.push(Action::MoveProjectUp { proj });
+    }
+    if ui
+        .put(down_rect, egui::Button::new("▼").frame(false).small())
+        .on_hover_text("Sposta progetto giù")
+        .clicked()
+    {
+        actions.push(Action::MoveProjectDown { proj });
+    }
     y += ROW_H;
 
     // categoria (click per scegliere) — nascosta in compatta
