@@ -587,7 +587,7 @@ fn gather_slots(
 
 // ── Toolbar ─────────────────────────────────────────────────────────────────
 
-fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     ui.horizontal(|ui| {
         if ui.button("+ Progetto").clicked() {
             actions.push(Action::NewProject);
@@ -654,36 +654,9 @@ fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<
             state.compact_mode = !state.compact_mode;
         }
 
-        ui.separator();
-        // Selettore anno (per i totali-anno nel footer)
-        let year_label = if state.selected_year == 0 {
-            "Anno".to_string()
-        } else {
-            state.selected_year.to_string()
-        };
-        egui::ComboBox::from_id_salt("year_combo")
-            .selected_text(year_label)
-            .width(70.0)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.selected_year, 0, "—");
-                for y in available_years(app) {
-                    ui.selectable_value(&mut state.selected_year, y, y.to_string());
-                }
-            });
-        // Selettore categoria (scope dei totali-anno)
-        let cat_label = match state.selected_category {
-            None => "Tutte".to_string(),
-            Some(c) => app.categories.get_name(c).unwrap_or("?").to_string(),
-        };
-        egui::ComboBox::from_id_salt("cat_combo")
-            .selected_text(cat_label)
-            .width(110.0)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.selected_category, None, "Tutte");
-                for (id, name) in app.categories.list() {
-                    ui.selectable_value(&mut state.selected_category, Some(id), name);
-                }
-            });
+        // I selettori Anno e Categoria sono stati spostati nel footer sinistro
+        // (vedi `draw_left_footer`): l'anno sopra i totali-anno per dev, la
+        // categoria sopra la colonna dei nomi dev.
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let col = if state.changed { EFFORT_ORANGE } else { TEXT_DIM };
@@ -1240,6 +1213,26 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
         });
 }
 
+/// Posiziona un `ComboBox` compatto a coordinate assolute dentro il footer
+/// (il footer è disegnato a mano col painter, quindi serve un'ui figlia).
+fn footer_combo(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id_salt: &str,
+    selected_text: String,
+    width: f32,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.spacing_mut().button_padding = Vec2::new(3.0, 0.0);
+        ui.spacing_mut().interact_size.y = ROW_H;
+        egui::ComboBox::from_id_salt(id_salt)
+            .selected_text(selected_text)
+            .width(width)
+            .show_ui(ui, add_contents);
+    });
+}
+
 fn draw_left_footer(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -1254,10 +1247,29 @@ fn draw_left_footer(
     let cat = state.selected_category;
 
     // ── Riga header (row 0) ──
-    // intestazione totale-anno sopra la colonna totali dev
+    // Selettore categoria (scope dei totali-anno) sopra la colonna dei nomi dev.
+    let cat_rect = Rect::from_min_size(rect.left_top(), Vec2::new(DEV_NAME_W, ROW_H));
+    let cat_label = match cat {
+        None => "Tutte".to_string(),
+        Some(c) => app.categories.get_name(c).unwrap_or("?").to_string(),
+    };
+    footer_combo(ui, cat_rect, "footer_cat_combo", cat_label, DEV_NAME_W - 6.0, |ui| {
+        ui.selectable_value(&mut state.selected_category, None, "Tutte");
+        for (id, name) in app.categories.list() {
+            ui.selectable_value(&mut state.selected_category, Some(id), name);
+        }
+    });
+
+    // Selettore anno (totali-anno per dev) sopra la colonna dei totali.
     let th = Rect::from_min_size(egui::pos2(total_x, rect.top()), Vec2::new(60.0, ROW_H));
-    let yhdr = if year == 0 { "Tot".to_string() } else { year.to_string() };
-    ui.painter().text(th.center(), Align2::CENTER_CENTER, yhdr, mono(FONT_SIZE - 3.0), TEXT_DIM);
+    let year_label = if year == 0 { "Tot".to_string() } else { year.to_string() };
+    footer_combo(ui, th, "footer_year_combo", year_label, 54.0, |ui| {
+        ui.selectable_value(&mut state.selected_year, 0, "—");
+        for y in available_years(app) {
+            ui.selectable_value(&mut state.selected_year, y, y.to_string());
+        }
+    });
+
     // filtro effort sopra la sezione worker
     let labels = ["Tutti", "Nulli", "≥40"];
     let fbw = 46.0;
