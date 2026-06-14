@@ -37,9 +37,34 @@ pub const CAT_BLUE: Color32 = Color32::from_rgb(0x7a, 0xb0, 0xd4);
 pub const SEL_BG: Color32 = Color32::from_rgba_premultiplied(70, 130, 180, 90); // steelblue alpha
 pub const FOCUS_BORDER: Color32 = Color32::from_rgb(0xff, 0x45, 0x00); // orangered
 
+use std::cell::Cell;
+
+thread_local! {
+    /// Modalità bianco/nero (senza colori). Impostata a inizio frame da `set_bw_mode`.
+    static BW_MODE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Attiva/disattiva la resa in scala di grigi (chiamata a inizio frame).
+pub fn set_bw_mode(on: bool) {
+    BW_MODE.with(|b| b.set(on));
+}
+
+/// Converte un colore in grigio (luminanza percepita) se la modalità B/N è
+/// attiva; altrimenti lo restituisce invariato. I grigi restano grigi, quindi
+/// può essere applicata indistintamente. L'alpha è preservato.
+#[inline]
+pub fn g(c: Color32) -> Color32 {
+    if !BW_MODE.with(|b| b.get()) {
+        return c;
+    }
+    let [r, gr, b, a] = c.to_array();
+    let lum = (0.299 * r as f32 + 0.587 * gr as f32 + 0.114 * b as f32).round() as u8;
+    Color32::from_rgba_premultiplied(lum, lum, lum, a)
+}
+
 #[inline]
 pub fn from_hex(rgb: u32) -> Color32 {
-    Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8)
+    g(Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8))
 }
 
 /// Colore del cumulativo per dev (replica `my-function` in global.slint).

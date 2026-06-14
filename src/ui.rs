@@ -82,6 +82,8 @@ pub struct UiState {
     // 0 = tutti gli effort, 1 = solo nulli, 2 = solo >= 40
     effort_filter_mode: i32,
     compact_mode: bool,
+    // resa in bianco/nero (senza colori)
+    bw_mode: bool,
     // selettori per i totali-anno per dev nel footer
     selected_year: i32, // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
@@ -188,6 +190,9 @@ impl eframe::App for PjmApp {
         {
             let app = &self.app;
             let state = &mut self.ui;
+
+            // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
+            set_bw_mode(state.bw_mode);
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
@@ -673,7 +678,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         }
         let filter_on = state.worker_filter.is_some();
         let wbtn = egui::Button::new("Workers ▼");
-        let wbtn = if filter_on { wbtn.fill(Color32::from_rgb(0x2a, 0x50, 0x80)) } else { wbtn };
+        let wbtn = if filter_on { wbtn.fill(g(Color32::from_rgb(0x2a, 0x50, 0x80))) } else { wbtn };
         if ui.add(wbtn).clicked() {
             state.show_worker_filter = !state.show_worker_filter;
         }
@@ -729,13 +734,17 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         if ui.button(compact_label).clicked() {
             state.compact_mode = !state.compact_mode;
         }
+        let bw_label = if state.bw_mode { "Colori" } else { "Bianco/Nero" };
+        if ui.button(bw_label).clicked() {
+            state.bw_mode = !state.bw_mode;
+        }
 
         // I selettori Anno e Categoria sono stati spostati nel footer sinistro
         // (vedi `draw_left_footer`): l'anno sopra i totali-anno per dev, la
         // categoria sopra la colonna dei nomi dev.
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let col = if state.changed { EFFORT_ORANGE } else { TEXT_DIM };
+            let col = if state.changed { g(EFFORT_ORANGE) } else { TEXT_DIM };
             let label = format!("{}{}", state.current_file, if state.changed { " (*)" } else { "" });
             ui.colored_label(col, label);
         });
@@ -773,14 +782,14 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
                 let w = match c {
                     Col::YearEnd(_) => {
                         // colonna di confine: sfondo canarino + titolo "Effort residuo"
-                        ui.painter().rect_filled(cell, 0.0, CANARY);
+                        ui.painter().rect_filled(cell, 0.0, g(CANARY));
                         draw_boundary_title(ui, cell);
                         continue;
                     }
                     Col::Week(w) => *w,
                 };
                 if w == state.this_week {
-                    ui.painter().rect_filled(cell, 0.0, THIS_WEEK.gamma_multiply(0.5));
+                    ui.painter().rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.5));
                 }
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))
                     .format("%y-%m-%d")
@@ -1268,7 +1277,7 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
 
     // striscia gialla in testa al footer
     let full_w = ui.available_width();
-    alloc_strip(ui, full_w, DEV_BORDER, START_STOP);
+    alloc_strip(ui, full_w, DEV_BORDER, g(START_STOP));
 
     // 1 riga header + una riga per worker o per dev (il più alto dei due)
     let n_devs = app.devs.list().len();
@@ -1422,7 +1431,7 @@ fn draw_right_footer(
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
     cols: &[Col],
 ) {
-    let lightgreen = Color32::from_rgb(0x90, 0xEE, 0x90);
+    let lightgreen = g(Color32::from_rgb(0x90, 0xEE, 0x90));
     let mut next_x = rect.left();
     for c in cols.iter() {
         let colw = col_width(c, COL_W);
@@ -1434,7 +1443,7 @@ fn draw_right_footer(
             Col::YearEnd(_) => {
                 let col =
                     Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
-                ui.painter().rect_filled(col, 0.0, CANARY);
+                ui.painter().rect_filled(col, 0.0, g(CANARY));
                 continue;
             }
             Col::Week(w) => *w,
@@ -1443,7 +1452,7 @@ fn draw_right_footer(
         // tinta settimana corrente su tutta la colonna
         if w == state.this_week {
             let col = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
-            ui.painter().rect_filled(col, 0.0, THIS_WEEK.gamma_multiply(0.18));
+            ui.painter().rect_filled(col, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
         }
 
         // header: data settimana
@@ -1476,9 +1485,9 @@ fn draw_right_footer(
             }
 
             let color = if value > eff_max {
-                Color32::RED
+                g(Color32::RED)
             } else if value == 0 {
-                Color32::YELLOW
+                g(Color32::YELLOW)
             } else {
                 lightgreen
             };
@@ -1513,7 +1522,7 @@ fn draw_corner_triangle_left(ui: &egui::Ui, cell: Rect) {
         egui::pos2(tl.x + 10.0, tl.y),
         egui::pos2(tl.x, tl.y + 10.0),
     ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, EFFORT_ORANGE, Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(pts, g(EFFORT_ORANGE), Stroke::NONE));
 }
 
 // ── Griglia (colonna destra) ────────────────────────────────────────────────
@@ -1637,7 +1646,7 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     let left = rect.left();
     let mut y = rect.top();
 
-    paint_hstrip(ui, left, content_w, y, START_STOP);
+    paint_hstrip(ui, left, content_w, y, g(START_STOP));
     y += DEV_BORDER;
 
     for p in &layout {
@@ -1667,8 +1676,8 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
 
         // in compatta: etichetta data sopra le colonne inizio (azzurra) e fine (verde)
         if compact {
-            draw_compact_date_marker(ui, left, cw, &cols, proj_start, proj_top, START_BG);
-            draw_compact_date_marker(ui, left, cw, &cols, deadline, proj_top, DEADLINE_BG);
+            draw_compact_date_marker(ui, left, cw, &cols, proj_start, proj_top, g(START_BG));
+            draw_compact_date_marker(ui, left, cw, &cols, deadline, proj_top, g(DEADLINE_BG));
         }
 
         y = proj_top + p.proj_h;
@@ -1726,7 +1735,7 @@ fn draw_dev_cells(
         if let Col::YearEnd(year_ending) = c {
             let col_rect =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
-            ui.painter().rect_filled(col_rect, 0.0, CANARY);
+            ui.painter().rect_filled(col_rect, 0.0, g(CANARY));
             // ore mancanti del dev (solo se il progetto è a cavallo del confine)
             if let Some(missing) = dev_missing_at_year_end(app, proj, dev, *year_ending) {
                 if !hide_effort {
@@ -1753,12 +1762,12 @@ fn draw_dev_cells(
         // colonna settimana: bg deadline/start
         let col_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, rect.height()));
         if is_deadline {
-            ui.painter().rect_filled(col_rect, 0.0, DEADLINE_BG);
+            ui.painter().rect_filled(col_rect, 0.0, g(DEADLINE_BG));
         } else if proj_start >= 0 && *w == proj_start {
-            ui.painter().rect_filled(col_rect, 0.0, START_BG);
+            ui.painter().rect_filled(col_rect, 0.0, g(START_BG));
         }
         if !compact && *w == state.this_week {
-            ui.painter().rect_filled(col_rect, 0.0, THIS_WEEK.gamma_multiply(0.18));
+            ui.painter().rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
         }
 
         let week_total = app
@@ -1900,11 +1909,11 @@ fn draw_dev_cells(
                 }
 
                 // disegno cella in editing + caret
-                ui.painter().rect_filled(cell, 0.0, SEL_BG);
+                ui.painter().rect_filled(cell, 0.0, g(SEL_BG));
                 ui.painter().rect_stroke(
                     cell,
                     0.0,
-                    Stroke::new(1.0, FOCUS_BORDER),
+                    Stroke::new(1.0, g(FOCUS_BORDER)),
                     egui::StrokeKind::Inside,
                 );
                 let trect = ui.painter().text(
@@ -1939,7 +1948,7 @@ fn draw_dev_cells(
                 let secondary = resp.secondary_clicked();
 
                 if hovered {
-                    ui.painter().rect_filled(cell, 0.0, SEL_BG.gamma_multiply(0.4));
+                    ui.painter().rect_filled(cell, 0.0, g(SEL_BG).gamma_multiply(0.4));
                 }
                 if !note.is_empty() {
                     draw_note_triangle(ui, cell);
@@ -1958,7 +1967,7 @@ fn draw_dev_cells(
                     let color = if hidden {
                         Color32::from_gray(0x80)
                     } else if sovra > max_h {
-                        Color32::RED
+                        g(Color32::RED)
                     } else {
                         TEXT_WHITE
                     };
@@ -2103,7 +2112,7 @@ fn draw_note_triangle(ui: &egui::Ui, cell: Rect) {
         egui::pos2(tr.x, tr.y),
         egui::pos2(tr.x, tr.y + 10.0),
     ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, NOTE_ORANGE, Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(pts, g(NOTE_ORANGE), Stroke::NONE));
 }
 
 fn dev_color(app: &App, dev: DevId) -> Color32 {
@@ -2112,7 +2121,7 @@ fn dev_color(app: &App, dev: DevId) -> Color32 {
         .into_iter()
         .find(|(id, _, _, _)| *id == dev)
         .map(|(_, _, bg, _)| from_hex(bg as u32))
-        .unwrap_or(Color32::from_rgb(0x00, 0x99, 0xFF))
+        .unwrap_or(g(Color32::from_rgb(0x00, 0x99, 0xFF)))
 }
 
 fn dev_text_color(app: &App, dev: DevId) -> Color32 {
@@ -2145,7 +2154,7 @@ fn left_column(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut 
     let left = rect.left();
     let mut y = rect.top();
 
-    paint_hstrip(ui, left, LEFT_W, y, START_STOP);
+    paint_hstrip(ui, left, LEFT_W, y, g(START_STOP));
     y += DEV_BORDER;
 
     for p in &layout {
@@ -2180,7 +2189,7 @@ fn draw_project_info(
     if trip.is_empty() {
         ui.painter().text(trip_rect.center(), Align2::CENTER_CENTER, "—", cell_font(), TEXT_FAINT);
     } else {
-        ui.painter().text(trip_rect.center(), Align2::CENTER_CENTER, &trip, cell_font(), EFFORT_ORANGE);
+        ui.painter().text(trip_rect.center(), Align2::CENTER_CENTER, &trip, cell_font(), g(EFFORT_ORANGE));
     }
     let tr = ui.interact(trip_rect, egui::Id::new(("trip", proj.0)), Sense::click());
     if tr.secondary_clicked() {
@@ -2217,7 +2226,7 @@ fn draw_project_info(
             .unwrap_or("—")
             .to_string();
         let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-        let cat_col = if cat == "—" { TEXT_FAINT } else { CAT_BLUE };
+        let cat_col = if cat == "—" { TEXT_FAINT } else { g(CAT_BLUE) };
         ui.painter().text(cat_rect.center(), Align2::CENTER_CENTER, cat, cell_font(), cat_col);
         let cr = ui.interact(cat_rect, egui::Id::new(("cat", proj.0)), Sense::click());
         if cr.clicked() {
@@ -2423,7 +2432,7 @@ fn draw_left_devs(
             let remains = planned as i32 - total;
             let rem_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y + ROW_H), Vec2::new(DEV_EFFORT_W, ROW_H));
             if (remains == planned as i32 && planned != 0) || remains < 0 {
-                ui.painter().rect_filled(rem_rect, 0.0, Color32::RED);
+                ui.painter().rect_filled(rem_rect, 0.0, g(Color32::RED));
             }
             ui.painter().text(rem_rect.center(), Align2::CENTER_CENTER, remains.to_string(), cell_font(), TEXT_WHITE);
         }
