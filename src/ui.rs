@@ -1879,24 +1879,23 @@ fn draw_dev_cells(
                             egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
                                 cancel = true;
                             }
-                            // Copia / Taglia / Incolla (Cmd su macOS, Ctrl altrove)
-                            egui::Event::Key { key: egui::Key::C, pressed: true, modifiers, .. }
-                                if modifiers.command || modifiers.ctrl =>
-                            {
+                            // Copia / Taglia / Incolla: eventi semantici di egui,
+                            // portabili (Cmd su macOS, Ctrl su Windows/Linux). Il
+                            // backend NON consegna Key::C/X/V per queste scorciatoie su
+                            // tutte le piattaforme (su Windows arrivano solo qui).
+                            egui::Event::Copy => {
                                 state.copied_text = ed.buf.clone();
                                 state.copied_note = note.clone();
                             }
-                            egui::Event::Key { key: egui::Key::X, pressed: true, modifiers, .. }
-                                if modifiers.command || modifiers.ctrl =>
-                            {
+                            egui::Event::Cut => {
                                 state.copied_text = ed.buf.clone();
                                 state.copied_note = note.clone();
                                 ed.buf.clear();
                                 ed.typed.clear();
                             }
-                            egui::Event::Key { key: egui::Key::V, pressed: true, modifiers, .. }
-                                if modifiers.command || modifiers.ctrl =>
-                            {
+                            // Si usa la clipboard interna (preserva la nota della cella),
+                            // ignorando il testo dell'eventuale clipboard di sistema.
+                            egui::Event::Paste(_) => {
                                 ed.buf = state.copied_text.clone();
                                 ed.typed = state.copied_text.clone();
                                 ed.paste_note = Some(state.copied_note.clone());
