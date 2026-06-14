@@ -1880,25 +1880,35 @@ fn draw_dev_cells(
                                 cancel = true;
                             }
                             // Copia / Taglia / Incolla: eventi semantici di egui,
-                            // portabili (Cmd su macOS, Ctrl su Windows/Linux). Il
-                            // backend NON consegna Key::C/X/V per queste scorciatoie su
-                            // tutte le piattaforme (su Windows arrivano solo qui).
+                            // portabili (Cmd su macOS, Ctrl su Windows/Linux). Si scrive
+                            // anche nella clipboard di SISTEMA: senza, su Windows egui non
+                            // genera mai `Event::Paste` (lo emette solo se la clipboard di
+                            // sistema non è vuota — vedi egui-winit), e l'incolla non parte.
+                            // La nota della cella resta nella clipboard interna.
                             egui::Event::Copy => {
                                 state.copied_text = ed.buf.clone();
                                 state.copied_note = note.clone();
+                                ui.ctx().copy_text(ed.buf.clone());
                             }
                             egui::Event::Cut => {
                                 state.copied_text = ed.buf.clone();
                                 state.copied_note = note.clone();
+                                ui.ctx().copy_text(ed.buf.clone());
                                 ed.buf.clear();
                                 ed.typed.clear();
                             }
-                            // Si usa la clipboard interna (preserva la nota della cella),
-                            // ignorando il testo dell'eventuale clipboard di sistema.
-                            egui::Event::Paste(_) => {
-                                ed.buf = state.copied_text.clone();
-                                ed.typed = state.copied_text.clone();
-                                ed.paste_note = Some(state.copied_note.clone());
+                            egui::Event::Paste(text) => {
+                                // Se l'incolla viene dalla nostra copia (stesso testo),
+                                // ripristina anche la nota; altrimenti incolla il testo
+                                // esterno senza nota.
+                                let note = if text == state.copied_text {
+                                    state.copied_note.clone()
+                                } else {
+                                    String::new()
+                                };
+                                ed.buf = text.clone();
+                                ed.typed = text;
+                                ed.paste_note = Some(note);
                             }
                             _ => {}
                         }
