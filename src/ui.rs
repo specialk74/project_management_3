@@ -26,19 +26,27 @@ struct Editing {
     dev: DevId,
     week: i32,
     row: usize,
-    buf: String,         // testo mostrato (dopo autocomplete)
-    typed: String,       // ciò che l'utente ha realmente digitato
+    buf: String,   // testo mostrato (dopo autocomplete)
+    typed: String, // ciò che l'utente ha realmente digitato
     just_opened: bool,
     had_focus: bool,
     paste_note: Option<String>, // nota incollata (Ctrl+V) da applicare al commit
-    orig_worker: String, // worker presente nella cella all'apertura (per commit mirato)
-    orig_note: String,   // nota presente nella cella all'apertura
+    orig_worker: String,        // worker presente nella cella all'apertura (per commit mirato)
+    orig_note: String,          // nota presente nella cella all'apertura
 }
 
 /// Bersaglio del note editor.
 enum NoteTarget {
-    Effort { proj: ProjectId, dev: DevId, week: i32, worker: String },
-    Dev { proj: ProjectId, dev: DevId },
+    Effort {
+        proj: ProjectId,
+        dev: DevId,
+        week: i32,
+        worker: String,
+    },
+    Dev {
+        proj: ProjectId,
+        dev: DevId,
+    },
 }
 
 struct NoteEditing {
@@ -48,14 +56,34 @@ struct NoteEditing {
 
 /// Popup di modifica (tripletta / inizio / fine / categoria) aperti da right/left-click.
 enum Popup {
-    Tripletta { proj: ProjectId, text: String },
-    Start { proj: ProjectId, text: String },
-    End { proj: ProjectId, text: String },
-    Category { proj: ProjectId },
+    Tripletta {
+        proj: ProjectId,
+        text: String,
+    },
+    Start {
+        proj: ProjectId,
+        text: String,
+    },
+    End {
+        proj: ProjectId,
+        text: String,
+    },
+    Category {
+        proj: ProjectId,
+    },
     /// Ore max globali di un worker (click sul nome nel footer sinistro).
-    WorkerMax { worker: WorkerId, name: String, text: String },
+    WorkerMax {
+        worker: WorkerId,
+        name: String,
+        text: String,
+    },
     /// Override ore max di un worker per una specifica settimana (click sulla cella sovra).
-    WorkerWeekMax { worker: WorkerId, name: String, week: usize, text: String },
+    WorkerWeekMax {
+        worker: WorkerId,
+        name: String,
+        week: usize,
+        text: String,
+    },
 }
 
 #[derive(Default)]
@@ -85,7 +113,7 @@ pub struct UiState {
     // resa in bianco/nero (senza colori)
     bw_mode: bool,
     // selettori per i totali-anno per dev nel footer
-    selected_year: i32, // 0 = nessuno
+    selected_year: i32,                    // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
     // input toolbar
     new_worker: String,
@@ -105,25 +133,90 @@ enum Action {
     AddWorker(String),
     AddDev(String),
     AddCategory(String),
-    SetProjectName { proj: ProjectId, name: String },
-    SetDevEffort { proj: ProjectId, dev: DevId, effort: usize },
-    AddRow { proj: ProjectId, dev: DevId },
-    CommitCell { proj: ProjectId, dev: DevId, week: WeekId, rows: Vec<String>, notes: Vec<String> },
-    SetNote { proj: ProjectId, dev: DevId, week: WeekId, worker: String, note: String },
-    SetDevNote { proj: ProjectId, dev: DevId, note: String },
-    SetProjectTripletta { proj: ProjectId, text: String },
-    SetProjectStartWeek { proj: ProjectId, date: String },
-    SetProjectEndWeek { proj: ProjectId, date: String },
-    SetProjectCategory { proj: ProjectId, cat: Option<CategoryId> },
-    DelRow { proj: ProjectId, dev: DevId },
-    SetDevHideEffort { proj: ProjectId, dev: DevId, hide: bool },
-    AddDevToProject { proj: ProjectId, dev: DevId, add: bool },
-    SetProjectEnabled { proj: ProjectId, enabled: bool },
-    SetAllProjectsEnabled { enabled: bool },
-    SetWorkerMaxHours { worker: WorkerId, hours: u32 },
-    SetWorkerWeekOverride { worker: WorkerId, week: usize, hours: u32 },
-    MoveProjectUp { proj: ProjectId },
-    MoveProjectDown { proj: ProjectId },
+    SetProjectName {
+        proj: ProjectId,
+        name: String,
+    },
+    SetDevEffort {
+        proj: ProjectId,
+        dev: DevId,
+        effort: usize,
+    },
+    AddRow {
+        proj: ProjectId,
+        dev: DevId,
+    },
+    CommitCell {
+        proj: ProjectId,
+        dev: DevId,
+        week: WeekId,
+        rows: Vec<String>,
+        notes: Vec<String>,
+    },
+    SetNote {
+        proj: ProjectId,
+        dev: DevId,
+        week: WeekId,
+        worker: String,
+        note: String,
+    },
+    SetDevNote {
+        proj: ProjectId,
+        dev: DevId,
+        note: String,
+    },
+    SetProjectTripletta {
+        proj: ProjectId,
+        text: String,
+    },
+    SetProjectStartWeek {
+        proj: ProjectId,
+        date: String,
+    },
+    SetProjectEndWeek {
+        proj: ProjectId,
+        date: String,
+    },
+    SetProjectCategory {
+        proj: ProjectId,
+        cat: Option<CategoryId>,
+    },
+    DelRow {
+        proj: ProjectId,
+        dev: DevId,
+    },
+    SetDevHideEffort {
+        proj: ProjectId,
+        dev: DevId,
+        hide: bool,
+    },
+    AddDevToProject {
+        proj: ProjectId,
+        dev: DevId,
+        add: bool,
+    },
+    SetProjectEnabled {
+        proj: ProjectId,
+        enabled: bool,
+    },
+    SetAllProjectsEnabled {
+        enabled: bool,
+    },
+    SetWorkerMaxHours {
+        worker: WorkerId,
+        hours: u32,
+    },
+    SetWorkerWeekOverride {
+        worker: WorkerId,
+        week: usize,
+        hours: u32,
+    },
+    MoveProjectUp {
+        proj: ProjectId,
+    },
+    MoveProjectDown {
+        proj: ProjectId,
+    },
 }
 
 pub struct PjmApp {
@@ -137,8 +230,15 @@ pub struct PjmApp {
 /// esterno): i font sono già impacchettati da egui su macOS/Windows/Linux.
 fn install_symbol_fallback(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let mono = fonts.families.get(&egui::FontFamily::Monospace).cloned().unwrap_or_default();
-    let prop = fonts.families.entry(egui::FontFamily::Proportional).or_default();
+    let mono = fonts
+        .families
+        .get(&egui::FontFamily::Monospace)
+        .cloned()
+        .unwrap_or_default();
+    let prop = fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default();
     for name in mono {
         if !prop.contains(&name) {
             prop.push(name);
@@ -159,7 +259,9 @@ impl PjmApp {
         // Scroll iniziale per centrare la settimana corrente (come nel main.rs Slint).
         // L'offset X tiene conto delle colonne di confine d'anno (più strette).
         let cols = columns_vec(&app);
-        let col_pos = cols.iter().position(|c| matches!(c, Col::Week(w) if *w == this_week));
+        let col_pos = cols
+            .iter()
+            .position(|c| matches!(c, Col::Week(w) if *w == this_week));
         let pending_scroll_x = match col_pos {
             Some(idx) if idx > 0 => {
                 const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
@@ -198,7 +300,11 @@ impl eframe::App for PjmApp {
             // per non trattenere un borrow di `ui` durante i pannelli.
             let (key_s, key_f, shift) = ui.ctx().input(|i| {
                 let cmd = i.modifiers.command || i.modifiers.ctrl;
-                (cmd && i.key_pressed(egui::Key::S), cmd && i.key_pressed(egui::Key::F), i.modifiers.shift)
+                (
+                    cmd && i.key_pressed(egui::Key::S),
+                    cmd && i.key_pressed(egui::Key::F),
+                    i.modifiers.shift,
+                )
             });
             if key_s {
                 actions.push(Action::Save);
@@ -257,8 +363,9 @@ impl PjmApp {
                 self.ui.changed = false;
             }
             Action::Open => {
-                if let Some(path_buf) =
-                    rfd::FileDialog::new().add_filter("RON files", &["ron"]).pick_file()
+                if let Some(path_buf) = rfd::FileDialog::new()
+                    .add_filter("RON files", &["ron"])
+                    .pick_file()
                 {
                     let path = path_buf.to_string_lossy().to_string();
                     match App::load(&path) {
@@ -313,11 +420,19 @@ impl PjmApp {
             }
             Action::AddRow { proj, dev } => {
                 if let Some(week) = self.app.projects.get_week_with_max_worker(proj, dev) {
-                    self.app.projects.add_effort(proj, dev, week, WORKER_ID_ZERO, Effort(0));
+                    self.app
+                        .projects
+                        .add_effort(proj, dev, week, WORKER_ID_ZERO, Effort(0));
                     self.mark_changed();
                 }
             }
-            Action::CommitCell { proj, dev, week, rows, notes } => {
+            Action::CommitCell {
+                proj,
+                dev,
+                week,
+                rows,
+                notes,
+            } => {
                 self.app.projects.reset_effort(proj, dev, week);
                 for (text, note) in rows.iter().zip(notes.iter()) {
                     let parts: Vec<&str> = text.split('|').collect();
@@ -326,7 +441,9 @@ impl PjmApp {
                     }
                     if let Some(wid) = self.app.workers.get_id_by_name(parts[0].trim()) {
                         let e = parts[1].trim().parse::<usize>().unwrap_or(0);
-                        self.app.projects.add_effort(proj, dev, week, wid, Effort(e));
+                        self.app
+                            .projects
+                            .add_effort(proj, dev, week, wid, Effort(e));
                         if !note.is_empty() {
                             self.app.projects.set_note(proj, dev, week, wid, note);
                         }
@@ -334,7 +451,13 @@ impl PjmApp {
                 }
                 self.mark_changed();
             }
-            Action::SetNote { proj, dev, week, worker, note } => {
+            Action::SetNote {
+                proj,
+                dev,
+                week,
+                worker,
+                note,
+            } => {
                 if let Some(wid) = self.app.workers.get_id_by_name(&worker) {
                     self.app.projects.set_note(proj, dev, week, wid, &note);
                     self.mark_changed();
@@ -401,7 +524,11 @@ impl PjmApp {
                 self.app.workers.set_max_hours(worker, hours);
                 self.mark_changed();
             }
-            Action::SetWorkerWeekOverride { worker, week, hours } => {
+            Action::SetWorkerWeekOverride {
+                worker,
+                week,
+                hours,
+            } => {
                 self.app.workers.set_week_override(worker, week, hours);
                 self.mark_changed();
             }
@@ -428,7 +555,12 @@ fn common_prefix(strings: &[String]) -> String {
     let first = &strings[0];
     let mut len = first.len();
     for s in &strings[1..] {
-        len = first.chars().zip(s.chars()).take_while(|(a, b)| a == b).count().min(len);
+        len = first
+            .chars()
+            .zip(s.chars())
+            .take_while(|(a, b)| a == b)
+            .count()
+            .min(len);
     }
     first[..len].to_string()
 }
@@ -447,7 +579,11 @@ fn find_completion(app: &App, prefix: &str, pipe: bool) -> String {
     if matches.is_empty() {
         String::new()
     } else if matches.len() == 1 {
-        if pipe { format!("{}|", matches[0]) } else { matches[0].clone() }
+        if pipe {
+            format!("{}|", matches[0])
+        } else {
+            matches[0].clone()
+        }
     } else {
         common_prefix(&matches)
     }
@@ -468,7 +604,10 @@ fn recompute_completion(app: &App, typed: &mut String, buf: &mut String) {
 // ── Helper griglia ──────────────────────────────────────────────────────────
 
 fn weeks_vec(app: &App) -> Vec<i32> {
-    (app.start_week.0..=app.end_week.0).step_by(7).map(|w| w as i32).collect()
+    (app.start_week.0..=app.end_week.0)
+        .step_by(7)
+        .map(|w| w as i32)
+        .collect()
 }
 
 /// Una colonna della griglia: una settimana reale, oppure una colonna di
@@ -526,7 +665,12 @@ fn columns_vec(app: &App) -> Vec<Col> {
 /// `Some(_)` solo se il progetto è "a cavallo": il suo range inizio→fine
 /// attraversa il confine (inizio nell'anno `<= year_ending`, fine `>= year_ending+1`).
 /// Valore = effort pianificato del dev − effort assegnati nelle settimane di `year_ending`.
-fn dev_missing_at_year_end(app: &App, proj: ProjectId, dev: DevId, year_ending: i32) -> Option<i32> {
+fn dev_missing_at_year_end(
+    app: &App,
+    proj: ProjectId,
+    dev: DevId,
+    year_ending: i32,
+) -> Option<i32> {
     let start = app.projects.get_project_start_week(proj)?;
     let end = app.projects.get_project_end_week(proj)?;
     let start_y = days_to_local(start.0 as i32).year();
@@ -627,7 +771,11 @@ fn col_w(compact: bool) -> f32 {
 }
 
 fn dev_block_height(max_rows: usize, compact: bool) -> f32 {
-    let inner = if compact { ROW_H } else { (max_rows as f32 + 1.0) * ROW_H };
+    let inner = if compact {
+        ROW_H
+    } else {
+        (max_rows as f32 + 1.0) * ROW_H
+    };
     DEV_BORDER + inner + DEV_BORDER
 }
 
@@ -678,7 +826,11 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         }
         let filter_on = state.worker_filter.is_some();
         let wbtn = egui::Button::new("Workers ▼");
-        let wbtn = if filter_on { wbtn.fill(g(Color32::from_rgb(0x2a, 0x50, 0x80))) } else { wbtn };
+        let wbtn = if filter_on {
+            wbtn.fill(g(Color32::from_rgb(0x2a, 0x50, 0x80)))
+        } else {
+            wbtn
+        };
         if ui.add(wbtn).clicked() {
             state.show_worker_filter = !state.show_worker_filter;
         }
@@ -730,11 +882,19 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         if ui.button("Apri").clicked() {
             actions.push(Action::Open);
         }
-        let compact_label = if state.compact_mode { "Vista normale" } else { "Vista compatta" };
+        let compact_label = if state.compact_mode {
+            "Vista normale"
+        } else {
+            "Vista compatta"
+        };
         if ui.button(compact_label).clicked() {
             state.compact_mode = !state.compact_mode;
         }
-        let bw_label = if state.bw_mode { "Colori" } else { "Bianco/Nero" };
+        let bw_label = if state.bw_mode {
+            "Colori"
+        } else {
+            "Bianco/Nero"
+        };
         if ui.button(bw_label).clicked() {
             state.bw_mode = !state.bw_mode;
         }
@@ -744,8 +904,16 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         // categoria sopra la colonna dei nomi dev.
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let col = if state.changed { g(EFFORT_ORANGE) } else { TEXT_DIM };
-            let label = format!("{}{}", state.current_file, if state.changed { " (*)" } else { "" });
+            let col = if state.changed {
+                g(EFFORT_ORANGE)
+            } else {
+                TEXT_DIM
+            };
+            let label = format!(
+                "{}{}",
+                state.current_file,
+                if state.changed { " (*)" } else { "" }
+            );
             ui.colored_label(col, label);
         });
     });
@@ -789,7 +957,8 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
                     Col::Week(w) => *w,
                 };
                 if w == state.this_week {
-                    ui.painter().rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.5));
+                    ui.painter()
+                        .rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.5));
                 }
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))
                     .format("%y-%m-%d")
@@ -799,7 +968,13 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
                     ui.interact(cell, egui::Id::new(("hdr", w)), Sense::hover())
                         .on_hover_text(txt);
                 } else {
-                    ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), TEXT_WHITE);
+                    ui.painter().text(
+                        cell.center(),
+                        Align2::CENTER_CENTER,
+                        txt,
+                        cell_font(),
+                        TEXT_WHITE,
+                    );
                 }
             }
         });
@@ -833,7 +1008,9 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(BG_DARK))
         .show_inside(ui, |ui| {
-            let mut sa = egui::ScrollArea::both().id_salt("grid_scroll").auto_shrink([false, false]);
+            let mut sa = egui::ScrollArea::both()
+                .id_salt("grid_scroll")
+                .auto_shrink([false, false]);
             if let Some(px) = state.pending_scroll_x {
                 sa = sa.scroll_offset(Vec2::new(px, 0.0));
             }
@@ -891,7 +1068,12 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
 
     if save {
         let action = match &ne.target {
-            NoteTarget::Effort { proj, dev, week, worker } => Action::SetNote {
+            NoteTarget::Effort {
+                proj,
+                dev,
+                week,
+                worker,
+            } => Action::SetNote {
                 proj: *proj,
                 dev: *dev,
                 week: WeekId(*week as usize),
@@ -913,7 +1095,12 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
 
 // ── Gestione dev del progetto (+Dev / −Dev) ─────────────────────────────────
 
-fn dev_manage_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+fn dev_manage_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     let Some(proj) = state.dev_manage else {
         return;
     };
@@ -930,7 +1117,11 @@ fn dev_manage_window(ctx: &egui::Context, app: &App, state: &mut UiState, action
             for (dev, name) in app.devs.list() {
                 let is_in = in_proj.contains(&dev);
                 let col = dev_color(app, dev);
-                let txt_col = if is_in { dev_text_color(app, dev) } else { Color32::from_gray(0x88) };
+                let txt_col = if is_in {
+                    dev_text_color(app, dev)
+                } else {
+                    Color32::from_gray(0x88)
+                };
                 let fill = if is_in { col } else { Color32::TRANSPARENT };
                 let resp = ui.add(
                     egui::Button::new(egui::RichText::new(&name).color(txt_col).monospace())
@@ -948,10 +1139,18 @@ fn dev_manage_window(ctx: &egui::Context, app: &App, state: &mut UiState, action
                             state.confirm_del_dev = Some((proj, dev));
                             close = true;
                         } else {
-                            actions.push(Action::AddDevToProject { proj, dev, add: false });
+                            actions.push(Action::AddDevToProject {
+                                proj,
+                                dev,
+                                add: false,
+                            });
                         }
                     } else {
-                        actions.push(Action::AddDevToProject { proj, dev, add: true });
+                        actions.push(Action::AddDevToProject {
+                            proj,
+                            dev,
+                            add: true,
+                        });
                     }
                 }
             }
@@ -978,7 +1177,11 @@ fn confirm_del_dev_window(ctx: &egui::Context, state: &mut UiState, actions: &mu
             ui.label("Questo dev ha già dati inseriti.\nRimuovere comunque?");
             ui.horizontal(|ui| {
                 if ui.button("Sì, rimuovi").clicked() {
-                    actions.push(Action::AddDevToProject { proj, dev, add: false });
+                    actions.push(Action::AddDevToProject {
+                        proj,
+                        dev,
+                        add: false,
+                    });
                     close = true;
                 }
                 if ui.button("Annulla").clicked() {
@@ -994,7 +1197,12 @@ fn confirm_del_dev_window(ctx: &egui::Context, state: &mut UiState, actions: &mu
 
 // ── Filtro progetti (Progetti ▼) ────────────────────────────────────────────
 
-fn project_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+fn project_filter_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     if !state.show_project_filter {
         return;
     }
@@ -1016,17 +1224,22 @@ fn project_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState, ac
                 }
             });
             ui.separator();
-            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                for (id, name, en) in &projects {
-                    let mut on = en.0;
-                    let trip = app.projects.get_tripletta(*id);
-                    // solo la tripletta (fallback al nome se la tripletta è vuota)
-                    let label = if trip.is_empty() { name.clone() } else { trip };
-                    if ui.checkbox(&mut on, label).changed() {
-                        actions.push(Action::SetProjectEnabled { proj: *id, enabled: on });
+            egui::ScrollArea::vertical()
+                .max_height(360.0)
+                .show(ui, |ui| {
+                    for (id, name, en) in &projects {
+                        let mut on = en.0;
+                        let trip = app.projects.get_tripletta(*id);
+                        // solo la tripletta (fallback al nome se la tripletta è vuota)
+                        let label = if trip.is_empty() { name.clone() } else { trip };
+                        if ui.checkbox(&mut on, label).changed() {
+                            actions.push(Action::SetProjectEnabled {
+                                proj: *id,
+                                enabled: on,
+                            });
+                        }
                     }
-                }
-            });
+                });
         });
 
     if !open {
@@ -1059,22 +1272,24 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
                 }
             });
             ui.separator();
-            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                for name in &all {
-                    let mut sel = match &filter {
-                        None => true,
-                        Some(s) => s.contains(name),
-                    };
-                    if ui.checkbox(&mut sel, name).changed() {
-                        let set = filter.get_or_insert_with(|| all.iter().cloned().collect());
-                        if sel {
-                            set.insert(name.clone());
-                        } else {
-                            set.remove(name);
+            egui::ScrollArea::vertical()
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    for name in &all {
+                        let mut sel = match &filter {
+                            None => true,
+                            Some(s) => s.contains(name),
+                        };
+                        if ui.checkbox(&mut sel, name).changed() {
+                            let set = filter.get_or_insert_with(|| all.iter().cloned().collect());
+                            if sel {
+                                set.insert(name.clone());
+                            } else {
+                                set.remove(name);
+                            }
                         }
                     }
-                }
-            });
+                });
         });
 
     // se tutti selezionati → nessun filtro
@@ -1107,12 +1322,17 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 .open(&mut open)
                 .show(ctx, |ui| {
                     let le = ui.add(
-                        egui::TextEdit::singleline(text).desired_width(220.0).font(cell_font()),
+                        egui::TextEdit::singleline(text)
+                            .desired_width(220.0)
+                            .font(cell_font()),
                     );
                     let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     ui.horizontal(|ui| {
                         if ui.button("OK").clicked() || entered {
-                            actions.push(Action::SetProjectTripletta { proj: *proj, text: text.clone() });
+                            actions.push(Action::SetProjectTripletta {
+                                proj: *proj,
+                                text: text.clone(),
+                            });
                             close = true;
                         }
                         if ui.button("Annulla").clicked() {
@@ -1122,14 +1342,28 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 });
         }
         Popup::Start { proj, text } => {
-            date_popup_window(ctx, "Data inizio (yy-mm-dd)", text, &mut open, &mut close, |date| {
-                actions.push(Action::SetProjectStartWeek { proj: *proj, date });
-            });
+            date_popup_window(
+                ctx,
+                "Data inizio (yy-mm-dd)",
+                text,
+                &mut open,
+                &mut close,
+                |date| {
+                    actions.push(Action::SetProjectStartWeek { proj: *proj, date });
+                },
+            );
         }
         Popup::End { proj, text } => {
-            date_popup_window(ctx, "Data fine (yy-mm-dd)", text, &mut open, &mut close, |date| {
-                actions.push(Action::SetProjectEndWeek { proj: *proj, date });
-            });
+            date_popup_window(
+                ctx,
+                "Data fine (yy-mm-dd)",
+                text,
+                &mut open,
+                &mut close,
+                |date| {
+                    actions.push(Action::SetProjectEndWeek { proj: *proj, date });
+                },
+            );
         }
         Popup::Category { proj } => {
             egui::Window::new("Categoria")
@@ -1139,12 +1373,18 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 .open(&mut open)
                 .show(ctx, |ui| {
                     if ui.button("— Nessuna").clicked() {
-                        actions.push(Action::SetProjectCategory { proj: *proj, cat: None });
+                        actions.push(Action::SetProjectCategory {
+                            proj: *proj,
+                            cat: None,
+                        });
                         close = true;
                     }
                     for (id, name) in app.categories.list() {
                         if ui.button(name).clicked() {
-                            actions.push(Action::SetProjectCategory { proj: *proj, cat: Some(id) });
+                            actions.push(Action::SetProjectCategory {
+                                proj: *proj,
+                                cat: Some(id),
+                            });
                             close = true;
                         }
                     }
@@ -1158,12 +1398,20 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 &mut open,
                 &mut close,
                 |hours| {
-                    actions.push(Action::SetWorkerMaxHours { worker: *worker, hours });
+                    actions.push(Action::SetWorkerMaxHours {
+                        worker: *worker,
+                        hours,
+                    });
                 },
                 DEFAULT_MAX_HOURS,
             );
         }
-        Popup::WorkerWeekMax { worker, name, week, text } => {
+        Popup::WorkerWeekMax {
+            worker,
+            name,
+            week,
+            text,
+        } => {
             // "Default" = max globale del worker (azzera l'override per la settimana).
             let global_max = app.workers.get_max_hours(*worker);
             hours_popup_window(
@@ -1173,7 +1421,11 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 &mut open,
                 &mut close,
                 |hours| {
-                    actions.push(Action::SetWorkerWeekOverride { worker: *worker, week: *week, hours });
+                    actions.push(Action::SetWorkerWeekOverride {
+                        worker: *worker,
+                        week: *week,
+                        hours,
+                    });
                 },
                 global_max,
             );
@@ -1201,8 +1453,11 @@ fn date_popup_window(
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .open(open)
         .show(ctx, |ui| {
-            let le =
-                ui.add(egui::TextEdit::singleline(text).desired_width(220.0).font(cell_font()));
+            let le = ui.add(
+                egui::TextEdit::singleline(text)
+                    .desired_width(220.0)
+                    .font(cell_font()),
+            );
             let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() || entered {
@@ -1238,8 +1493,11 @@ fn hours_popup_window(
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .open(open)
         .show(ctx, |ui| {
-            let le =
-                ui.add(egui::TextEdit::singleline(text).desired_width(120.0).font(cell_font()));
+            let le = ui.add(
+                egui::TextEdit::singleline(text)
+                    .desired_width(120.0)
+                    .font(cell_font()),
+            );
             let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() || entered {
@@ -1260,7 +1518,10 @@ fn hours_popup_window(
 }
 
 /// Worker visibili nel footer: esclude `hide_in_footer` e (se attivo) quelli fuori filtro.
-fn footer_workers(app: &App, filter: &Filter) -> Vec<(crate::workers_utils::worker::WorkerId, String)> {
+fn footer_workers(
+    app: &App,
+    filter: &Filter,
+) -> Vec<(crate::workers_utils::worker::WorkerId, String)> {
     app.workers
         .list()
         .into_iter()
@@ -1303,8 +1564,7 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let content_w = cols_width(&cols, COL_W);
-            let (rrect, _) =
-                ui.allocate_exact_size(Vec2::new(content_w, footer_h), Sense::hover());
+            let (rrect, _) = ui.allocate_exact_size(Vec2::new(content_w, footer_h), Sense::hover());
             draw_right_footer(ui, rrect, app, state, &workers, &cols);
         });
 }
@@ -1349,16 +1609,27 @@ fn draw_left_footer(
         None => "Tutte".to_string(),
         Some(c) => app.categories.get_name(c).unwrap_or("?").to_string(),
     };
-    footer_combo(ui, cat_rect, "footer_cat_combo", cat_label, DEV_NAME_W - 6.0, |ui| {
-        ui.selectable_value(&mut state.selected_category, None, "Tutte");
-        for (id, name) in app.categories.list() {
-            ui.selectable_value(&mut state.selected_category, Some(id), name);
-        }
-    });
+    footer_combo(
+        ui,
+        cat_rect,
+        "footer_cat_combo",
+        cat_label,
+        DEV_NAME_W - 6.0,
+        |ui| {
+            ui.selectable_value(&mut state.selected_category, None, "Tutte");
+            for (id, name) in app.categories.list() {
+                ui.selectable_value(&mut state.selected_category, Some(id), name);
+            }
+        },
+    );
 
     // Selettore anno (totali-anno per dev) sopra la colonna dei totali.
     let th = Rect::from_min_size(egui::pos2(total_x, rect.top()), Vec2::new(60.0, ROW_H));
-    let year_label = if year == 0 { "Tot".to_string() } else { year.to_string() };
+    let year_label = if year == 0 {
+        "Tot".to_string()
+    } else {
+        year.to_string()
+    };
     footer_combo(ui, th, "footer_year_combo", year_label, 54.0, |ui| {
         ui.selectable_value(&mut state.selected_year, 0, "—");
         for y in available_years(app) {
@@ -1373,7 +1644,10 @@ fn draw_left_footer(
         let x = wk_x + i as f32 * (fbw + 2.0);
         let br = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(fbw, ROW_H));
         let active = state.effort_filter_mode == i as i32;
-        if ui.put(br, egui::SelectableLabel::new(active, *lab)).clicked() {
+        if ui
+            .put(br, egui::SelectableLabel::new(active, *lab))
+            .clicked()
+        {
             state.effort_filter_mode = i as i32;
         }
     }
@@ -1385,14 +1659,26 @@ fn draw_left_footer(
         let tcol = dev_text_color(app, *dev);
         let nrect = Rect::from_min_size(egui::pos2(rect.left(), y), Vec2::new(DEV_NAME_W, ROW_H));
         ui.painter().rect_filled(nrect, 0.0, color);
-        ui.painter().text(nrect.center(), Align2::CENTER_CENTER, dname, cell_font(), tcol);
+        ui.painter().text(
+            nrect.center(),
+            Align2::CENTER_CENTER,
+            dname,
+            cell_font(),
+            tcol,
+        );
         let trect = Rect::from_min_size(egui::pos2(total_x, y), Vec2::new(60.0, ROW_H));
         let ttxt = if year == 0 {
             "—".to_string()
         } else {
             dev_year_total(app, *dev, year, cat).to_string()
         };
-        ui.painter().text(trect.center(), Align2::CENTER_CENTER, ttxt, cell_font(), TEXT_WHITE);
+        ui.painter().text(
+            trect.center(),
+            Align2::CENTER_CENTER,
+            ttxt,
+            cell_font(),
+            TEXT_WHITE,
+        );
     }
 
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
@@ -1406,8 +1692,13 @@ fn draw_left_footer(
         if app.workers.get_max_hours(*wid) < DEFAULT_MAX_HOURS {
             draw_corner_triangle_left(ui, cell);
         }
-        ui.painter()
-            .text(cell.center(), Align2::CENTER_CENTER, name, cell_font(), TEXT_WHITE);
+        ui.painter().text(
+            cell.center(),
+            Align2::CENTER_CENTER,
+            name,
+            cell_font(),
+            TEXT_WHITE,
+        );
 
         let resp = ui
             .interact(cell, ui.id().with(("wmax", wid.0)), Sense::click())
@@ -1451,24 +1742,41 @@ fn draw_right_footer(
 
         // tinta settimana corrente su tutta la colonna
         if w == state.this_week {
-            let col = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
-            ui.painter().rect_filled(col, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+            let col =
+                Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
+            ui.painter()
+                .rect_filled(col, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
         }
 
         // header: data settimana
         let hdr = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
-        let date = primo_giorno_settimana_corrente(&days_to_local(w)).format("%y-%m-%d").to_string();
-        ui.painter().text(hdr.center(), Align2::CENTER_CENTER, date, cell_font(), TEXT_DIM);
+        let date = primo_giorno_settimana_corrente(&days_to_local(w))
+            .format("%y-%m-%d")
+            .to_string();
+        ui.painter().text(
+            hdr.center(),
+            Align2::CENTER_CENTER,
+            date,
+            cell_font(),
+            TEXT_DIM,
+        );
 
         // celle sovra per worker
         for (idx, (wid, name)) in workers.iter().enumerate() {
             let y = rect.top() + (idx as f32 + 1.0) * ROW_H;
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(COL_W, ROW_H));
 
-            let bg = if idx % 2 == 0 { BETWEEN_PROJECTS } else { Color32::BLACK };
+            let bg = if idx % 2 == 0 {
+                BETWEEN_PROJECTS
+            } else {
+                Color32::BLACK
+            };
             ui.painter().rect_filled(cell, 0.0, bg);
 
-            let value = app.sovra.get(&(WeekId(w as usize), *wid)).map_or(0, |e| e.0 as i32);
+            let value = app
+                .sovra
+                .get(&(WeekId(w as usize), *wid))
+                .map_or(0, |e| e.0 as i32);
             let eff_max = app.workers.get_effective_max_hours(*wid, w as usize) as i32;
             let global_max = app.workers.get_max_hours(*wid) as i32;
 
@@ -1496,7 +1804,13 @@ fn draw_right_footer(
             } else {
                 value.to_string()
             };
-            ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, cell_font(), color);
+            ui.painter().text(
+                cell.center(),
+                Align2::CENTER_CENTER,
+                txt,
+                cell_font(),
+                color,
+            );
 
             // Click sulla cella → popup override ore max per quella settimana.
             let resp = ui
@@ -1522,7 +1836,11 @@ fn draw_corner_triangle_left(ui: &egui::Ui, cell: Rect) {
         egui::pos2(tl.x + 10.0, tl.y),
         egui::pos2(tl.x, tl.y + 10.0),
     ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, g(EFFORT_ORANGE), Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(
+        pts,
+        g(EFFORT_ORANGE),
+        Stroke::NONE,
+    ));
 }
 
 // ── Griglia (colonna destra) ────────────────────────────────────────────────
@@ -1535,7 +1853,9 @@ const NAME_ROWS: usize = 2;
 /// `NAME_ROWS` righe). Senza questo, l'altezza riservata al progetto sarebbe
 /// troppo piccola e inizio/fine sforerebbero nel progetto successivo.
 fn name_block_height(ui: &egui::Ui, name: &str) -> f32 {
-    let galley = ui.painter().layout(name.to_string(), cell_font(), TEXT_WHITE, LEFT_INFO_W);
+    let galley = ui
+        .painter()
+        .layout(name.to_string(), cell_font(), TEXT_WHITE, LEFT_INFO_W);
     galley.size().y.max(NAME_ROWS as f32 * ROW_H)
 }
 
@@ -1567,11 +1887,19 @@ fn project_layout(ui: &egui::Ui, app: &App, filter: &Filter, compact: bool) -> V
         if filter.is_some() && devs.is_empty() {
             continue;
         }
-        let sum_devs: f32 = devs.iter().map(|(_, m)| dev_block_height(*m, compact)).sum();
+        let sum_devs: f32 = devs
+            .iter()
+            .map(|(_, m)| dev_block_height(*m, compact))
+            .sum();
         // l'info riserva lo spazio reale del nome (può crescere su più righe).
         let info_h = extra_rows * ROW_H + name_block_height(ui, &name);
         let proj_h = sum_devs.max(info_h);
-        out.push(ProjLayout { proj: proj_id, name, devs, proj_h });
+        out.push(ProjLayout {
+            proj: proj_id,
+            name,
+            devs,
+            proj_h,
+        });
     }
     out
 }
@@ -1603,8 +1931,11 @@ fn draw_boundary_title(ui: &egui::Ui, cell: Rect) {
 
 /// Striscia orizzontale piena (bordo dev / separatore progetto), disegnata a y assoluta.
 fn paint_hstrip(ui: &egui::Ui, left: f32, w: f32, y: f32, color: Color32) {
-    ui.painter()
-        .rect_filled(Rect::from_min_size(egui::pos2(left, y), Vec2::new(w, DEV_BORDER)), 0.0, color);
+    ui.painter().rect_filled(
+        Rect::from_min_size(egui::pos2(left, y), Vec2::new(w, DEV_BORDER)),
+        0.0,
+        color,
+    );
 }
 
 /// Etichetta data (sempre visibile) sopra la colonna inizio/fine di un progetto
@@ -1621,11 +1952,16 @@ fn draw_compact_date_marker(
     if week < 0 {
         return;
     }
-    let Some(ci) = cols.iter().position(|c| matches!(c, Col::Week(w) if *w == week)) else {
+    let Some(ci) = cols
+        .iter()
+        .position(|c| matches!(c, Col::Week(w) if *w == week))
+    else {
         return;
     };
     let cx = left + col_x_offset(cols, ci, cw) + cw / 2.0;
-    let date = primo_giorno_settimana_corrente(&days_to_local(week)).format("%y-%m-%d").to_string();
+    let date = primo_giorno_settimana_corrente(&days_to_local(week))
+        .format("%y-%m-%d")
+        .to_string();
     let galley = ui.painter().layout_no_wrap(date, mono(9.0), TEXT_WHITE);
     let pos = egui::pos2(cx - galley.size().x / 2.0, top_y + 1.0);
     let bgrect = Rect::from_min_size(pos, galley.size()).expand(1.5);
@@ -1633,7 +1969,13 @@ fn draw_compact_date_marker(
     ui.painter().galley(pos, galley, TEXT_WHITE);
 }
 
-fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
+fn grid(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    filter: &Filter,
+) {
     let compact = state.compact_mode;
     let cw = col_w(compact);
     let cols = columns_vec(app);
@@ -1650,10 +1992,16 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     y += DEV_BORDER;
 
     for p in &layout {
-        let proj_start =
-            app.projects.get_project_start_week(p.proj).map(|w| w.0 as i32).unwrap_or(-1);
-        let deadline =
-            app.projects.get_project_end_week(p.proj).map(|w| w.0 as i32).unwrap_or(-1);
+        let proj_start = app
+            .projects
+            .get_project_start_week(p.proj)
+            .map(|w| w.0 as i32)
+            .unwrap_or(-1);
+        let deadline = app
+            .projects
+            .get_project_end_week(p.proj)
+            .map(|w| w.0 as i32)
+            .unwrap_or(-1);
         let proj_top = y;
         let mut dy = y;
 
@@ -1663,7 +2011,11 @@ fn grid(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
             let border = if compact { BG_DARK } else { color };
             paint_hstrip(ui, left, content_w, dy, border);
             dy += DEV_BORDER;
-            let inner_h = if compact { ROW_H } else { (*max_rows as f32 + 1.0) * ROW_H };
+            let inner_h = if compact {
+                ROW_H
+            } else {
+                (*max_rows as f32 + 1.0) * ROW_H
+            };
             let block = Rect::from_min_size(egui::pos2(left, dy), Vec2::new(content_w, inner_h));
             draw_dev_cells(
                 ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols, proj_start,
@@ -1708,7 +2060,11 @@ fn draw_dev_cells(
         .get_single_dev(proj, dev)
         .map(|sd| sd.planned_effort().0 as i32)
         .unwrap_or(0);
-    let hide_effort = app.projects.get_single_dev(proj, dev).map(|sd| sd.get_hide_effort()).unwrap_or(false);
+    let hide_effort = app
+        .projects
+        .get_single_dev(proj, dev)
+        .map(|sd| sd.get_hide_effort())
+        .unwrap_or(false);
 
     // range di attività del dev (per le barre della vista compatta)
     let (act_start, act_end) = app
@@ -1767,7 +2123,8 @@ fn draw_dev_cells(
             ui.painter().rect_filled(col_rect, 0.0, g(START_BG));
         }
         if !compact && *w == state.this_week {
-            ui.painter().rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+            ui.painter()
+                .rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
         }
 
         let week_total = app
@@ -1782,7 +2139,11 @@ fn draw_dev_cells(
                 let in_activity = act_start >= 0 && *w >= act_start && *w <= act_end;
                 if in_activity {
                     let ratio = (week_total as f32 / 40.0).min(1.0);
-                    let bar_h = if week_total == 0 { 1.0 } else { (ROW_H * ratio).max(1.0) };
+                    let bar_h = if week_total == 0 {
+                        1.0
+                    } else {
+                        (ROW_H * ratio).max(1.0)
+                    };
                     let bar = Rect::from_min_size(
                         egui::pos2(x, rect.bottom() - bar_h),
                         Vec2::new(cw, bar_h),
@@ -1792,8 +2153,12 @@ fn draw_dev_cells(
                     let date = primo_giorno_settimana_corrente(&days_to_local(*w))
                         .format("%y-%m-%d")
                         .to_string();
-                    ui.interact(col_rect, egui::Id::new(("cbar", proj.0, dev.0, *w)), Sense::hover())
-                        .on_hover_text(format!("{}  ·  {}h", date, week_total));
+                    ui.interact(
+                        col_rect,
+                        egui::Id::new(("cbar", proj.0, dev.0, *w)),
+                        Sense::hover(),
+                    )
+                    .on_hover_text(format!("{}  ·  {}h", date, week_total));
                 }
             }
             continue;
@@ -1817,8 +2182,18 @@ fn draw_dev_cells(
                 } else {
                     format!("{}", remaining)
                 };
-                let color = if is_deadline { TEXT_WHITE } else { cumulative_color(week_total, planned) };
-                ui.painter().text(cum_rect.center(), Align2::CENTER_CENTER, txt, cell_font(), color);
+                let color = if is_deadline {
+                    TEXT_WHITE
+                } else {
+                    cumulative_color(week_total, planned)
+                };
+                ui.painter().text(
+                    cum_rect.center(),
+                    Align2::CENTER_CENTER,
+                    txt,
+                    cell_font(),
+                    color,
+                );
             }
         }
 
@@ -1862,21 +2237,41 @@ fn draw_dev_cells(
                                 }
                                 recompute_completion(app, &mut ed.typed, &mut ed.buf);
                             }
-                            egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                            egui::Event::Key {
+                                key: egui::Key::Backspace,
+                                pressed: true,
+                                ..
+                            } => {
                                 // Cancellazione letterale: niente re-completamento, altrimenti
                                 // un nome completo verrebbe ri-completato e non si potrebbe svuotare.
                                 ed.typed.pop();
                                 ed.buf = ed.typed.clone();
                             }
-                            egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
+                            egui::Event::Key {
+                                key: egui::Key::Delete,
+                                pressed: true,
+                                ..
+                            } => {
                                 ed.typed.clear();
                                 ed.buf.clear();
                             }
-                            egui::Event::Key { key: egui::Key::Enter, pressed: true, .. }
-                            | egui::Event::Key { key: egui::Key::Tab, pressed: true, .. } => {
+                            egui::Event::Key {
+                                key: egui::Key::Enter,
+                                pressed: true,
+                                ..
+                            }
+                            | egui::Event::Key {
+                                key: egui::Key::Tab,
+                                pressed: true,
+                                ..
+                            } => {
                                 commit = true;
                             }
-                            egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
+                            egui::Event::Key {
+                                key: egui::Key::Escape,
+                                pressed: true,
+                                ..
+                            } => {
                                 cancel = true;
                             }
                             // Copia / Taglia / Incolla: eventi semantici di egui,
@@ -1957,7 +2352,8 @@ fn draw_dev_cells(
                 let secondary = resp.secondary_clicked();
 
                 if hovered {
-                    ui.painter().rect_filled(cell, 0.0, g(SEL_BG).gamma_multiply(0.4));
+                    ui.painter()
+                        .rect_filled(cell, 0.0, g(SEL_BG).gamma_multiply(0.4));
                 }
                 if !note.is_empty() {
                     draw_note_triangle(ui, cell);
@@ -1967,7 +2363,11 @@ fn draw_dev_cells(
                     let wid = app.workers.get_id_by_name(wname);
                     let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
                     let sovra = wid
-                        .map(|id| app.sovra.get(&(WeekId(*w as usize), id)).map_or(0, |e| e.0 as i32))
+                        .map(|id| {
+                            app.sovra
+                                .get(&(WeekId(*w as usize), id))
+                                .map_or(0, |e| e.0 as i32)
+                        })
                         .unwrap_or(0);
                     let max_h = wid
                         .map(|id| app.workers.get_effective_max_hours(id, *w as usize) as i32)
@@ -2008,7 +2408,12 @@ fn draw_dev_cells(
                 if secondary && !text.is_empty() {
                     let wname = text.split('|').next().unwrap_or("").trim().to_string();
                     state.note_editor = Some(NoteEditing {
-                        target: NoteTarget::Effort { proj, dev, week: *w, worker: wname },
+                        target: NoteTarget::Effort {
+                            proj,
+                            dev,
+                            week: *w,
+                            worker: wname,
+                        },
                         text: note.clone(),
                     });
                 }
@@ -2018,7 +2423,12 @@ fn draw_dev_cells(
 }
 
 /// Tutte le voci (worker, effort, nota) della settimana, ignorando il filtro.
-fn full_week_entries(app: &App, proj: ProjectId, dev: DevId, week: i32) -> Vec<(String, usize, String)> {
+fn full_week_entries(
+    app: &App,
+    proj: ProjectId,
+    dev: DevId,
+    week: i32,
+) -> Vec<(String, usize, String)> {
     app.projects
         .get_single_dev(proj, dev)
         .and_then(|sd| sd.get_all(WeekId(week as usize)))
@@ -2027,7 +2437,11 @@ fn full_week_entries(app: &App, proj: ProjectId, dev: DevId, week: i32) -> Vec<(
                 .iter()
                 .filter(|(wid, _)| **wid != WORKER_ID_ZERO)
                 .map(|(wid, se)| {
-                    (app.workers.get_name_by_id(*wid).to_string(), se.get_effort().0, se.get_note())
+                    (
+                        app.workers.get_name_by_id(*wid).to_string(),
+                        se.get_effort().0,
+                        se.get_note(),
+                    )
                 })
                 .collect()
         })
@@ -2048,15 +2462,21 @@ fn commit_editing(app: &App, ed: &Editing) -> Action {
         let wname = parts[0].trim().to_string();
         if !wname.is_empty() {
             let eff = parts[1].trim().parse::<usize>().unwrap_or(0);
-            let note = ed
-                .paste_note
-                .clone()
-                .unwrap_or_else(|| if wname == ed.orig_worker { ed.orig_note.clone() } else { String::new() });
+            let note = ed.paste_note.clone().unwrap_or_else(|| {
+                if wname == ed.orig_worker {
+                    ed.orig_note.clone()
+                } else {
+                    String::new()
+                }
+            });
             entries.retain(|(n, _, _)| n != &wname);
             entries.push((wname, eff, note));
         }
     }
-    let rows: Vec<String> = entries.iter().map(|(n, e, _)| format!("{}|{}", n, e)).collect();
+    let rows: Vec<String> = entries
+        .iter()
+        .map(|(n, e, _)| format!("{}|{}", n, e))
+        .collect();
     let notes: Vec<String> = entries.iter().map(|(_, _, n)| n.clone()).collect();
     Action::CommitCell {
         proj: ed.proj,
@@ -2072,8 +2492,12 @@ fn commit_editing(app: &App, ed: &Editing) -> Action {
 fn paint_person_cell(ui: &egui::Ui, cell: Rect, text: &str, color: Color32) {
     let font = person_font();
     let avail = COL_W - 4.0;
-    let measure =
-        |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), color).size().x;
+    let measure = |s: &str| {
+        ui.painter()
+            .layout_no_wrap(s.to_string(), font.clone(), color)
+            .size()
+            .x
+    };
 
     let display = if measure(text) <= avail {
         text.to_string()
@@ -2098,7 +2522,11 @@ fn paint_person_cell(ui: &egui::Ui, cell: Rect, text: &str, color: Color32) {
             if keep == 0 {
                 break String::from("…");
             }
-            let cand: String = text.chars().take(keep).chain(std::iter::once('…')).collect();
+            let cand: String = text
+                .chars()
+                .take(keep)
+                .chain(std::iter::once('…'))
+                .collect();
             if measure(&cand) <= avail {
                 break cand;
             }
@@ -2121,7 +2549,11 @@ fn draw_note_triangle(ui: &egui::Ui, cell: Rect) {
         egui::pos2(tr.x, tr.y),
         egui::pos2(tr.x, tr.y + 10.0),
     ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, g(NOTE_ORANGE), Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(
+        pts,
+        g(NOTE_ORANGE),
+        Stroke::NONE,
+    ));
 }
 
 fn dev_color(app: &App, dev: DevId) -> Color32 {
@@ -2153,7 +2585,13 @@ fn dev_name(app: &App, dev: DevId) -> String {
 
 // ── Colonna sinistra ────────────────────────────────────────────────────────
 
-fn left_column(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, filter: &Filter) {
+fn left_column(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    filter: &Filter,
+) {
     let compact = state.compact_mode;
     let layout = project_layout(ui, app, filter, compact);
     let total_h = total_content_h(&layout);
@@ -2196,13 +2634,28 @@ fn draw_project_info(
     let trip = app.projects.get_tripletta(proj);
     let trip_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
     if trip.is_empty() {
-        ui.painter().text(trip_rect.center(), Align2::CENTER_CENTER, "—", cell_font(), TEXT_FAINT);
+        ui.painter().text(
+            trip_rect.center(),
+            Align2::CENTER_CENTER,
+            "—",
+            cell_font(),
+            TEXT_FAINT,
+        );
     } else {
-        ui.painter().text(trip_rect.center(), Align2::CENTER_CENTER, &trip, cell_font(), g(EFFORT_ORANGE));
+        ui.painter().text(
+            trip_rect.center(),
+            Align2::CENTER_CENTER,
+            &trip,
+            cell_font(),
+            g(EFFORT_ORANGE),
+        );
     }
     let tr = ui.interact(trip_rect, egui::Id::new(("trip", proj.0)), Sense::click());
     if tr.secondary_clicked() {
-        state.popup = Some(Popup::Tripletta { proj, text: trip.clone() });
+        state.popup = Some(Popup::Tripletta {
+            proj,
+            text: trip.clone(),
+        });
     }
     tr.on_hover_text("Tasto destro: modifica tripletta");
 
@@ -2235,8 +2688,18 @@ fn draw_project_info(
             .unwrap_or("—")
             .to_string();
         let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-        let cat_col = if cat == "—" { TEXT_FAINT } else { g(CAT_BLUE) };
-        ui.painter().text(cat_rect.center(), Align2::CENTER_CENTER, cat, cell_font(), cat_col);
+        let cat_col = if cat == "—" {
+            TEXT_FAINT
+        } else {
+            g(CAT_BLUE)
+        };
+        ui.painter().text(
+            cat_rect.center(),
+            Align2::CENTER_CENTER,
+            cat,
+            cell_font(),
+            cat_col,
+        );
         let cr = ui.interact(cat_rect, egui::Id::new(("cat", proj.0)), Sense::click());
         if cr.clicked() {
             state.popup = Some(Popup::Category { proj });
@@ -2248,18 +2711,25 @@ fn draw_project_info(
     let name_top = y;
     let name_h = NAME_ROWS as f32 * ROW_H;
     let name_rect = Rect::from_min_size(egui::pos2(x, name_top), Vec2::new(w, name_h));
-    let buf = state.name_buffers.entry(proj.0).or_insert_with(|| proj_name.to_string());
+    let buf = state
+        .name_buffers
+        .entry(proj.0)
+        .or_insert_with(|| proj_name.to_string());
     let resp = ui.put(
         name_rect,
         egui::TextEdit::multiline(buf)
             .font(cell_font())
+            .text_color(TEXT_WHITE)
             .frame(egui::Frame::NONE)
             .margin(egui::Margin::ZERO)
             .desired_rows(NAME_ROWS)
             .desired_width(w),
     );
     if resp.lost_focus() {
-        actions.push(Action::SetProjectName { proj, name: buf.clone() });
+        actions.push(Action::SetProjectName {
+            proj,
+            name: buf.clone(),
+        });
     } else if !resp.has_focus() && *buf != proj_name {
         *buf = proj_name.to_string();
     }
@@ -2275,7 +2745,11 @@ fn draw_project_info(
     let start_date = app
         .projects
         .get_project_start_week(proj)
-        .map(|wk| primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32)).format("%y-%m-%d").to_string())
+        .map(|wk| {
+            primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32))
+                .format("%y-%m-%d")
+                .to_string()
+        })
         .unwrap_or_default();
     let start_txt = if start_date.is_empty() {
         "Inizio: —".to_string()
@@ -2283,10 +2757,19 @@ fn draw_project_info(
         format!("Inizio: {}", start_date)
     };
     let sr = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-    ui.painter().text(sr.center(), Align2::CENTER_CENTER, start_txt, mono(FONT_SIZE - 2.0), TEXT_DIM);
+    ui.painter().text(
+        sr.center(),
+        Align2::CENTER_CENTER,
+        start_txt,
+        mono(FONT_SIZE - 2.0),
+        TEXT_DIM,
+    );
     let srr = ui.interact(sr, egui::Id::new(("start", proj.0)), Sense::click());
     if srr.secondary_clicked() {
-        state.popup = Some(Popup::Start { proj, text: start_date });
+        state.popup = Some(Popup::Start {
+            proj,
+            text: start_date,
+        });
     }
     srr.on_hover_text("Tasto destro: modifica data inizio");
     y += ROW_H;
@@ -2295,7 +2778,11 @@ fn draw_project_info(
     let end_date = app
         .projects
         .get_project_end_week(proj)
-        .map(|wk| primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32)).format("%y-%m-%d").to_string())
+        .map(|wk| {
+            primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32))
+                .format("%y-%m-%d")
+                .to_string()
+        })
         .unwrap_or_default();
     let end_txt = if end_date.is_empty() {
         "Fine: —".to_string()
@@ -2303,17 +2790,29 @@ fn draw_project_info(
         format!("Fine: {}", end_date)
     };
     let er = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-    ui.painter().text(er.center(), Align2::CENTER_CENTER, end_txt, mono(FONT_SIZE - 2.0), TEXT_DIM);
+    ui.painter().text(
+        er.center(),
+        Align2::CENTER_CENTER,
+        end_txt,
+        mono(FONT_SIZE - 2.0),
+        TEXT_DIM,
+    );
     let err = ui.interact(er, egui::Id::new(("end", proj.0)), Sense::click());
     if err.secondary_clicked() {
-        state.popup = Some(Popup::End { proj, text: end_date });
+        state.popup = Some(Popup::End {
+            proj,
+            text: end_date,
+        });
     }
     err.on_hover_text("Tasto destro: modifica deadline");
 }
 
 fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &mut UiState) {
     let x = rect.left() + LEFT_INFO_W;
-    let strip = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(DEV_STRIP_W, rect.height()));
+    let strip = Rect::from_min_size(
+        egui::pos2(x, rect.top()),
+        Vec2::new(DEV_STRIP_W, rect.height()),
+    );
     let resp = ui.interact(strip, egui::Id::new(("devstrip", proj.0)), Sense::click());
     let bg = if resp.hovered() {
         Color32::from_rgb(0x3a, 0x3a, 0x3a)
@@ -2371,18 +2870,41 @@ fn draw_left_devs(
         let top_b = Rect::from_min_size(egui::pos2(x0, y), Vec2::new(LEFT_DEV_W, DEV_BORDER));
         ui.painter().rect_filled(top_b, 0.0, color);
         let inner_y = y + DEV_BORDER;
-        let inner_h = if compact { ROW_H } else { (max_rows as f32 + 1.0) * ROW_H };
+        let inner_h = if compact {
+            ROW_H
+        } else {
+            (max_rows as f32 + 1.0) * ROW_H
+        };
 
         // cella nome dev (90px, doppio click = add row)
-        let name_rect = Rect::from_min_size(egui::pos2(x0, inner_y), Vec2::new(DEV_NAME_W, inner_h));
+        let name_rect =
+            Rect::from_min_size(egui::pos2(x0, inner_y), Vec2::new(DEV_NAME_W, inner_h));
         ui.painter().rect_filled(name_rect, 0.0, color);
-        ui.painter().text(name_rect.center(), Align2::CENTER_CENTER, dev_name(app, *dev), cell_font(), tcol);
-        let dev_note = app.projects.get_single_dev(proj, *dev).map(|sd| sd.get_note()).unwrap_or_default();
-        let hide_effort = app.projects.get_single_dev(proj, *dev).map(|sd| sd.get_hide_effort()).unwrap_or(false);
+        ui.painter().text(
+            name_rect.center(),
+            Align2::CENTER_CENTER,
+            dev_name(app, *dev),
+            cell_font(),
+            tcol,
+        );
+        let dev_note = app
+            .projects
+            .get_single_dev(proj, *dev)
+            .map(|sd| sd.get_note())
+            .unwrap_or_default();
+        let hide_effort = app
+            .projects
+            .get_single_dev(proj, *dev)
+            .map(|sd| sd.get_hide_effort())
+            .unwrap_or(false);
         if !dev_note.is_empty() {
             draw_note_triangle(ui, name_rect);
         }
-        let nresp = ui.interact(name_rect, egui::Id::new(("devname", proj.0, dev.0)), Sense::click());
+        let nresp = ui.interact(
+            name_rect,
+            egui::Id::new(("devname", proj.0, dev.0)),
+            Sense::click(),
+        );
         if nresp.double_clicked() {
             actions.push(Action::AddRow { proj, dev: *dev });
         }
@@ -2403,9 +2925,17 @@ fn draw_left_devs(
                 ui.close_menu();
             }
             ui.separator();
-            let label = if hide_effort { "Visualizza effort" } else { "Nascondi effort" };
+            let label = if hide_effort {
+                "Visualizza effort"
+            } else {
+                "Nascondi effort"
+            };
             if ui.button(label).clicked() {
-                actions.push(Action::SetDevHideEffort { proj, dev: *dev, hide: !hide_effort });
+                actions.push(Action::SetDevHideEffort {
+                    proj,
+                    dev: *dev,
+                    hide: !hide_effort,
+                });
                 ui.close_menu();
             }
         });
@@ -2415,39 +2945,71 @@ fn draw_left_devs(
 
         // area effort/remains (65px) — i campi sono nascosti in compatta
         let eff_x = x0 + DEV_NAME_W;
-        let eff_area = Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, inner_h));
+        let eff_area =
+            Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, inner_h));
         ui.painter().rect_filled(eff_area, 0.0, color);
 
         if !compact {
             // effort pianificato (editabile)
-            let planned = app.projects.get_single_dev(proj, *dev).map(|sd| sd.planned_effort().0).unwrap_or(0);
-            let eff_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, ROW_H));
+            let planned = app
+                .projects
+                .get_single_dev(proj, *dev)
+                .map(|sd| sd.planned_effort().0)
+                .unwrap_or(0);
+            let eff_rect =
+                Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, ROW_H));
             let key = (proj.0, dev.0);
-            let buf = state.effort_buffers.entry(key).or_insert_with(|| planned.to_string());
+            let buf = state
+                .effort_buffers
+                .entry(key)
+                .or_insert_with(|| planned.to_string());
             let resp = ui.put(
                 eff_rect,
-                egui::TextEdit::singleline(buf).font(cell_font()).frame(egui::Frame::NONE).horizontal_align(egui::Align::Center),
+                egui::TextEdit::singleline(buf)
+                    .font(cell_font())
+                    .frame(egui::Frame::NONE)
+                    .horizontal_align(egui::Align::Center),
             );
             if resp.lost_focus() {
                 if let Ok(v) = buf.trim().parse::<usize>() {
-                    actions.push(Action::SetDevEffort { proj, dev: *dev, effort: v });
+                    actions.push(Action::SetDevEffort {
+                        proj,
+                        dev: *dev,
+                        effort: v,
+                    });
                 }
             } else if !resp.has_focus() && *buf != planned.to_string() {
                 *buf = planned.to_string();
             }
 
             // remains
-            let total = app.projects.get_single_dev(proj, *dev).map(|sd| sd.get_effort_tot().0 as i32).unwrap_or(0);
+            let total = app
+                .projects
+                .get_single_dev(proj, *dev)
+                .map(|sd| sd.get_effort_tot().0 as i32)
+                .unwrap_or(0);
             let remains = planned as i32 - total;
-            let rem_rect = Rect::from_min_size(egui::pos2(eff_x, inner_y + ROW_H), Vec2::new(DEV_EFFORT_W, ROW_H));
+            let rem_rect = Rect::from_min_size(
+                egui::pos2(eff_x, inner_y + ROW_H),
+                Vec2::new(DEV_EFFORT_W, ROW_H),
+            );
             if (remains == planned as i32 && planned != 0) || remains < 0 {
                 ui.painter().rect_filled(rem_rect, 0.0, g(Color32::RED));
             }
-            ui.painter().text(rem_rect.center(), Align2::CENTER_CENTER, remains.to_string(), cell_font(), TEXT_WHITE);
+            ui.painter().text(
+                rem_rect.center(),
+                Align2::CENTER_CENTER,
+                remains.to_string(),
+                cell_font(),
+                TEXT_WHITE,
+            );
         }
 
         // bordo inferiore
-        let bot_b = Rect::from_min_size(egui::pos2(x0, inner_y + inner_h), Vec2::new(LEFT_DEV_W, DEV_BORDER));
+        let bot_b = Rect::from_min_size(
+            egui::pos2(x0, inner_y + inner_h),
+            Vec2::new(LEFT_DEV_W, DEV_BORDER),
+        );
         ui.painter().rect_filled(bot_b, 0.0, color);
 
         y += block_h;
