@@ -1542,7 +1542,8 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
 
     // 1 riga header + una riga per worker o per dev (il più alto dei due)
     let n_devs = app.devs.list().len();
-    let footer_h = (workers.len().max(n_devs) as f32 + 1.0) * ROW_H;
+    // +2 righe dev: una riga vuota di separazione + la riga "Totale" sotto l'elenco dev.
+    let footer_h = (workers.len().max(n_devs + 2) as f32 + 1.0) * ROW_H;
 
     // Footer sinistro: stessa riserva da 300px della griglia (SidePanel).
     egui::SidePanel::left("ftr_left")
@@ -1680,6 +1681,38 @@ fn draw_left_footer(
             TEXT_WHITE,
         );
     }
+
+    // ── Riga "Totale": somma dei totali-anno di tutti i dev ──
+    // Rispetta i selettori anno e categoria attivi nel footer.
+    // Una riga vuota (+1) la separa dall'elenco dev.
+    let ty = rect.top() + (app.devs.list().len() as f32 + 2.0) * ROW_H;
+    let nrect = Rect::from_min_size(egui::pos2(rect.left(), ty), Vec2::new(DEV_NAME_W, ROW_H));
+    ui.painter().rect_filled(nrect, 0.0, g(START_STOP));
+    ui.painter().text(
+        nrect.center(),
+        Align2::CENTER_CENTER,
+        "Totale",
+        cell_font(),
+        Color32::BLACK,
+    );
+    let trect = Rect::from_min_size(egui::pos2(total_x, ty), Vec2::new(60.0, ROW_H));
+    let ttxt = if year == 0 {
+        "—".to_string()
+    } else {
+        app.devs
+            .list()
+            .iter()
+            .map(|(dev, _)| dev_year_total(app, *dev, year, cat))
+            .sum::<i32>()
+            .to_string()
+    };
+    ui.painter().text(
+        trect.center(),
+        Align2::CENTER_CENTER,
+        ttxt,
+        cell_font(),
+        TEXT_WHITE,
+    );
 
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
     // Click sul nome → popup "Ore max" (limite settimanale globale del worker).
