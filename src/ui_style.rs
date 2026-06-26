@@ -22,7 +22,6 @@ pub const DEFAULT_MAX_HOURS: u32 = 40;
 
 // Colori (da styles.slint / Slint Colors.*)
 pub const BG_DARK: Color32 = Color32::from_rgb(0x1e, 0x1e, 0x1e);
-pub const PANEL_BG: Color32 = Color32::from_rgb(0x2a, 0x2a, 0x2a);
 pub const BETWEEN_PROJECTS: Color32 = Color32::from_rgb(0x80, 0x80, 0x80); // Colors.gray
 pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // Colors.yellow
 pub const THIS_WEEK: Color32 = Color32::from_rgb(0x00, 0xce, 0x3a);

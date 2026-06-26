@@ -84,6 +84,12 @@ enum Popup {
         week: usize,
         text: String,
     },
+    /// Limite ore settimana per TUTTI i worker (click sulla data della settimana nell'header).
+    BulkWeekMax {
+        week: usize,
+        date: String,
+        text: String,
+    },
 }
 
 #[derive(Default)]
@@ -208,6 +214,10 @@ enum Action {
     },
     SetWorkerWeekOverride {
         worker: WorkerId,
+        week: usize,
+        hours: u32,
+    },
+    SetBulkWeekLimit {
         week: usize,
         hours: u32,
     },
@@ -530,6 +540,10 @@ impl PjmApp {
                 hours,
             } => {
                 self.app.workers.set_week_override(worker, week, hours);
+                self.mark_changed();
+            }
+            Action::SetBulkWeekLimit { week, hours } => {
+                self.app.set_bulk_week_limit(week, hours);
                 self.mark_changed();
             }
             Action::MoveProjectUp { proj } => {
@@ -921,7 +935,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
 
 // ── Header (date settimane) ─────────────────────────────────────────────────
 
-fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
+fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
     let cols = columns_vec(app);
     // Riserva i 300px sinistri con lo stesso meccanismo della griglia (SidePanel),
     // così l'origine X delle colonne coincide esattamente.
@@ -963,18 +977,28 @@ fn header(ui: &mut egui::Ui, app: &App, state: &UiState) {
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))
                     .format("%y-%m-%d")
                     .to_string();
+                // Click sulla data → popup limite ore settimana per TUTTI i worker.
+                let mut resp = ui
+                    .interact(cell, egui::Id::new(("hdr", w)), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if compact {
                     // colonne troppo strette per il testo → la data nel tooltip
-                    ui.interact(cell, egui::Id::new(("hdr", w)), Sense::hover())
-                        .on_hover_text(txt);
+                    resp = resp.on_hover_text(txt.clone());
                 } else {
                     ui.painter().text(
                         cell.center(),
                         Align2::CENTER_CENTER,
-                        txt,
+                        &txt,
                         cell_font(),
                         TEXT_WHITE,
                     );
+                }
+                if resp.clicked() {
+                    state.popup = Some(Popup::BulkWeekMax {
+                        week: w as usize,
+                        date: txt,
+                        text: DEFAULT_MAX_HOURS.to_string(),
+                    });
                 }
             }
         });
@@ -1428,6 +1452,20 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                     });
                 },
                 global_max,
+            );
+        }
+        Popup::BulkWeekMax { week, date, text } => {
+            // "Default" = 40 → azzera l'override per tutti i worker su questa settimana.
+            hours_popup_window(
+                ctx,
+                &format!("Limite settimana (tutti) - {date}"),
+                text,
+                &mut open,
+                &mut close,
+                |hours| {
+                    actions.push(Action::SetBulkWeekLimit { week: *week, hours });
+                },
+                DEFAULT_MAX_HOURS,
             );
         }
     }

@@ -25,10 +25,6 @@ impl Categories {
         id
     }
 
-    pub fn remove(&mut self, id: CategoryId) {
-        self.categories.remove(&id);
-    }
-
     pub fn list(&self) -> Vec<(CategoryId, String)> {
         let mut items: Vec<(CategoryId, String)> = self
             .categories

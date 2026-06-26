@@ -68,31 +68,6 @@ impl App {
         Ok(app)
     }
 
-    // Global max hours for the worker at sorted index `idx` (None → 40).
-    // pub fn get_worker_max_hours_by_idx(&self, idx: usize) -> u32 {
-    //     self.workers
-    //         .list()
-    //         .get(idx)
-    //         .map(|(id, _)| self.workers.get_max_hours(*id))
-    //         .unwrap_or(DEFAULT_MAX_HOURS)
-    // }
-
-    // Effective max hours (per-week override → global → 40) for worker at sorted index.
-    // pub fn get_effective_max_hours_by_idx(&self, idx: usize, week: usize) -> u32 {
-    //     self.workers
-    //         .list()
-    //         .get(idx)
-    //         .map(|(id, _)| self.workers.get_effective_max_hours(*id, week))
-    //         .unwrap_or(DEFAULT_MAX_HOURS)
-    // }
-
-    pub fn set_worker_max_hours_by_idx(&mut self, idx: usize, hours: u32) {
-        let workers = self.workers.list();
-        if let Some((id, _)) = workers.get(idx) {
-            self.workers.set_max_hours(*id, hours);
-        }
-    }
-
     /// Applies a bulk week limit to all workers: min(hours, effective_current) wins.
     /// If hours >= 40, removes the week override for every worker (reset).
     pub fn set_bulk_week_limit(&mut self, week: usize, hours: u32) {
@@ -108,13 +83,6 @@ impl App {
                 let new_val = hours.min(current_eff);
                 self.workers.set_week_override(wid, week, new_val);
             }
-        }
-    }
-
-    pub fn set_worker_week_override_by_idx(&mut self, idx: usize, week: usize, hours: u32) {
-        let workers = self.workers.list();
-        if let Some((id, _)) = workers.get(idx) {
-            self.workers.set_week_override(*id, week, hours);
         }
     }
 
