@@ -13,6 +13,7 @@ pub const FONT_SIZE: f32 = 13.0;
 // Suddivisione interna della colonna sinistra (info | strip Dev | righe dev)
 pub const DEV_STRIP_W: f32 = 12.0;
 pub const DEV_NAME_W: f32 = COL_W; // 90
+pub const DEV_TOTAL_W: f32 = 60.0; // larghezza colonna dei totali-anno nel footer
 pub const DEV_EFFORT_W: f32 = COL_W - 25.0; // 65
 pub const LEFT_DEV_W: f32 = DEV_NAME_W + DEV_EFFORT_W; // 155
 pub const LEFT_INFO_W: f32 = LEFT_W - DEV_STRIP_W - LEFT_DEV_W; // 133

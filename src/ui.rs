@@ -1598,7 +1598,7 @@ fn draw_left_footer(
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
 ) {
     let total_x = rect.left() + DEV_NAME_W; // 90
-    let dev_section_w = DEV_NAME_W + 60.0; // 150
+    let dev_section_w = DEV_NAME_W + DEV_TOTAL_W; // 150
     let wk_x = rect.left() + dev_section_w + 5.0;
     let year = state.selected_year;
     let cat = state.selected_category;
@@ -1625,7 +1625,7 @@ fn draw_left_footer(
     );
 
     // Selettore anno (totali-anno per dev) sopra la colonna dei totali.
-    let th = Rect::from_min_size(egui::pos2(total_x, rect.top()), Vec2::new(60.0, ROW_H));
+    let th = Rect::from_min_size(egui::pos2(total_x, rect.top()), Vec2::new(DEV_TOTAL_W, ROW_H));
     let year_label = if year == 0 {
         "Tot".to_string()
     } else {
@@ -1667,7 +1667,7 @@ fn draw_left_footer(
             cell_font(),
             tcol,
         );
-        let trect = Rect::from_min_size(egui::pos2(total_x, y), Vec2::new(60.0, ROW_H));
+        let trect = Rect::from_min_size(egui::pos2(total_x, y), Vec2::new(DEV_TOTAL_W, ROW_H));
         let ttxt = if year == 0 {
             "—".to_string()
         } else {
@@ -1695,7 +1695,7 @@ fn draw_left_footer(
         cell_font(),
         Color32::BLACK,
     );
-    let trect = Rect::from_min_size(egui::pos2(total_x, ty), Vec2::new(60.0, ROW_H));
+    let trect = Rect::from_min_size(egui::pos2(total_x, ty), Vec2::new(DEV_TOTAL_W, ROW_H));
     let ttxt = if year == 0 {
         "—".to_string()
     } else {
