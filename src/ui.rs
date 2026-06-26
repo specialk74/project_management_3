@@ -719,12 +719,18 @@ fn available_years(app: &App) -> Vec<i32> {
 }
 
 /// Totale effort del dev nell'anno selezionato (filtrato per categoria).
-fn dev_year_total(app: &App, dev: DevId, year: i32, cat: Option<CategoryId>) -> i32 {
+/// `projects` è la lista già pronta (evita di ricostruirla e riordinarla a ogni dev).
+fn dev_year_total(
+    app: &App,
+    projects: &[(ProjectId, String)],
+    dev: DevId,
+    year: i32,
+    cat: Option<CategoryId>,
+) -> i32 {
     if year == 0 {
         return 0;
     }
-    app.projects
-        .list()
+    projects
         .iter()
         .filter(|(pid, _)| match cat {
             None => true,
@@ -1692,7 +1698,12 @@ fn draw_left_footer(
     }
 
     // ── Sezione dev: nome + totale-anno ──
-    for (di, (dev, dname)) in app.devs.list().iter().enumerate() {
+    // `grand_total` si accumula qui per evitare un secondo passaggio nella riga "Totale".
+    // `projects` è costruita una volta sola e condivisa da tutte le chiamate a `dev_year_total`.
+    let devs = app.devs.list();
+    let projects = app.projects.list();
+    let mut grand_total = 0i32;
+    for (di, (dev, dname)) in devs.iter().enumerate() {
         let y = rect.top() + (di as f32 + 1.0) * ROW_H;
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
@@ -1705,11 +1716,13 @@ fn draw_left_footer(
             cell_font(),
             tcol,
         );
+        let dev_total = dev_year_total(app, &projects, *dev, year, cat);
+        grand_total += dev_total;
         let trect = Rect::from_min_size(egui::pos2(total_x, y), Vec2::new(DEV_TOTAL_W, ROW_H));
         let ttxt = if year == 0 {
             "—".to_string()
         } else {
-            dev_year_total(app, *dev, year, cat).to_string()
+            dev_total.to_string()
         };
         ui.painter().text(
             trect.center(),
@@ -1723,7 +1736,7 @@ fn draw_left_footer(
     // ── Riga "Totale": somma dei totali-anno di tutti i dev ──
     // Rispetta i selettori anno e categoria attivi nel footer.
     // Una riga vuota (+1) la separa dall'elenco dev.
-    let ty = rect.top() + (app.devs.list().len() as f32 + 2.0) * ROW_H;
+    let ty = rect.top() + (devs.len() as f32 + 2.0) * ROW_H;
     let nrect = Rect::from_min_size(egui::pos2(rect.left(), ty), Vec2::new(DEV_NAME_W, ROW_H));
     ui.painter().rect_filled(nrect, 0.0, g(START_STOP));
     ui.painter().text(
@@ -1737,12 +1750,7 @@ fn draw_left_footer(
     let ttxt = if year == 0 {
         "—".to_string()
     } else {
-        app.devs
-            .list()
-            .iter()
-            .map(|(dev, _)| dev_year_total(app, *dev, year, cat))
-            .sum::<i32>()
-            .to_string()
+        grand_total.to_string()
     };
     ui.painter().text(
         trect.center(),
