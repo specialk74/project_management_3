@@ -1236,7 +1236,18 @@ fn project_filter_window(
     if !state.show_project_filter {
         return;
     }
-    let projects = app.projects.list_full(); // (id, name, enable)
+    // (id, name, enable, label-mostrata) ordinati alfabeticamente per etichetta
+    let mut projects: Vec<(ProjectId, String, Enable, String)> = app
+        .projects
+        .list_full()
+        .into_iter()
+        .map(|(id, name, en)| {
+            let trip = app.projects.get_tripletta(id);
+            let label = if trip.is_empty() { name.clone() } else { trip };
+            (id, name, en, label)
+        })
+        .collect();
+    projects.sort_by(|a, b| a.3.to_lowercase().cmp(&b.3.to_lowercase()));
     let mut open = true;
 
     egui::Window::new("Progetti")
@@ -1257,11 +1268,8 @@ fn project_filter_window(
             egui::ScrollArea::vertical()
                 .max_height(360.0)
                 .show(ui, |ui| {
-                    for (id, name, en) in &projects {
+                    for (id, _name, en, label) in &projects {
                         let mut on = en.0;
-                        let trip = app.projects.get_tripletta(*id);
-                        // solo la tripletta (fallback al nome se la tripletta è vuota)
-                        let label = if trip.is_empty() { name.clone() } else { trip };
                         if ui.checkbox(&mut on, label).changed() {
                             actions.push(Action::SetProjectEnabled {
                                 proj: *id,
