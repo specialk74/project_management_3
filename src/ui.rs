@@ -110,6 +110,9 @@ pub struct UiState {
     worker_filter: Option<HashSet<String>>,
     show_worker_filter: bool,
     show_project_filter: bool,
+    // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
+    worker_filter_just_opened: bool,
+    project_filter_just_opened: bool,
     // appunti per copia/incolla cella
     copied_text: String,
     copied_note: String,
@@ -324,6 +327,7 @@ impl eframe::App for PjmApp {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
                 } else {
                     state.show_worker_filter = true;
+                    state.worker_filter_just_opened = true;
                 }
             }
 
@@ -843,6 +847,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         }
         if ui.button("Progetti ▼").clicked() {
             state.show_project_filter = !state.show_project_filter;
+            state.project_filter_just_opened = state.show_project_filter;
         }
         let filter_on = state.worker_filter.is_some();
         let wbtn = egui::Button::new("Workers ▼");
@@ -853,6 +858,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         };
         if ui.add(wbtn).clicked() {
             state.show_worker_filter = !state.show_worker_filter;
+            state.worker_filter_just_opened = state.show_worker_filter;
         }
         ui.separator();
 
@@ -1261,7 +1267,10 @@ fn project_filter_window(
     projects.sort_by(|a, b| a.3.to_lowercase().cmp(&b.3.to_lowercase()));
     let mut open = true;
 
-    egui::Window::new("Progetti")
+    let just_opened = state.project_filter_just_opened;
+    state.project_filter_just_opened = false;
+
+    let resp = egui::Window::new("Progetti")
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(90.0, 40.0))
@@ -1289,7 +1298,11 @@ fn project_filter_window(
                 });
         });
 
-    if !open {
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
         state.show_project_filter = false;
     }
 }
@@ -1311,7 +1324,10 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     let mut open = true;
     let mut filter = state.worker_filter.clone();
 
-    egui::Window::new("Workers")
+    let just_opened = state.worker_filter_just_opened;
+    state.worker_filter_just_opened = false;
+
+    let resp = egui::Window::new("Workers")
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(140.0, 40.0))
@@ -1351,7 +1367,11 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
         }
     }
     state.worker_filter = filter;
-    if !open {
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
         state.show_worker_filter = false;
     }
 }
