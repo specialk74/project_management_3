@@ -47,6 +47,12 @@ enum NoteTarget {
         proj: ProjectId,
         dev: DevId,
     },
+    /// Nota legata a un worker per una specifica settimana (footer destro).
+    WorkerWeek {
+        worker: WorkerId,
+        week: usize,
+        name: String,
+    },
 }
 
 struct NoteEditing {
@@ -237,6 +243,11 @@ enum Action {
         worker: WorkerId,
         week: usize,
         hours: u32,
+    },
+    SetWorkerWeekNote {
+        worker: WorkerId,
+        week: usize,
+        note: String,
     },
     SetBulkWeekLimit {
         week: usize,
@@ -631,6 +642,14 @@ impl PjmApp {
                 hours,
             } => {
                 self.app.workers.set_week_override(worker, week, hours);
+                self.mark_changed();
+            }
+            Action::SetWorkerWeekNote {
+                worker,
+                week,
+                note,
+            } => {
+                self.app.workers.set_week_note(worker, week, &note);
                 self.mark_changed();
             }
             Action::SetBulkWeekLimit { week, hours } => {
@@ -1168,6 +1187,7 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
     let title = match &ne.target {
         NoteTarget::Effort { worker, .. } => format!("Nota: {}", worker),
         NoteTarget::Dev { .. } => "Nota Dev".to_string(),
+        NoteTarget::WorkerWeek { name, .. } => format!("Nota: {}", name),
     };
     let mut open = true;
     let mut save = false;
@@ -1212,6 +1232,11 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
             NoteTarget::Dev { proj, dev } => Action::SetDevNote {
                 proj: *proj,
                 dev: *dev,
+                note: ne.text.clone(),
+            },
+            NoteTarget::WorkerWeek { worker, week, .. } => Action::SetWorkerWeekNote {
+                worker: *worker,
+                week: *week,
                 note: ne.text.clone(),
             },
         };
@@ -2072,8 +2097,9 @@ fn draw_right_footer(
                 continue;
             }
 
-            // triangolo se override settimana attivo
-            if eff_max != global_max {
+            // triangolo se esiste una nota collegata al worker per questa settimana
+            let has_note = app.workers.has_week_note(*wid, w as usize);
+            if has_note {
                 draw_note_triangle(ui, cell);
             }
 
@@ -2097,9 +2123,13 @@ fn draw_right_footer(
                 color,
             );
 
-            // Click sulla cella → popup override ore max per quella settimana.
+            // Tasto sinistro → override ore max; tasto destro → nota worker/settimana.
             let resp = ui
-                .interact(cell, ui.id().with(("wkmax", wid.0, w)), Sense::click())
+                .interact(
+                    cell,
+                    ui.id().with(("wkmax", wid.0, w)),
+                    Sense::click(),
+                )
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
                 state.popup = Some(Popup::WorkerWeekMax {
@@ -2108,6 +2138,33 @@ fn draw_right_footer(
                     week: w as usize,
                     text: eff_max.to_string(),
                 });
+            }
+            if resp.secondary_clicked() {
+                state.note_editor = Some(NoteEditing {
+                    target: NoteTarget::WorkerWeek {
+                        worker: *wid,
+                        week: w as usize,
+                        name: name.clone(),
+                    },
+                    text: app.workers.get_week_note(*wid, w as usize),
+                });
+            }
+
+            // Passando sopra il triangolo si vede il testo della nota.
+            if has_note {
+                let tri = Rect::from_min_size(
+                    egui::pos2(cell.right() - 12.0, cell.top()),
+                    Vec2::new(12.0, 12.0),
+                );
+                if resp.hover_pos().is_some_and(|p| tri.contains(p)) {
+                    let note = app.workers.get_week_note(*wid, w as usize);
+                    // stesse impostazioni di `Response::on_hover_text` (tooltip
+                    // ancorato alla cella, non al puntatore).
+                    resp.show_tooltip_ui(|ui| {
+                        ui.set_max_width(ui.spacing().tooltip_width);
+                        ui.add(egui::widgets::Label::new(note));
+                    });
+                }
             }
         }
     }

@@ -73,6 +73,26 @@ impl Workers {
         }
     }
 
+    pub fn get_week_note(&self, id: WorkerId, week: usize) -> String {
+        self.worker_id
+            .get(&id)
+            .and_then(|w| w.get_week_note(week))
+            .unwrap_or("")
+            .to_string()
+    }
+
+    pub fn has_week_note(&self, id: WorkerId, week: usize) -> bool {
+        self.worker_id
+            .get(&id)
+            .is_some_and(|w| w.has_week_note(week))
+    }
+
+    pub fn set_week_note(&mut self, id: WorkerId, week: usize, note: &str) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_week_note(week, note);
+        }
+    }
+
     pub fn all_workers_have_override(&self, week: usize) -> bool {
         let workers = self.list();
         if workers.is_empty() {

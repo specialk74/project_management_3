@@ -23,6 +23,9 @@ pub struct Worker {
     /// Per-week overrides: WeekId.0 → max hours for that specific week.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub week_overrides: HashMap<usize, u32>,
+    /// Per-week notes: WeekId.0 → testo nota per quella specifica settimana.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub week_notes: HashMap<usize, String>,
     /// When true, the worker row is hidden in the right-footer (totals are still counted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hide_in_footer: Option<bool>,
@@ -36,7 +39,25 @@ impl Worker {
             font_color: None,
             max_weekly_hours: None,
             week_overrides: HashMap::new(),
+            week_notes: HashMap::new(),
             hide_in_footer: None,
+        }
+    }
+
+    pub fn get_week_note(&self, week: usize) -> Option<&str> {
+        self.week_notes.get(&week).map(|s| s.as_str())
+    }
+
+    pub fn has_week_note(&self, week: usize) -> bool {
+        self.week_notes.get(&week).is_some_and(|s| !s.is_empty())
+    }
+
+    /// Imposta (o rimuove, se vuota) la nota della settimana indicata.
+    pub fn set_week_note(&mut self, week: usize, note: &str) {
+        if note.is_empty() {
+            self.week_notes.remove(&week);
+        } else {
+            self.week_notes.insert(week, note.to_string());
         }
     }
 
