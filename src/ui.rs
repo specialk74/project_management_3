@@ -1227,6 +1227,17 @@ fn confirm_del_dev_window(ctx: &egui::Context, state: &mut UiState, actions: &mu
 
 // ── Filtro progetti (Progetti ▼) ────────────────────────────────────────────
 
+/// Larghezza (in punti) del titolo della finestra, più lo spazio per il
+/// pulsante di chiusura, così da poter dare al contenuto una larghezza minima
+/// pari almeno a quella della barra del titolo.
+fn title_width(ui: &egui::Ui, title: &str) -> f32 {
+    let font_id = egui::TextStyle::Heading.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(title.to_owned(), font_id, egui::Color32::WHITE);
+    galley.size().x + 36.0
+}
+
 fn project_filter_window(
     ctx: &egui::Context,
     app: &App,
@@ -1256,18 +1267,16 @@ fn project_filter_window(
         .default_pos(egui::pos2(90.0, 40.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("Seleziona tutti").clicked() {
-                    actions.push(Action::SetAllProjectsEnabled { enabled: true });
-                }
-                if ui.button("Deseleziona tutti").clicked() {
-                    actions.push(Action::SetAllProjectsEnabled { enabled: false });
-                }
-            });
-            ui.separator();
+            let min_w = title_width(ui, "Progetti");
             egui::ScrollArea::vertical()
-                .max_height(360.0)
+                .max_height(400.0)
                 .show(ui, |ui| {
+                    ui.set_min_width(min_w);
+                    let mut all_on =
+                        !projects.is_empty() && projects.iter().all(|(_, _, en, _)| en.0);
+                    if ui.checkbox(&mut all_on, "Select All").changed() {
+                        actions.push(Action::SetAllProjectsEnabled { enabled: all_on });
+                    }
                     for (id, _name, en, label) in &projects {
                         let mut on = en.0;
                         if ui.checkbox(&mut on, label).changed() {
@@ -1295,39 +1304,37 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     let mut open = true;
     let mut filter = state.worker_filter.clone();
 
-    egui::Window::new("Filtro Workers")
+    egui::Window::new("Workers")
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(140.0, 40.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("Seleziona tutti").clicked() {
-                    filter = None;
+            let min_w = title_width(ui, "Workers");
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_min_width(min_w);
+                let mut all_on = match &filter {
+                    None => !all.is_empty(),
+                    Some(s) => !all.is_empty() && all.iter().all(|n| s.contains(n)),
+                };
+                if ui.checkbox(&mut all_on, "Select All").changed() {
+                    filter = if all_on { None } else { Some(HashSet::new()) };
                 }
-                if ui.button("Deseleziona tutti").clicked() {
-                    filter = Some(HashSet::new());
-                }
-            });
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .max_height(320.0)
-                .show(ui, |ui| {
-                    for name in &all {
-                        let mut sel = match &filter {
-                            None => true,
-                            Some(s) => s.contains(name),
-                        };
-                        if ui.checkbox(&mut sel, name).changed() {
-                            let set = filter.get_or_insert_with(|| all.iter().cloned().collect());
-                            if sel {
-                                set.insert(name.clone());
-                            } else {
-                                set.remove(name);
-                            }
+                for name in &all {
+                    let mut sel = match &filter {
+                        None => true,
+                        Some(s) => s.contains(name),
+                    };
+                    if ui.checkbox(&mut sel, name).changed() {
+                        let set = filter.get_or_insert_with(|| all.iter().cloned().collect());
+                        if sel {
+                            set.insert(name.clone());
+                        } else {
+                            set.remove(name);
                         }
                     }
-                });
+                }
+            });
         });
 
     // se tutti selezionati → nessun filtro
@@ -1677,7 +1684,10 @@ fn draw_left_footer(
     );
 
     // Selettore anno (totali-anno per dev) sopra la colonna dei totali.
-    let th = Rect::from_min_size(egui::pos2(total_x, rect.top()), Vec2::new(DEV_TOTAL_W, ROW_H));
+    let th = Rect::from_min_size(
+        egui::pos2(total_x, rect.top()),
+        Vec2::new(DEV_TOTAL_W, ROW_H),
+    );
     let year_label = if year == 0 {
         "Tot".to_string()
     } else {
