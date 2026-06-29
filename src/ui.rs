@@ -1300,7 +1300,14 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     if !state.show_worker_filter {
         return;
     }
-    let all: Vec<String> = app.workers.list().into_iter().map(|(_, n)| n).collect();
+    // i worker nascosti nel footer non compaiono nemmeno nel filtro
+    let all: Vec<String> = app
+        .workers
+        .list()
+        .into_iter()
+        .filter(|(id, _)| !app.workers.is_hidden_in_footer(*id))
+        .map(|(_, n)| n)
+        .collect();
     let mut open = true;
     let mut filter = state.worker_filter.clone();
 
