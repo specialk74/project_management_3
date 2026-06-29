@@ -111,6 +111,9 @@ pub struct UiState {
     show_worker_filter: bool,
     show_project_filter: bool,
     show_closed_filter: bool,
+    // conferma di uscita con modifiche non salvate
+    show_exit_confirm: bool,
+    allow_close: bool,
     // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
     worker_filter_just_opened: bool,
     project_filter_just_opened: bool,
@@ -135,6 +138,13 @@ pub struct UiState {
     // buffer di editing per nomi progetto ed effort dev
     name_buffers: HashMap<usize, String>,
     effort_buffers: HashMap<(usize, usize), String>,
+}
+
+// Scelta dell'utente nella finestra di conferma uscita.
+enum ExitChoice {
+    Save,
+    Discard,
+    Cancel,
 }
 
 // ── Azioni differite (applicate dopo il rendering) ──────────────────────────
@@ -369,10 +379,70 @@ impl eframe::App for PjmApp {
         for a in actions {
             self.apply(a);
         }
+
+        let ctx = ui.ctx().clone();
+        self.handle_exit(&ctx);
     }
 }
 
 impl PjmApp {
+    /// Intercetta la richiesta di chiusura finestra: se ci sono modifiche non
+    /// salvate, annulla la chiusura e mostra una finestra di conferma con le
+    /// opzioni "Salva ed esci", "Esci senza salvare", "Annulla".
+    fn handle_exit(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested())
+            && self.ui.changed
+            && !self.ui.allow_close
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.ui.show_exit_confirm = true;
+        }
+
+        if !self.ui.show_exit_confirm {
+            return;
+        }
+
+        let mut choice: Option<ExitChoice> = None;
+        egui::Window::new("Uscita")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Ci sono modifiche non salvate. Vuoi salvarle prima di uscire?");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Salva ed esci").clicked() {
+                        choice = Some(ExitChoice::Save);
+                    }
+                    if ui.button("Esci senza salvare").clicked() {
+                        choice = Some(ExitChoice::Discard);
+                    }
+                    if ui.button("Annulla").clicked() {
+                        choice = Some(ExitChoice::Cancel);
+                    }
+                });
+            });
+
+        match choice {
+            Some(ExitChoice::Save) => {
+                self.app.save(&self.ui.current_file);
+                self.ui.changed = false;
+                self.ui.show_exit_confirm = false;
+                self.ui.allow_close = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Some(ExitChoice::Discard) => {
+                self.ui.show_exit_confirm = false;
+                self.ui.allow_close = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Some(ExitChoice::Cancel) => {
+                self.ui.show_exit_confirm = false;
+            }
+            None => {}
+        }
+    }
+
     fn mark_changed(&mut self) {
         self.app.recompute_week_range();
         self.app.compute_sovra();
