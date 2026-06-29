@@ -110,9 +110,13 @@ pub struct UiState {
     worker_filter: Option<HashSet<String>>,
     show_worker_filter: bool,
     show_project_filter: bool,
+    show_closed_filter: bool,
     // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
     worker_filter_just_opened: bool,
     project_filter_just_opened: bool,
+    closed_filter_just_opened: bool,
+    // posizione (angolo in basso a sx) del pulsante "Closed ▼", per ancorare la finestra
+    closed_btn_pos: egui::Pos2,
     // appunti per copia/incolla cella
     copied_text: String,
     copied_note: String,
@@ -210,6 +214,10 @@ enum Action {
     },
     SetAllProjectsEnabled {
         enabled: bool,
+    },
+    SetProjectClosed {
+        proj: ProjectId,
+        closed: bool,
     },
     SetWorkerMaxHours {
         worker: WorkerId,
@@ -355,6 +363,7 @@ impl eframe::App for PjmApp {
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
+            closed_filter_window(ui.ctx(), app, state, &mut actions);
         }
 
         for a in actions {
@@ -530,8 +539,16 @@ impl PjmApp {
             Action::SetAllProjectsEnabled { enabled } => {
                 let ids: Vec<_> = self.app.projects.list().iter().map(|(id, _)| *id).collect();
                 for id in ids {
+                    // i progetti chiusi restano non-enabled
+                    if self.app.projects.is_closed(id) {
+                        continue;
+                    }
                     self.app.projects.set_enable(id, Enable(enabled));
                 }
+                self.mark_changed();
+            }
+            Action::SetProjectClosed { proj, closed } => {
+                self.app.projects.set_closed(proj, closed);
                 self.mark_changed();
             }
             Action::SetWorkerMaxHours { worker, hours } => {
@@ -924,6 +941,12 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         if ui.button(bw_label).clicked() {
             state.bw_mode = !state.bw_mode;
         }
+        let closed_btn = ui.button("Closed ▼");
+        state.closed_btn_pos = closed_btn.rect.left_bottom();
+        if closed_btn.clicked() {
+            state.show_closed_filter = !state.show_closed_filter;
+            state.closed_filter_just_opened = state.show_closed_filter;
+        }
 
         // I selettori Anno e Categoria sono stati spostati nel footer sinistro
         // (vedi `draw_left_footer`): l'anno sopra i totali-anno per dev, la
@@ -1258,6 +1281,8 @@ fn project_filter_window(
         .projects
         .list_full()
         .into_iter()
+        // i progetti chiusi non compaiono tra i progetti "attivi"
+        .filter(|(id, _, _)| !app.projects.is_closed(*id))
         .map(|(id, name, en)| {
             let trip = app.projects.get_tripletta(id);
             let label = if trip.is_empty() { name.clone() } else { trip };
@@ -1304,6 +1329,72 @@ fn project_filter_window(
         .unwrap_or(false);
     if !open || (!just_opened && clicked_outside) {
         state.show_project_filter = false;
+    }
+}
+
+// ── Filtro progetti chiusi (Closed ▼) ───────────────────────────────────────
+
+fn closed_filter_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_closed_filter {
+        return;
+    }
+    // tutti i progetti, ordinati alfabeticamente per etichetta; il check indica "chiuso"
+    let mut projects: Vec<(ProjectId, String)> = app
+        .projects
+        .list_full()
+        .into_iter()
+        .map(|(id, name, _)| {
+            let trip = app.projects.get_tripletta(id);
+            let label = if trip.is_empty() { name } else { trip };
+            (id, label)
+        })
+        .collect();
+    projects.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+
+    let mut open = true;
+    let just_opened = state.closed_filter_just_opened;
+    state.closed_filter_just_opened = false;
+
+    let mut window = egui::Window::new("Closed")
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open);
+    // all'apertura ancora la finestra sotto il pulsante "Closed ▼";
+    // dopo resta trascinabile dall'utente
+    window = if just_opened {
+        window.current_pos(state.closed_btn_pos)
+    } else {
+        window.default_pos(state.closed_btn_pos)
+    };
+    let resp = window.show(ctx, |ui| {
+            let min_w = title_width(ui, "Closed");
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(min_w);
+                    for (id, label) in &projects {
+                        let mut closed = app.projects.is_closed(*id);
+                        if ui.checkbox(&mut closed, label).changed() {
+                            actions.push(Action::SetProjectClosed {
+                                proj: *id,
+                                closed,
+                            });
+                        }
+                    }
+                });
+        });
+
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
+        state.show_closed_filter = false;
     }
 }
 

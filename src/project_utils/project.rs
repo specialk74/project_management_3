@@ -35,6 +35,10 @@ pub struct Project {
     /// campo) partono tutti da 0 → tie-break per ProjectId = ordine attuale.
     #[serde(default)]
     order: usize,
+    /// Progetto chiuso/archiviato. Optional per retro-compatibilità con i file
+    /// .ron privi del campo. Un progetto chiuso è automaticamente non-enabled.
+    #[serde(default)]
+    closed: Option<bool>,
 }
 
 impl Project {
@@ -48,6 +52,7 @@ impl Project {
             tripletta: None,
             category: None,
             order: 0,
+            closed: None,
         }
     }
 
@@ -61,6 +66,7 @@ impl Project {
             tripletta: None,
             category: None,
             order: 0,
+            closed: None,
         }
     }
 
@@ -171,6 +177,17 @@ impl Project {
 
     pub fn set_enable(&mut self, enable: Enable) {
         self.enable = enable;
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.unwrap_or(false)
+    }
+
+    /// Imposta lo stato "chiuso". Chiudere un progetto lo rende anche
+    /// automaticamente non-enabled; riaprirlo lo rende di nuovo enabled.
+    pub fn set_closed(&mut self, closed: bool) {
+        self.closed = if closed { Some(true) } else { None };
+        self.enable = Enable(!closed);
     }
 
     pub fn get_keys(

@@ -251,6 +251,18 @@ impl Projects {
             .map_or(Enable(false), |f| f.get_enable())
     }
 
+    pub fn is_closed(&self, project_id: ProjectId) -> bool {
+        self.projects
+            .get(&project_id)
+            .map_or(false, |p| p.is_closed())
+    }
+
+    pub fn set_closed(&mut self, project_id: ProjectId, closed: bool) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_closed(closed);
+        }
+    }
+
     pub fn get_week_with_max_worker(&self, project_id: ProjectId, id_dev: DevId) -> Option<WeekId> {
         self.projects
             .get(&project_id)?
