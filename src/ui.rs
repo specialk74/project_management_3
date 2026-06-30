@@ -405,9 +405,7 @@ impl PjmApp {
     /// salvate, annulla la chiusura e mostra una finestra di conferma con le
     /// opzioni "Salva ed esci", "Esci senza salvare", "Annulla".
     fn handle_exit(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| i.viewport().close_requested())
-            && self.ui.changed
-            && !self.ui.allow_close
+        if ctx.input(|i| i.viewport().close_requested()) && self.ui.changed && !self.ui.allow_close
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.ui.show_exit_confirm = true;
@@ -648,11 +646,7 @@ impl PjmApp {
                 self.app.workers.set_week_override(worker, week, hours);
                 self.mark_changed();
             }
-            Action::SetWorkerWeekNote {
-                worker,
-                week,
-                note,
-            } => {
+            Action::SetWorkerWeekNote { worker, week, note } => {
                 self.app.workers.set_week_note(worker, week, &note);
                 self.mark_changed();
             }
@@ -750,7 +744,7 @@ enum Col {
 
 /// Larghezza (px) della colonna di confine d'anno: più stretta di una settimana,
 /// quel tanto che basta per il titolo "Effort residuo" e i valori.
-const BOUNDARY_W: f32 = 44.0;
+const BOUNDARY_W: f32 = 64.0;
 
 /// Larghezza di una colonna: le settimane usano `cw`, il confine è più stretto.
 fn col_width(c: &Col, cw: f32) -> f32 {
@@ -815,6 +809,24 @@ fn dev_missing_at_year_end(
         .map(|w| sd.get_effort_by_week(*w).0 as i32)
         .sum();
     Some(planned - assigned)
+}
+
+/// Totale ore che restano al progetto per essere completato oltre il confine di
+/// fine `year_ending`: somma dei residui per-dev (`dev_missing_at_year_end`),
+/// scartando quelli negativi (dev già in pari o in eccesso). `None` se il progetto
+/// non è a cavallo del confine (nessun dev produce un residuo).
+fn project_missing_at_year_end(app: &App, proj: ProjectId, year_ending: i32) -> Option<i32> {
+    let mut crosses = false;
+    let mut total = 0i32;
+    for dev in app.projects.list_devs(proj) {
+        if let Some(missing) = dev_missing_at_year_end(app, proj, dev, year_ending) {
+            crosses = true;
+            if missing > 0 {
+                total += missing;
+            }
+        }
+    }
+    crosses.then_some(total)
 }
 
 /// Anni disponibili (da inizio/fine progetti), ordinati.
@@ -1055,11 +1067,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| state.current_file.clone());
-            let label = format!(
-                "{}{}",
-                file_name,
-                if state.changed { " (*)" } else { "" }
-            );
+            let label = format!("{}{}", file_name, if state.changed { " (*)" } else { "" });
             ui.colored_label(col, label)
                 .on_hover_text(&state.current_file);
         });
@@ -1484,22 +1492,19 @@ fn closed_filter_window(
         window.default_pos(state.closed_btn_pos)
     };
     let resp = window.show(ctx, |ui| {
-            let min_w = title_width(ui, "Closed");
-            egui::ScrollArea::vertical()
-                .max_height(400.0)
-                .show(ui, |ui| {
-                    ui.set_min_width(min_w);
-                    for (id, label) in &projects {
-                        let mut closed = app.projects.is_closed(*id);
-                        if ui.checkbox(&mut closed, label).changed() {
-                            actions.push(Action::SetProjectClosed {
-                                proj: *id,
-                                closed,
-                            });
-                        }
+        let min_w = title_width(ui, "Closed");
+        egui::ScrollArea::vertical()
+            .max_height(400.0)
+            .show(ui, |ui| {
+                ui.set_min_width(min_w);
+                for (id, label) in &projects {
+                    let mut closed = app.projects.is_closed(*id);
+                    if ui.checkbox(&mut closed, label).changed() {
+                        actions.push(Action::SetProjectClosed { proj: *id, closed });
                     }
-                });
-        });
+                }
+            });
+    });
 
     // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
     let clicked_outside = resp
@@ -2226,11 +2231,7 @@ fn draw_right_footer(
 
             // Tasto sinistro → override ore max; tasto destro → nota worker/settimana.
             let resp = ui
-                .interact(
-                    cell,
-                    ui.id().with(("wkmax", wid.0, w)),
-                    Sense::click(),
-                )
+                .interact(cell, ui.id().with(("wkmax", wid.0, w)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
                 state.popup = Some(Popup::WorkerWeekMax {
@@ -2469,6 +2470,30 @@ fn grid(
             dy += DEV_BORDER;
         }
 
+        // Totale progetto in cima a ogni colonna di confine d'anno (solo progetti a
+        // cavallo): somma dei residui positivi dei dev per completare il progetto.
+        if !compact {
+            let mut cx = left;
+            for c in &cols {
+                let colw = col_width(c, cw);
+                if let Col::YearEnd(year_ending) = c {
+                    if let Some(total) = project_missing_at_year_end(app, p.proj, *year_ending) {
+                        let cell =
+                            Rect::from_min_size(egui::pos2(cx, proj_top), Vec2::new(colw, ROW_H));
+                        ui.painter().rect_filled(cell, 0.0, BG_DARK);
+                        ui.painter().text(
+                            cell.center(),
+                            Align2::CENTER_CENTER,
+                            format!("T:{total}"),
+                            cell_font(),
+                            g(EFFORT_ORANGE),
+                        );
+                    }
+                }
+                cx += colw;
+            }
+        }
+
         // in compatta: etichetta data sopra le colonne inizio (azzurra) e fine (verde)
         if compact {
             draw_compact_date_marker(ui, left, cw, &cols, proj_start, proj_top, g(START_BG));
@@ -2538,9 +2563,10 @@ fn draw_dev_cells(
             // ore mancanti del dev (solo se il progetto è a cavallo del confine)
             if let Some(missing) = dev_missing_at_year_end(app, proj, dev, *year_ending) {
                 if !hide_effort {
+                    // In basso, per non collidere col totale progetto in cima alla colonna.
                     ui.painter().text(
-                        col_rect.center(),
-                        Align2::CENTER_CENTER,
+                        col_rect.center_bottom() - Vec2::new(0.0, 2.0),
+                        Align2::CENTER_BOTTOM,
                         missing.to_string(),
                         cell_font(),
                         BG_DARK,
