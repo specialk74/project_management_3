@@ -1875,7 +1875,17 @@ fn footer_combo(
 /// monte ore effettivo del worker (`get_effective_max_hours`), così gli override
 /// con orari diversi dal default riducono (o aumentano) il totale rispetto a
 /// `default × n_settimane`.
-fn worker_remaining_hours(app: &App, wid: WorkerId, year: i32, this_week: i32) -> i32 {
+///
+/// Con il filtro "Nulli" attivo (`only_null`) si contano solo le settimane in cui
+/// il worker non ha ancora effort assegnato (sovra = 0): il valore diventa così la
+/// somma delle ore che potrebbero ancora essergli destinate.
+fn worker_remaining_hours(
+    app: &App,
+    wid: WorkerId,
+    year: i32,
+    this_week: i32,
+    only_null: bool,
+) -> i32 {
     let start = if year == days_to_local(this_week).year() {
         this_week
     } else {
@@ -1884,6 +1894,14 @@ fn worker_remaining_hours(app: &App, wid: WorkerId, year: i32, this_week: i32) -
     weeks_vec(app)
         .into_iter()
         .filter(|w| *w >= start && days_to_local(*w).year() == year)
+        .filter(|w| {
+            !only_null
+                || app
+                    .sovra
+                    .get(&(WeekId(*w as usize), wid))
+                    .map_or(0, |e| e.0)
+                    == 0
+        })
         .map(|w| app.workers.get_effective_max_hours(wid, w as usize) as i32)
         .sum()
 }
@@ -2044,7 +2062,13 @@ fn draw_left_footer(
                 egui::pos2(rem_left, y),
                 Vec2::new((rect.right() - rem_left).max(0.0), ROW_H),
             );
-            let remaining = worker_remaining_hours(app, *wid, year, state.this_week);
+            let remaining = worker_remaining_hours(
+                app,
+                *wid,
+                year,
+                state.this_week,
+                state.effort_filter_mode == 1,
+            );
             ui.painter().text(
                 rem_rect.right_center() - Vec2::new(12.0, 0.0),
                 Align2::RIGHT_CENTER,
