@@ -2169,7 +2169,7 @@ fn draw_right_footer(
             Align2::CENTER_CENTER,
             date,
             cell_font(),
-            TEXT_DIM,
+            TEXT_WHITE,
         );
 
         // celle sovra per worker
