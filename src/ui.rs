@@ -1867,6 +1867,27 @@ fn footer_combo(
     });
 }
 
+/// Ore rimanenti per il worker fino alla fine dell'anno `year`.
+///
+/// Il periodo segue il selettore Anno del footer: se `year` è l'anno solare
+/// corrente (quello di `this_week`) si parte dalla settimana corrente, altrimenti
+/// dalla prima settimana di `year`. Per ogni settimana del periodo si somma il
+/// monte ore effettivo del worker (`get_effective_max_hours`), così gli override
+/// con orari diversi dal default riducono (o aumentano) il totale rispetto a
+/// `default × n_settimane`.
+fn worker_remaining_hours(app: &App, wid: WorkerId, year: i32, this_week: i32) -> i32 {
+    let start = if year == days_to_local(this_week).year() {
+        this_week
+    } else {
+        i32::MIN // nessun limite inferiore: tutte le settimane dell'anno
+    };
+    weeks_vec(app)
+        .into_iter()
+        .filter(|w| *w >= start && days_to_local(*w).year() == year)
+        .map(|w| app.workers.get_effective_max_hours(wid, w as usize) as i32)
+        .sum()
+}
+
 fn draw_left_footer(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -2014,6 +2035,24 @@ fn draw_left_footer(
             cell_font(),
             TEXT_WHITE,
         );
+
+        // Ore rimanenti dell'anno selezionato, nello spazio a destra del nome.
+        // Su "Tot" (year == 0) la cella resta vuota.
+        if year != 0 {
+            let rem_left = wk_x + COL_W;
+            let rem_rect = Rect::from_min_size(
+                egui::pos2(rem_left, y),
+                Vec2::new((rect.right() - rem_left).max(0.0), ROW_H),
+            );
+            let remaining = worker_remaining_hours(app, *wid, year, state.this_week);
+            ui.painter().text(
+                rem_rect.right_center() - Vec2::new(12.0, 0.0),
+                Align2::RIGHT_CENTER,
+                remaining.to_string(),
+                cell_font(),
+                g(Color32::from_rgb(0x90, 0xEE, 0x90)),
+            );
+        }
 
         let resp = ui
             .interact(cell, ui.id().with(("wmax", wid.0)), Sense::click())
