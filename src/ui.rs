@@ -124,6 +124,10 @@ pub struct UiState {
     worker_filter_just_opened: bool,
     project_filter_just_opened: bool,
     closed_filter_just_opened: bool,
+    // true finché la finestra popup/nota è già stata mostrata almeno un frame:
+    // serve a dare il focus al campo di testo solo alla prima comparsa.
+    popup_was_open: bool,
+    note_editor_was_open: bool,
     // posizione (angolo in basso a sx) del pulsante "Closed ▼", per ancorare la finestra
     closed_btn_pos: egui::Pos2,
     // appunti per copia/incolla cella
@@ -1186,9 +1190,13 @@ fn alloc_strip(ui: &mut egui::Ui, w: f32, h: f32, color: Color32) {
 // ── Note editor (finestra) ──────────────────────────────────────────────────
 
 fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Vec<Action>) {
-    let Some(ne) = &mut state.note_editor else {
+    if state.note_editor.is_none() {
         return;
-    };
+    }
+    // Prima comparsa: dà il focus al campo nota.
+    let just_opened = !state.note_editor_was_open;
+    state.note_editor_was_open = true;
+    let ne = state.note_editor.as_mut().unwrap();
     let title = match &ne.target {
         NoteTarget::Effort { worker, .. } => format!("Nota: {}", worker),
         NoteTarget::Dev { .. } => "Nota Dev".to_string(),
@@ -1204,12 +1212,15 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.add(
+            let te = ui.add(
                 egui::TextEdit::multiline(&mut ne.text)
                     .desired_rows(4)
                     .desired_width(320.0)
                     .font(cell_font()),
             );
+            if just_opened {
+                te.request_focus();
+            }
             ui.horizontal(|ui| {
                 if ui.button("Salva").clicked() {
                     save = true;
@@ -1249,6 +1260,7 @@ fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Ve
     }
     if save || cancel || !open {
         state.note_editor = None;
+        state.note_editor_was_open = false;
     }
 }
 
@@ -1570,9 +1582,13 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
 // ── Popup di modifica (tripletta / inizio / fine / categoria) ───────────────
 
 fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
-    let Some(popup) = &mut state.popup else {
+    if state.popup.is_none() {
         return;
-    };
+    }
+    // Prima comparsa della finestra: dà il focus al campo di testo.
+    let just_opened = !state.popup_was_open;
+    state.popup_was_open = true;
+    let popup = state.popup.as_mut().unwrap();
     let mut open = true;
     let mut close = false;
 
@@ -1589,6 +1605,9 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                             .desired_width(220.0)
                             .font(cell_font()),
                     );
+                    if just_opened {
+                        le.request_focus();
+                    }
                     let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     ui.horizontal(|ui| {
                         if ui.button("OK").clicked() || entered {
@@ -1611,6 +1630,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 text,
                 &mut open,
                 &mut close,
+                just_opened,
                 |date| {
                     actions.push(Action::SetProjectStartWeek { proj: *proj, date });
                 },
@@ -1623,6 +1643,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 text,
                 &mut open,
                 &mut close,
+                just_opened,
                 |date| {
                     actions.push(Action::SetProjectEndWeek { proj: *proj, date });
                 },
@@ -1660,6 +1681,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 text,
                 &mut open,
                 &mut close,
+                just_opened,
                 |hours| {
                     actions.push(Action::SetWorkerMaxHours {
                         worker: *worker,
@@ -1683,6 +1705,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 text,
                 &mut open,
                 &mut close,
+                just_opened,
                 |hours| {
                     actions.push(Action::SetWorkerWeekOverride {
                         worker: *worker,
@@ -1701,6 +1724,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                 text,
                 &mut open,
                 &mut close,
+                just_opened,
                 |hours| {
                     actions.push(Action::SetBulkWeekLimit { week: *week, hours });
                 },
@@ -1711,6 +1735,7 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
 
     if close || !open {
         state.popup = None;
+        state.popup_was_open = false;
     }
 }
 
@@ -1722,6 +1747,7 @@ fn date_popup_window(
     text: &mut String,
     open: &mut bool,
     close: &mut bool,
+    just_opened: bool,
     mut on_confirm: impl FnMut(String),
 ) {
     egui::Window::new(title)
@@ -1735,6 +1761,9 @@ fn date_popup_window(
                     .desired_width(220.0)
                     .font(cell_font()),
             );
+            if just_opened {
+                le.request_focus();
+            }
             let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() || entered {
@@ -1761,6 +1790,7 @@ fn hours_popup_window(
     text: &mut String,
     open: &mut bool,
     close: &mut bool,
+    just_opened: bool,
     mut on_confirm: impl FnMut(u32),
     default_hours: u32,
 ) {
@@ -1775,6 +1805,9 @@ fn hours_popup_window(
                     .desired_width(120.0)
                     .font(cell_font()),
             );
+            if just_opened {
+                le.request_focus();
+            }
             let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() || entered {
