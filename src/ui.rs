@@ -1047,12 +1047,17 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             } else {
                 TEXT_DIM
             };
+            let file_name = std::path::Path::new(&state.current_file)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| state.current_file.clone());
             let label = format!(
                 "{}{}",
-                state.current_file,
+                file_name,
                 if state.changed { " (*)" } else { "" }
             );
-            ui.colored_label(col, label);
+            ui.colored_label(col, label)
+                .on_hover_text(&state.current_file);
         });
     });
 }
