@@ -405,6 +405,43 @@ impl eframe::App for PjmApp {
     }
 }
 
+/// Converte una data `yy-mm-dd` nella settimana corrispondente. Stringa vuota
+/// (o non valida) ⇒ `None`, cioè rimuove il limite di inizio/fine del progetto.
+fn week_from_date_str(date: &str) -> Option<WeekId> {
+    if date.trim().is_empty() {
+        return None;
+    }
+    parse_date_str(date).map(|d| WeekId(d as usize))
+}
+
+/// Interpreta una stringa `yy-mm-dd` / `yyyy-mm-dd` come `jiff::civil::Date`
+/// (il giorno esatto, non allineato al lunedì). Usata per inizializzare il
+/// calendario `DatePickerButton`. `None` se vuota o non valida.
+fn date_str_to_jiff(s: &str) -> Option<jiff::civil::Date> {
+    let parts: Vec<&str> = s.trim().split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let year: i32 = parts[0].parse().ok()?;
+    let month: i8 = parts[1].parse().ok()?;
+    let day: i8 = parts[2].parse().ok()?;
+    let year = if year < 100 { year + 2000 } else { year };
+    jiff::civil::Date::new(year as i16, month, day).ok()
+}
+
+/// Formatta un `jiff::civil::Date` come `yyyy-mm-dd` (accettato da `parse_date_str`,
+/// che poi allinea al lunedì della settimana).
+fn jiff_to_date_str(d: &jiff::civil::Date) -> String {
+    format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day())
+}
+
+/// Data odierna come `jiff::civil::Date`, valore di default del calendario.
+fn today_jiff() -> jiff::civil::Date {
+    let t = chrono::Utc::now().date_naive();
+    jiff::civil::Date::new(t.year() as i16, t.month() as i8, t.day() as i8)
+        .unwrap_or_else(|_| jiff::civil::Date::new(2000, 1, 1).unwrap())
+}
+
 impl PjmApp {
     /// Intercetta la richiesta di chiusura finestra: se ci sono modifiche non
     /// salvate, annulla la chiusura e mostra una finestra di conferma con le
@@ -583,21 +620,15 @@ impl PjmApp {
                 self.mark_changed();
             }
             Action::SetProjectStartWeek { proj, date } => {
-                let wk = if date.trim().is_empty() {
-                    None
-                } else {
-                    parse_date_str(&date).map(|d| WeekId(d as usize))
-                };
-                self.app.projects.set_project_start_week(proj, wk);
+                self.app
+                    .projects
+                    .set_project_start_week(proj, week_from_date_str(&date));
                 self.mark_changed();
             }
             Action::SetProjectEndWeek { proj, date } => {
-                let wk = if date.trim().is_empty() {
-                    None
-                } else {
-                    parse_date_str(&date).map(|d| WeekId(d as usize))
-                };
-                self.app.projects.set_project_end_week(proj, wk);
+                self.app
+                    .projects
+                    .set_project_end_week(proj, week_from_date_str(&date));
                 self.mark_changed();
             }
             Action::SetProjectCategory { proj, cat } => {
@@ -1780,17 +1811,21 @@ fn date_popup_window(
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .open(open)
         .show(ctx, |ui| {
-            let le = ui.add(
-                egui::TextEdit::singleline(text)
-                    .desired_width(220.0)
-                    .font(cell_font()),
+            let _ = just_opened;
+            // Selezione col mouse: il calendario è inizializzato con la data
+            // corrente del campo (o con oggi, se non impostata). Quando l'utente
+            // sceglie un giorno, la stringa `text` viene aggiornata.
+            let mut date = date_str_to_jiff(text).unwrap_or_else(today_jiff);
+            let picked = ui.add(
+                egui_extras::DatePickerButton::new(&mut date)
+                    .id_salt(title)
+                    .format("%Y-%m-%d"),
             );
-            if just_opened {
-                le.request_focus();
+            if picked.changed() {
+                *text = jiff_to_date_str(&date);
             }
-            let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             ui.horizontal(|ui| {
-                if ui.button("OK").clicked() || entered {
+                if ui.button("OK").clicked() {
                     on_confirm(text.clone());
                     *close = true;
                 }
