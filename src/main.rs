@@ -19,16 +19,20 @@ fn main() -> eframe::Result<()> {
     let mut app = App::load(&file_path).unwrap_or_else(|_| App::new());
     app.compute_sovra();
 
+    let title = format!(
+        "Project Management Effort Tracker v{}",
+        env!("CARGO_PKG_VERSION")
+    );
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_min_inner_size([800.0, 600.0])
-            .with_title("Project Management Effort Tracker"),
+            .with_title(&title),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Project Management Effort Tracker",
+        &title,
         native_options,
         Box::new(move |cc| Ok(Box::new(PjmApp::new(app, file_path, cc)))),
     )

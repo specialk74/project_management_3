@@ -1205,6 +1205,8 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             let label = format!("{}{}", file_name, if state.changed { " (*)" } else { "" });
             ui.colored_label(col, label)
                 .on_hover_text(&state.current_file);
+            ui.separator();
+            ui.weak(format!("v{}", env!("CARGO_PKG_VERSION")));
         });
     });
 }
