@@ -189,8 +189,20 @@ fn page_ops(
     start: i32,
     end: i32,
     mut flags: Vec<Flag>,
+    created: &str,
 ) -> Vec<Op> {
     let mut ops = Vec::new();
+
+    // Piè di pagina: data di creazione del PDF, centrata in basso.
+    ops.extend(text_center(
+        fonts,
+        PAGE_W / 2.0,
+        8.0,
+        &format!("Creato il {created}"),
+        8.0,
+        false,
+        (0.4, 0.4, 0.4),
+    ));
 
     // Tripletta (in alto, grande) e descrizione (a capo automatico).
     if !tripletta.is_empty() {
@@ -260,6 +272,9 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
         bold: doc.add_font(&bold),
     };
 
+    // Data/ora di creazione (locale), uguale su tutte le pagine di questo PDF.
+    let created = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+
     let mut pages = Vec::new();
 
     for (id, name, enable) in app.projects.list_full() {
@@ -303,7 +318,7 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
         }
 
         let tripletta = app.projects.get_tripletta(id);
-        let ops = page_ops(&fonts, &tripletta, &name, start, end, flags);
+        let ops = page_ops(&fonts, &tripletta, &name, start, end, flags, &created);
         pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), ops));
     }
 
