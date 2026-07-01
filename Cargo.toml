@@ -11,3 +11,4 @@ rfd = "0.17.2"
 eframe = "0.34.3"
 egui_extras = { version = "0.34.3", features = ["datepicker"] }
 jiff = "0.2.23"
+printpdf = "0.9.1"

@@ -273,6 +273,7 @@ enum Action {
     MoveProjectDown {
         proj: ProjectId,
     },
+    ExportPdf,
     CreateMilestone(String),
     SetMilestoneColor {
         milestone: MilestoneId,
@@ -737,6 +738,21 @@ impl PjmApp {
                     self.mark_changed();
                 }
             }
+            Action::ExportPdf => match crate::pdf_export::build_pdf(&self.app) {
+                None => eprintln!("Nessun progetto visibile con inizio e fine: PDF non creato."),
+                Some(bytes) => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PDF", &["pdf"])
+                        .set_file_name("progetti.pdf")
+                        .save_file()
+                    {
+                        let p = path.to_string_lossy().to_string();
+                        if let Err(e) = std::fs::write(&p, bytes) {
+                            eprintln!("Errore scrittura PDF '{p}': {e}");
+                        }
+                    }
+                }
+            },
             Action::CreateMilestone(name) => {
                 self.app.milestones.add(&name);
                 self.mark_changed();
@@ -1145,6 +1161,9 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         }
         if ui.button("Apri").clicked() {
             actions.push(Action::Open);
+        }
+        if ui.button("PDF").clicked() {
+            actions.push(Action::ExportPdf);
         }
         let compact_label = if state.compact_mode {
             "Vista normale"

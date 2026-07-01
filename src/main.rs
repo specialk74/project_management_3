@@ -3,6 +3,7 @@ mod categories;
 mod date_utils;
 mod dev_utils;
 mod milestones;
+mod pdf_export;
 mod project_utils;
 mod single_dev_utils;
 mod single_effort_utils;
