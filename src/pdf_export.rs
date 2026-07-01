@@ -8,6 +8,23 @@ use printpdf::*;
 use crate::app::App;
 use crate::date_utils::dates::days_to_local;
 
+// Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
+// accenti/Unicode, che i font builtin PDF (WinAnsi) non garantiscono.
+const FONT_REGULAR: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
+const FONT_BOLD: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf");
+
+/// Handle dei font incorporati, registrati nel documento.
+struct Fonts {
+    regular: FontId,
+    bold: FontId,
+}
+
+impl Fonts {
+    fn handle(&self, bold: bool) -> PdfFontHandle {
+        PdfFontHandle::External(if bold { self.bold.clone() } else { self.regular.clone() })
+    }
+}
+
 // Pagina A4 orizzontale (mm), origine in basso a sinistra.
 const PAGE_W: f32 = 297.0;
 const PAGE_H: f32 = 210.0;
@@ -46,12 +63,19 @@ fn text_w_mm(text: &str, size_pt: f32) -> f32 {
 }
 
 /// Ops per una stringa ancorata a sinistra a (x, y) in mm.
-fn text_left(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Op> {
-    let font = if bold { BuiltinFont::HelveticaBold } else { BuiltinFont::Helvetica };
+fn text_left(
+    fonts: &Fonts,
+    x: f32,
+    y: f32,
+    s: &str,
+    size: f32,
+    bold: bool,
+    color: (f32, f32, f32),
+) -> Vec<Op> {
     vec![
         Op::StartTextSection,
         Op::SetTextCursor { pos: Point::new(Mm(x), Mm(y)) },
-        Op::SetFont { font: PdfFontHandle::Builtin(font), size: Pt(size) },
+        Op::SetFont { font: fonts.handle(bold), size: Pt(size) },
         Op::SetLineHeight { lh: Pt(size) },
         Op::SetFillColor { col: rgb(color) },
         Op::ShowText { items: vec![TextItem::Text(s.to_string())] },
@@ -60,9 +84,17 @@ fn text_left(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f
 }
 
 /// Come `text_left` ma centrato orizzontalmente su `x`.
-fn text_center(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Op> {
+fn text_center(
+    fonts: &Fonts,
+    x: f32,
+    y: f32,
+    s: &str,
+    size: f32,
+    bold: bool,
+    color: (f32, f32, f32),
+) -> Vec<Op> {
     let start = (x - text_w_mm(s, size) / 2.0).clamp(2.0, PAGE_W - 2.0);
-    text_left(start, y, s, size, bold, color)
+    text_left(fonts, start, y, s, size, bold, color)
 }
 
 /// Rettangolo pieno tra gli angoli (x0,y0)-(x1,y1) in mm.
@@ -134,18 +166,42 @@ fn wrap(text: &str, max_chars: usize) -> Vec<String> {
     lines
 }
 
+/// Come `wrap` ma preserva gli a-capo espliciti (`\n`): ogni riga del testo
+/// diventa un paragrafo a sé, poi mandato a capo automaticamente. Le righe
+/// vuote restano come righe vuote (a-capo visibile). Gestisce anche `\r\n`.
+fn wrap_multiline(text: &str, max_chars: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for para in text.replace('\r', "").split('\n') {
+        if para.trim().is_empty() {
+            out.push(String::new());
+        } else {
+            out.extend(wrap(para, max_chars));
+        }
+    }
+    out
+}
+
 /// Genera gli `Op` di una pagina per un progetto. `flags` già ordinate per data.
-fn page_ops(tripletta: &str, descr: &str, start: i32, end: i32, mut flags: Vec<Flag>) -> Vec<Op> {
+fn page_ops(
+    fonts: &Fonts,
+    tripletta: &str,
+    descr: &str,
+    start: i32,
+    end: i32,
+    mut flags: Vec<Flag>,
+) -> Vec<Op> {
     let mut ops = Vec::new();
 
     // Tripletta (in alto, grande) e descrizione (a capo automatico).
     if !tripletta.is_empty() {
-        ops.extend(text_left(MARGIN, 190.0, tripletta, 22.0, true, BLACK));
+        ops.extend(text_left(fonts, MARGIN, 190.0, tripletta, 22.0, true, BLACK));
     }
+    // Descrizione: preserva gli a-capo del testo del progetto. Limitata alle
+    // righe che stanno sopra la zona della timeline (per non sovrapporsi).
     let mut y = 176.0;
-    for l in wrap(descr, 95).into_iter().take(4) {
-        ops.extend(text_left(MARGIN, y, &l, 13.0, false, BLACK));
-        y -= 6.5;
+    for l in wrap_multiline(descr, 95).into_iter().take(6) {
+        ops.extend(text_left(fonts, MARGIN, y, &l, 13.0, false, BLACK));
+        y -= 6.0;
     }
 
     // Barra timeline.
@@ -186,8 +242,8 @@ fn page_ops(tripletta: &str, descr: &str, start: i32, end: i32, mut flags: Vec<F
         });
 
         // Etichette sotto la barra: titolo + data, centrate sull'asta.
-        ops.extend(text_center(x, ty_title, &f.title, 9.0, true, BLACK));
-        ops.extend(text_center(x, ty_date, &f.date, 8.0, false, BLACK));
+        ops.extend(text_center(fonts, x, ty_title, &f.title, 9.0, true, BLACK));
+        ops.extend(text_center(fonts, x, ty_date, &f.date, 8.0, false, BLACK));
     }
 
     ops
@@ -196,6 +252,14 @@ fn page_ops(tripletta: &str, descr: &str, start: i32, end: i32, mut flags: Vec<F
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
 pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
+    let mut doc = PdfDocument::new("Progetti");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+
     let mut pages = Vec::new();
 
     for (id, name, enable) in app.projects.list_full() {
@@ -239,7 +303,7 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
         }
 
         let tripletta = app.projects.get_tripletta(id);
-        let ops = page_ops(&tripletta, &name, start, end, flags);
+        let ops = page_ops(&fonts, &tripletta, &name, start, end, flags);
         pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), ops));
     }
 
@@ -247,7 +311,6 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
         return None;
     }
 
-    let mut doc = PdfDocument::new("Progetti");
     let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
     Some(bytes)
 }
