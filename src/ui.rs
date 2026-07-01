@@ -2003,7 +2003,10 @@ fn draw_left_footer(
         let br = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(fbw, ROW_H));
         let active = state.effort_filter_mode == i as i32;
         if ui
-            .put(br, egui::SelectableLabel::new(active, *lab))
+            .put(
+                br,
+                egui::SelectableLabel::new(active, egui::RichText::new(*lab).color(TEXT_WHITE)),
+            )
             .clicked()
         {
             state.effort_filter_mode = i as i32;
@@ -2197,7 +2200,7 @@ fn draw_right_footer(
             let global_max = app.workers.get_max_hours(*wid) as i32;
 
             let shown = state.effort_filter_mode == 0
-                || (state.effort_filter_mode == 1 && value == 0)
+                || (state.effort_filter_mode == 1 && value == 0 && eff_max != 0)
                 || (state.effort_filter_mode == 2 && value >= 40);
             if !shown {
                 continue;
