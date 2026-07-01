@@ -17,7 +17,7 @@ use crate::project_utils::project::{Enable, ProjectId};
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_style::*;
-use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
+use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
 
@@ -253,6 +253,11 @@ enum Action {
         week: usize,
         note: String,
     },
+    SetWorkerWeekStatus {
+        worker: WorkerId,
+        week: usize,
+        status: Option<WeekStatus>,
+    },
     SetBulkWeekLimit {
         week: usize,
         hours: u32,
@@ -375,7 +380,7 @@ impl eframe::App for PjmApp {
             if !state.compact_mode {
                 egui::TopBottomPanel::bottom("footer")
                     .frame(egui::Frame::NONE.fill(BG_DARK))
-                    .show_inside(ui, |ui| footer(ui, app, state));
+                    .show_inside(ui, |ui| footer(ui, app, state, &mut actions));
             }
 
             egui::CentralPanel::default()
@@ -644,10 +649,24 @@ impl PjmApp {
                 hours,
             } => {
                 self.app.workers.set_week_override(worker, week, hours);
+                // Override a zero ore ⇒ settimana di ferie: attiva lo stato "Ferie".
+                if hours == 0 {
+                    self.app
+                        .workers
+                        .set_week_status(worker, week, Some(WeekStatus::Ferie));
+                }
                 self.mark_changed();
             }
             Action::SetWorkerWeekNote { worker, week, note } => {
                 self.app.workers.set_week_note(worker, week, &note);
+                self.mark_changed();
+            }
+            Action::SetWorkerWeekStatus {
+                worker,
+                week,
+                status,
+            } => {
+                self.app.workers.set_week_status(worker, week, status);
                 self.mark_changed();
             }
             Action::SetBulkWeekLimit { week, hours } => {
@@ -1825,6 +1844,10 @@ fn hours_popup_window(
                     on_confirm(default_hours);
                     *close = true;
                 }
+                if ui.button("Zero").clicked() {
+                    on_confirm(0);
+                    *close = true;
+                }
                 if ui.button("Annulla").clicked() {
                     *close = true;
                 }
@@ -1845,7 +1868,7 @@ fn footer_workers(
         .collect()
 }
 
-fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
+fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     let filter = state.worker_filter.clone();
     let workers = footer_workers(app, &filter);
     let cols = columns_vec(app);
@@ -1881,7 +1904,7 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let content_w = cols_width(&cols, COL_W);
             let (rrect, _) = ui.allocate_exact_size(Vec2::new(content_w, footer_h), Sense::hover());
-            draw_right_footer(ui, rrect, app, state, &workers, &cols);
+            draw_right_footer(ui, rrect, app, state, &workers, &cols, actions);
         });
 }
 
@@ -2140,6 +2163,7 @@ fn draw_right_footer(
     state: &mut UiState,
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
     cols: &[Col],
+    actions: &mut Vec<Action>,
 ) {
     let lightgreen = g(Color32::from_rgb(0x90, 0xEE, 0x90));
     let mut next_x = rect.left();
@@ -2209,11 +2233,24 @@ fn draw_right_footer(
             // triangolo se esiste una nota collegata al worker per questa settimana
             let has_note = app.workers.has_week_note(*wid, w as usize);
             if has_note {
-                draw_note_triangle(ui, cell);
+                draw_note_triangle(ui, cell.shrink(STATUS_TRI_INSET));
+            }
+
+            // triangoli di stato: ferie (verde, alto-sx) / malattia (rosso, basso-sx)
+            match app.workers.get_week_status(*wid, w as usize) {
+                Some(WeekStatus::Ferie) => {
+                    draw_status_triangle_top_left(ui, cell, g(Color32::from_rgb(0x33, 0x99, 0xFF)))
+                }
+                Some(WeekStatus::Malattia) => {
+                    draw_status_triangle_bottom_left(ui, cell, g(Color32::RED))
+                }
+                None => {}
             }
 
             let color = if value > eff_max {
                 g(Color32::RED)
+            } else if eff_max == 0 {
+                g(Color32::from_rgb(0xCD, 0x85, 0x3F)) // marrone chiaro: override a zero
             } else if value == 0 {
                 g(Color32::YELLOW)
             } else {
@@ -2244,16 +2281,46 @@ fn draw_right_footer(
                     text: eff_max.to_string(),
                 });
             }
-            if resp.secondary_clicked() {
-                state.note_editor = Some(NoteEditing {
-                    target: NoteTarget::WorkerWeek {
+            let cur_status = app.workers.get_week_status(*wid, w as usize);
+            resp.context_menu(|ui| {
+                // "Ferie" e "Malattia" fanno da toggle: riscegliere lo stato attivo lo rimuove.
+                if ui
+                    .selectable_label(cur_status == Some(WeekStatus::Ferie), "Ferie")
+                    .clicked()
+                {
+                    let status = (cur_status != Some(WeekStatus::Ferie)).then_some(WeekStatus::Ferie);
+                    actions.push(Action::SetWorkerWeekStatus {
                         worker: *wid,
                         week: w as usize,
-                        name: name.clone(),
-                    },
-                    text: app.workers.get_week_note(*wid, w as usize),
-                });
-            }
+                        status,
+                    });
+                    ui.close();
+                }
+                if ui
+                    .selectable_label(cur_status == Some(WeekStatus::Malattia), "Malattia")
+                    .clicked()
+                {
+                    let status =
+                        (cur_status != Some(WeekStatus::Malattia)).then_some(WeekStatus::Malattia);
+                    actions.push(Action::SetWorkerWeekStatus {
+                        worker: *wid,
+                        week: w as usize,
+                        status,
+                    });
+                    ui.close();
+                }
+                if ui.button("Note").clicked() {
+                    state.note_editor = Some(NoteEditing {
+                        target: NoteTarget::WorkerWeek {
+                            worker: *wid,
+                            week: w as usize,
+                            name: name.clone(),
+                        },
+                        text: app.workers.get_week_note(*wid, w as usize),
+                    });
+                    ui.close();
+                }
+            });
 
             // Passando sopra il triangolo si vede il testo della nota.
             if has_note {
@@ -3012,6 +3079,36 @@ fn paint_person_cell(ui: &egui::Ui, cell: Rect, text: &str, color: Color32) {
         cell.center().y - galley.size().y / 2.0,
     );
     ui.painter().galley(pos, galley, color);
+}
+
+/// Scostamento dei triangoli di stato dagli angoli, verso il centro cella,
+/// così ferie (alto-sx) e malattia (basso-sx) non si toccano.
+const STATUS_TRI_INSET: f32 = 3.0;
+
+/// Triangolo di stato nell'angolo in alto a SINISTRA (ferie).
+fn draw_status_triangle_top_left(ui: &egui::Ui, cell: Rect, color: Color32) {
+    let x = cell.left() + STATUS_TRI_INSET;
+    let y = cell.top() + STATUS_TRI_INSET;
+    let pts = vec![
+        egui::pos2(x, y),
+        egui::pos2(x + 10.0, y),
+        egui::pos2(x, y + 10.0),
+    ];
+    ui.painter()
+        .add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
+}
+
+/// Triangolo di stato nell'angolo in basso a SINISTRA (malattia).
+fn draw_status_triangle_bottom_left(ui: &egui::Ui, cell: Rect, color: Color32) {
+    let x = cell.left() + STATUS_TRI_INSET;
+    let y = cell.bottom() - STATUS_TRI_INSET;
+    let pts = vec![
+        egui::pos2(x, y),
+        egui::pos2(x + 10.0, y),
+        egui::pos2(x, y - 10.0),
+    ];
+    ui.painter()
+        .add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
 }
 
 fn draw_note_triangle(ui: &egui::Ui, cell: Rect) {

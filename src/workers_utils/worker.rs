@@ -10,6 +10,13 @@ pub const DEFAULT_MAX_HOURS: u32 = 40;
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct WorkerId(pub usize);
 
+/// Stato di una settimana per un worker: ferie o malattia.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum WeekStatus {
+    Ferie,
+    Malattia,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Worker {
     pub name: String,
@@ -26,6 +33,9 @@ pub struct Worker {
     /// Per-week notes: WeekId.0 → testo nota per quella specifica settimana.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub week_notes: HashMap<usize, String>,
+    /// Per-week status: WeekId.0 → ferie/malattia per quella specifica settimana.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub week_status: HashMap<usize, WeekStatus>,
     /// When true, the worker row is hidden in the right-footer (totals are still counted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hide_in_footer: Option<bool>,
@@ -40,6 +50,7 @@ impl Worker {
             max_weekly_hours: None,
             week_overrides: HashMap::new(),
             week_notes: HashMap::new(),
+            week_status: HashMap::new(),
             hide_in_footer: None,
         }
     }
@@ -58,6 +69,22 @@ impl Worker {
             self.week_notes.remove(&week);
         } else {
             self.week_notes.insert(week, note.to_string());
+        }
+    }
+
+    pub fn get_week_status(&self, week: usize) -> Option<WeekStatus> {
+        self.week_status.get(&week).copied()
+    }
+
+    /// Imposta (o rimuove, se `None`) lo stato della settimana indicata.
+    pub fn set_week_status(&mut self, week: usize, status: Option<WeekStatus>) {
+        match status {
+            Some(s) => {
+                self.week_status.insert(week, s);
+            }
+            None => {
+                self.week_status.remove(&week);
+            }
         }
     }
 

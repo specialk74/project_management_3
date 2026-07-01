@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use crate::workers_utils::{
-    worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, Worker, WorkerId},
+    worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WeekStatus, Worker, WorkerId},
     *,
 };
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,16 @@ impl Workers {
     pub fn set_week_note(&mut self, id: WorkerId, week: usize, note: &str) {
         if let Some(w) = self.worker_id.get_mut(&id) {
             w.set_week_note(week, note);
+        }
+    }
+
+    pub fn get_week_status(&self, id: WorkerId, week: usize) -> Option<WeekStatus> {
+        self.worker_id.get(&id).and_then(|w| w.get_week_status(week))
+    }
+
+    pub fn set_week_status(&mut self, id: WorkerId, week: usize, status: Option<WeekStatus>) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_week_status(week, status);
         }
     }
 
