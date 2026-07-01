@@ -2452,6 +2452,52 @@ fn paint_hstrip(ui: &egui::Ui, left: f32, w: f32, y: f32, color: Color32) {
     );
 }
 
+/// Come `paint_hstrip` ma limitata all'intervallo X `[x0, x1)`: usata per le
+/// bande colorate dei dev, che non devono comparire fuori dal periodo attivo
+/// del progetto. Se l'intervallo è vuoto non disegna nulla.
+fn paint_hstrip_range(ui: &egui::Ui, x0: f32, x1: f32, y: f32, color: Color32) {
+    if x1 <= x0 {
+        return;
+    }
+    ui.painter().rect_filled(
+        Rect::from_min_size(egui::pos2(x0, y), Vec2::new(x1 - x0, DEV_BORDER)),
+        0.0,
+        color,
+    );
+}
+
+/// Intervallo X `[x0, x1)` delle colonne-settimana "attive" del progetto, cioè
+/// comprese tra inizio e fine (estremi inclusi). `proj_start`/`deadline` a -1
+/// significano "nessun limite" su quel lato. Se nessuna settimana visibile è
+/// attiva restituisce un intervallo vuoto (`x0 == x1`).
+fn active_hstrip_range(
+    cols: &[Col],
+    cw: f32,
+    left: f32,
+    content_w: f32,
+    proj_start: i32,
+    deadline: i32,
+) -> (f32, f32) {
+    // Nessun limite su entrambi i lati: banda a piena larghezza (comportamento storico).
+    if proj_start < 0 && deadline < 0 {
+        return (left, left + content_w);
+    }
+    let is_active = |c: &Col| {
+        matches!(c, Col::Week(w)
+            if (proj_start < 0 || *w >= proj_start) && (deadline < 0 || *w <= deadline))
+    };
+    match (
+        cols.iter().position(is_active),
+        cols.iter().rposition(is_active),
+    ) {
+        (Some(first), Some(last)) => (
+            left + col_x_offset(cols, first, cw),
+            left + col_x_offset(cols, last + 1, cw),
+        ),
+        _ => (left, left), // nessuna settimana attiva in vista: niente banda
+    }
+}
+
 /// Etichetta data (sempre visibile) sopra la colonna inizio/fine di un progetto
 /// in vista compatta. Sfondo colorato come la colonna, testo centrato sulla colonna.
 fn draw_compact_date_marker(
@@ -2516,6 +2562,10 @@ fn grid(
             .get_project_end_week(p.proj)
             .map(|w| w.0 as i32)
             .unwrap_or(-1);
+        // Le bande colorate dei dev sono limitate al periodo attivo del progetto:
+        // niente riga colorata prima dell'inizio o dopo la fine.
+        let (act_x0, act_x1) =
+            active_hstrip_range(&cols, cw, left, content_w, proj_start, deadline);
         let proj_top = y;
         let mut dy = y;
 
@@ -2523,7 +2573,7 @@ fn grid(
             let color = dev_color(app, *dev_id);
             // i bordi dev sono trasparenti in compatta
             let border = if compact { BG_DARK } else { color };
-            paint_hstrip(ui, left, content_w, dy, border);
+            paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
             let inner_h = if compact {
                 ROW_H
@@ -2536,7 +2586,7 @@ fn grid(
                 deadline, filter, compact, cw,
             );
             dy += inner_h;
-            paint_hstrip(ui, left, content_w, dy, border);
+            paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
         }
 
