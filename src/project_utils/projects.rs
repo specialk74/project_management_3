@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::{
     categories::CategoryId,
     dev_utils::dev::DevId,
+    milestones::MilestoneId,
     project_utils::project::{Enable, Project, ProjectId},
     single_dev_utils::single_dev::{SingleDev, WeekId},
     single_effort_utils::sinlge_effort::Effort,
@@ -158,6 +159,41 @@ impl Projects {
 
     pub fn del(&mut self, id_project: ProjectId) {
         self.projects.remove(&id_project);
+    }
+
+    pub fn add_project_milestone(&mut self, id: ProjectId, mid: MilestoneId, week: WeekId) {
+        if let Some(p) = self.projects.get_mut(&id) {
+            p.add_milestone(mid, week);
+        }
+    }
+
+    pub fn remove_project_milestone(&mut self, id: ProjectId, mid: MilestoneId) {
+        if let Some(p) = self.projects.get_mut(&id) {
+            p.remove_milestone(mid);
+        }
+    }
+
+    /// Rimuove la milestone da tutti i progetti (chiamata quando viene eliminata
+    /// globalmente).
+    pub fn purge_milestone(&mut self, mid: MilestoneId) {
+        for p in self.projects.values_mut() {
+            p.purge_milestone(mid);
+        }
+    }
+
+    pub fn project_has_milestone(&self, id: ProjectId, mid: MilestoneId) -> bool {
+        self.projects.get(&id).is_some_and(|p| p.has_milestone(mid))
+    }
+
+    pub fn list_project_milestones(&self, id: ProjectId) -> Vec<(MilestoneId, WeekId)> {
+        self.projects.get(&id).map(|p| p.list_milestones()).unwrap_or_default()
+    }
+
+    pub fn project_milestones_at_week(&self, id: ProjectId, week: WeekId) -> Vec<MilestoneId> {
+        self.projects
+            .get(&id)
+            .map(|p| p.milestones_at_week(week))
+            .unwrap_or_default()
     }
 
     pub fn add_dev(&mut self, id_project: ProjectId, id_dev: DevId) {

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::{
     categories::CategoryId,
     dev_utils::dev::DevId,
+    milestones::MilestoneId,
     single_dev_utils::single_dev::{SingleDev, WeekId},
     single_effort_utils::sinlge_effort::Effort,
     workers_utils::worker::WorkerId,
@@ -39,6 +40,10 @@ pub struct Project {
     /// .ron privi del campo. Un progetto chiuso è automaticamente non-enabled.
     #[serde(default)]
     closed: Option<bool>,
+    /// Milestone collocate nel progetto: id milestone → settimana. La chiave
+    /// garantisce che la stessa milestone non compaia più volte nel progetto.
+    #[serde(default)]
+    milestones: HashMap<MilestoneId, WeekId>,
 }
 
 impl Project {
@@ -53,6 +58,7 @@ impl Project {
             category: None,
             order: 0,
             closed: None,
+            milestones: HashMap::new(),
         }
     }
 
@@ -67,6 +73,7 @@ impl Project {
             category: None,
             order: 0,
             closed: None,
+            milestones: HashMap::new(),
         }
     }
 
@@ -208,5 +215,45 @@ impl Project {
 
     pub fn get_dev_hide_effort(&self, id_dev: DevId) -> bool {
         self.dev_id.get(&id_dev).map(|sd| sd.get_hide_effort()).unwrap_or(false)
+    }
+
+    /// Colloca (o sposta) una milestone in una settimana. La stessa milestone
+    /// non può comparire più volte: se già presente, ne aggiorna la settimana.
+    pub fn add_milestone(&mut self, id: MilestoneId, week: WeekId) {
+        self.milestones.insert(id, week);
+    }
+
+    pub fn remove_milestone(&mut self, id: MilestoneId) {
+        self.milestones.remove(&id);
+    }
+
+    pub fn has_milestone(&self, id: MilestoneId) -> bool {
+        self.milestones.contains_key(&id)
+    }
+
+    /// Rimuove ogni collocazione della milestone (usato quando viene eliminata
+    /// globalmente).
+    pub fn purge_milestone(&mut self, id: MilestoneId) {
+        self.milestones.remove(&id);
+    }
+
+    /// Elenco (milestone, settimana) collocate nel progetto.
+    pub fn list_milestones(&self) -> Vec<(MilestoneId, WeekId)> {
+        let mut v: Vec<(MilestoneId, WeekId)> =
+            self.milestones.iter().map(|(&id, &w)| (id, w)).collect();
+        v.sort_by_key(|(id, _)| *id);
+        v
+    }
+
+    /// Milestone collocate nella settimana indicata (ordinate per id).
+    pub fn milestones_at_week(&self, week: WeekId) -> Vec<MilestoneId> {
+        let mut v: Vec<MilestoneId> = self
+            .milestones
+            .iter()
+            .filter(|(_, w)| **w == week)
+            .map(|(&id, _)| id)
+            .collect();
+        v.sort();
+        v
     }
 }

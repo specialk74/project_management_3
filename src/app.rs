@@ -5,6 +5,7 @@ use crate::{
     categories::Categories,
     date_utils::dates::get_default_weeks,
     dev_utils::devs::Devs,
+    milestones::Milestones,
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
     single_effort_utils::sinlge_effort::Effort,
@@ -34,6 +35,8 @@ pub struct App {
     #[serde(default)]
     pub categories: Categories,
     #[serde(default)]
+    pub milestones: Milestones,
+    #[serde(default)]
     pub holidays: Vec<WeekId>,
     #[serde(skip)]
     pub sovra: HashMap<(WeekId, WorkerId), Effort>,
@@ -51,6 +54,7 @@ impl App {
             devs: Devs::new(),
             projects: Projects::new(),
             categories: Categories::new(),
+            milestones: Milestones::new(),
             holidays: Vec::new(),
             sovra: HashMap::new(),
         }

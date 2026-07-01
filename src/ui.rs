@@ -17,6 +17,7 @@ use crate::project_utils::project::{Enable, ProjectId};
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_style::*;
+use crate::milestones::MilestoneId;
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
@@ -145,6 +146,10 @@ pub struct UiState {
     new_worker: String,
     new_dev: String,
     new_category: String,
+    new_milestone: String,
+    // finestra di gestione milestone (elenco, colore, elimina)
+    show_milestone_manager: bool,
+    milestone_manager_just_opened: bool,
     // buffer di editing per nomi progetto ed effort dev
     name_buffers: HashMap<usize, String>,
     effort_buffers: HashMap<(usize, usize), String>,
@@ -267,6 +272,23 @@ enum Action {
     },
     MoveProjectDown {
         proj: ProjectId,
+    },
+    CreateMilestone(String),
+    SetMilestoneColor {
+        milestone: MilestoneId,
+        color: u32,
+    },
+    DeleteMilestone {
+        milestone: MilestoneId,
+    },
+    AddProjectMilestone {
+        proj: ProjectId,
+        milestone: MilestoneId,
+        week: WeekId,
+    },
+    RemoveProjectMilestone {
+        proj: ProjectId,
+        milestone: MilestoneId,
     },
 }
 
@@ -393,6 +415,7 @@ impl eframe::App for PjmApp {
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
+            milestone_manager_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
         }
 
@@ -713,6 +736,32 @@ impl PjmApp {
                 if self.app.projects.move_down(proj) {
                     self.mark_changed();
                 }
+            }
+            Action::CreateMilestone(name) => {
+                self.app.milestones.add(&name);
+                self.mark_changed();
+            }
+            Action::SetMilestoneColor { milestone, color } => {
+                self.app.milestones.set_color(milestone, color);
+                self.mark_changed();
+            }
+            Action::DeleteMilestone { milestone } => {
+                self.app.milestones.del(milestone);
+                // toglie ogni collocazione dai progetti
+                self.app.projects.purge_milestone(milestone);
+                self.mark_changed();
+            }
+            Action::AddProjectMilestone {
+                proj,
+                milestone,
+                week,
+            } => {
+                self.app.projects.add_project_milestone(proj, milestone, week);
+                self.mark_changed();
+            }
+            Action::RemoveProjectMilestone { proj, milestone } => {
+                self.app.projects.remove_project_milestone(proj, milestone);
+                self.mark_changed();
             }
         }
     }
@@ -1071,6 +1120,23 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             if !state.new_category.is_empty() {
                 actions.push(Action::AddCategory(std::mem::take(&mut state.new_category)));
             }
+        }
+
+        let me = ui.add(
+            egui::TextEdit::singleline(&mut state.new_milestone)
+                .hint_text("Nome milestone…")
+                .desired_width(120.0),
+        );
+        if (me.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            || ui.button("+ Milestone").clicked()
+        {
+            if !state.new_milestone.is_empty() {
+                actions.push(Action::CreateMilestone(std::mem::take(&mut state.new_milestone)));
+            }
+        }
+        if ui.button("Milestone ▼").clicked() {
+            state.show_milestone_manager = !state.show_milestone_manager;
+            state.milestone_manager_just_opened = state.show_milestone_manager;
         }
 
         ui.separator();
@@ -1500,6 +1566,77 @@ fn project_filter_window(
     if !open || (!just_opened && clicked_outside) {
         state.show_project_filter = false;
     }
+}
+
+// ── Gestione milestone (Milestone ▼) ────────────────────────────────────────
+
+/// Colore `u32` 0xRRGGBB → `Color32` grezzo (senza filtro B/N, per l'editing).
+fn u32_to_color(rgb: u32) -> Color32 {
+    Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8)
+}
+
+fn color_to_u32(c: Color32) -> u32 {
+    ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32)
+}
+
+fn milestone_manager_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_milestone_manager {
+        return;
+    }
+    let milestones = app.milestones.list();
+    let mut open = true;
+    let just_opened = state.milestone_manager_just_opened;
+    state.milestone_manager_just_opened = false;
+
+    let resp = egui::Window::new("Milestone")
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(120.0, 40.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_min_width(title_width(ui, "Milestone").max(220.0));
+            if milestones.is_empty() {
+                ui.label("Nessuna milestone. Creane una dalla toolbar.");
+            }
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .show(ui, |ui| {
+                    for (id, name, color) in &milestones {
+                        ui.horizontal(|ui| {
+                            let mut col = u32_to_color(*color);
+                            if ui.color_edit_button_srgba(&mut col).changed() {
+                                actions.push(Action::SetMilestoneColor {
+                                    milestone: *id,
+                                    color: color_to_u32(col),
+                                });
+                            }
+                            ui.label(name);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("🗑").on_hover_text("Elimina milestone").clicked() {
+                                        actions.push(Action::DeleteMilestone { milestone: *id });
+                                    }
+                                },
+                            );
+                        });
+                    }
+                });
+        });
+
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    // niente auto-chiusura al click-fuori: il color picker apre popup esterni.
+    if !open {
+        state.show_milestone_manager = false;
+    }
+    let _ = (just_opened, clicked_outside);
 }
 
 // ── Filtro progetti chiusi (Closed ▼) ───────────────────────────────────────
@@ -2749,6 +2886,68 @@ fn draw_dev_cells(
         if !compact && *w == state.this_week {
             ui.painter()
                 .rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+        }
+
+        // ── Milestone: tinta colonna col colore della milestone + tooltip;
+        //    tasto destro sulla riga in alto per aggiungere/rimuovere. ──
+        let ms_here = app
+            .projects
+            .project_milestones_at_week(proj, WeekId(*w as usize));
+        if let Some(first) = ms_here.first() {
+            if let Some(color) = app.milestones.get_color(*first) {
+                ui.painter().rect_filled(col_rect, 0.0, from_hex(color));
+            }
+        }
+        {
+            let top = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
+            let mut resp = ui.interact(
+                top,
+                egui::Id::new(("msrow", proj.0, dev.0, *w)),
+                Sense::click(),
+            );
+            if !ms_here.is_empty() {
+                let names: Vec<String> = ms_here
+                    .iter()
+                    .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
+                    .collect();
+                resp = resp.on_hover_text(names.join(", "));
+            }
+            let week_id = WeekId(*w as usize);
+            resp.context_menu(|ui| {
+                ui.label("Aggiungi milestone qui:");
+                let all = app.milestones.list();
+                if all.is_empty() {
+                    ui.label("(nessuna — creane dalla toolbar)");
+                }
+                for (id, name, color) in &all {
+                    let here = ms_here.contains(id);
+                    let mark = if here { "● " } else { "" };
+                    let label =
+                        egui::RichText::new(format!("{mark}{name}")).color(u32_to_color(*color));
+                    if ui.button(label).clicked() {
+                        actions.push(Action::AddProjectMilestone {
+                            proj,
+                            milestone: *id,
+                            week: week_id,
+                        });
+                        ui.close();
+                    }
+                }
+                if !ms_here.is_empty() {
+                    ui.separator();
+                    for m in &ms_here {
+                        if let Some(name) = app.milestones.get_name(*m) {
+                            if ui.button(format!("Rimuovi: {name}")).clicked() {
+                                actions.push(Action::RemoveProjectMilestone {
+                                    proj,
+                                    milestone: *m,
+                                });
+                                ui.close();
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         let week_total = app
