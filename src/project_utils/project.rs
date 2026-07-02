@@ -19,9 +19,18 @@ pub struct ProjectId(pub usize);
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub struct Enable(pub bool);
 
+/// Default di `enable`: abilitato. Usato quando il campo non è serializzato
+/// (è uno stato di filtro transitorio, ricalcolato da `closed` al caricamento).
+fn enable_default() -> Enable {
+    Enable(true)
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Project {
     info: String,
+    // `enable` è lo stato del filtro "Progetti ▼": puramente di visualizzazione,
+    // non va salvato né riletto dal file. Al load viene ricalcolato da `closed`.
+    #[serde(skip, default = "enable_default")]
     enable: Enable,
     dev_id: HashMap<DevId, SingleDev>,
     #[serde(default)]
@@ -255,5 +264,23 @@ impl Project {
             .collect();
         v.sort();
         v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enable_not_serialized_and_defaults_true() {
+        let p = Project::new("demo");
+        let s = ron::ser::to_string(&p).unwrap();
+        assert!(!s.contains("enable"), "enable non deve essere serializzato: {s}");
+
+        // File "vecchio" che contiene ancora enable:(false): il campo (skip) va
+        // ignorato e il valore ripristinato al default (abilitato).
+        let old = s.replacen('(', "(enable:(false),", 1);
+        let back: Project = ron::from_str(&old).expect("il vecchio formato deve caricarsi");
+        assert!(back.get_enable().0, "enable deve tornare al default (abilitato)");
     }
 }

@@ -676,8 +676,9 @@ impl PjmApp {
                 self.mark_changed();
             }
             Action::SetProjectEnabled { proj, enabled } => {
+                // Filtro di sola visualizzazione: non persistito, non marca come
+                // modificato (come il filtro per worker).
                 self.app.projects.set_enable(proj, Enable(enabled));
-                self.mark_changed();
             }
             Action::SetAllProjectsEnabled { enabled } => {
                 let ids: Vec<_> = self.app.projects.list().iter().map(|(id, _)| *id).collect();
@@ -688,7 +689,7 @@ impl PjmApp {
                     }
                     self.app.projects.set_enable(id, Enable(enabled));
                 }
-                self.mark_changed();
+                // Filtro di sola visualizzazione: non marca come modificato.
             }
             Action::SetProjectClosed { proj, closed } => {
                 self.app.projects.set_closed(proj, closed);

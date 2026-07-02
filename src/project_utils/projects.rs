@@ -293,6 +293,15 @@ impl Projects {
             .map_or(false, |p| p.is_closed())
     }
 
+    /// Ricalcola lo stato `enable` (filtro) di tutti i progetti a partire da
+    /// `closed`: aperti = abilitati, chiusi = disabilitati. Chiamato dopo il
+    /// caricamento, dato che `enable` non è persistito.
+    pub fn reset_enable_from_closed(&mut self) {
+        for p in self.projects.values_mut() {
+            p.set_enable(Enable(!p.is_closed()));
+        }
+    }
+
     pub fn set_closed(&mut self, project_id: ProjectId, closed: bool) {
         if let Some(p) = self.projects.get_mut(&project_id) {
             p.set_closed(closed);

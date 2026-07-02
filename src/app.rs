@@ -69,6 +69,8 @@ impl App {
         let content = std::fs::read_to_string(path)?;
         let mut app: App = ron::from_str(&content)?;
         app.recompute_week_range();
+        // `enable` è un filtro transitorio non persistito: ricalcolalo da `closed`.
+        app.projects.reset_enable_from_closed();
         Ok(app)
     }
 
