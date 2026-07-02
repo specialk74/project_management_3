@@ -102,6 +102,21 @@ impl SingleDev {
         weeks
     }
 
+    /// Prima e ultima settimana in cui il dev ha effort registrato (>0).
+    /// `None` se non c'è alcun effort. Usato per la barra Gantt nel PDF.
+    pub fn effort_span(&self) -> Option<(WeekId, WeekId)> {
+        let mut min: Option<WeekId> = None;
+        let mut max: Option<WeekId> = None;
+        for (week, s) in self.weeks.iter() {
+            if s.effort_tot().0 == 0 {
+                continue;
+            }
+            min = Some(min.map_or(*week, |m| m.min(*week)));
+            max = Some(max.map_or(*week, |m| m.max(*week)));
+        }
+        Some((min?, max?))
+    }
+
     pub fn set_note(&mut self, week: WeekId, id_worker: WorkerId, note: &str) {
         if let Some(single) = self.weeks.get_mut(&week) {
             single.set_note(id_worker, note);
