@@ -41,11 +41,11 @@ const CHART_X1: f32 = 279.0;
 
 // Asse dei mesi (banda orizzontale). Tenuto basso per lasciare ampio spazio
 // alle bandierine sopra (usando lo spazio libero sotto le righe dev).
-const AXIS_TOP: f32 = 140.0;
-const AXIS_BOT: f32 = 132.0;
+const AXIS_TOP: f32 = 130.0;
+const AXIS_BOT: f32 = 122.0;
 
 // Zona righe dev (tra l'asse e il footer).
-const ROWS_TOP: f32 = 129.0;
+const ROWS_TOP: f32 = 119.0;
 const ROWS_BOT: f32 = 26.0;
 
 // Footer (banda grigia + data creazione).
@@ -365,8 +365,10 @@ fn page_ops(
     if !tripletta.is_empty() {
         ops.extend(text_left(fonts, X_LABEL, 200.0, tripletta, 16.0, true, BLACK));
     }
-    let mut y = 193.0;
-    for l in wrap_multiline(descr, 110).into_iter().take(2) {
+    // Descrizione completa: ogni riga logica (a-capo espliciti) mandata a capo
+    // automaticamente. Nessun limite di righe, così il testo non viene troncato.
+    let mut y = if tripletta.is_empty() { 200.0 } else { 193.0 };
+    for l in wrap_multiline(descr, 120) {
         ops.extend(text_left(fonts, X_LABEL, y, &l, 9.0, false, TEXT_GRAY));
         y -= 5.0;
     }
@@ -471,11 +473,16 @@ fn page_ops(
         pole_tops.push(pole);
     }
 
+    // Prima passata: le aste, in secondo piano, così non coprono le etichette
+    // delle bandierine vicine.
+    for (i, f) in flags.iter().enumerate() {
+        let x = x_of(f.day);
+        ops.extend(line(x, AXIS_TOP, x, pole_tops[i], 1.0, f.color));
+    }
+    // Seconda passata: pennant ed etichette, in primo piano.
     for (i, f) in flags.iter().enumerate() {
         let x = x_of(f.day);
         let pole_top = pole_tops[i];
-        // Asta colorata dall'asse fino alla base della bandierina.
-        ops.extend(line(x, AXIS_TOP, x, pole_top, 1.0, f.color));
         // Pennant: triangolo a destra dell'asta.
         ops.extend(poly_fill(
             &[(x, pole_top), (x + 7.0, pole_top - 2.0), (x, pole_top - 4.0)],
