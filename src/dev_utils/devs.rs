@@ -5,7 +5,7 @@ use crate::dev_utils::dev::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Devs {
     last_id: DevId,
     dev_id: HashMap<DevId, Dev>,

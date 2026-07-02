@@ -29,14 +29,14 @@ const PALETTE: [u32; 16] = [
     0xD81B60, // rosa
 ];
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Milestone {
     pub name: String,
     /// Colore associato, formato 0xRRGGBB.
     pub color: u32,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 pub struct Milestones {
     last_id: MilestoneId,
     milestones: HashMap<MilestoneId, Milestone>,

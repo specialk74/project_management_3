@@ -7,6 +7,7 @@ mod pdf_export;
 mod project_utils;
 mod single_dev_utils;
 mod single_effort_utils;
+mod sync_merge;
 mod ui;
 mod ui_style;
 mod workers_utils;

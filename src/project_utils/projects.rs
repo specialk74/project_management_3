@@ -14,7 +14,7 @@ use crate::{
     workers_utils::worker::WorkerId,
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Projects {
     last_id: ProjectId,
     projects: HashMap<ProjectId, Project>,
@@ -279,6 +279,21 @@ impl Projects {
 
     pub fn get_single_dev(&self, project_id: ProjectId, dev_id: DevId) -> Option<&SingleDev> {
         self.projects.get(&project_id)?.get_dev_id(&dev_id)
+    }
+
+    /// Accesso al progetto (per il merge a 3 vie).
+    pub fn get(&self, id: ProjectId) -> Option<&Project> {
+        self.projects.get(&id)
+    }
+
+    /// Tutti i ProjectId presenti (non ordinati).
+    pub fn ids(&self) -> Vec<ProjectId> {
+        self.projects.keys().copied().collect()
+    }
+
+    /// Inserisce o sostituisce un progetto (usato dal merge).
+    pub fn set_project(&mut self, id: ProjectId, project: Project) {
+        self.projects.insert(id, project);
     }
 
     pub fn get_enable(&self, project_id: &ProjectId) -> Enable {

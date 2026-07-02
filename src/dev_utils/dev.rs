@@ -30,7 +30,7 @@ fn color_for_idx(idx: DevId) -> (usize, usize) {
     (bg, font)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Dev {
     name: String,
     #[serde(default)]

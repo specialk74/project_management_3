@@ -8,7 +8,7 @@ use crate::workers_utils::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Workers {
     last_id: WorkerId,
     worker_id: HashMap<WorkerId, Worker>,

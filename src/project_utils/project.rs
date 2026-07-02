@@ -25,7 +25,7 @@ fn enable_default() -> Enable {
     Enable(true)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Project {
     info: String,
     // `enable` è lo stato del filtro "Progetti ▼": puramente di visualizzazione,
@@ -193,6 +193,35 @@ impl Project {
 
     pub fn set_enable(&mut self, enable: Enable) {
         self.enable = enable;
+    }
+
+    /// Mappa dev → SingleDev (per il merge a 3 vie).
+    pub fn devs(&self) -> &HashMap<DevId, SingleDev> {
+        &self.dev_id
+    }
+
+    /// Sostituisce l'intera mappa dei dev (usato dal merge).
+    pub fn set_devs(&mut self, devs: HashMap<DevId, SingleDev>) {
+        self.dev_id = devs;
+    }
+
+    /// Uguaglianza dei soli "dati generali" del progetto (tutto tranne i dev e il
+    /// campo `enable`, che è un filtro transitorio). Usata dal merge per capire se
+    /// l'intestazione del progetto è stata modificata.
+    pub fn header_eq(&self, o: &Project) -> bool {
+        self.info == o.info
+            && self.start_week == o.start_week
+            && self.end_week == o.end_week
+            && self.tripletta == o.tripletta
+            && self.category == o.category
+            && self.order == o.order
+            && self.closed == o.closed
+            && self.milestones == o.milestones
+    }
+
+    /// Uguaglianza di contenuto (dati generali + dev), ignorando `enable`.
+    pub fn content_eq(&self, o: &Project) -> bool {
+        self.header_eq(o) && self.dev_id == o.dev_id
     }
 
     pub fn is_closed(&self) -> bool {

@@ -9,7 +9,7 @@ use crate::{
     workers_utils::worker::{WORKER_ID_ZERO, WorkerId},
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct SingleEffortWeek {
     pub worker_id: HashMap<WorkerId, SingleEffort>,
 }

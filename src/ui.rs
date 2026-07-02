@@ -13,11 +13,11 @@ use crate::date_utils::dates::{
     days_to_local, local_to_days, parse_date_str, primo_giorno_settimana_corrente,
 };
 use crate::dev_utils::dev::DevId;
+use crate::milestones::MilestoneId;
 use crate::project_utils::project::{Enable, ProjectId};
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_style::*;
-use crate::milestones::MilestoneId;
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
@@ -99,10 +99,31 @@ enum Popup {
     },
 }
 
+/// Conflitto in sospeso: il file su disco è cambiato mentre c'erano modifiche
+/// locali che toccano gli stessi progetti/dev. L'utente sceglie via dialog.
+struct PendingReload {
+    /// Stato del file su disco (versione del collega).
+    theirs: App,
+    /// Merge con la mia versione vincente sui punti in conflitto.
+    merged: App,
+    /// Descrizioni dei conflitti da mostrare.
+    conflicts: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
     changed: bool,
+    // ── Rilevamento modifiche esterne al file condiviso (es. OneDrive) ──
+    // Snapshot RON dell'ultimo stato noto su disco (antenato comune per il merge).
+    base_ron: String,
+    // mtime dell'ultimo stato di disco osservato; None finché non inizializzato.
+    file_mtime: Option<std::time::SystemTime>,
+    // conflitto in sospeso in attesa di scelta utente.
+    pending_reload: Option<PendingReload>,
+    // messaggio (persistente) mostrato in toolbar dopo un aggiornamento esterno
+    // applicato in automatico; resta finché non si salva o non lo si chiude.
+    external_notice: Option<String>,
     this_week: i32,
     scroll_x: f32,
     scroll_y: f32,
@@ -346,10 +367,16 @@ impl PjmApp {
             _ => None,
         };
 
+        // Stato iniziale per il rilevamento di modifiche esterne al file.
+        let base_ron = app.to_ron_string();
+        let file_mtime = file_mtime_of(&current_file);
+
         Self {
             app,
             ui: UiState {
                 current_file,
+                base_ron,
+                file_mtime,
                 this_week,
                 selected_year: today.year(),
                 scroll_x: pending_scroll_x.unwrap_or(0.0),
@@ -358,6 +385,16 @@ impl PjmApp {
             },
         }
     }
+}
+
+/// mtime del file, se leggibile.
+fn file_mtime_of(path: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Testo di notifica con orario corrente (per gli aggiornamenti esterni).
+fn notice_now(msg: &str) -> String {
+    format!("🔄 {msg} ({})", chrono::Local::now().format("%H:%M"))
 }
 
 impl eframe::App for PjmApp {
@@ -425,6 +462,8 @@ impl eframe::App for PjmApp {
         }
 
         let ctx = ui.ctx().clone();
+        self.check_external_change(&ctx);
+        self.conflict_window(&ctx);
         self.handle_exit(&ctx);
     }
 }
@@ -528,11 +567,164 @@ impl PjmApp {
         self.ui.changed = true;
     }
 
+    /// Aggiorna lo snapshot "base" e l'mtime dopo che lo stato è tornato
+    /// coerente col disco (salvataggio o apertura).
+    fn sync_baseline(&mut self) {
+        self.ui.base_ron = self.app.to_ron_string();
+        self.ui.file_mtime = file_mtime_of(&self.ui.current_file);
+    }
+
+    /// Adotta integralmente lo stato del disco (ricarica automatica: nessuna
+    /// modifica locale da preservare).
+    fn adopt_disk(&mut self, mut theirs: App, mtime: std::time::SystemTime) {
+        theirs.compute_sovra();
+        self.ui.base_ron = theirs.to_ron_string();
+        self.app = theirs;
+        self.ui.file_mtime = Some(mtime);
+        self.ui.changed = false;
+        self.ui.name_buffers.clear();
+        self.ui.effort_buffers.clear();
+        self.ui.editing = None;
+        self.ui.external_notice = Some(notice_now("File changed..."));
+    }
+
+    /// Poll periodico dell'mtime del file condiviso: se un collega lo ha
+    /// modificato, ricarica (nessuna modifica locale) o fonde a 3 vie
+    /// (modifiche locali). Vedi modulo `sync_merge`.
+    fn check_external_change(&mut self, ctx: &egui::Context) {
+        // Continua a fare polling anche senza interazione utente.
+        ctx.request_repaint_after(std::time::Duration::from_secs(2));
+
+        // Conflitto già in attesa di scelta → non toccare nulla.
+        if self.ui.pending_reload.is_some() {
+            return;
+        }
+
+        let path = self.ui.current_file.clone();
+        let Some(disk_mtime) = file_mtime_of(&path) else {
+            return;
+        };
+        match self.ui.file_mtime {
+            None => {
+                self.ui.file_mtime = Some(disk_mtime);
+                return;
+            }
+            Some(known) if known == disk_mtime => return,
+            _ => {}
+        }
+
+        // Il file è cambiato: leggilo. Se lettura/parse falliscono (scrittura
+        // parziale di OneDrive) non aggiorno l'mtime → riprovo al prossimo giro.
+        let Ok(theirs) = App::load(&path) else {
+            return;
+        };
+
+        // Nessuna modifica locale → ricarica automatica.
+        if !self.ui.changed {
+            self.adopt_disk(theirs, disk_mtime);
+            return;
+        }
+
+        // Modifiche locali → merge a 3 vie con l'antenato comune.
+        let Ok(base) = App::from_ron_str(&self.ui.base_ron) else {
+            self.adopt_disk(theirs, disk_mtime);
+            return;
+        };
+        let dev_names: HashMap<DevId, String> = self.app.devs.list().into_iter().collect();
+        let name_fn = |d: DevId| {
+            dev_names
+                .get(&d)
+                .cloned()
+                .unwrap_or_else(|| "?".to_string())
+        };
+        let outcome = crate::sync_merge::merge(&base, &self.app, theirs.clone(), &name_fn);
+
+        if outcome.conflicts.is_empty() {
+            // Fusione pulita: applico e sposto la base sul disco. Restano le mie
+            // modifiche non salvate → `changed` resta true.
+            self.app = outcome.app;
+            self.ui.base_ron = theirs.to_ron_string();
+            self.ui.file_mtime = Some(disk_mtime);
+            self.ui.external_notice = Some(notice_now("Uniti i cambiamenti di un collega"));
+        } else {
+            self.ui.file_mtime = Some(disk_mtime);
+            self.ui.pending_reload = Some(PendingReload {
+                theirs,
+                merged: outcome.app,
+                conflicts: outcome.conflicts,
+            });
+        }
+    }
+
+    /// Finestra di scelta quando ci sono conflitti tra le mie modifiche e quelle
+    /// del collega.
+    fn conflict_window(&mut self, ctx: &egui::Context) {
+        let conflicts = match &self.ui.pending_reload {
+            Some(p) => p.conflicts.clone(),
+            None => return,
+        };
+        let mut choice: Option<bool> = None; // true = tieni le mie, false = scarta
+        egui::Window::new("File modificato da un collega")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label(
+                    "Il file è stato modificato esternamente e ci sono conflitti con le tue \
+                     modifiche non salvate:",
+                );
+                ui.add_space(4.0);
+                for c in &conflicts {
+                    ui.label(format!("•  {c}"));
+                }
+                ui.add_space(8.0);
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button("Mantieni le mie").clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button("Ricarica (scarta le mie)").clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+
+        match choice {
+            Some(true) => {
+                if let Some(p) = self.ui.pending_reload.take() {
+                    self.app = p.merged; // sovra già ricalcolata nel merge
+                    self.ui.base_ron = p.theirs.to_ron_string();
+                    self.ui.changed = true;
+                    self.ui.external_notice = Some(notice_now(
+                        "Modifiche del collega unite (conflitti: tenute le tue)",
+                    ));
+                }
+            }
+            Some(false) => {
+                if let Some(p) = self.ui.pending_reload.take() {
+                    let mut theirs = p.theirs;
+                    theirs.compute_sovra();
+                    self.ui.base_ron = theirs.to_ron_string();
+                    self.app = theirs;
+                    self.ui.changed = false;
+                    self.ui.name_buffers.clear();
+                    self.ui.effort_buffers.clear();
+                    self.ui.editing = None;
+                    self.ui.external_notice =
+                        Some(notice_now("File Changed (your change discarded)"));
+                }
+            }
+            None => {}
+        }
+    }
+
     fn apply(&mut self, a: Action) {
         match a {
             Action::Save => {
                 self.app.save(&self.ui.current_file);
                 self.ui.changed = false;
+                self.sync_baseline();
+                self.ui.external_notice = None;
             }
             Action::Open => {
                 if let Some(path_buf) = rfd::FileDialog::new()
@@ -549,6 +741,7 @@ impl PjmApp {
                             self.ui.editing = None;
                             self.app.compute_sovra();
                             self.ui.changed = false;
+                            self.sync_baseline();
                         }
                         Err(e) => eprintln!("Errore apertura '{path}': {e}"),
                     }
@@ -773,7 +966,9 @@ impl PjmApp {
                 milestone,
                 week,
             } => {
-                self.app.projects.add_project_milestone(proj, milestone, week);
+                self.app
+                    .projects
+                    .add_project_milestone(proj, milestone, week);
                 self.mark_changed();
             }
             Action::RemoveProjectMilestone { proj, milestone } => {
@@ -1148,7 +1343,9 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             || ui.button("+ Milestone").clicked()
         {
             if !state.new_milestone.is_empty() {
-                actions.push(Action::CreateMilestone(std::mem::take(&mut state.new_milestone)));
+                actions.push(Action::CreateMilestone(std::mem::take(
+                    &mut state.new_milestone,
+                )));
             }
         }
         if ui.button("Milestone ▼").clicked() {
@@ -1208,6 +1405,18 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 .on_hover_text(&state.current_file);
             ui.separator();
             ui.weak(format!("v{}", env!("CARGO_PKG_VERSION")));
+
+            // Notifica di aggiornamento esterno applicato in automatico.
+            if let Some(msg) = state.external_notice.clone() {
+                ui.separator();
+                if ui.small_button("✕").on_hover_text("Nascondi").clicked() {
+                    state.external_notice = None;
+                }
+                ui.colored_label(
+                    g(egui::Color32::from_rgb(90, 200, 250)),
+                    egui::RichText::new(msg).strong(),
+                );
+            }
         });
     });
 }
@@ -1594,7 +1803,11 @@ fn project_filter_window(
 
 /// Colore `u32` 0xRRGGBB → `Color32` grezzo (senza filtro B/N, per l'editing).
 fn u32_to_color(rgb: u32) -> Color32 {
-    Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8)
+    Color32::from_rgb(
+        ((rgb >> 16) & 0xFF) as u8,
+        ((rgb >> 8) & 0xFF) as u8,
+        (rgb & 0xFF) as u8,
+    )
 }
 
 fn color_to_u32(c: Color32) -> u32 {
@@ -1641,7 +1854,8 @@ fn milestone_manager_window(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui.button("🗑").on_hover_text("Elimina milestone").clicked() {
+                                    if ui.button("🗑").on_hover_text("Elimina milestone").clicked()
+                                    {
                                         actions.push(Action::DeleteMilestone { milestone: *id });
                                     }
                                 },
@@ -2482,7 +2696,8 @@ fn draw_right_footer(
                     .selectable_label(cur_status == Some(WeekStatus::Ferie), "Ferie")
                     .clicked()
                 {
-                    let status = (cur_status != Some(WeekStatus::Ferie)).then_some(WeekStatus::Ferie);
+                    let status =
+                        (cur_status != Some(WeekStatus::Ferie)).then_some(WeekStatus::Ferie);
                     actions.push(Action::SetWorkerWeekStatus {
                         worker: *wid,
                         week: w as usize,

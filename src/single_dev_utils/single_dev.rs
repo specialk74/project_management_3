@@ -18,7 +18,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct SingleDev {
     weeks: HashMap<WeekId, SingleEffortWeek>,
     effort: Effort,

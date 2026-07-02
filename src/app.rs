@@ -21,7 +21,7 @@ fn default_projects() -> Projects {
     Projects::new()
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct App {
     pub start_week: WeekId,
     #[serde(skip)]
@@ -67,7 +67,19 @@ impl App {
 
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
-        let mut app: App = ron::from_str(&content)?;
+        Self::from_ron_str(&content)
+    }
+
+    /// Serializza lo stato in stringa RON (stesso formato di `save`). Usato per
+    /// lo snapshot "base" del rilevamento modifiche esterne.
+    pub fn to_ron_string(&self) -> String {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap_or_default()
+    }
+
+    /// Costruisce un `App` da una stringa RON, ricalcolando i campi derivati
+    /// (range settimane, `enable` dai `closed`).
+    pub fn from_ron_str(s: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut app: App = ron::from_str(s)?;
         app.recompute_week_range();
         // `enable` è un filtro transitorio non persistito: ricalcolalo da `closed`.
         app.projects.reset_enable_from_closed();
