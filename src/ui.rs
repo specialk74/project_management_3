@@ -158,6 +158,8 @@ pub struct UiState {
     // 0 = tutti gli effort, 1 = solo nulli, 2 = solo >= 40
     effort_filter_mode: i32,
     compact_mode: bool,
+    // footer collassato tramite la maniglia col triangolino (indipendente da compact_mode)
+    footer_hidden: bool,
     // resa in bianco/nero (senza colori)
     bw_mode: bool,
     // selettori per i totali-anno per dev nel footer
@@ -437,10 +439,23 @@ impl eframe::App for PjmApp {
                 .show_inside(ui, |ui| header(ui, app, state));
 
             // Footer (worker / sovra) — nascosto in vista compatta.
+            // La maniglia col triangolino permette di collassarlo/riaprirlo.
             if !state.compact_mode {
-                egui::TopBottomPanel::bottom("footer")
-                    .frame(egui::Frame::NONE.fill(BG_DARK))
-                    .show_inside(ui, |ui| footer(ui, app, state, &mut actions));
+                if state.footer_hidden {
+                    // Solo la maniglia: triangolino verso l'alto per riaprire.
+                    egui::TopBottomPanel::bottom("footer_handle")
+                        .frame(egui::Frame::NONE.fill(BG_DARK))
+                        .show_inside(ui, |ui| footer_handle(ui, state));
+                } else {
+                    egui::TopBottomPanel::bottom("footer")
+                        .frame(egui::Frame::NONE.fill(BG_DARK))
+                        .show_inside(ui, |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            // Maniglia (triangolino verso il basso) in cima al footer.
+                            footer_handle(ui, state);
+                            footer(ui, app, state, &mut actions);
+                        });
+                }
             }
 
             egui::CentralPanel::default()
@@ -2282,6 +2297,56 @@ fn footer_workers(
         .filter(|(id, _)| !app.workers.is_hidden_in_footer(*id))
         .filter(|(_, name)| worker_shown(filter, name))
         .collect()
+}
+
+/// Maniglia sottile e cliccabile, larga quanto il footer, con un triangolino
+/// giallo centrato. Quando il footer è visibile il triangolo punta in basso
+/// (click = nascondi); quando è nascosto punta in alto (click = mostra).
+fn footer_handle(ui: &mut egui::Ui, state: &mut UiState) {
+    const HANDLE_H: f32 = 14.0;
+    let hidden = state.footer_hidden;
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, HANDLE_H), Sense::click());
+    if resp.clicked() {
+        state.footer_hidden = !hidden;
+    }
+    // Sfondo, con leggero risalto al passaggio del mouse.
+    let bg = if resp.hovered() {
+        g(Color32::from_rgb(0x2e, 0x2e, 0x2e))
+    } else {
+        BG_DARK
+    };
+    ui.painter().rect_filled(rect, 0.0, bg);
+    // Triangolino centrato orizzontalmente.
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    const HW: f32 = 7.0; // metà base
+    const HH: f32 = 4.0; // metà altezza
+    let pts = if hidden {
+        // punta verso l'alto → riapre il footer
+        vec![
+            egui::pos2(cx, cy - HH),
+            egui::pos2(cx - HW, cy + HH),
+            egui::pos2(cx + HW, cy + HH),
+        ]
+    } else {
+        // punta verso il basso → nasconde il footer
+        vec![
+            egui::pos2(cx - HW, cy - HH),
+            egui::pos2(cx + HW, cy - HH),
+            egui::pos2(cx, cy + HH),
+        ]
+    };
+    ui.painter()
+        .add(egui::Shape::convex_polygon(pts, g(START_STOP), Stroke::NONE));
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.on_hover_text(if hidden {
+        "Mostra il footer"
+    } else {
+        "Nascondi il footer"
+    });
 }
 
 fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
