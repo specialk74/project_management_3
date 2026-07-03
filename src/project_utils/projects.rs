@@ -8,7 +8,7 @@ use crate::{
     categories::CategoryId,
     dev_utils::dev::DevId,
     milestones::MilestoneId,
-    project_utils::project::{Enable, Project, ProjectId},
+    project_utils::project::{Enable, OverflowResolution, Project, ProjectId},
     single_dev_utils::single_dev::{SingleDev, WeekId},
     single_effort_utils::sinlge_effort::Effort,
     workers_utils::worker::WorkerId,
@@ -194,6 +194,54 @@ impl Projects {
             .get(&id)
             .map(|p| p.milestones_at_week(week))
             .unwrap_or_default()
+    }
+
+    /// Dev del progetto con almeno una settimana di effort.
+    pub fn devs_with_effort(&self, id: ProjectId) -> Vec<DevId> {
+        self.projects.get(&id).map(|p| p.devs_with_effort()).unwrap_or_default()
+    }
+
+    /// Blocco contiguo di settimane con effort di un dev, attorno a `week`.
+    pub fn dev_contiguous_block(&self, id: ProjectId, dev: DevId, week: WeekId) -> Vec<WeekId> {
+        self.projects
+            .get(&id)
+            .map(|p| p.dev_contiguous_block(dev, week))
+            .unwrap_or_default()
+    }
+
+    /// Tutte le settimane con effort di un dev del progetto.
+    pub fn dev_effort_weeks(&self, id: ProjectId, dev: DevId) -> Vec<WeekId> {
+        self.projects
+            .get(&id)
+            .map(|p| p.dev_effort_weeks(dev))
+            .unwrap_or_default()
+    }
+
+    /// Lato di sforamento (`Some(true)`=fine, `Some(false)`=inizio) per uno
+    /// spostamento di `delta_weeks`, oppure `None` se non sfora.
+    pub fn move_overflow_side(
+        &self,
+        id: ProjectId,
+        moves: &[(DevId, Vec<WeekId>)],
+        delta_weeks: i64,
+    ) -> Option<bool> {
+        self.projects
+            .get(&id)
+            .and_then(|p| p.move_overflow_side(moves, delta_weeks))
+    }
+
+    /// Sposta blocchi di effort (ed eventuali milestone) di `delta_weeks`.
+    pub fn move_effort(
+        &mut self,
+        id: ProjectId,
+        moves: &[(DevId, Vec<WeekId>)],
+        delta_weeks: i64,
+        milestones: &[MilestoneId],
+        resolution: OverflowResolution,
+    ) {
+        if let Some(p) = self.projects.get_mut(&id) {
+            p.move_effort(moves, delta_weeks, milestones, resolution);
+        }
     }
 
     pub fn add_dev(&mut self, id_project: ProjectId, id_dev: DevId) {

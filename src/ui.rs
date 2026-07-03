@@ -14,7 +14,7 @@ use crate::date_utils::dates::{
 };
 use crate::dev_utils::dev::DevId;
 use crate::milestones::MilestoneId;
-use crate::project_utils::project::{Enable, ProjectId};
+use crate::project_utils::project::{Enable, OverflowResolution, ProjectId};
 use crate::single_dev_utils::single_dev::WeekId;
 use crate::single_effort_utils::sinlge_effort::Effort;
 use crate::ui_style::*;
@@ -99,6 +99,32 @@ enum Popup {
     },
 }
 
+/// Flusso multi-passo per lo spostamento di effort (menù "Sposta").
+enum MoveDialog {
+    /// Selezione dei dev da spostare (solo per "Sposta devs").
+    SelectDevs {
+        proj: ProjectId,
+        candidates: Vec<(DevId, String)>,
+        selected: HashSet<DevId>,
+    },
+    /// Numero di settimane + milestone da trascinare insieme.
+    Params {
+        proj: ProjectId,
+        moves: Vec<(DevId, Vec<WeekId>)>,
+        weeks_text: String,
+        milestones: Vec<(MilestoneId, String, bool)>,
+    },
+    /// Conferma di uno sforamento del confine di progetto.
+    Overflow {
+        proj: ProjectId,
+        moves: Vec<(DevId, Vec<WeekId>)>,
+        delta: i64,
+        milestones: Vec<MilestoneId>,
+        /// true = sfora la fine (delta>0); false = sfora l'inizio (delta<0).
+        end_side: bool,
+    },
+}
+
 /// Conflitto in sospeso: il file su disco è cambiato mentre c'erano modifiche
 /// locali che toccano gli stessi progetti/dev. L'utente sceglie via dialog.
 struct PendingReload {
@@ -134,6 +160,9 @@ pub struct UiState {
     popup: Option<Popup>,
     dev_manage: Option<ProjectId>,
     confirm_del_dev: Option<(ProjectId, DevId)>,
+    // flusso "Sposta" (blocco / devs) aperto dal menù contestuale milestone
+    move_dialog: Option<MoveDialog>,
+    move_dialog_was_open: bool,
     // filtro worker: None = nessun filtro (tutti); Some(set) = mostra solo questi nomi
     worker_filter: Option<HashSet<String>>,
     show_worker_filter: bool,
@@ -314,6 +343,13 @@ enum Action {
         proj: ProjectId,
         milestone: MilestoneId,
     },
+    MoveEffort {
+        proj: ProjectId,
+        moves: Vec<(DevId, Vec<WeekId>)>,
+        delta: i64,
+        milestones: Vec<MilestoneId>,
+        resolution: OverflowResolution,
+    },
 }
 
 pub struct PjmApp {
@@ -470,6 +506,7 @@ impl eframe::App for PjmApp {
             project_filter_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
+            move_dialog_window(ui.ctx(), app, state, &mut actions);
         }
 
         for a in actions {
@@ -988,6 +1025,18 @@ impl PjmApp {
             }
             Action::RemoveProjectMilestone { proj, milestone } => {
                 self.app.projects.remove_project_milestone(proj, milestone);
+                self.mark_changed();
+            }
+            Action::MoveEffort {
+                proj,
+                moves,
+                delta,
+                milestones,
+                resolution,
+            } => {
+                self.app
+                    .projects
+                    .move_effort(proj, &moves, delta, &milestones, resolution);
                 self.mark_changed();
             }
         }
@@ -2034,6 +2083,263 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
         .unwrap_or(false);
     if !open || (!just_opened && clicked_outside) {
         state.show_worker_filter = false;
+    }
+}
+
+// ── Flusso "Sposta" effort (blocco / devs) ──────────────────────────────────
+
+/// Intervallo [min, max] di settimana coperto da un insieme di spostamenti.
+fn moves_span(moves: &[(DevId, Vec<WeekId>)]) -> Option<(usize, usize)> {
+    let mut lo = usize::MAX;
+    let mut hi = usize::MIN;
+    for (_, ws) in moves {
+        for w in ws {
+            lo = lo.min(w.0);
+            hi = hi.max(w.0);
+        }
+    }
+    (lo <= hi).then_some((lo, hi))
+}
+
+/// Costruisce il passo "Params": numero settimane vuoto e milestone del
+/// progetto, pre-selezionando quelle che cadono nell'intervallo spostato.
+fn make_move_params(app: &App, proj: ProjectId, moves: Vec<(DevId, Vec<WeekId>)>) -> MoveDialog {
+    let span = moves_span(&moves);
+    let milestones = app
+        .projects
+        .list_project_milestones(proj)
+        .into_iter()
+        .map(|(id, w)| {
+            let name = app.milestones.get_name(id).unwrap_or("?").to_string();
+            let inside = span.is_some_and(|(lo, hi)| w.0 >= lo && w.0 <= hi);
+            (id, name, inside)
+        })
+        .collect();
+    MoveDialog::Params {
+        proj,
+        moves,
+        weeks_text: String::new(),
+        milestones,
+    }
+}
+
+fn move_dialog_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if state.move_dialog.is_none() {
+        return;
+    }
+    let just_opened = !state.move_dialog_was_open;
+    state.move_dialog_was_open = true;
+
+    let mut open = true; // pulsante [x] della finestra
+    let mut close = false; // termina l'intero flusso
+    let mut next: Option<MoveDialog> = None; // passa allo step successivo
+
+    match state.move_dialog.as_mut().unwrap() {
+        MoveDialog::SelectDevs {
+            proj,
+            candidates,
+            selected,
+        } => {
+            egui::Window::new("Sposta devs")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Seleziona i dev da spostare:");
+                    ui.add_space(4.0);
+                    let mut all = candidates.iter().all(|(id, _)| selected.contains(id));
+                    if ui.checkbox(&mut all, "Select All").changed() {
+                        if all {
+                            for (id, _) in candidates.iter() {
+                                selected.insert(*id);
+                            }
+                        } else {
+                            selected.clear();
+                        }
+                    }
+                    for (id, name) in candidates.iter() {
+                        let mut on = selected.contains(id);
+                        if ui.checkbox(&mut on, name).changed() {
+                            if on {
+                                selected.insert(*id);
+                            } else {
+                                selected.remove(id);
+                            }
+                        }
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let any = !selected.is_empty();
+                        if ui
+                            .add_enabled(any, egui::Button::new("Avanti"))
+                            .clicked()
+                        {
+                            let mut moves: Vec<(DevId, Vec<WeekId>)> = Vec::new();
+                            for (d, _) in candidates.iter() {
+                                if selected.contains(d) {
+                                    let ws = app.projects.dev_effort_weeks(*proj, *d);
+                                    if !ws.is_empty() {
+                                        moves.push((*d, ws));
+                                    }
+                                }
+                            }
+                            next = Some(make_move_params(app, *proj, moves));
+                        }
+                        if ui.button("Annulla").clicked() {
+                            close = true;
+                        }
+                    });
+                });
+        }
+        MoveDialog::Params {
+            proj,
+            moves,
+            weeks_text,
+            milestones,
+        } => {
+            egui::Window::new("Sposta effort")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Di quante settimane spostare?");
+                    ui.weak("(+ verso destra, − verso sinistra)");
+                    let le = ui.add(
+                        egui::TextEdit::singleline(weeks_text)
+                            .desired_width(80.0)
+                            .hint_text("es. 2 o -3"),
+                    );
+                    if just_opened {
+                        le.request_focus();
+                    }
+                    let entered =
+                        le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                    if !milestones.is_empty() {
+                        ui.separator();
+                        ui.label("Milestone da spostare insieme:");
+                        let mut all = milestones.iter().all(|(_, _, s)| *s);
+                        if ui.checkbox(&mut all, "Select All").changed() {
+                            for (_, _, s) in milestones.iter_mut() {
+                                *s = all;
+                            }
+                        }
+                        for (_, name, sel) in milestones.iter_mut() {
+                            ui.checkbox(sel, name.as_str());
+                        }
+                    }
+
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let confirm = ui.button("Sposta").clicked() || entered;
+                        if confirm {
+                            if let Ok(n) = weeks_text.trim().parse::<i64>() {
+                                if n == 0 {
+                                    close = true;
+                                } else {
+                                    let sel_ms: Vec<MilestoneId> = milestones
+                                        .iter()
+                                        .filter(|(_, _, s)| *s)
+                                        .map(|(id, _, _)| *id)
+                                        .collect();
+                                    match app.projects.move_overflow_side(*proj, moves, n) {
+                                        Some(end_side) => {
+                                            next = Some(MoveDialog::Overflow {
+                                                proj: *proj,
+                                                moves: moves.clone(),
+                                                delta: n,
+                                                milestones: sel_ms,
+                                                end_side,
+                                            });
+                                        }
+                                        None => {
+                                            actions.push(Action::MoveEffort {
+                                                proj: *proj,
+                                                moves: moves.clone(),
+                                                delta: n,
+                                                milestones: sel_ms,
+                                                resolution: OverflowResolution::None,
+                                            });
+                                            close = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Annulla").clicked() {
+                            close = true;
+                        }
+                    });
+                });
+        }
+        MoveDialog::Overflow {
+            proj,
+            moves,
+            delta,
+            milestones,
+            end_side,
+        } => {
+            egui::Window::new("Sforamento confine")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label(if *end_side {
+                        "L'effort spostato supera la fine del progetto."
+                    } else {
+                        "L'effort spostato supera l'inizio del progetto."
+                    });
+                    ui.add_space(6.0);
+                    let push = |actions: &mut Vec<Action>, resolution| {
+                        actions.push(Action::MoveEffort {
+                            proj: *proj,
+                            moves: moves.clone(),
+                            delta: *delta,
+                            milestones: milestones.clone(),
+                            resolution,
+                        });
+                    };
+                    ui.horizontal(|ui| {
+                        let move_lbl = if *end_side {
+                            "Sposta la fine del progetto"
+                        } else {
+                            "Sposta l'inizio del progetto"
+                        };
+                        if ui.button(move_lbl).clicked() {
+                            push(actions, OverflowResolution::MoveBoundary);
+                            close = true;
+                        }
+                        let lose_lbl = if *end_side {
+                            "Perdi le settimane oltre la fine"
+                        } else {
+                            "Perdi le settimane prima dell'inizio"
+                        };
+                        if ui.button(lose_lbl).clicked() {
+                            push(actions, OverflowResolution::Truncate);
+                            close = true;
+                        }
+                        if ui.button("Annulla").clicked() {
+                            close = true;
+                        }
+                    });
+                });
+        }
+    }
+
+    if let Some(n) = next {
+        state.move_dialog = Some(n);
+        state.move_dialog_was_open = false; // rifocalizza lo step successivo
+    } else if close || !open {
+        state.move_dialog = None;
+        state.move_dialog_was_open = false;
     }
 }
 
@@ -3231,39 +3537,79 @@ fn draw_dev_cells(
             }
             let week_id = WeekId(*w as usize);
             resp.context_menu(|ui| {
-                ui.label("Aggiungi milestone qui:");
-                let all = app.milestones.list();
-                if all.is_empty() {
-                    ui.label("(nessuna — creane dalla toolbar)");
-                }
-                for (id, name, color) in &all {
-                    let here = ms_here.contains(id);
-                    let mark = if here { "● " } else { "" };
-                    let label =
-                        egui::RichText::new(format!("{mark}{name}")).color(u32_to_color(*color));
-                    if ui.button(label).clicked() {
-                        actions.push(Action::AddProjectMilestone {
-                            proj,
-                            milestone: *id,
-                            week: week_id,
-                        });
-                        ui.close();
+                // ── Sottomenù: Aggiungi milestone qui (+ rimozione) ──
+                ui.menu_button("Aggiungi milestone qui", |ui| {
+                    let all = app.milestones.list();
+                    if all.is_empty() {
+                        ui.label("(nessuna — creane dalla toolbar)");
                     }
-                }
-                if !ms_here.is_empty() {
-                    ui.separator();
-                    for m in &ms_here {
-                        if let Some(name) = app.milestones.get_name(*m) {
-                            if ui.button(format!("Rimuovi: {name}")).clicked() {
-                                actions.push(Action::RemoveProjectMilestone {
-                                    proj,
-                                    milestone: *m,
-                                });
-                                ui.close();
+                    for (id, name, color) in &all {
+                        let here = ms_here.contains(id);
+                        let mark = if here { "● " } else { "" };
+                        let label = egui::RichText::new(format!("{mark}{name}"))
+                            .color(u32_to_color(*color));
+                        if ui.button(label).clicked() {
+                            actions.push(Action::AddProjectMilestone {
+                                proj,
+                                milestone: *id,
+                                week: week_id,
+                            });
+                            ui.close();
+                        }
+                    }
+                    if !ms_here.is_empty() {
+                        ui.separator();
+                        for m in &ms_here {
+                            if let Some(name) = app.milestones.get_name(*m) {
+                                if ui.button(format!("Rimuovi: {name}")).clicked() {
+                                    actions.push(Action::RemoveProjectMilestone {
+                                        proj,
+                                        milestone: *m,
+                                    });
+                                    ui.close();
+                                }
                             }
                         }
                     }
-                }
+                });
+
+                // ── Sottomenù: Sposta effort ──
+                ui.menu_button("Sposta", |ui| {
+                    // Sposta blocco → blocco contiguo del dev attorno alla settimana.
+                    let block = app.projects.dev_contiguous_block(proj, dev, week_id);
+                    if ui
+                        .add_enabled(!block.is_empty(), egui::Button::new("Sposta blocco"))
+                        .clicked()
+                    {
+                        state.move_dialog = Some(make_move_params(app, proj, vec![(dev, block)]));
+                        state.move_dialog_was_open = false;
+                        ui.close();
+                    }
+                    // Sposta devs → elenco dei dev del progetto con effort.
+                    let with_effort = app.projects.devs_with_effort(proj);
+                    if ui
+                        .add_enabled(!with_effort.is_empty(), egui::Button::new("Sposta devs"))
+                        .clicked()
+                    {
+                        let names: HashMap<DevId, String> = app.devs.list().into_iter().collect();
+                        let candidates: Vec<(DevId, String)> = with_effort
+                            .iter()
+                            .map(|d| (*d, names.get(d).cloned().unwrap_or_default()))
+                            .collect();
+                        // Pre-seleziona il dev da cui è stato aperto il menù.
+                        let mut selected = HashSet::new();
+                        if with_effort.contains(&dev) {
+                            selected.insert(dev);
+                        }
+                        state.move_dialog = Some(MoveDialog::SelectDevs {
+                            proj,
+                            candidates,
+                            selected,
+                        });
+                        state.move_dialog_was_open = false;
+                        ui.close();
+                    }
+                });
             });
         }
 

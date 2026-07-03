@@ -14,6 +14,12 @@ use crate::{
 )]
 pub struct WeekId(pub usize);
 
+/// Un `WeekId` è in realtà un numero di giorno assoluto; settimane consecutive
+/// distano 7 (vedi `weeks_vec`, che genera le colonne con `step_by(7)`). Serve
+/// per riconoscere le settimane adiacenti e per convertire "n settimane" in
+/// giorni negli spostamenti di effort.
+pub const WEEK_STEP: usize = 7;
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -115,6 +121,82 @@ impl SingleDev {
             max = Some(max.map_or(*week, |m| m.max(*week)));
         }
         Some((min?, max?))
+    }
+
+    /// Settimane con effort effettivo (>0), ordinate.
+    pub fn effort_weeks(&self) -> Vec<WeekId> {
+        let mut v: Vec<WeekId> = self
+            .weeks
+            .iter()
+            .filter(|(_, s)| s.effort_tot().0 > 0)
+            .map(|(w, _)| *w)
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Blocco contiguo di settimane con effort (>0) che contiene `around`
+    /// (settimane consecutive per numero). Vuoto se `around` non ha effort.
+    pub fn contiguous_block(&self, around: WeekId) -> Vec<WeekId> {
+        let has = |w: usize| {
+            self.weeks
+                .get(&WeekId(w))
+                .is_some_and(|s| s.effort_tot().0 > 0)
+        };
+        if !has(around.0) {
+            return Vec::new();
+        }
+        let mut lo = around.0;
+        while lo >= WEEK_STEP && has(lo - WEEK_STEP) {
+            lo -= WEEK_STEP;
+        }
+        let mut hi = around.0;
+        while has(hi + WEEK_STEP) {
+            hi += WEEK_STEP;
+        }
+        (lo..=hi).step_by(WEEK_STEP).map(WeekId).collect()
+    }
+
+    /// Sposta le settimane indicate di `delta` (positivo = a destra). Le
+    /// settimane che finirebbero sotto 0, oppure — se il relativo limite è
+    /// `Some` — fuori dai confini `trunc_start`/`trunc_end`, vengono perse.
+    /// In caso di collisione con una settimana già presente, gli effort dei
+    /// worker vengono uniti.
+    pub fn shift_weeks(
+        &mut self,
+        weeks: &[WeekId],
+        delta: i64,
+        trunc_start: Option<i64>,
+        trunc_end: Option<i64>,
+    ) {
+        let mut moved: Vec<(i64, SingleEffortWeek)> = Vec::new();
+        for w in weeks {
+            if let Some(v) = self.weeks.remove(w) {
+                moved.push((w.0 as i64 + delta, v));
+            }
+        }
+        for (nw, v) in moved {
+            if nw < 0 {
+                continue;
+            }
+            if let Some(ts) = trunc_start {
+                if nw < ts {
+                    continue;
+                }
+            }
+            if let Some(te) = trunc_end {
+                if nw > te {
+                    continue;
+                }
+            }
+            let key = WeekId(nw as usize);
+            match self.weeks.get_mut(&key) {
+                Some(existing) => existing.worker_id.extend(v.worker_id),
+                None => {
+                    self.weeks.insert(key, v);
+                }
+            }
+        }
     }
 
     pub fn set_note(&mut self, week: WeekId, id_worker: WorkerId, note: &str) {
