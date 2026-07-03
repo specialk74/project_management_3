@@ -1273,118 +1273,126 @@ fn gather_slots(
 
 // ── Toolbar ─────────────────────────────────────────────────────────────────
 
-fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+/// Riga "campo di testo + bottone +<label>" usata nel menù "Aggiungi".
+/// Chiama `on_submit` col nome (non vuoto) alla pressione di Invio o del
+/// bottone e svuota il campo; la tendina resta aperta per inserimenti multipli.
+fn add_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    hint: &str,
+    value: &mut String,
+    mut on_submit: impl FnMut(String),
+) {
     ui.horizontal(|ui| {
-        if ui.button("+ Progetto").clicked() {
-            actions.push(Action::NewProject);
-        }
-        if ui.button("Progetti ▼").clicked() {
-            state.show_project_filter = !state.show_project_filter;
-            state.project_filter_just_opened = state.show_project_filter;
-        }
-        let filter_on = state.worker_filter.is_some();
-        let wbtn = egui::Button::new("Workers ▼");
-        let wbtn = if filter_on {
-            wbtn.fill(g(Color32::from_rgb(0x2a, 0x50, 0x80)))
-        } else {
-            wbtn
-        };
-        if ui.add(wbtn).clicked() {
-            state.show_worker_filter = !state.show_worker_filter;
-            state.worker_filter_just_opened = state.show_worker_filter;
-        }
-        ui.separator();
-
-        let we = ui.add(
-            egui::TextEdit::singleline(&mut state.new_worker)
-                .hint_text("Nome worker…")
-                .desired_width(120.0),
+        let e = ui.add(
+            egui::TextEdit::singleline(value)
+                .hint_text(hint)
+                .desired_width(140.0),
         );
-        if (we.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-            || ui.button("+ Worker").clicked()
-        {
-            if !state.new_worker.is_empty() {
-                actions.push(Action::AddWorker(std::mem::take(&mut state.new_worker)));
-            }
+        let submit = (e.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            || ui.button(format!("+ {label}")).clicked();
+        if submit && !value.is_empty() {
+            on_submit(std::mem::take(value));
         }
+    });
+}
 
-        let de = ui.add(
-            egui::TextEdit::singleline(&mut state.new_dev)
-                .hint_text("Nome dev…")
-                .desired_width(120.0),
-        );
-        if (de.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-            || ui.button("+ Dev").clicked()
-        {
-            if !state.new_dev.is_empty() {
-                actions.push(Action::AddDev(std::mem::take(&mut state.new_dev)));
+fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    egui::menu::bar(ui, |ui| {
+        // ── File ─────────────────────────────────────────────────────────────
+        ui.menu_button("File", |ui| {
+            if ui.button("Salva").clicked() {
+                actions.push(Action::Save);
+                ui.close_menu();
             }
-        }
-
-        let ce = ui.add(
-            egui::TextEdit::singleline(&mut state.new_category)
-                .hint_text("Nome categoria…")
-                .desired_width(120.0),
-        );
-        if (ce.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-            || ui.button("+ Categoria").clicked()
-        {
-            if !state.new_category.is_empty() {
-                actions.push(Action::AddCategory(std::mem::take(&mut state.new_category)));
+            if ui.button("Apri…").clicked() {
+                actions.push(Action::Open);
+                ui.close_menu();
             }
-        }
-
-        let me = ui.add(
-            egui::TextEdit::singleline(&mut state.new_milestone)
-                .hint_text("Nome milestone…")
-                .desired_width(120.0),
-        );
-        if (me.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-            || ui.button("+ Milestone").clicked()
-        {
-            if !state.new_milestone.is_empty() {
-                actions.push(Action::CreateMilestone(std::mem::take(
-                    &mut state.new_milestone,
-                )));
+            ui.separator();
+            if ui.button("Esporta PDF…").clicked() {
+                actions.push(Action::ExportPdf);
+                ui.close_menu();
             }
-        }
-        if ui.button("Milestone ▼").clicked() {
-            state.show_milestone_manager = !state.show_milestone_manager;
-            state.milestone_manager_just_opened = state.show_milestone_manager;
-        }
+        });
 
-        ui.separator();
-        if ui.button("Salva").clicked() {
-            actions.push(Action::Save);
-        }
-        if ui.button("Apri").clicked() {
-            actions.push(Action::Open);
-        }
-        if ui.button("PDF").clicked() {
-            actions.push(Action::ExportPdf);
-        }
-        let compact_label = if state.compact_mode {
-            "Vista normale"
-        } else {
-            "Vista compatta"
-        };
-        if ui.button(compact_label).clicked() {
-            state.compact_mode = !state.compact_mode;
-        }
-        let bw_label = if state.bw_mode {
-            "Colori"
-        } else {
-            "Bianco/Nero"
-        };
-        if ui.button(bw_label).clicked() {
-            state.bw_mode = !state.bw_mode;
-        }
-        let closed_btn = ui.button("Closed ▼");
-        state.closed_btn_pos = closed_btn.rect.left_bottom();
-        if closed_btn.clicked() {
-            state.show_closed_filter = !state.show_closed_filter;
-            state.closed_filter_just_opened = state.show_closed_filter;
-        }
+        // ── Aggiungi ─────────────────────────────────────────────────────────
+        // I campi di testo restano nel menù: non chiudiamo la tendina dopo un
+        // inserimento, così si possono aggiungere più elementi di seguito.
+        ui.menu_button("Aggiungi", |ui| {
+            if ui.button("+ Progetto").clicked() {
+                actions.push(Action::NewProject);
+                ui.close_menu();
+            }
+            ui.separator();
+
+            add_field(ui, "Worker", "Nome worker…", &mut state.new_worker, |name| {
+                actions.push(Action::AddWorker(name));
+            });
+            add_field(ui, "Dev", "Nome dev…", &mut state.new_dev, |name| {
+                actions.push(Action::AddDev(name));
+            });
+            add_field(
+                ui,
+                "Categoria",
+                "Nome categoria…",
+                &mut state.new_category,
+                |name| actions.push(Action::AddCategory(name)),
+            );
+            add_field(
+                ui,
+                "Milestone",
+                "Nome milestone…",
+                &mut state.new_milestone,
+                |name| actions.push(Action::CreateMilestone(name)),
+            );
+        });
+
+        // ── Filtri ───────────────────────────────────────────────────────────
+        ui.menu_button("Filtri", |ui| {
+            if ui.button("Progetti…").clicked() {
+                state.show_project_filter = !state.show_project_filter;
+                state.project_filter_just_opened = state.show_project_filter;
+                ui.close_menu();
+            }
+            // La spunta segnala che un filtro worker è attivo.
+            if ui
+                .selectable_label(state.worker_filter.is_some(), "Workers…")
+                .clicked()
+            {
+                state.show_worker_filter = !state.show_worker_filter;
+                state.worker_filter_just_opened = state.show_worker_filter;
+                ui.close_menu();
+            }
+            if ui.button("Milestone…").clicked() {
+                state.show_milestone_manager = !state.show_milestone_manager;
+                state.milestone_manager_just_opened = state.show_milestone_manager;
+                ui.close_menu();
+            }
+            let closed_btn = ui.button("Closed…");
+            // La finestra "Closed" si ancora sotto questa voce di menù.
+            state.closed_btn_pos = closed_btn.rect.left_bottom();
+            if closed_btn.clicked() {
+                state.show_closed_filter = !state.show_closed_filter;
+                state.closed_filter_just_opened = state.show_closed_filter;
+                ui.close_menu();
+            }
+        });
+
+        // ── Vista ────────────────────────────────────────────────────────────
+        ui.menu_button("Vista", |ui| {
+            if ui
+                .selectable_label(state.compact_mode, "Vista compatta")
+                .clicked()
+            {
+                state.compact_mode = !state.compact_mode;
+                ui.close_menu();
+            }
+            if ui.selectable_label(state.bw_mode, "Bianco/Nero").clicked() {
+                state.bw_mode = !state.bw_mode;
+                ui.close_menu();
+            }
+        });
 
         // I selettori Anno e Categoria sono stati spostati nel footer sinistro
         // (vedi `draw_left_footer`): l'anno sopra i totali-anno per dev, la
