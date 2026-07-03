@@ -1329,6 +1329,13 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 actions.push(Action::ExportPdf);
                 ui.close_menu();
             }
+            ui.separator();
+            if ui.button("Esci").clicked() {
+                // Richiede la chiusura: se ci sono modifiche non salvate,
+                // `handle_exit` intercetta e mostra la conferma; altrimenti esce.
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                ui.close_menu();
+            }
         });
 
         // ── Aggiungi ─────────────────────────────────────────────────────────
