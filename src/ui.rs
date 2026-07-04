@@ -1397,9 +1397,15 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             }
             ui.separator();
 
-            add_field(ui, "Worker", "Nome worker…", &mut state.new_worker, |name| {
-                actions.push(Action::AddWorker(name));
-            });
+            add_field(
+                ui,
+                "Worker",
+                "Nome worker…",
+                &mut state.new_worker,
+                |name| {
+                    actions.push(Action::AddWorker(name));
+                },
+            );
             add_field(ui, "Dev", "Nome dev…", &mut state.new_dev, |name| {
                 actions.push(Action::AddDev(name));
             });
@@ -2176,10 +2182,7 @@ fn move_dialog_window(
                     ui.separator();
                     ui.horizontal(|ui| {
                         let any = !selected.is_empty();
-                        if ui
-                            .add_enabled(any, egui::Button::new("Avanti"))
-                            .clicked()
-                        {
+                        if ui.add_enabled(any, egui::Button::new("Avanti")).clicked() {
                             let mut moves: Vec<(DevId, Vec<WeekId>)> = Vec::new();
                             for (d, _) in candidates.iter() {
                                 if selected.contains(d) {
@@ -2219,8 +2222,7 @@ fn move_dialog_window(
                     if just_opened {
                         le.request_focus();
                     }
-                    let entered =
-                        le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                     if !milestones.is_empty() {
                         ui.separator();
@@ -2650,8 +2652,11 @@ fn footer_handle(ui: &mut egui::Ui, state: &mut UiState) {
             egui::pos2(cx, cy + HH),
         ]
     };
-    ui.painter()
-        .add(egui::Shape::convex_polygon(pts, g(START_STOP), Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(
+        pts,
+        g(START_STOP),
+        Stroke::NONE,
+    ));
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -4506,6 +4511,7 @@ fn draw_left_devs(
                 eff_rect,
                 egui::TextEdit::singleline(buf)
                     .font(cell_font())
+                    .text_color(dev_text_color(app, *dev))
                     .frame(egui::Frame::NONE)
                     .horizontal_align(egui::Align::Center),
             );
@@ -4532,15 +4538,22 @@ fn draw_left_devs(
                 egui::pos2(eff_x, inner_y + ROW_H),
                 Vec2::new(DEV_EFFORT_W, ROW_H),
             );
-            if (remains == planned as i32 && planned != 0) || remains < 0 {
+            let rem_red = (remains == planned as i32 && planned != 0) || remains < 0;
+            if rem_red {
                 ui.painter().rect_filled(rem_rect, 0.0, g(Color32::RED));
             }
+            // su sfondo rosso il testo è sempre bianco, altrimenti segue il dev.
+            let rem_color = if rem_red {
+                TEXT_WHITE
+            } else {
+                dev_text_color(app, *dev)
+            };
             ui.painter().text(
                 rem_rect.center(),
                 Align2::CENTER_CENTER,
                 remains.to_string(),
                 cell_font(),
-                TEXT_WHITE,
+                rem_color,
             );
         }
 
