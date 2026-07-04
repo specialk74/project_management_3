@@ -136,6 +136,16 @@ struct PendingReload {
     conflicts: Vec<String>,
 }
 
+/// Preferenza tema: Auto segue il sistema (di giorno chiaro, la sera scuro se
+/// macOS è su Aspetto "Automatico"); Light/Dark forzano manualmente.
+#[derive(Clone, Copy, PartialEq, Default)]
+enum ThemePref {
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -194,6 +204,8 @@ pub struct UiState {
     footer_hidden: bool,
     // resa in bianco/nero (senza colori)
     bw_mode: bool,
+    // tema chiaro/scuro: Auto = segue il sistema, altrimenti forzato
+    theme_pref: ThemePref,
     // selettori per i totali-anno per dev nel footer
     selected_year: i32,                    // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
@@ -446,6 +458,23 @@ impl eframe::App for PjmApp {
             // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
             set_bw_mode(state.bw_mode);
 
+            // Tema chiaro/scuro: risolto a inizio frame. In Auto segue il tema del
+            // sistema (macOS "Automatico" → chiaro di giorno, scuro la sera).
+            let dark = match state.theme_pref {
+                ThemePref::Dark => true,
+                ThemePref::Light => false,
+                ThemePref::Auto => {
+                    ui.ctx().system_theme().unwrap_or(egui::Theme::Dark) == egui::Theme::Dark
+                }
+            };
+            set_dark_theme(dark);
+            // Allinea anche i widget nativi di egui (menù, popup, campi di testo).
+            ui.ctx().set_visuals(if dark {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            });
+
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
             let (key_s, key_f, shift) = ui.ctx().input(|i| {
@@ -472,7 +501,7 @@ impl eframe::App for PjmApp {
                 .show_inside(ui, |ui| toolbar(ui, app, state, &mut actions));
 
             egui::TopBottomPanel::top("header")
-                .frame(egui::Frame::NONE.fill(BG_DARK))
+                .frame(egui::Frame::NONE.fill(bg()))
                 .show_inside(ui, |ui| header(ui, app, state));
 
             // Footer (worker / sovra) — nascosto in vista compatta.
@@ -481,11 +510,11 @@ impl eframe::App for PjmApp {
                 if state.footer_hidden {
                     // Solo la maniglia: triangolino verso l'alto per riaprire.
                     egui::TopBottomPanel::bottom("footer_handle")
-                        .frame(egui::Frame::NONE.fill(BG_DARK))
+                        .frame(egui::Frame::NONE.fill(bg()))
                         .show_inside(ui, |ui| footer_handle(ui, state));
                 } else {
                     egui::TopBottomPanel::bottom("footer")
-                        .frame(egui::Frame::NONE.fill(BG_DARK))
+                        .frame(egui::Frame::NONE.fill(bg()))
                         .show_inside(ui, |ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
                             // Maniglia (triangolino verso il basso) in cima al footer.
@@ -496,7 +525,7 @@ impl eframe::App for PjmApp {
             }
 
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(BG_DARK))
+                .frame(egui::Frame::NONE.fill(bg()))
                 .show_inside(ui, |ui| body(ui, app, state, &mut actions));
 
             note_editor_window(ui.ctx(), state, &mut actions);
@@ -1508,10 +1537,43 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 ui.close_menu();
             }
             ui.separator();
+            // Tema chiaro/scuro: Auto segue il sistema (macOS "Automatico" =
+            // chiaro di giorno, scuro la sera), oppure forzato manualmente.
+            ui.label(
+                egui::RichText::new("Tema")
+                    .strong()
+                    .color(g(EFFORT_ORANGE)),
+            );
+            if ui
+                .selectable_label(state.theme_pref == ThemePref::Auto, "Auto (sistema)")
+                .clicked()
+            {
+                state.theme_pref = ThemePref::Auto;
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(state.theme_pref == ThemePref::Light, "Chiaro")
+                .clicked()
+            {
+                state.theme_pref = ThemePref::Light;
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(state.theme_pref == ThemePref::Dark, "Scuro")
+                .clicked()
+            {
+                state.theme_pref = ThemePref::Dark;
+                ui.close_menu();
+            }
+            ui.separator();
             // Zoom settimane: mergia 2 o 4 settimane (somma effort, sola lettura).
             // Disponibile solo in vista normale; ignorato in vista compatta.
             ui.add_enabled_ui(!state.compact_mode, |ui| {
-                ui.label("Zoom settimane");
+                ui.label(
+                    egui::RichText::new("Zoom settimane")
+                        .strong()
+                        .color(g(EFFORT_ORANGE)),
+                );
                 if ui
                     .selectable_label(state.zoom_level == 0, "Normale")
                     .clicked()
@@ -1541,7 +1603,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             let col = if state.changed {
                 g(EFFORT_ORANGE)
             } else {
-                TEXT_DIM
+                text_dim()
             };
             let file_name = std::path::Path::new(&state.current_file)
                 .file_name()
@@ -1579,7 +1641,7 @@ fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
     egui::SidePanel::left("hdr_left")
         .exact_width(LEFT_W)
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(BG_DARK))
+        .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |_ui| {});
 
     egui::ScrollArea::horizontal()
@@ -1632,7 +1694,7 @@ fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                         Align2::CENTER_CENTER,
                         &txt,
                         cell_font(),
-                        TEXT_WHITE,
+                        text(),
                     );
                 }
                 if merged {
@@ -1665,7 +1727,7 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     egui::SidePanel::left("leftcol")
         .exact_width(LEFT_W)
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(BG_DARK))
+        .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |ui| {
             let sy = state.scroll_y;
             egui::ScrollArea::vertical()
@@ -1680,7 +1742,7 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
 
     // Griglia: prende lo spazio restante, è la "master" dello scroll.
     egui::CentralPanel::default()
-        .frame(egui::Frame::NONE.fill(BG_DARK))
+        .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |ui| {
             let mut sa = egui::ScrollArea::both()
                 .id_salt("grid_scroll")
@@ -2706,7 +2768,7 @@ fn footer_handle(ui: &mut egui::Ui, state: &mut UiState) {
     let bg = if resp.hovered() {
         g(Color32::from_rgb(0x2e, 0x2e, 0x2e))
     } else {
-        BG_DARK
+        bg()
     };
     ui.painter().rect_filled(rect, 0.0, bg);
     // Triangolino centrato orizzontalmente.
@@ -2764,7 +2826,7 @@ fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<A
     egui::SidePanel::left("ftr_left")
         .exact_width(LEFT_W)
         .resizable(false)
-        .frame(egui::Frame::NONE.fill(BG_DARK))
+        .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let (lrect, _) = ui.allocate_exact_size(Vec2::new(LEFT_W, footer_h), Sense::hover());
@@ -2905,7 +2967,7 @@ fn draw_left_footer(
         if ui
             .put(
                 br,
-                egui::SelectableLabel::new(active, egui::RichText::new(*lab).color(TEXT_WHITE)),
+                egui::SelectableLabel::new(active, egui::RichText::new(*lab).color(text())),
             )
             .clicked()
         {
@@ -2945,7 +3007,7 @@ fn draw_left_footer(
             Align2::CENTER_CENTER,
             ttxt,
             cell_font(),
-            TEXT_WHITE,
+            text(),
         );
     }
 
@@ -2973,7 +3035,7 @@ fn draw_left_footer(
         Align2::CENTER_CENTER,
         ttxt,
         cell_font(),
-        TEXT_WHITE,
+        text(),
     );
 
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
@@ -2992,7 +3054,7 @@ fn draw_left_footer(
             Align2::CENTER_CENTER,
             name,
             cell_font(),
-            TEXT_WHITE,
+            text(),
         );
 
         // Ore rimanenti dell'anno selezionato, nello spazio a destra del nome.
@@ -3015,7 +3077,7 @@ fn draw_left_footer(
                 Align2::RIGHT_CENTER,
                 remaining.to_string(),
                 cell_font(),
-                g(Color32::from_rgb(0x90, 0xEE, 0x90)),
+                g(ok_green()),
             );
         }
 
@@ -3042,7 +3104,7 @@ fn draw_right_footer(
     cols: &[Col],
     actions: &mut Vec<Action>,
 ) {
-    let lightgreen = g(Color32::from_rgb(0x90, 0xEE, 0x90));
+    let lightgreen = g(ok_green());
     let mut next_x = rect.left();
     for c in cols.iter() {
         let colw = col_width(c, COL_W);
@@ -3083,7 +3145,7 @@ fn draw_right_footer(
             Align2::CENTER_CENTER,
             date,
             cell_font(),
-            TEXT_WHITE,
+            text(),
         );
 
         // celle sovra per worker
@@ -3092,9 +3154,9 @@ fn draw_right_footer(
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(COL_W, ROW_H));
 
             let bg = if idx % 2 == 0 {
-                BETWEEN_PROJECTS
+                row_even()
             } else {
-                Color32::BLACK
+                row_alt()
             };
             ui.painter().rect_filled(cell, 0.0, bg);
 
@@ -3144,9 +3206,9 @@ fn draw_right_footer(
             let color = if value > eff_max {
                 g(Color32::RED)
             } else if eff_max == 0 {
-                g(Color32::from_rgb(0xCD, 0x85, 0x3F)) // marrone chiaro: override a zero
+                g(override_brown()) // marrone: override a zero
             } else if value == 0 {
-                g(Color32::YELLOW)
+                g(zero_yellow())
             } else {
                 lightgreen
             };
@@ -3269,7 +3331,7 @@ const NAME_ROWS: usize = 2;
 fn name_block_height(ui: &egui::Ui, name: &str) -> f32 {
     let galley = ui
         .painter()
-        .layout(name.to_string(), cell_font(), TEXT_WHITE, LEFT_INFO_W);
+        .layout(name.to_string(), cell_font(), text(), LEFT_INFO_W);
     galley.size().y.max(NAME_ROWS as f32 * ROW_H)
 }
 
@@ -3339,19 +3401,20 @@ fn total_content_h(layout: &[ProjLayout]) -> f32 {
 fn draw_boundary_title(ui: &egui::Ui, cell: Rect) {
     let font = mono(7.0);
     let cx = cell.center().x;
+    // Sfondo canarino sempre giallo → testo sempre nero (indipendente dal tema).
     ui.painter().text(
         egui::pos2(cx, cell.top() + cell.height() * 0.30),
         Align2::CENTER_CENTER,
         "Effort",
         font.clone(),
-        BG_DARK,
+        Color32::BLACK,
     );
     ui.painter().text(
         egui::pos2(cx, cell.top() + cell.height() * 0.72),
         Align2::CENTER_CENTER,
         "residuo",
         font,
-        BG_DARK,
+        Color32::BLACK,
     );
 }
 
@@ -3431,11 +3494,11 @@ fn draw_compact_date_marker(
     let date = primo_giorno_settimana_corrente(&days_to_local(week))
         .format("%y-%m-%d")
         .to_string();
-    let galley = ui.painter().layout_no_wrap(date, mono(9.0), TEXT_WHITE);
+    let galley = ui.painter().layout_no_wrap(date, mono(9.0), text());
     let pos = egui::pos2(cx - galley.size().x / 2.0, top_y + 1.0);
     let bgrect = Rect::from_min_size(pos, galley.size()).expand(1.5);
     ui.painter().rect_filled(bgrect, 2.0, bg);
-    ui.painter().galley(pos, galley, TEXT_WHITE);
+    ui.painter().galley(pos, galley, text());
 }
 
 fn grid(
@@ -3484,7 +3547,7 @@ fn grid(
         for (dev_id, max_rows) in &p.devs {
             let color = dev_color(app, *dev_id);
             // i bordi dev sono trasparenti in compatta
-            let border = if compact { BG_DARK } else { color };
+            let border = if compact { bg() } else { color };
             paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
             let inner_h = dev_inner_h(*max_rows, compact, merged);
@@ -3508,7 +3571,7 @@ fn grid(
                     if let Some(total) = project_missing_at_year_end(app, p.proj, *year_ending) {
                         let cell =
                             Rect::from_min_size(egui::pos2(cx, proj_top), Vec2::new(colw, ROW_H));
-                        ui.painter().rect_filled(cell, 0.0, BG_DARK);
+                        ui.painter().rect_filled(cell, 0.0, bg());
                         ui.painter().text(
                             cell.center(),
                             Align2::CENTER_CENTER,
@@ -3598,7 +3661,7 @@ fn draw_dev_cells(
                         Align2::CENTER_BOTTOM,
                         missing.to_string(),
                         cell_font(),
-                        BG_DARK,
+                        Color32::BLACK, // su sfondo canarino: sempre nero
                     );
                 }
             }
@@ -3823,7 +3886,7 @@ fn draw_dev_cells(
                     format!("{}", remaining)
                 };
                 let color = if is_deadline {
-                    TEXT_WHITE
+                    text()
                 } else {
                     cumulative_color(week_total, planned)
                 };
@@ -3855,7 +3918,7 @@ fn draw_dev_cells(
                     Align2::CENTER_CENTER,
                     week_total.to_string(),
                     cell_font(),
-                    TEXT_WHITE,
+                    text(),
                 );
             }
             continue;
@@ -3985,13 +4048,13 @@ fn draw_dev_cells(
                     Align2::LEFT_CENTER,
                     &ed.buf,
                     person_font(),
-                    TEXT_WHITE,
+                    crate::ui_style::text(),
                 );
                 let caret_x = (trect.right() + 1.0).min(cell.right() - 1.0);
                 ui.painter().vline(
                     caret_x,
                     (cell.top() + 2.0)..=(cell.bottom() - 2.0),
-                    Stroke::new(1.0, TEXT_WHITE),
+                    Stroke::new(1.0, crate::ui_style::text()),
                 );
 
                 if cancel {
@@ -4038,7 +4101,7 @@ fn draw_dev_cells(
                     } else if sovra > max_h {
                         g(Color32::RED)
                     } else {
-                        TEXT_WHITE
+                        crate::ui_style::text()
                     };
                     paint_person_cell(ui, cell, text, color);
                 }
@@ -4261,7 +4324,7 @@ fn dev_text_color(app: &App, dev: DevId) -> Color32 {
         .into_iter()
         .find(|(id, _, _, _)| *id == dev)
         .map(|(_, _, _, font)| from_hex(font as u32))
-        .unwrap_or(TEXT_WHITE)
+        .unwrap_or(text())
 }
 
 fn dev_name(app: &App, dev: DevId) -> String {
@@ -4342,7 +4405,7 @@ fn draw_project_info(
             Align2::CENTER_CENTER,
             "—",
             cell_font(),
-            TEXT_FAINT,
+            text_faint(),
         );
     } else {
         ui.painter().text(
@@ -4398,7 +4461,7 @@ fn draw_project_info(
             .to_string();
         let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
         let cat_col = if cat == "—" {
-            TEXT_FAINT
+            text_faint()
         } else {
             g(CAT_BLUE)
         };
@@ -4428,7 +4491,7 @@ fn draw_project_info(
         name_rect,
         egui::TextEdit::multiline(buf)
             .font(cell_font())
-            .text_color(TEXT_WHITE)
+            .text_color(text())
             .frame(egui::Frame::NONE)
             .margin(egui::Margin::ZERO)
             .desired_rows(NAME_ROWS)
@@ -4471,7 +4534,7 @@ fn draw_project_info(
         Align2::CENTER_CENTER,
         start_txt,
         mono(FONT_SIZE - 2.0),
-        TEXT_DIM,
+        text_dim(),
     );
     let srr = ui.interact(sr, egui::Id::new(("start", proj.0)), Sense::click());
     if srr.secondary_clicked() {
@@ -4504,7 +4567,7 @@ fn draw_project_info(
         Align2::CENTER_CENTER,
         end_txt,
         mono(FONT_SIZE - 2.0),
-        TEXT_DIM,
+        text_dim(),
     );
     let err = ui.interact(er, egui::Id::new(("end", proj.0)), Sense::click());
     if err.secondary_clicked() {
@@ -4523,16 +4586,11 @@ fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &m
         Vec2::new(DEV_STRIP_W, rect.height()),
     );
     let resp = ui.interact(strip, egui::Id::new(("devstrip", proj.0)), Sense::click());
-    let bg = if resp.hovered() {
-        Color32::from_rgb(0x3a, 0x3a, 0x3a)
-    } else {
-        Color32::from_rgb(0x22, 0x22, 0x22)
-    };
-    ui.painter().rect_filled(strip, 0.0, bg);
+    ui.painter().rect_filled(strip, 0.0, strip_bg(resp.hovered()));
     ui.painter().rect_stroke(
         strip,
         0.0,
-        Stroke::new(1.0, Color32::from_rgb(0x55, 0x55, 0x55)),
+        Stroke::new(1.0, strip_border()),
         egui::StrokeKind::Inside,
     );
     // etichetta "Dev" verticale (lettere impilate)
@@ -4546,7 +4604,7 @@ fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &m
             Align2::CENTER_CENTER,
             ch.to_string(),
             mono(FONT_SIZE - 3.0),
-            TEXT_DIM,
+            text_dim(),
         );
     }
     if resp.clicked() {
@@ -4704,9 +4762,10 @@ fn draw_left_devs(
             if rem_red {
                 ui.painter().rect_filled(rem_rect, 0.0, g(Color32::RED));
             }
-            // su sfondo rosso il testo è sempre bianco, altrimenti segue il dev.
+            // su sfondo rosso il testo è sempre bianco (a prescindere dal tema
+            // di sistema), altrimenti segue il colore del dev.
             let rem_color = if rem_red {
-                TEXT_WHITE
+                Color32::WHITE
             } else {
                 dev_text_color(app, *dev)
             };
