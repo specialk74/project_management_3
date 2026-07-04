@@ -146,6 +146,13 @@ enum ThemePref {
     Dark,
 }
 
+/// Stato della dialog "Esporta PDF" del singolo progetto: i dev del progetto con
+/// il flag di selezione, nell'ordine (riordinabile con ▲▼) scelto dall'utente.
+struct PdfExport {
+    proj: ProjectId,
+    entries: Vec<(DevId, bool)>,
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -206,6 +213,9 @@ pub struct UiState {
     bw_mode: bool,
     // tema chiaro/scuro: Auto = segue il sistema, altrimenti forzato
     theme_pref: ThemePref,
+    // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
+    // un solo progetto e si lancia l'export)
+    pdf_export: Option<PdfExport>,
     // selettori per i totali-anno per dev nel footer
     selected_year: i32,                    // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
@@ -341,6 +351,7 @@ enum Action {
         proj: ProjectId,
     },
     ExportPdf,
+    ExportPdfProject { proj: ProjectId, devs: Vec<DevId> },
     CreateMilestone(String),
     SetMilestoneColor {
         milestone: MilestoneId,
@@ -438,6 +449,20 @@ impl PjmApp {
     }
 }
 
+/// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
+fn save_pdf_dialog(bytes: Vec<u8>, default_name: &str) {
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter("PDF", &["pdf"])
+        .set_file_name(default_name)
+        .save_file()
+    {
+        let p = path.to_string_lossy().to_string();
+        if let Err(e) = std::fs::write(&p, bytes) {
+            eprintln!("Errore scrittura PDF '{p}': {e}");
+        }
+    }
+}
+
 /// mtime del file, se leggibile.
 fn file_mtime_of(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
@@ -531,6 +556,7 @@ impl eframe::App for PjmApp {
             note_editor_window(ui.ctx(), state, &mut actions);
             popup_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
+            pdf_export_window(ui.ctx(), app, state, &mut actions);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
@@ -1014,21 +1040,42 @@ impl PjmApp {
                     self.mark_changed();
                 }
             }
-            Action::ExportPdf => match crate::pdf_export::build_pdf(&self.app) {
-                None => eprintln!("Nessun progetto visibile con inizio e fine: PDF non creato."),
-                Some(bytes) => {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PDF", &["pdf"])
-                        .set_file_name("progetti.pdf")
-                        .save_file()
-                    {
-                        let p = path.to_string_lossy().to_string();
-                        if let Err(e) = std::fs::write(&p, bytes) {
-                            eprintln!("Errore scrittura PDF '{p}': {e}");
+            Action::ExportPdf => {
+                // Progetti "visibili" = abilitati e non chiusi. Se ne resta uno
+                // solo (l'utente ha filtrato a un singolo progetto), apri la dialog
+                // di selezione/ordinamento dei dev; altrimenti esporta tutti.
+                let eligible: Vec<ProjectId> = self
+                    .app
+                    .projects
+                    .list_full()
+                    .into_iter()
+                    .filter(|(id, _, en)| en.0 && !self.app.projects.is_closed(*id))
+                    .map(|(id, _, _)| id)
+                    .collect();
+                if let [proj] = eligible[..] {
+                    let entries = self
+                        .app
+                        .projects
+                        .list_devs(proj)
+                        .into_iter()
+                        .map(|d| (d, true))
+                        .collect();
+                    self.ui.pdf_export = Some(PdfExport { proj, entries });
+                } else {
+                    match crate::pdf_export::build_pdf(&self.app) {
+                        None => {
+                            eprintln!("Nessun progetto visibile con inizio e fine: PDF non creato.")
                         }
+                        Some(bytes) => save_pdf_dialog(bytes, "progetti.pdf"),
                     }
                 }
-            },
+            }
+            Action::ExportPdfProject { proj, devs } => {
+                match crate::pdf_export::build_pdf_project(&self.app, proj, &devs) {
+                    None => eprintln!("Progetto senza inizio/fine o nessun dev: PDF non creato."),
+                    Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
+                }
+            }
             Action::CreateMilestone(name) => {
                 self.app.milestones.add(&name);
                 self.mark_changed();
@@ -1908,6 +1955,114 @@ fn dev_manage_window(
 
     if close || !open {
         state.dev_manage = None;
+    }
+}
+
+/// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
+/// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
+/// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
+fn pdf_export_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(px) = state.pdf_export.as_mut() else {
+        return;
+    };
+    let proj = px.proj;
+    let trip = app.projects.get_tripletta(proj);
+    let title = if trip.is_empty() {
+        "Esporta PDF progetto".to_string()
+    } else {
+        format!("Esporta PDF: {trip}")
+    };
+
+    let mut open = true;
+    let mut do_export = false;
+    let mut cancel = false;
+    let mut move_up: Option<usize> = None;
+    let mut move_down: Option<usize> = None;
+
+    egui::Window::new("Esporta PDF")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new(&title).strong());
+            ui.add_space(4.0);
+            ui.label("Seleziona e ordina i dev da esportare:");
+            ui.add_space(4.0);
+
+            let n = px.entries.len();
+            for (i, (dev, sel)) in px.entries.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.checkbox(sel, "");
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(dev_name(app, *dev))
+                                .monospace()
+                                .color(dev_color(app, *dev)),
+                        )
+                        .selectable(false),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add_enabled(i + 1 < n, egui::Button::new("▼")).clicked() {
+                            move_down = Some(i);
+                        }
+                        if ui.add_enabled(i > 0, egui::Button::new("▲")).clicked() {
+                            move_up = Some(i);
+                        }
+                    });
+                });
+            }
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                let any = px.entries.iter().any(|(_, s)| *s);
+                if ui
+                    .add_enabled(any, egui::Button::new("Esporta…"))
+                    .clicked()
+                {
+                    do_export = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    // Riordino con le frecce (uno spostamento per frame).
+    if let Some(i) = move_up {
+        px.entries.swap(i, i - 1);
+    }
+    if let Some(i) = move_down {
+        px.entries.swap(i, i + 1);
+    }
+
+    // Esito: raccolgo i dati prima di rilasciare il prestito di `px`.
+    let outcome: Option<Option<Vec<DevId>>> = if do_export {
+        let devs = px
+            .entries
+            .iter()
+            .filter(|(_, s)| *s)
+            .map(|(d, _)| *d)
+            .collect();
+        Some(Some(devs))
+    } else if cancel || !open {
+        Some(None)
+    } else {
+        None
+    };
+
+    match outcome {
+        Some(Some(devs)) => {
+            actions.push(Action::ExportPdfProject { proj, devs });
+            state.pdf_export = None;
+        }
+        Some(None) => state.pdf_export = None,
+        None => {}
     }
 }
 

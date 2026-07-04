@@ -12,6 +12,8 @@ use printpdf::*;
 
 use crate::app::App;
 use crate::date_utils::dates::{days_to_local, local_to_days};
+use crate::dev_utils::dev::DevId;
+use crate::project_utils::project::ProjectId;
 
 // Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
 // accenti/Unicode, che i font builtin PDF (WinAnsi) non garantiscono.
@@ -304,12 +306,14 @@ fn wrap_multiline(text: &str, max_chars: usize) -> Vec<String> {
 
 // --- Dati della pagina ------------------------------------------------------
 
-/// Una riga del Gantt (un dev con effort).
+/// Una riga del Gantt (un dev). Con effort: barra dalla prima all'ultima
+/// settimana. Senza effort (`no_effort`): riga sottile fino al margine destro.
 struct Row {
     label: String,
     color: (f32, f32, f32),
     start_day: i32,
     end_day: i32,
+    no_effort: bool,
 }
 
 /// Una milestone (bandierina in alto).
@@ -506,13 +510,28 @@ fn page_ops(
         // Etichetta a sinistra (nome dev), troncata se troppo lunga.
         let label = truncate_to_w(&r.label, 8.0, label_w);
         ops.extend(text_left(fonts, X_LABEL, yc - 1.3, &label, 8.0, false, BLACK));
+        let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
+
+        // Dev senza effort: riga sottile del colore del dev, dal nome fino al
+        // margine destro del grafico (oltre la fine del progetto).
+        if r.no_effort {
+            let thin_hh = 0.4;
+            ops.extend(rect_fill(
+                lead_x0,
+                yc - thin_hh,
+                CHART_X1,
+                yc + thin_hh,
+                r.color,
+            ));
+            continue;
+        }
+
         // Barra: dalla prima all'ultima settimana con effort. Estesa di una
         // settimana per dare larghezza minima visibile.
         let bx0 = x_of(r.start_day);
         let bx1 = x_of(r.end_day + 7);
         // Linea orizzontale dal nome del dev fino all'inizio della barra,
         // alternata: righe pari solida, righe dispari tratteggiata.
-        let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
         if bx0 - 1.0 > lead_x0 {
             if i % 2 == 0 {
                 ops.extend(line(lead_x0, yc, bx0 - 1.0, yc, 0.3, GRAY_DK));
@@ -603,6 +622,7 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
                 color,
                 start_day: first.0 as i32,
                 end_day: last.0 as i32,
+                no_effort: false,
             });
         }
         rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -632,6 +652,102 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
     }
 
     let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
+    Some(bytes)
+}
+
+/// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
+/// scelto dall'utente. I dev con effort producono la barra normale; quelli senza
+/// effort una riga sottile del colore del dev fino al margine destro.
+/// `None` se il progetto non ha inizio E fine, o se `ordered_devs` è vuoto.
+pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<Vec<u8>> {
+    if ordered_devs.is_empty() {
+        return None;
+    }
+    let (Some(start_w), Some(end_w)) = (
+        app.projects.get_project_start_week(proj),
+        app.projects.get_project_end_week(proj),
+    ) else {
+        return None;
+    };
+    let proj_start = start_w.0 as i32;
+    let proj_end = end_w.0 as i32;
+
+    let mut doc = PdfDocument::new("Progetto");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+
+    let dev_info: std::collections::HashMap<_, _> = app
+        .devs
+        .list_full()
+        .into_iter()
+        .map(|(id, name, bg, _)| (id, (name, u32_rgb(bg as u32))))
+        .collect();
+
+    // Nome (descrizione) del progetto.
+    let name = app
+        .projects
+        .list_full()
+        .into_iter()
+        .find(|(id, _, _)| *id == proj)
+        .map(|(_, n, _)| n)
+        .unwrap_or_default();
+
+    // Righe dev nell'ordine scelto dall'utente (nessun ordinamento automatico).
+    let mut rows = Vec::new();
+    for &dev_id in ordered_devs {
+        let (label, color) = dev_info
+            .get(&dev_id)
+            .cloned()
+            .unwrap_or_else(|| ("?".to_string(), BLACK));
+        match app
+            .projects
+            .get_single_dev(proj, dev_id)
+            .and_then(|sd| sd.effort_span())
+        {
+            Some((first, last)) => rows.push(Row {
+                label,
+                color,
+                start_day: first.0 as i32,
+                end_day: last.0 as i32,
+                no_effort: false,
+            }),
+            None => rows.push(Row {
+                label,
+                color,
+                start_day: proj_start,
+                end_day: proj_end,
+                no_effort: true,
+            }),
+        }
+    }
+
+    // Milestone del progetto.
+    let mut flags = Vec::new();
+    for (mid, week) in app.projects.list_project_milestones(proj) {
+        let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
+        let mcol = app.milestones.get_color(mid).map(u32_rgb).unwrap_or(BLACK);
+        flags.push(Flag {
+            day: week.0 as i32,
+            title: mname,
+            date: short_date(week.0 as i32),
+            color: mcol,
+        });
+    }
+
+    let tripletta = app.projects.get_tripletta(proj);
+    let ops = page_ops(
+        &fonts, &tripletta, &name, proj_start, proj_end, &rows, flags, today, &created,
+    );
+    let page = PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), ops);
+    let bytes = doc
+        .with_pages(vec![page])
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
     Some(bytes)
 }
 
@@ -672,5 +788,27 @@ mod tests {
         let mut app = App::new();
         app.projects.add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
         assert!(build_pdf(&app).is_none());
+    }
+
+    #[test]
+    fn single_project_with_effortless_dev_produces_valid_pdf() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        // Un dev con effort e uno senza (solo aggiunto al progetto).
+        let dev_eff = app.devs.add("Frontend");
+        let dev_empty = app.devs.add("Backend");
+        app.projects.add_dev(pid, dev_eff);
+        app.projects.add_dev(pid, dev_empty);
+        app.projects
+            .add_effort(pid, dev_eff, WeekId(20007), WorkerId(0), Effort(8));
+
+        // Ordine scelto dall'utente: prima il dev senza effort.
+        let bytes = build_pdf_project(&app, pid, &[dev_empty, dev_eff])
+            .expect("progetto con inizio/fine e dev → Some");
+        assert!(bytes.starts_with(b"%PDF"));
+
+        // Nessun dev selezionato → None.
+        assert!(build_pdf_project(&app, pid, &[]).is_none());
     }
 }
