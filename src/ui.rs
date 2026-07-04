@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, Utc};
 use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, Vec2};
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 use crate::app::App;
 use crate::categories::CategoryId;
@@ -216,6 +217,12 @@ pub struct UiState {
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
     // un solo progetto e si lancia l'export)
     pdf_export: Option<PdfExport>,
+    // finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…)
+    show_help: bool,
+    // testo di ricerca nel manuale (filtra le sezioni)
+    help_search: String,
+    // cache di rendering Markdown (immagini/impostazioni), persistente tra i frame
+    help_md_cache: CommonMarkCache,
     // selettori per i totali-anno per dev nel footer
     selected_year: i32,                    // 0 = nessuno
     selected_category: Option<CategoryId>, // None = tutte
@@ -557,6 +564,7 @@ impl eframe::App for PjmApp {
             popup_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
+            help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
@@ -1072,7 +1080,7 @@ impl PjmApp {
             }
             Action::ExportPdfProject { proj, devs } => {
                 match crate::pdf_export::build_pdf_project(&self.app, proj, &devs) {
-                    None => eprintln!("Progetto senza inizio/fine o nessun dev: PDF non creato."),
+                    None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
                     Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
                 }
             }
@@ -1642,6 +1650,14 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             });
         });
 
+        // ── Aiuto ────────────────────────────────────────────────────────────
+        ui.menu_button("Aiuto", |ui| {
+            if ui.button("Manuale d'uso…").clicked() {
+                state.show_help = true;
+                ui.close_menu();
+            }
+        });
+
         // I selettori Anno e Categoria sono stati spostati nel footer sinistro
         // (vedi `draw_left_footer`): l'anno sopra i totali-anno per dev, la
         // categoria sopra la colonna dei nomi dev.
@@ -1981,8 +1997,6 @@ fn pdf_export_window(
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
-    let mut move_up: Option<usize> = None;
-    let mut move_down: Option<usize> = None;
 
     egui::Window::new("Esporta PDF")
         .collapsible(false)
@@ -1992,39 +2006,75 @@ fn pdf_export_window(
         .show(ctx, |ui| {
             ui.label(egui::RichText::new(&title).strong());
             ui.add_space(4.0);
-            ui.label("Seleziona e ordina i dev da esportare:");
+            ui.label("Seleziona i dev; trascinali per riordinarli:");
             ui.add_space(4.0);
 
-            let n = px.entries.len();
-            for (i, (dev, sel)) in px.entries.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    ui.checkbox(sel, "");
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(dev_name(app, *dev))
-                                .monospace()
-                                .color(dev_color(app, *dev)),
-                        )
-                        .selectable(false),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add_enabled(i + 1 < n, egui::Button::new("▼")).clicked() {
-                            move_down = Some(i);
-                        }
-                        if ui.add_enabled(i > 0, egui::Button::new("▲")).clicked() {
-                            move_up = Some(i);
-                        }
+            // Select All in cima.
+            let mut all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+            if ui.checkbox(&mut all, "Select All").changed() {
+                for e in px.entries.iter_mut() {
+                    e.1 = all;
+                }
+            }
+            ui.separator();
+
+            // Elenco dev con riordino drag & drop (payload = indice di partenza).
+            let mut from: Option<usize> = None;
+            let mut to: Option<usize> = None;
+            for i in 0..px.entries.len() {
+                let dev = px.entries[i].0;
+                let mut sel = px.entries[i].1;
+                let inner = ui.horizontal(|ui| {
+                    ui.checkbox(&mut sel, "");
+                    ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("≡  {}", dev_name(app, dev)))
+                                    .monospace()
+                                    .color(dev_color(app, dev)),
+                            )
+                            .selectable(false),
+                        );
                     });
                 });
+                px.entries[i].1 = sel;
+
+                let resp = inner.response;
+                let ptr = ui.input(|i| i.pointer.interact_pos());
+                // Indicatore di inserimento mentre si trascina sopra la riga.
+                if resp.dnd_hover_payload::<usize>().is_some() {
+                    if let Some(p) = ptr {
+                        let y = if p.y > resp.rect.center().y {
+                            resp.rect.bottom()
+                        } else {
+                            resp.rect.top()
+                        };
+                        ui.painter().hline(
+                            resp.rect.x_range(),
+                            y,
+                            Stroke::new(2.0, g(EFFORT_ORANGE)),
+                        );
+                    }
+                }
+                if let Some(payload) = resp.dnd_release_payload::<usize>() {
+                    from = Some(*payload);
+                    let after = ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
+                    to = Some(if after { i + 1 } else { i });
+                }
+            }
+            // Applica lo spostamento a fine passata.
+            if let (Some(f), Some(t)) = (from, to) {
+                if f != t {
+                    let item = px.entries.remove(f);
+                    let insert = if f < t { t - 1 } else { t };
+                    px.entries.insert(insert.min(px.entries.len()), item);
+                }
             }
 
             ui.separator();
             ui.horizontal(|ui| {
-                let any = px.entries.iter().any(|(_, s)| *s);
-                if ui
-                    .add_enabled(any, egui::Button::new("Esporta…"))
-                    .clicked()
-                {
+                // Esportabile anche con zero dev: esce comunque il resto (milestone…).
+                if ui.button("Esporta…").clicked() {
                     do_export = true;
                 }
                 if ui.button("Annulla").clicked() {
@@ -2032,14 +2082,6 @@ fn pdf_export_window(
                 }
             });
         });
-
-    // Riordino con le frecce (uno spostamento per frame).
-    if let Some(i) = move_up {
-        px.entries.swap(i, i - 1);
-    }
-    if let Some(i) = move_down {
-        px.entries.swap(i, i + 1);
-    }
 
     // Esito: raccolgo i dati prima di rilasciare il prestito di `px`.
     let outcome: Option<Option<Vec<DevId>>> = if do_export {
@@ -2064,6 +2106,86 @@ fn pdf_export_window(
         Some(None) => state.pdf_export = None,
         None => {}
     }
+}
+
+// ── Aiuto / Manuale ─────────────────────────────────────────────────────────
+
+/// Testo del manuale d'uso, incorporato a compile-time da `docs/MANUALE.md`.
+const MANUAL_MD: &str = include_str!("../docs/MANUALE.md");
+
+/// Finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…): resa Markdown completa via
+/// `egui_commonmark` + casella di ricerca che filtra le sezioni (livello `##`).
+fn help_window(ctx: &egui::Context, state: &mut UiState) {
+    if !state.show_help {
+        return;
+    }
+    let mut open = true;
+    egui::Window::new("Manuale d'uso")
+        .collapsible(true)
+        .resizable(true)
+        .default_size(egui::vec2(820.0, 620.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            // Barra di ricerca.
+            ui.horizontal(|ui| {
+                ui.label("🔎");
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.help_search)
+                        .hint_text("Cerca nel manuale…")
+                        .desired_width(360.0),
+                );
+                if ui.button("✕").on_hover_text("Pulisci").clicked() {
+                    state.help_search.clear();
+                }
+            });
+            ui.separator();
+
+            let q = state.help_search.trim().to_lowercase();
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    if q.is_empty() {
+                        // Manuale intero.
+                        CommonMarkViewer::new().show(ui, &mut state.help_md_cache, MANUAL_MD);
+                    } else {
+                        // Solo le sezioni (## ) che contengono il testo cercato.
+                        let mut any = false;
+                        for sec in manual_sections(MANUAL_MD) {
+                            if sec.to_lowercase().contains(&q) {
+                                any = true;
+                                CommonMarkViewer::new().show(ui, &mut state.help_md_cache, sec);
+                                ui.separator();
+                            }
+                        }
+                        if !any {
+                            ui.label(format!("Nessun risultato per «{}».", state.help_search));
+                        }
+                    }
+                });
+        });
+    if !open {
+        state.show_help = false;
+    }
+}
+
+/// Divide il manuale in sezioni tagliando all'inizio di ogni intestazione di
+/// livello 2 (`## `). La prima sezione contiene titolo, introduzione e indice.
+fn manual_sections(md: &str) -> Vec<&str> {
+    let bytes = md.as_bytes();
+    let mut out = Vec::new();
+    let mut last = 0;
+    for (pos, _) in md.match_indices("## ") {
+        // deve essere a inizio riga e non far parte di "### "/"#### "
+        let at_line_start = pos == 0 || bytes[pos - 1] == b'\n';
+        if at_line_start {
+            if pos > last {
+                out.push(&md[last..pos]);
+            }
+            last = pos;
+        }
+    }
+    out.push(&md[last..]);
+    out
 }
 
 fn confirm_del_dev_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Vec<Action>) {
