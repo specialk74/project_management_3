@@ -3200,8 +3200,14 @@ fn project_layout(ui: &egui::Ui, app: &App, filter: &Filter, compact: bool) -> V
             .iter()
             .map(|(_, m)| dev_block_height(*m, compact))
             .sum();
-        // l'info riserva lo spazio reale del nome (può crescere su più righe).
-        let info_h = extra_rows * ROW_H + name_block_height(ui, &name);
+        // Con filtro worker attivo l'info mostra solo la tripletta (1 riga):
+        // così non aggiunge spessore oltre alle righe dev filtrate.
+        // Senza filtro riserva lo spazio reale del nome (può crescere su più righe).
+        let info_h = if filter.is_some() {
+            ROW_H
+        } else {
+            extra_rows * ROW_H + name_block_height(ui, &name)
+        };
         let proj_h = sum_devs.max(info_h);
         out.push(ProjLayout {
             proj: proj_id,
@@ -4122,7 +4128,17 @@ fn left_column(
 
     for p in &layout {
         let proj_rect = Rect::from_min_size(egui::pos2(left, y), Vec2::new(LEFT_W, p.proj_h));
-        draw_project_info(ui, proj_rect, app, state, actions, p.proj, &p.name, compact);
+        draw_project_info(
+            ui,
+            proj_rect,
+            app,
+            state,
+            actions,
+            p.proj,
+            &p.name,
+            compact,
+            filter.is_some(),
+        );
         draw_left_dev_strip(ui, proj_rect, p.proj, state);
         draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs, compact);
 
@@ -4141,6 +4157,7 @@ fn draw_project_info(
     proj: ProjectId,
     proj_name: &str,
     compact: bool,
+    filter_active: bool,
 ) {
     let x = rect.left();
     let w = LEFT_INFO_W;
@@ -4174,6 +4191,12 @@ fn draw_project_info(
         });
     }
     tr.on_hover_text("Tasto destro: modifica tripletta");
+
+    // Con filtro worker attivo resta visibile solo la tripletta: niente pulsanti
+    // sposta, categoria, nome, inizio/fine (così non crea spessore).
+    if filter_active {
+        return;
+    }
 
     // Pulsanti sposta su/giù all'estrema destra della riga tripletta.
     let btn_w = 16.0;
