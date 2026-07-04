@@ -187,6 +187,9 @@ pub struct UiState {
     // 0 = tutti gli effort, 1 = solo nulli, 2 = solo >= 40
     effort_filter_mode: i32,
     compact_mode: bool,
+    // zoom settimane (solo vista NON compatta): 0 = normale, 1 = merge 2 settimane,
+    // 2 = merge 4 settimane. Le colonne mergiate sono sola lettura (somma effort).
+    zoom_level: u8,
     // footer collassato tramite la maniglia col triangolino (indipendente da compact_mode)
     footer_hidden: bool,
     // resa in bianco/nero (senza colori)
@@ -391,10 +394,8 @@ impl PjmApp {
 
         // Scroll iniziale per centrare la settimana corrente (come nel main.rs Slint).
         // L'offset X tiene conto delle colonne di confine d'anno (più strette).
-        let cols = columns_vec(&app);
-        let col_pos = cols
-            .iter()
-            .position(|c| matches!(c, Col::Week(w) if *w == this_week));
+        let cols = columns_vec(&app, 0);
+        let col_pos = cols.iter().position(|c| c.contains_week(this_week));
         let pending_scroll_x = match col_pos {
             Some(idx) if idx > 0 => {
                 const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
@@ -1111,10 +1112,28 @@ fn weeks_vec(app: &App) -> Vec<i32> {
 /// confine d'anno (sola lettura, sfondo giallo canarino) inserita tra l'ultima
 /// settimana di un anno e la prima del successivo. `YearEnd(y)` rappresenta il
 /// confine tra l'anno `y` e l'anno `y+1`.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Col {
-    Week(i32),
+    /// Una o più settimane mergiate (len 1 al livello zoom 0). L'effort mostrato
+    /// è la somma delle settimane del gruppo; le colonne con len > 1 sono sola lettura.
+    Weeks(Vec<i32>),
     YearEnd(i32),
+}
+
+impl Col {
+    /// True se il gruppo contiene la settimana `w`.
+    fn contains_week(&self, w: i32) -> bool {
+        matches!(self, Col::Weeks(ws) if ws.contains(&w))
+    }
+}
+
+/// Numero di settimane mergiate per livello di zoom.
+fn zoom_group(level: u8) -> usize {
+    match level {
+        1 => 2,
+        2 => 4,
+        _ => 1,
+    }
 }
 
 /// Larghezza (px) della colonna di confine d'anno: più stretta di una settimana,
@@ -1125,7 +1144,7 @@ const BOUNDARY_W: f32 = 64.0;
 fn col_width(c: &Col, cw: f32) -> f32 {
     match c {
         Col::YearEnd(_) => BOUNDARY_W,
-        Col::Week(_) => cw,
+        Col::Weeks(_) => cw,
     }
 }
 
@@ -1141,16 +1160,26 @@ fn col_x_offset(cols: &[Col], idx: usize, cw: f32) -> f32 {
 
 /// Asse colonne condiviso da header, griglia e footer: le settimane di
 /// `weeks_vec` con, dopo ogni transizione d'anno, una colonna di confine.
-fn columns_vec(app: &App) -> Vec<Col> {
+fn columns_vec(app: &App, level: u8) -> Vec<Col> {
+    let g = zoom_group(level);
     let weeks = weeks_vec(app);
     let mut cols = Vec::with_capacity(weeks.len() + 2);
-    for (i, w) in weeks.iter().enumerate() {
-        cols.push(Col::Week(*w));
-        if let Some(next) = weeks.get(i + 1) {
-            let y0 = days_to_local(*w).year();
-            let y1 = days_to_local(*next).year();
+    let mut i = 0;
+    while i < weeks.len() {
+        // Raggruppa fino a `g` settimane consecutive dello stesso anno: un gruppo
+        // non attraversa mai il confine d'anno (la colonna gialla resta separata).
+        let year = days_to_local(weeks[i]).year();
+        let mut group = Vec::new();
+        while i < weeks.len() && group.len() < g && days_to_local(weeks[i]).year() == year {
+            group.push(weeks[i]);
+            i += 1;
+        }
+        cols.push(Col::Weeks(group));
+        // Confine d'anno tra questo gruppo e il prossimo, se cambia anno.
+        if i < weeks.len() {
+            let next_year = days_to_local(weeks[i]).year();
             // di norma un solo confine; il ciclo copre eventuali salti d'anno.
-            for y in y0..y1 {
+            for y in year..next_year {
                 cols.push(Col::YearEnd(y));
             }
         }
@@ -1291,13 +1320,22 @@ fn col_w(compact: bool) -> f32 {
     if compact { COMPACT_W } else { COL_W }
 }
 
-fn dev_block_height(max_rows: usize, compact: bool) -> f32 {
-    let inner = if compact {
+/// Altezza dell'area interna (celle) di un blocco dev.
+/// - compatta: 1 riga (barra)
+/// - mergiata (zoom): 2 righe (cumulativo + somma), i nomi worker spariscono
+/// - normale: 1 riga cumulativo + `max_rows` righe worker
+fn dev_inner_h(max_rows: usize, compact: bool, merged: bool) -> f32 {
+    if compact {
         ROW_H
+    } else if merged {
+        2.0 * ROW_H
     } else {
         (max_rows as f32 + 1.0) * ROW_H
-    };
-    DEV_BORDER + inner + DEV_BORDER
+    }
+}
+
+fn dev_block_height(max_rows: usize, compact: bool, merged: bool) -> f32 {
+    DEV_BORDER + dev_inner_h(max_rows, compact, merged) + DEV_BORDER
 }
 
 /// Slot (testo "nome|effort", nota) per ogni riga della settimana, riempiti con vuoti.
@@ -1469,6 +1507,30 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 state.bw_mode = !state.bw_mode;
                 ui.close_menu();
             }
+            ui.separator();
+            // Zoom settimane: mergia 2 o 4 settimane (somma effort, sola lettura).
+            // Disponibile solo in vista normale; ignorato in vista compatta.
+            ui.add_enabled_ui(!state.compact_mode, |ui| {
+                ui.label("Zoom settimane");
+                if ui
+                    .selectable_label(state.zoom_level == 0, "Normale")
+                    .clicked()
+                {
+                    state.zoom_level = 0;
+                }
+                if ui
+                    .selectable_label(state.zoom_level == 1, "2 settimane")
+                    .clicked()
+                {
+                    state.zoom_level = 1;
+                }
+                if ui
+                    .selectable_label(state.zoom_level == 2, "4 settimane")
+                    .clicked()
+                {
+                    state.zoom_level = 2;
+                }
+            });
         });
 
         // I selettori Anno e Categoria sono stati spostati nel footer sinistro
@@ -1509,7 +1571,9 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
 // ── Header (date settimane) ─────────────────────────────────────────────────
 
 fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
-    let cols = columns_vec(app);
+    // zoom attivo solo in vista normale
+    let level = if state.compact_mode { 0 } else { state.zoom_level };
+    let cols = columns_vec(app, level);
     // Riserva i 300px sinistri con lo stesso meccanismo della griglia (SidePanel),
     // così l'origine X delle colonne coincide esattamente.
     egui::SidePanel::left("hdr_left")
@@ -1534,19 +1598,24 @@ fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 let colw = col_width(c, cw);
                 let cell = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, ROW_H));
                 x += colw;
-                let w = match c {
+                let ws = match c {
                     Col::YearEnd(_) => {
                         // colonna di confine: sfondo canarino + titolo "Effort residuo"
                         ui.painter().rect_filled(cell, 0.0, g(CANARY));
                         draw_boundary_title(ui, cell);
                         continue;
                     }
-                    Col::Week(w) => *w,
+                    Col::Weeks(ws) => ws,
                 };
-                if w == state.this_week {
+                let Some(w) = ws.first().copied() else {
+                    continue;
+                };
+                let merged = ws.len() > 1;
+                if ws.contains(&state.this_week) {
                     ui.painter()
                         .rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.5));
                 }
+                // etichetta = data della prima settimana del gruppo
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))
                     .format("%y-%m-%d")
                     .to_string();
@@ -1566,7 +1635,15 @@ fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                         TEXT_WHITE,
                     );
                 }
-                if resp.clicked() {
+                if merged {
+                    // gruppo mergiato: sola lettura. Tooltip con l'intervallo di date.
+                    if let Some(last) = ws.last().copied() {
+                        let end = primo_giorno_settimana_corrente(&days_to_local(last))
+                            .format("%y-%m-%d")
+                            .to_string();
+                        resp.on_hover_text(format!("{txt} … {end}"));
+                    }
+                } else if resp.clicked() {
                     state.popup = Some(Popup::BulkWeekMax {
                         week: w as usize,
                         date: txt,
@@ -2670,7 +2747,8 @@ fn footer_handle(ui: &mut egui::Ui, state: &mut UiState) {
 fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     let filter = state.worker_filter.clone();
     let workers = footer_workers(app, &filter);
-    let cols = columns_vec(app);
+    let level = if state.compact_mode { 0 } else { state.zoom_level };
+    let cols = columns_vec(app, level);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
     // striscia gialla in testa al footer
@@ -2972,18 +3050,23 @@ fn draw_right_footer(
         next_x += colw;
 
         // colonna di confine d'anno: sfondo canarino su tutta l'altezza, niente valori
-        let w = match c {
+        let ws = match c {
             Col::YearEnd(_) => {
                 let col =
                     Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
                 ui.painter().rect_filled(col, 0.0, g(CANARY));
                 continue;
             }
-            Col::Week(w) => *w,
+            Col::Weeks(ws) => ws,
         };
+        let Some(w) = ws.first().copied() else {
+            continue;
+        };
+        // gruppi mergiati (zoom): valori sommati e sola lettura (niente click/note/stato)
+        let merged = ws.len() > 1;
 
         // tinta settimana corrente su tutta la colonna
-        if w == state.this_week {
+        if ws.contains(&state.this_week) {
             let col =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
             ui.painter()
@@ -3015,12 +3098,20 @@ fn draw_right_footer(
             };
             ui.painter().rect_filled(cell, 0.0, bg);
 
-            let value = app
-                .sovra
-                .get(&(WeekId(w as usize), *wid))
-                .map_or(0, |e| e.0 as i32);
-            let eff_max = app.workers.get_effective_max_hours(*wid, w as usize) as i32;
-            let global_max = app.workers.get_max_hours(*wid) as i32;
+            // Somma su tutte le settimane del gruppo (una sola al livello zoom 0).
+            let value: i32 = ws
+                .iter()
+                .map(|wk| {
+                    app.sovra
+                        .get(&(WeekId(*wk as usize), *wid))
+                        .map_or(0, |e| e.0 as i32)
+                })
+                .sum();
+            let eff_max: i32 = ws
+                .iter()
+                .map(|wk| app.workers.get_effective_max_hours(*wid, *wk as usize) as i32)
+                .sum();
+            let global_max = app.workers.get_max_hours(*wid) as i32 * ws.len() as i32;
 
             let shown = state.effort_filter_mode == 0
                 || (state.effort_filter_mode == 1 && value == 0 && eff_max != 0)
@@ -3029,21 +3120,25 @@ fn draw_right_footer(
                 continue;
             }
 
-            // triangolo se esiste una nota collegata al worker per questa settimana
-            let has_note = app.workers.has_week_note(*wid, w as usize);
+            // Elementi per-settimana (note, stato, click): solo per colonne non mergiate.
+            let has_note = !merged && app.workers.has_week_note(*wid, w as usize);
             if has_note {
                 draw_note_triangle(ui, cell.shrink(STATUS_TRI_INSET));
             }
 
             // triangoli di stato: ferie (verde, alto-sx) / malattia (rosso, basso-sx)
-            match app.workers.get_week_status(*wid, w as usize) {
-                Some(WeekStatus::Ferie) => {
-                    draw_status_triangle_top_left(ui, cell, g(Color32::from_rgb(0x33, 0x99, 0xFF)))
+            if !merged {
+                match app.workers.get_week_status(*wid, w as usize) {
+                    Some(WeekStatus::Ferie) => draw_status_triangle_top_left(
+                        ui,
+                        cell,
+                        g(Color32::from_rgb(0x33, 0x99, 0xFF)),
+                    ),
+                    Some(WeekStatus::Malattia) => {
+                        draw_status_triangle_bottom_left(ui, cell, g(Color32::RED))
+                    }
+                    None => {}
                 }
-                Some(WeekStatus::Malattia) => {
-                    draw_status_triangle_bottom_left(ui, cell, g(Color32::RED))
-                }
-                None => {}
             }
 
             let color = if value > eff_max {
@@ -3067,6 +3162,11 @@ fn draw_right_footer(
                 cell_font(),
                 color,
             );
+
+            // Colonna mergiata (zoom): sola lettura, niente interazioni per-settimana.
+            if merged {
+                continue;
+            }
 
             // Tasto sinistro → override ore max; tasto destro → nota worker/settimana.
             let resp = ui
@@ -3182,7 +3282,13 @@ struct ProjLayout {
     proj_h: f32,
 }
 
-fn project_layout(ui: &egui::Ui, app: &App, filter: &Filter, compact: bool) -> Vec<ProjLayout> {
+fn project_layout(
+    ui: &egui::Ui,
+    app: &App,
+    filter: &Filter,
+    compact: bool,
+    merged: bool,
+) -> Vec<ProjLayout> {
     // Righe info oltre al nome: compatta = solo tripletta; normale = tripletta +
     // categoria + inizio + fine.
     let extra_rows = if compact { 1.0 } else { 4.0 };
@@ -3203,7 +3309,7 @@ fn project_layout(ui: &egui::Ui, app: &App, filter: &Filter, compact: bool) -> V
         }
         let sum_devs: f32 = devs
             .iter()
-            .map(|(_, m)| dev_block_height(*m, compact))
+            .map(|(_, m)| dev_block_height(*m, compact, merged))
             .sum();
         // Con filtro worker attivo l'info mostra solo la tripletta (1 riga):
         // così non aggiunge spessore oltre alle righe dev filtrate.
@@ -3289,8 +3395,8 @@ fn active_hstrip_range(
         return (left, left + content_w);
     }
     let is_active = |c: &Col| {
-        matches!(c, Col::Week(w)
-            if (proj_start < 0 || *w >= proj_start) && (deadline < 0 || *w <= deadline))
+        matches!(c, Col::Weeks(ws)
+            if ws.iter().any(|w| (proj_start < 0 || *w >= proj_start) && (deadline < 0 || *w <= deadline)))
     };
     match (
         cols.iter().position(is_active),
@@ -3318,10 +3424,7 @@ fn draw_compact_date_marker(
     if week < 0 {
         return;
     }
-    let Some(ci) = cols
-        .iter()
-        .position(|c| matches!(c, Col::Week(w) if *w == week))
-    else {
+    let Some(ci) = cols.iter().position(|c| c.contains_week(week)) else {
         return;
     };
     let cx = left + col_x_offset(cols, ci, cw) + cw / 2.0;
@@ -3343,10 +3446,13 @@ fn grid(
     filter: &Filter,
 ) {
     let compact = state.compact_mode;
+    // zoom attivo solo in vista normale; le colonne mergiate sono sola lettura.
+    let level = if compact { 0 } else { state.zoom_level };
+    let merged = level > 0;
     let cw = col_w(compact);
-    let cols = columns_vec(app);
+    let cols = columns_vec(app, level);
     let content_w = cols_width(&cols, cw);
-    let layout = project_layout(ui, app, filter, compact);
+    let layout = project_layout(ui, app, filter, compact, merged);
     let total_h = total_content_h(&layout);
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
@@ -3381,15 +3487,11 @@ fn grid(
             let border = if compact { BG_DARK } else { color };
             paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
-            let inner_h = if compact {
-                ROW_H
-            } else {
-                (*max_rows as f32 + 1.0) * ROW_H
-            };
+            let inner_h = dev_inner_h(*max_rows, compact, merged);
             let block = Rect::from_min_size(egui::pos2(left, dy), Vec2::new(content_w, inner_h));
             draw_dev_cells(
                 ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols, proj_start,
-                deadline, filter, compact, cw,
+                deadline, filter, compact, cw, merged,
             );
             dy += inner_h;
             paint_hstrip_range(ui, act_x0, act_x1, dy, border);
@@ -3448,6 +3550,7 @@ fn draw_dev_cells(
     filter: &Filter,
     compact: bool,
     cw: f32,
+    merged: bool,
 ) {
     let planned = app
         .projects
@@ -3501,38 +3604,68 @@ fn draw_dev_cells(
             }
             continue;
         }
-        let w = match c {
-            Col::Week(w) => w,
+        let ws = match c {
+            Col::Weeks(ws) => ws,
             Col::YearEnd(_) => unreachable!(),
         };
+        let w = &ws[0]; // settimana rappresentativa (etichette/id)
 
-        let before_start = proj_start >= 0 && *w < proj_start;
-        let after_deadline = deadline >= 0 && *w > deadline;
-        let is_deadline = deadline >= 0 && *w == deadline;
+        // Flag aggregati sul gruppo di settimane (una sola al livello zoom 0).
+        let before_start = proj_start >= 0 && ws.iter().all(|wk| *wk < proj_start);
+        let after_deadline = deadline >= 0 && ws.iter().all(|wk| *wk > deadline);
+        let is_deadline = deadline >= 0 && ws.contains(&deadline);
+        let is_start = proj_start >= 0 && ws.contains(&proj_start);
 
         // colonna settimana: bg deadline/start
         let col_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, rect.height()));
         if is_deadline {
             ui.painter().rect_filled(col_rect, 0.0, g(DEADLINE_BG));
-        } else if proj_start >= 0 && *w == proj_start {
+        } else if is_start {
             ui.painter().rect_filled(col_rect, 0.0, g(START_BG));
         }
-        if !compact && *w == state.this_week {
+        if !compact && ws.contains(&state.this_week) {
             ui.painter()
                 .rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
         }
 
         // ── Milestone: tinta colonna col colore della milestone + tooltip;
         //    tasto destro sulla riga in alto per aggiungere/rimuovere. ──
-        let ms_here = app
-            .projects
-            .project_milestones_at_week(proj, WeekId(*w as usize));
+        // Unione delle milestone di tutte le settimane del gruppo.
+        let ms_here: Vec<_> = {
+            let mut v = Vec::new();
+            for wk in ws.iter() {
+                for m in app
+                    .projects
+                    .project_milestones_at_week(proj, WeekId(*wk as usize))
+                {
+                    if !v.contains(&m) {
+                        v.push(m);
+                    }
+                }
+            }
+            v
+        };
         if let Some(first) = ms_here.first() {
             if let Some(color) = app.milestones.get_color(*first) {
                 ui.painter().rect_filled(col_rect, 0.0, from_hex(color));
             }
         }
-        {
+        if merged {
+            // Colonna mergiata: milestone solo informative (tooltip), niente menù.
+            if !ms_here.is_empty() {
+                let top = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
+                let names: Vec<String> = ms_here
+                    .iter()
+                    .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
+                    .collect();
+                ui.interact(
+                    top,
+                    egui::Id::new(("msrow_m", proj.0, dev.0, *w)),
+                    Sense::hover(),
+                )
+                .on_hover_text(names.join(", "));
+            }
+        } else {
             let top = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
             let mut resp = ui.interact(
                 top,
@@ -3624,10 +3757,15 @@ fn draw_dev_cells(
             });
         }
 
+        // Effort del gruppo = somma delle settimane mergiate (una sola al livello 0).
         let week_total = app
             .projects
             .get_single_dev(proj, dev)
-            .map(|sd| sd.get_effort_by_week(WeekId(*w as usize)).0 as i32)
+            .map(|sd| {
+                ws.iter()
+                    .map(|wk| sd.get_effort_by_week(WeekId(*wk as usize)).0 as i32)
+                    .sum()
+            })
             .unwrap_or(0);
 
         // ── Vista compatta: una barra (altezza ∝ effort) per settimana attiva ──
@@ -3669,8 +3807,13 @@ fn draw_dev_cells(
             let has_workers = app
                 .projects
                 .get_single_dev(proj, dev)
-                .and_then(|sd| sd.get_all(WeekId(*w as usize)))
-                .map(|s| s.worker_id.keys().any(|k| *k != WORKER_ID_ZERO))
+                .map(|sd| {
+                    ws.iter().any(|wk| {
+                        sd.get_all(WeekId(*wk as usize))
+                            .map(|s| s.worker_id.keys().any(|k| *k != WORKER_ID_ZERO))
+                            .unwrap_or(false)
+                    })
+                })
                 .unwrap_or(false);
             if (has_workers || is_deadline) && !hide_effort {
                 let remaining = planned - running;
@@ -3698,6 +3841,26 @@ fn draw_dev_cells(
         if before_start || after_deadline {
             continue;
         }
+
+        // ── Colonna mergiata (zoom): una sola cella con la somma, sola lettura,
+        //    niente nomi worker. Occupa la riga sotto il cumulativo. ──
+        if merged {
+            if !hide_effort && (week_total > 0 || is_deadline) {
+                let cell = Rect::from_min_size(
+                    egui::pos2(x, rect.top() + ROW_H),
+                    Vec2::new(cw, ROW_H),
+                );
+                ui.painter().text(
+                    cell.center(),
+                    Align2::CENTER_CENTER,
+                    week_total.to_string(),
+                    cell_font(),
+                    TEXT_WHITE,
+                );
+            }
+            continue;
+        }
+
         let slots = gather_slots(app, proj, dev, *w, max_rows, filter);
         for (row, (text, note)) in slots.iter().enumerate() {
             let y = rect.top() + (row as f32 + 1.0) * ROW_H;
@@ -4120,7 +4283,9 @@ fn left_column(
     filter: &Filter,
 ) {
     let compact = state.compact_mode;
-    let layout = project_layout(ui, app, filter, compact);
+    // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
+    let merged = !compact && state.zoom_level > 0;
+    let layout = project_layout(ui, app, filter, compact, merged);
     let total_h = total_content_h(&layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
@@ -4145,7 +4310,7 @@ fn left_column(
             filter.is_some(),
         );
         draw_left_dev_strip(ui, proj_rect, p.proj, state);
-        draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs, compact);
+        draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs, compact, merged);
 
         y += p.proj_h;
         paint_hstrip(ui, left, LEFT_W, y, BETWEEN_PROJECTS);
@@ -4400,6 +4565,7 @@ fn draw_left_devs(
     proj: ProjectId,
     devs: &[(DevId, usize)],
     compact: bool,
+    merged: bool,
 ) {
     let x0 = rect.left() + LEFT_INFO_W + DEV_STRIP_W;
     let mut y = rect.top();
@@ -4408,17 +4574,13 @@ fn draw_left_devs(
         let max_rows = *max_rows;
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
-        let block_h = dev_block_height(max_rows, compact);
+        let block_h = dev_block_height(max_rows, compact, merged);
 
         // bordo superiore
         let top_b = Rect::from_min_size(egui::pos2(x0, y), Vec2::new(LEFT_DEV_W, DEV_BORDER));
         ui.painter().rect_filled(top_b, 0.0, color);
         let inner_y = y + DEV_BORDER;
-        let inner_h = if compact {
-            ROW_H
-        } else {
-            (max_rows as f32 + 1.0) * ROW_H
-        };
+        let inner_h = dev_inner_h(max_rows, compact, merged);
 
         // cella nome dev (90px, doppio click = add row)
         let name_rect =
