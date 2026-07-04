@@ -512,12 +512,12 @@ fn page_ops(
         ops.extend(text_left(fonts, X_LABEL, yc - 1.3, &label, 8.0, false, BLACK));
         let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
 
-        // Dev senza effort: riga sottile del colore del dev, dal nome fino al
-        // margine destro del grafico (oltre la fine del progetto).
+        // Dev senza effort: riga sottile del colore del dev che copre tutta la
+        // larghezza del calendario (dall'inizio alla fine dell'asse dei mesi).
         if r.no_effort {
             let thin_hh = 0.4;
             ops.extend(rect_fill(
-                lead_x0,
+                CHART_X0,
                 yc - thin_hh,
                 CHART_X1,
                 yc + thin_hh,
@@ -657,12 +657,10 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
 
 /// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
 /// scelto dall'utente. I dev con effort producono la barra normale; quelli senza
-/// effort una riga sottile del colore del dev fino al margine destro.
-/// `None` se il progetto non ha inizio E fine, o se `ordered_devs` è vuoto.
+/// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
+/// Con `ordered_devs` vuoto esporta comunque la pagina (asse, milestone, today…)
+/// senza righe dev. `None` solo se il progetto non ha inizio E fine.
 pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<Vec<u8>> {
-    if ordered_devs.is_empty() {
-        return None;
-    }
     let (Some(start_w), Some(end_w)) = (
         app.projects.get_project_start_week(proj),
         app.projects.get_project_end_week(proj),
@@ -808,7 +806,16 @@ mod tests {
             .expect("progetto con inizio/fine e dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
-        // Nessun dev selezionato → None.
+        // Nessun dev selezionato → esporta comunque il resto (milestone, asse…).
+        let bytes = build_pdf_project(&app, pid, &[]).expect("senza dev → Some");
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn single_project_without_end_returns_none() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        // niente fine → None anche col percorso singolo progetto
         assert!(build_pdf_project(&app, pid, &[]).is_none());
     }
 }

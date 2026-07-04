@@ -1072,7 +1072,7 @@ impl PjmApp {
             }
             Action::ExportPdfProject { proj, devs } => {
                 match crate::pdf_export::build_pdf_project(&self.app, proj, &devs) {
-                    None => eprintln!("Progetto senza inizio/fine o nessun dev: PDF non creato."),
+                    None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
                     Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
                 }
             }
@@ -1981,8 +1981,6 @@ fn pdf_export_window(
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
-    let mut move_up: Option<usize> = None;
-    let mut move_down: Option<usize> = None;
 
     egui::Window::new("Esporta PDF")
         .collapsible(false)
@@ -1992,39 +1990,75 @@ fn pdf_export_window(
         .show(ctx, |ui| {
             ui.label(egui::RichText::new(&title).strong());
             ui.add_space(4.0);
-            ui.label("Seleziona e ordina i dev da esportare:");
+            ui.label("Seleziona i dev; trascinali per riordinarli:");
             ui.add_space(4.0);
 
-            let n = px.entries.len();
-            for (i, (dev, sel)) in px.entries.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    ui.checkbox(sel, "");
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(dev_name(app, *dev))
-                                .monospace()
-                                .color(dev_color(app, *dev)),
-                        )
-                        .selectable(false),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add_enabled(i + 1 < n, egui::Button::new("▼")).clicked() {
-                            move_down = Some(i);
-                        }
-                        if ui.add_enabled(i > 0, egui::Button::new("▲")).clicked() {
-                            move_up = Some(i);
-                        }
+            // Select All in cima.
+            let mut all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+            if ui.checkbox(&mut all, "Select All").changed() {
+                for e in px.entries.iter_mut() {
+                    e.1 = all;
+                }
+            }
+            ui.separator();
+
+            // Elenco dev con riordino drag & drop (payload = indice di partenza).
+            let mut from: Option<usize> = None;
+            let mut to: Option<usize> = None;
+            for i in 0..px.entries.len() {
+                let dev = px.entries[i].0;
+                let mut sel = px.entries[i].1;
+                let inner = ui.horizontal(|ui| {
+                    ui.checkbox(&mut sel, "");
+                    ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("≡  {}", dev_name(app, dev)))
+                                    .monospace()
+                                    .color(dev_color(app, dev)),
+                            )
+                            .selectable(false),
+                        );
                     });
                 });
+                px.entries[i].1 = sel;
+
+                let resp = inner.response;
+                let ptr = ui.input(|i| i.pointer.interact_pos());
+                // Indicatore di inserimento mentre si trascina sopra la riga.
+                if resp.dnd_hover_payload::<usize>().is_some() {
+                    if let Some(p) = ptr {
+                        let y = if p.y > resp.rect.center().y {
+                            resp.rect.bottom()
+                        } else {
+                            resp.rect.top()
+                        };
+                        ui.painter().hline(
+                            resp.rect.x_range(),
+                            y,
+                            Stroke::new(2.0, g(EFFORT_ORANGE)),
+                        );
+                    }
+                }
+                if let Some(payload) = resp.dnd_release_payload::<usize>() {
+                    from = Some(*payload);
+                    let after = ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
+                    to = Some(if after { i + 1 } else { i });
+                }
+            }
+            // Applica lo spostamento a fine passata.
+            if let (Some(f), Some(t)) = (from, to) {
+                if f != t {
+                    let item = px.entries.remove(f);
+                    let insert = if f < t { t - 1 } else { t };
+                    px.entries.insert(insert.min(px.entries.len()), item);
+                }
             }
 
             ui.separator();
             ui.horizontal(|ui| {
-                let any = px.entries.iter().any(|(_, s)| *s);
-                if ui
-                    .add_enabled(any, egui::Button::new("Esporta…"))
-                    .clicked()
-                {
+                // Esportabile anche con zero dev: esce comunque il resto (milestone…).
+                if ui.button("Esporta…").clicked() {
                     do_export = true;
                 }
                 if ui.button("Annulla").clicked() {
@@ -2032,14 +2066,6 @@ fn pdf_export_window(
                 }
             });
         });
-
-    // Riordino con le frecce (uno spostamento per frame).
-    if let Some(i) = move_up {
-        px.entries.swap(i, i - 1);
-    }
-    if let Some(i) = move_down {
-        px.entries.swap(i, i + 1);
-    }
 
     // Esito: raccolgo i dati prima di rilasciare il prestito di `px`.
     let outcome: Option<Option<Vec<DevId>>> = if do_export {
