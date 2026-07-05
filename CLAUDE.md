@@ -126,7 +126,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta PDF…, Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
 - **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F`), Milestone… (manager), Closed…
-- **Vista**: Vista compatta, Bianco/Nero, **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4).
+- **Vista**: Vista compatta, Bianco/Nero, **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
 ### Dialogs / windows

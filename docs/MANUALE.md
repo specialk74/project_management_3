@@ -168,6 +168,7 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 - **Bianco/Nero** — resa in scala di grigi (toglie i colori).
 - **Tema** — *Auto (sistema)* / *Chiaro* / *Scuro* (vedi §15).
 - **Zoom settimane** — *Normale* / *2 settimane* / *4 settimane* (vedi §15).
+- **Saturazione worker…** — cruscotto di sintesi del carico (vedi §15).
 
 ---
 
@@ -431,6 +432,30 @@ Nelle colonne unite:
   resta separata e il raggruppamento riparte a ogni anno).
 
 Lo zoom si può aumentare e diminuire liberamente (avanti/indietro).
+
+### Saturazione worker (Vista ▸ Saturazione worker…)
+Cruscotto di sintesi del carico delle persone, per **pianificare e ribilanciare**
+senza scorrere la griglia. È in sola lettura e aggrega i dati esistenti (ore
+allocate `sovra`, capacità = max ore effettive della settimana). Mostra **solo i
+worker visibili nel footer** (esclude quelli nascosti o esclusi dal filtro).
+Contiene:
+
+- un selettore **Settimana / Mese** (granularità);
+- una casella **"Solo da settimana corrente"** che nasconde le settimane passate
+  (mostra solo presente e futuro);
+- un **riepilogo**: numero di sovra-allocazioni e ore in eccesso totali;
+- una colonna **Σ** (subito dopo il nome del worker, quindi sempre visibile senza
+  scorrere) con totale allocato/capacità e numero di settimane in sovra;
+- una **heatmap** worker × (settimana|mese) colorata per saturazione
+  (**verde** = libero, **giallo** = pieno, **rosso** = oltre capacità); ogni cella
+  mostra le ore, col tooltip `allocato / capacità`, ed è cliccabile per saltare a
+  quella settimana nella griglia; la **settimana corrente** è evidenziata (chip
+  verde nell'intestazione e bordo verde brillante sulle celle).
+
+La finestra **non è ridimensionabile**: per vedere quale settimana è stata
+selezionata basta **spostarla**. Nota: **ferie/malattia non azzerano la capacità**
+(si possono fare pochi giorni di ferie e lavorare gli altri), quindi il conteggio
+ore resta quello reale.
 
 ---
 

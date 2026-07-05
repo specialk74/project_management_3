@@ -230,6 +230,10 @@ pub struct UiState {
     load_error: Option<String>,
     // finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…)
     show_help: bool,
+    // cruscotto saturazione worker (Vista ▸ Saturazione worker…)
+    show_saturation: bool,
+    saturation_monthly: bool,     // false = per settimana, true = per mese
+    saturation_future_only: bool, // mostra solo dalla settimana corrente in poi
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // cache di rendering Markdown (immagini/impostazioni), persistente tra i frame
@@ -606,6 +610,7 @@ impl eframe::App for PjmApp {
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
+            saturation_window(ui.ctx(), app, state);
         }
 
         for a in actions {
@@ -1728,6 +1733,11 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                     state.zoom_level = 2;
                 }
             });
+            ui.separator();
+            if ui.button("Saturazione worker…").clicked() {
+                state.show_saturation = true;
+                ui.close_menu();
+            }
         });
 
         // ── Aiuto ────────────────────────────────────────────────────────────
@@ -1857,6 +1867,251 @@ fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 }
             }
         });
+}
+
+// ── Cruscotto saturazione worker (Vista ▸ Saturazione worker…) ──────────────
+
+/// Colonne del cruscotto: per settimana → una colonna per settimana; per mese →
+/// le settimane raggruppate per mese (etichetta `yy-mm`).
+fn saturation_columns(app: &App, monthly: bool) -> Vec<(String, Vec<i32>)> {
+    let weeks = weeks_vec(app);
+    if !monthly {
+        return weeks
+            .into_iter()
+            .map(|w| {
+                let d = primo_giorno_settimana_corrente(&days_to_local(w));
+                (d.format("%y-%m-%d").to_string(), vec![w])
+            })
+            .collect();
+    }
+    let mut out: Vec<(String, Vec<i32>)> = Vec::new();
+    for w in weeks {
+        let d = primo_giorno_settimana_corrente(&days_to_local(w));
+        let key = format!("{:02}-{:02}", d.year() % 100, d.month());
+        match out.last_mut() {
+            Some(last) if last.0 == key => last.1.push(w),
+            _ => out.push((key, vec![w])),
+        }
+    }
+    out
+}
+
+/// Metriche di una cella: ore allocate e capacità (somma su tutte le settimane
+/// del periodo). La capacità è il max ore effettivo della settimana: ferie e
+/// malattia NON azzerano la capacità (si possono fare 2 giorni di ferie e
+/// lavorare gli altri) — il conteggio orario resta quello reale.
+fn saturation_cell(app: &App, wid: WorkerId, weeks: &[i32]) -> (i32, i32) {
+    let mut alloc = 0;
+    let mut cap = 0;
+    for &w in weeks {
+        alloc += app
+            .sovra
+            .get(&(WeekId(w as usize), wid))
+            .map_or(0, |e| e.0 as i32);
+        cap += app.workers.get_effective_max_hours(wid, w as usize) as i32;
+    }
+    (alloc, cap)
+}
+
+fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
+/// Colori (sfondo, testo) di una cella heatmap in base alla saturazione.
+fn heat_colors(alloc: i32, cap: i32) -> (Color32, Color32) {
+    if alloc == 0 {
+        return (bg(), text_dim()); // scarico
+    }
+    if alloc > cap {
+        return (g(Color32::from_rgb(0xcc, 0x30, 0x30)), Color32::WHITE); // sovra
+    }
+    let r = if cap > 0 { alloc as f32 / cap as f32 } else { 1.0 };
+    // verde (poco carico) → giallo (quasi pieno)
+    let c = lerp_color(
+        Color32::from_rgb(0x2e, 0x7d, 0x32),
+        Color32::from_rgb(0xc9, 0xa0, 0x00),
+        r,
+    );
+    (g(c), Color32::WHITE)
+}
+
+/// Cella colorata della heatmap. `current` evidenzia la settimana corrente con un
+/// bordo verde; le altre hanno un bordo tenue per delimitarle.
+fn heat_cell(
+    ui: &mut egui::Ui,
+    label: &str,
+    bgc: Color32,
+    fg: Color32,
+    current: bool,
+    tip: &str,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(32.0, 16.0), Sense::click());
+    ui.painter().rect_filled(rect, 2.0, bgc);
+    // Settimana corrente: bordo verde brillante e spesso, ben visibile su
+    // qualsiasi colore di cella; le altre hanno un bordo tenue.
+    let stroke = if current {
+        Stroke::new(2.5, g(Color32::from_rgb(0x00, 0xe0, 0x4b)))
+    } else {
+        Stroke::new(0.5, text_faint())
+    };
+    ui.painter()
+        .rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Inside);
+    if !label.is_empty() {
+        ui.painter()
+            .text(rect.center(), Align2::CENTER_CENTER, label, mono(8.5), fg);
+    }
+    resp.on_hover_text(tip)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Finestra "Saturazione worker": heatmap worker × (settimana|mese), colorata per
+/// saturazione (allocato / capacità). Mostra solo i worker visibili nel footer.
+fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    if !state.show_saturation {
+        return;
+    }
+    let this_week = state.this_week;
+    let filter = state.worker_filter.clone();
+    // Solo i worker visibili nel footer (esclude nascosti e fuori-filtro).
+    let workers = footer_workers(app, &filter);
+
+    let mut columns = saturation_columns(app, state.saturation_monthly);
+    if state.saturation_future_only {
+        // Tieni la settimana corrente e quelle successive.
+        columns.retain(|(_, wks)| wks.iter().any(|&w| w >= this_week));
+    }
+
+    // Riepilogo (sovra-allocazioni e ore in eccesso) sui dati mostrati.
+    let mut over_n = 0;
+    let mut total_excess = 0;
+    for (wid, _) in &workers {
+        for (_, wks) in &columns {
+            let (a, c) = saturation_cell(app, *wid, wks);
+            if a > c && a > 0 {
+                over_n += 1;
+                total_excess += a - c;
+            }
+        }
+    }
+
+    let mut open = true;
+    let mut jump_week: Option<i32> = None;
+
+    egui::Window::new("Saturazione worker")
+        .collapsible(true)
+        // Larghezza ridimensionabile, altezza no.
+        .resizable([true, false])
+        .default_width(900.0)
+        .default_pos(egui::pos2(80.0, 60.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Vista:");
+                ui.selectable_value(&mut state.saturation_monthly, false, "Settimana");
+                ui.selectable_value(&mut state.saturation_monthly, true, "Mese");
+                ui.separator();
+                ui.checkbox(
+                    &mut state.saturation_future_only,
+                    "Solo da settimana corrente",
+                );
+            });
+            ui.label(format!(
+                "Sovra-allocazioni: {over_n}  ·  Ore in eccesso totali: {total_excess}"
+            ));
+            ui.separator();
+            ui.label(
+                "Heatmap (allocato / capacità): verde=libero, giallo=pieno, rosso=oltre; \
+                 bordo verde = settimana corrente",
+            );
+
+            egui::ScrollArea::both()
+                .id_salt("sat_heat")
+                // Riempie la larghezza della finestra (scroll orizzontale se serve);
+                // allargando la finestra si vedono più colonne. Altezza limitata.
+                .max_height(440.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Grid::new("sat_grid")
+                        .spacing(egui::vec2(2.0, 2.0))
+                        .show(ui, |ui| {
+                            // Intestazione: nome, poi Σ (a sinistra, sempre visibile),
+                            // poi le colonne dei periodi.
+                            ui.label("");
+                            ui.label(egui::RichText::new("Σ  all/cap").strong());
+                            for (lab, wks) in &columns {
+                                let mut rt = egui::RichText::new(lab).monospace().small();
+                                if wks.contains(&this_week) {
+                                    // "chip" pieno verde brillante: settimana corrente.
+                                    rt = rt
+                                        .strong()
+                                        .color(Color32::BLACK)
+                                        .background_color(g(Color32::from_rgb(0x00, 0xe0, 0x4b)));
+                                }
+                                ui.label(rt);
+                            }
+                            ui.end_row();
+
+                            for (wid, wname) in &workers {
+                                // Totali del worker: calcolati prima, così la colonna Σ
+                                // può stare subito dopo il nome (visibile senza scorrere).
+                                let mut tot_a = 0;
+                                let mut tot_c = 0;
+                                let mut over_w = 0;
+                                for (_, wks) in &columns {
+                                    let (a, c) = saturation_cell(app, *wid, wks);
+                                    tot_a += a;
+                                    tot_c += c;
+                                    if a > c {
+                                        over_w += 1;
+                                    }
+                                }
+                                ui.label(egui::RichText::new(wname).monospace());
+                                let tcol = if over_w > 0 {
+                                    g(Color32::from_rgb(0xcc, 0x30, 0x30))
+                                } else {
+                                    text()
+                                };
+                                ui.label(
+                                    egui::RichText::new(format!("{tot_a}/{tot_c}  ({over_w}⚠)"))
+                                        .color(tcol)
+                                        .monospace(),
+                                );
+
+                                for (lab, wks) in &columns {
+                                    let (alloc, cap) = saturation_cell(app, *wid, wks);
+                                    let (bgc, fg) = heat_colors(alloc, cap);
+                                    let is_cur = wks.contains(&this_week);
+                                    let txt = if alloc == 0 {
+                                        String::new()
+                                    } else {
+                                        alloc.to_string()
+                                    };
+                                    let tip = format!("{wname} · {lab}\n{alloc} / {cap} h");
+                                    if heat_cell(ui, &txt, bgc, fg, is_cur, &tip).clicked() {
+                                        jump_week = Some(wks[0]);
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+        });
+
+    // Click su una cella → scrolla la griglia a quella settimana. Per capire quale
+    // settimana è selezionata basta spostare la finestra (non è ridimensionabile).
+    if let Some(w) = jump_week {
+        let level = if state.compact_mode { 0 } else { state.zoom_level };
+        let cols = columns_vec(app, level);
+        let cw = col_w(state.compact_mode);
+        if let Some(idx) = cols.iter().position(|c| c.contains_week(w)) {
+            state.pending_scroll_x = Some((col_x_offset(&cols, idx, cw) - 80.0).max(0.0));
+        }
+    }
+    if !open {
+        state.show_saturation = false;
+    }
 }
 
 // ── Corpo: colonna sinistra + griglia con scroll sincronizzato ──────────────
