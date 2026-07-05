@@ -173,6 +173,12 @@ pub struct UiState {
     scroll_y: f32,
     // scroll orizzontale iniziale da applicare alla griglia (settimana corrente)
     pending_scroll_x: Option<f32>,
+    // scroll verticale da applicare alla griglia (salto rapido a un progetto)
+    pending_scroll_y: Option<f32>,
+    // ricerca nel popup "Progetti" (unifica filtro visibilità + salto rapido, ⌘/Ctrl+P)
+    project_search: String,
+    // progetto verso cui scrollare al prossimo frame (risolto in `body`)
+    jump_to_project: Option<ProjectId>,
     editing: Option<Editing>,
     note_editor: Option<NoteEditing>,
     popup: Option<Popup>,
@@ -324,9 +330,6 @@ enum Action {
     },
     SetProjectEnabled {
         proj: ProjectId,
-        enabled: bool,
-    },
-    SetAllProjectsEnabled {
         enabled: bool,
     },
     SetProjectClosed {
@@ -536,11 +539,12 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, shift) = ui.ctx().input(|i| {
+            let (key_s, key_f, key_p, shift) = ui.ctx().input(|i| {
                 let cmd = i.modifiers.command || i.modifiers.ctrl;
                 (
                     cmd && i.key_pressed(egui::Key::S),
                     cmd && i.key_pressed(egui::Key::F),
+                    cmd && i.key_pressed(egui::Key::P),
                     i.modifiers.shift,
                 )
             });
@@ -554,6 +558,10 @@ impl eframe::App for PjmApp {
                     state.show_worker_filter = true;
                     state.worker_filter_just_opened = true;
                 }
+            }
+            if key_p {
+                state.show_project_filter = true;
+                state.project_filter_just_opened = true;
             }
 
             egui::TopBottomPanel::top("toolbar")
@@ -1071,17 +1079,6 @@ impl PjmApp {
                 // Filtro di sola visualizzazione: non persistito, non marca come
                 // modificato (come il filtro per worker).
                 self.app.projects.set_enable(proj, Enable(enabled));
-            }
-            Action::SetAllProjectsEnabled { enabled } => {
-                let ids: Vec<_> = self.app.projects.list().iter().map(|(id, _)| *id).collect();
-                for id in ids {
-                    // i progetti chiusi restano non-enabled
-                    if self.app.projects.is_closed(id) {
-                        continue;
-                    }
-                    self.app.projects.set_enable(id, Enable(enabled));
-                }
-                // Filtro di sola visualizzazione: non marca come modificato.
             }
             Action::SetProjectClosed { proj, closed } => {
                 self.app.projects.set_closed(proj, closed);
@@ -1632,14 +1629,14 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
 
         // ── Filtri ───────────────────────────────────────────────────────────
         ui.menu_button("Filtri", |ui| {
-            if ui.button("Progetti…").clicked() {
+            if ui.button("Progetti…  (⌘/Ctrl+P)").clicked() {
                 state.show_project_filter = !state.show_project_filter;
                 state.project_filter_just_opened = state.show_project_filter;
                 ui.close_menu();
             }
             // La spunta segnala che un filtro worker è attivo.
             if ui
-                .selectable_label(state.worker_filter.is_some(), "Workers…")
+                .selectable_label(state.worker_filter.is_some(), "Workers…  (⌘/Ctrl+F)")
                 .clicked()
             {
                 state.show_worker_filter = !state.show_worker_filter;
@@ -1869,6 +1866,26 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     // Il filtro è clonato una volta per frame per evitare conflitti di borrow.
     let filter = state.worker_filter.clone();
 
+    // Salto rapido a un progetto: risolvo qui (prima delle aree di scroll) la
+    // posizione Y del progetto scelto, usando lo stesso layout della griglia.
+    if let Some(target) = state.jump_to_project.take() {
+        let compact = state.compact_mode;
+        let merged = !compact && state.zoom_level > 0;
+        let layout = project_layout(ui, app, &filter, compact, merged);
+        let mut y = DEV_BORDER;
+        let mut found = false;
+        for p in &layout {
+            if p.proj == target {
+                found = true;
+                break;
+            }
+            y += p.proj_h + DEV_BORDER;
+        }
+        if found {
+            state.pending_scroll_y = Some((y - DEV_BORDER).max(0.0));
+        }
+    }
+
     // Colonna sinistra: larghezza fissa, scroll verticale che segue la griglia.
     egui::SidePanel::left("leftcol")
         .exact_width(LEFT_W)
@@ -1893,8 +1910,12 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
             let mut sa = egui::ScrollArea::both()
                 .id_salt("grid_scroll")
                 .auto_shrink([false, false]);
-            if let Some(px) = state.pending_scroll_x {
-                sa = sa.scroll_offset(Vec2::new(px, 0.0));
+            // Scroll pilotato: X per la settimana corrente (init), Y per il salto
+            // a un progetto. L'asse non pilotato mantiene la posizione attuale.
+            if state.pending_scroll_x.is_some() || state.pending_scroll_y.is_some() {
+                let x = state.pending_scroll_x.unwrap_or(state.scroll_x);
+                let y = state.pending_scroll_y.unwrap_or(state.scroll_y);
+                sa = sa.scroll_offset(Vec2::new(x, y));
             }
             let out = sa.show(ui, |ui| {
                 ui.with_layout(top_down, |ui| grid(ui, app, state, actions, &filter));
@@ -1902,6 +1923,7 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
             state.scroll_x = out.state.offset.x;
             state.scroll_y = out.state.offset.y;
             state.pending_scroll_x = None;
+            state.pending_scroll_y = None;
         });
 }
 
@@ -2327,24 +2349,36 @@ fn project_filter_window(
     if !state.show_project_filter {
         return;
     }
-    // (id, name, enable, label-mostrata) ordinati alfabeticamente per etichetta
-    let mut projects: Vec<(ProjectId, String, Enable, String)> = app
+    // (id, enable, tripletta, name) filtrati per la ricerca e ordinati per etichetta.
+    // In elenco si mostra SOLO la tripletta (fallback al nome se assente, altrimenti
+    // la riga sarebbe vuota); la ricerca combacia sia con tripletta sia con nome.
+    let q = state.project_search.trim().to_lowercase();
+    let mut projects: Vec<(ProjectId, Enable, String)> = app
         .projects
         .list_full()
         .into_iter()
         // i progetti chiusi non compaiono tra i progetti "attivi"
         .filter(|(id, _, _)| !app.projects.is_closed(*id))
-        .map(|(id, name, en)| {
+        .filter_map(|(id, name, en)| {
             let trip = app.projects.get_tripletta(id);
-            let label = if trip.is_empty() { name.clone() } else { trip };
-            (id, name, en, label)
+            let hit = q.is_empty()
+                || trip.to_lowercase().contains(&q)
+                || name.to_lowercase().contains(&q);
+            if !hit {
+                return None;
+            }
+            let label = if trip.is_empty() { name } else { trip };
+            Some((id, en, label))
         })
         .collect();
-    projects.sort_by(|a, b| a.3.to_lowercase().cmp(&b.3.to_lowercase()));
+    projects.sort_by(|a, b| a.2.to_lowercase().cmp(&b.2.to_lowercase()));
     let mut open = true;
 
     let just_opened = state.project_filter_just_opened;
     state.project_filter_just_opened = false;
+
+    let mut jump: Option<ProjectId> = None;
+    let mut esc = false;
 
     let resp = egui::Window::new("Progetti")
         .collapsible(false)
@@ -2352,33 +2386,76 @@ fn project_filter_window(
         .default_pos(egui::pos2(90.0, 40.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            let min_w = title_width(ui, "Progetti");
+            ui.set_min_width(240.0);
+            // Ricerca (con auto-focus alla prima apertura).
+            let te = ui.add(
+                egui::TextEdit::singleline(&mut state.project_search)
+                    .hint_text("Cerca per tripletta…")
+                    .desired_width(f32::INFINITY),
+            );
+            if just_opened {
+                te.request_focus();
+            }
+            let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                esc = true;
+            }
+            ui.separator();
             egui::ScrollArea::vertical()
                 .max_height(400.0)
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    ui.set_min_width(min_w);
-                    let mut all_on =
-                        !projects.is_empty() && projects.iter().all(|(_, _, en, _)| en.0);
+                    // "Select All" agisce sui progetti attualmente elencati.
+                    let mut all_on = !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
                     if ui.checkbox(&mut all_on, "Select All").changed() {
-                        actions.push(Action::SetAllProjectsEnabled { enabled: all_on });
-                    }
-                    for (id, _name, en, label) in &projects {
-                        let mut on = en.0;
-                        if ui.checkbox(&mut on, label).changed() {
+                        for (id, _, _) in &projects {
                             actions.push(Action::SetProjectEnabled {
                                 proj: *id,
-                                enabled: on,
+                                enabled: all_on,
                             });
+                        }
+                    }
+                    for (id, en, label) in &projects {
+                        ui.horizontal(|ui| {
+                            // Spunta di visibilità.
+                            let mut on = en.0;
+                            if ui.checkbox(&mut on, "").changed() {
+                                actions.push(Action::SetProjectEnabled {
+                                    proj: *id,
+                                    enabled: on,
+                                });
+                            }
+                            // Tripletta cliccabile → salta al progetto.
+                            if ui
+                                .selectable_label(false, label)
+                                .on_hover_text("Vai al progetto")
+                                .clicked()
+                            {
+                                jump = Some(*id);
+                            }
+                        });
+                    }
+                    // Invio → salta al primo risultato.
+                    if enter {
+                        if let Some((id, _, _)) = projects.first() {
+                            jump = Some(*id);
                         }
                     }
                 });
         });
 
+    if let Some(id) = jump {
+        state.jump_to_project = Some(id);
+        state.show_project_filter = false;
+        state.project_search.clear();
+        return;
+    }
+
     // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
     let clicked_outside = resp
         .map(|r| r.response.clicked_elsewhere())
         .unwrap_or(false);
-    if !open || (!just_opened && clicked_outside) {
+    if !open || esc || (!just_opened && clicked_outside) {
         state.show_project_filter = false;
     }
 }

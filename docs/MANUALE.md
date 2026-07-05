@@ -364,9 +364,17 @@ mostrare rispettivamente tutti i valori, solo quelli a zero, o solo quelli ≥ 4
 
 ## 14. Filtri
 
-### Filtro progetti (Filtri ▸ Progetti…)
-Elenco dei progetti con spunta di visibilità. Disabilitare un progetto lo nasconde
-dalla griglia. "Select All" agisce su tutti.
+### Progetti — visibilità + salto rapido (Filtri ▸ Progetti…, `Cmd/Ctrl+P`)
+Un'unica finestra con:
+- una **casella di ricerca** in cima (auto-focus): digita e l'elenco si filtra in
+  tempo reale (la ricerca combacia con tripletta o nome);
+- per ogni progetto una **spunta di visibilità** (disabilitarlo lo nasconde dalla
+  griglia) e la **tripletta cliccabile**;
+- in elenco si mostra **solo la tripletta** (o il nome se la tripletta è assente).
+
+Fai **click sulla tripletta**, o premi **Invio** per il primo risultato, e la
+griglia scorre fino a quel progetto. "Select All" agisce sui progetti elencati.
+`Esc` chiude.
 
 > Suggerimento: se resta **un solo progetto visibile**, l'esportazione PDF passa
 > alla modalità "singolo progetto" (vedi §16).
@@ -481,6 +489,7 @@ Regole del PDF a singolo progetto:
 | `Cmd/Ctrl + S` | Salva il file |
 | `Cmd/Ctrl + F` | Apri il filtro worker |
 | `Shift + Cmd/Ctrl + F` | Deseleziona tutti i worker nel filtro |
+| `Cmd/Ctrl + P` | Vai a progetto (ricerca e salto rapido) |
 | `Invio` / `Tab` | Conferma la modifica della cella |
 | `Esc` | Annulla la modifica della cella |
 | `Cmd/Ctrl + C / X / V` | Copia / Taglia / Incolla nella cella in modifica |
