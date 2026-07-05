@@ -17,6 +17,9 @@ use crate::{
 
 pub const SAVE_PATH: &str = "workers.ron";
 
+/// Quante versioni precedenti del file conservare come backup a rotazione.
+pub const BACKUP_COUNT: usize = 5;
+
 fn default_projects() -> Projects {
     Projects::new()
 }
@@ -68,9 +71,71 @@ impl App {
                 return;
             }
         };
+        // Prima di sovrascrivere, conserva la versione attuale come backup.
+        Self::rotate_backups(path, BACKUP_COUNT);
         if let Err(e) = Self::write_atomic(path, content.as_bytes()) {
             eprintln!("Errore salvataggio '{path}': {e}");
         }
+    }
+
+    /// Backup a rotazione: `<path>.bak1` (più recente) … `<path>.bakN` (più
+    /// vecchio). Sposta bak(i) → bak(i+1), elimina il più vecchio e copia il file
+    /// corrente in bak1. Best-effort: gli errori non bloccano mai il salvataggio.
+    fn rotate_backups(path: &str, keep: usize) {
+        if keep == 0 || !Path::new(path).exists() {
+            return;
+        }
+        let name = |i: usize| format!("{path}.bak{i}");
+        let _ = fs::remove_file(name(keep));
+        for i in (1..keep).rev() {
+            let _ = fs::rename(name(i), name(i + 1));
+        }
+        let _ = fs::copy(path, name(1));
+    }
+
+    /// Controlli di coerenza "leggeri" da eseguire dopo il caricamento: segnala i
+    /// riferimenti pendenti (categoria / dev / milestone che non esistono). Non
+    /// blocca il caricamento: serve a dare un messaggio chiaro invece di stati
+    /// incoerenti silenziosi. Ritorna la lista (eventualmente vuota) dei problemi.
+    pub fn validate(&self) -> Vec<String> {
+        use std::collections::HashSet;
+        const MAX: usize = 20;
+        let dev_ids: HashSet<_> = self.devs.list().into_iter().map(|(id, _)| id).collect();
+        let ms_ids: HashSet<_> = self
+            .milestones
+            .list()
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        let mut issues = Vec::new();
+        for (pid, pname) in self.projects.list() {
+            if issues.len() >= MAX {
+                break;
+            }
+            if let Some(cat) = self.projects.get_category(pid) {
+                if self.categories.get_name(cat).is_none() {
+                    issues.push(format!("Progetto «{pname}»: categoria inesistente."));
+                }
+            }
+            for d in self.projects.list_devs(pid) {
+                if !dev_ids.contains(&d) {
+                    issues.push(format!("Progetto «{pname}»: dev sconosciuto (id {}).", d.0));
+                }
+            }
+            for (mid, _) in self.projects.list_project_milestones(pid) {
+                if !ms_ids.contains(&mid) {
+                    issues.push(format!(
+                        "Progetto «{pname}»: milestone inesistente (id {}).",
+                        mid.0
+                    ));
+                }
+            }
+        }
+        if issues.len() > MAX {
+            issues.truncate(MAX);
+            issues.push("… (altri problemi non elencati)".to_string());
+        }
+        issues
     }
 
     /// Scrittura **atomica**: scrive su un file temporaneo nella stessa cartella,
@@ -207,5 +272,38 @@ mod tests {
         assert!(!tmp.exists(), "il temporaneo deve essere stato rinominato");
 
         let _ = fs::remove_file(&path_str);
+    }
+
+    #[test]
+    fn backup_rotation_keeps_previous_version() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("pjm_bak_{}.ron", std::process::id()));
+        let p = path.to_string_lossy().to_string();
+        let _ = fs::remove_file(&p);
+
+        let mut app = App::new();
+        app.save(&p); // primo salvataggio: il file non esisteva → nessun backup
+        let first = fs::read_to_string(&p).unwrap();
+        let bak1 = format!("{p}.bak1");
+        assert!(
+            !Path::new(&bak1).exists(),
+            "nessun backup al primo salvataggio"
+        );
+
+        app.workers.add("mario");
+        app.save(&p); // ora il file esisteva → bak1 = versione precedente
+        assert!(Path::new(&bak1).exists());
+        assert_eq!(fs::read_to_string(&bak1).unwrap(), first);
+
+        let _ = fs::remove_file(&p);
+        for i in 1..=BACKUP_COUNT {
+            let _ = fs::remove_file(format!("{p}.bak{i}"));
+        }
+    }
+
+    #[test]
+    fn validate_clean_app_has_no_issues() {
+        let app = App::new();
+        assert!(app.validate().is_empty());
     }
 }

@@ -17,7 +17,20 @@ use ui::PjmApp;
 
 fn main() -> eframe::Result<()> {
     let file_path = std::env::args().nth(1).unwrap_or_else(|| SAVE_PATH.to_string());
-    let mut app = App::load(&file_path).unwrap_or_else(|_| App::new());
+    // Se il file esiste ma non si carica, avvisa l'utente (evita di ripartire in
+    // silenzio da vuoto e sovrascrivere per sbaglio un file esistente).
+    let (mut app, startup_error) = match App::load(&file_path) {
+        Ok(a) => (a, None),
+        Err(e) => {
+            let msg = std::path::Path::new(&file_path).exists().then(|| {
+                format!(
+                    "Impossibile leggere «{file_path}»:\n{e}\n\nSi parte da un file vuoto: \
+                     salvando sovrascriverai il file esistente."
+                )
+            });
+            (App::new(), msg)
+        }
+    };
     app.compute_sovra();
 
     let title = format!(
@@ -35,6 +48,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         &title,
         native_options,
-        Box::new(move |cc| Ok(Box::new(PjmApp::new(app, file_path, cc)))),
+        Box::new(move |cc| Ok(Box::new(PjmApp::new(app, file_path, startup_error, cc)))),
     )
 }

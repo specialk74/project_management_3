@@ -217,6 +217,11 @@ pub struct UiState {
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
     // un solo progetto e si lancia l'export)
     pdf_export: Option<PdfExport>,
+    // autosave: istante (secondi, orologio egui) dell'ultimo salvataggio
+    last_save_time: f64,
+    // messaggio di errore/incoerenza da mostrare dopo un caricamento fallito o
+    // con riferimenti pendenti (validazione schema)
+    load_error: Option<String>,
     // finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…)
     show_help: bool,
     // testo di ricerca nel manuale (filtra le sezioni)
@@ -414,7 +419,12 @@ fn install_symbol_fallback(ctx: &egui::Context) {
 }
 
 impl PjmApp {
-    pub fn new(app: App, current_file: String, cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(
+        app: App,
+        current_file: String,
+        startup_error: Option<String>,
+        cc: &eframe::CreationContext<'_>,
+    ) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         cc.egui_ctx.style_mut(|s| s.interaction.tooltip_delay = 0.0);
         install_symbol_fallback(&cc.egui_ctx);
@@ -440,6 +450,9 @@ impl PjmApp {
         let base_ron = app.to_ron_string();
         let file_mtime = file_mtime_of(&current_file);
 
+        // Errore di caricamento all'avvio + eventuali incoerenze di schema.
+        let load_error = combine_issues(startup_error, app.validate());
+
         Self {
             app,
             ui: UiState {
@@ -450,10 +463,24 @@ impl PjmApp {
                 selected_year: today.year(),
                 scroll_x: pending_scroll_x.unwrap_or(0.0),
                 pending_scroll_x,
+                load_error,
                 ..Default::default()
             },
         }
     }
+}
+
+/// Unisce un eventuale errore di caricamento e la lista di incoerenze di schema
+/// in un unico messaggio (o `None` se non c'è nulla da segnalare).
+fn combine_issues(err: Option<String>, warnings: Vec<String>) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(e) = err {
+        parts.push(e);
+    }
+    if !warnings.is_empty() {
+        parts.push(format!("Incoerenze nel file:\n• {}", warnings.join("\n• ")));
+    }
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
 
 /// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
@@ -580,6 +607,8 @@ impl eframe::App for PjmApp {
         let ctx = ui.ctx().clone();
         self.check_external_change(&ctx);
         self.conflict_window(&ctx);
+        self.maybe_autosave(&ctx);
+        self.load_error_window(&ctx);
         self.handle_exit(&ctx);
     }
 }
@@ -688,6 +717,55 @@ impl PjmApp {
     fn sync_baseline(&mut self) {
         self.ui.base_ron = self.app.to_ron_string();
         self.ui.file_mtime = file_mtime_of(&self.ui.current_file);
+    }
+
+    /// Salvataggio automatico: se ci sono modifiche non salvate e sono trascorsi
+    /// almeno `AUTOSAVE_SECS` secondi dall'ultimo salvataggio, salva (con backup
+    /// a rotazione e scrittura atomica). Non interviene mentre è in attesa la
+    /// scelta su un conflitto con un collega.
+    fn maybe_autosave(&mut self, ctx: &egui::Context) {
+        const AUTOSAVE_SECS: f64 = 120.0;
+        if self.ui.pending_reload.is_some() {
+            return;
+        }
+        let now = ctx.input(|i| i.time);
+        if !self.ui.changed {
+            // niente da salvare: mantieni il timer allineato ad "adesso"
+            self.ui.last_save_time = now;
+            return;
+        }
+        if now - self.ui.last_save_time >= AUTOSAVE_SECS {
+            self.app.save(&self.ui.current_file);
+            self.ui.changed = false;
+            self.sync_baseline();
+            self.ui.last_save_time = now;
+            self.ui.external_notice = Some(notice_now("Salvataggio automatico"));
+        }
+    }
+
+    /// Finestra che segnala un problema di caricamento o incoerenze nel file
+    /// (validazione schema): invece di fallire in silenzio.
+    fn load_error_window(&mut self, ctx: &egui::Context) {
+        let Some(msg) = self.ui.load_error.clone() else {
+            return;
+        };
+        let mut close = false;
+        egui::Window::new("Problema nel file")
+            .collapsible(false)
+            .resizable(true)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.set_max_width(560.0);
+                ui.label(msg);
+                ui.add_space(8.0);
+                ui.separator();
+                if ui.button("OK").clicked() {
+                    close = true;
+                }
+            });
+        if close {
+            self.ui.load_error = None;
+        }
     }
 
     /// Adotta integralmente lo stato del disco (ricarica automatica: nessuna
@@ -858,8 +936,13 @@ impl PjmApp {
                             self.app.compute_sovra();
                             self.ui.changed = false;
                             self.sync_baseline();
+                            // Validazione schema: segnala riferimenti pendenti.
+                            self.ui.load_error = combine_issues(None, self.app.validate());
                         }
-                        Err(e) => eprintln!("Errore apertura '{path}': {e}"),
+                        Err(e) => {
+                            self.ui.load_error =
+                                Some(format!("Impossibile aprire «{path}»:\n{e}"));
+                        }
                     }
                 }
             }
