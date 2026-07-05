@@ -370,7 +370,14 @@ enum Action {
         proj: ProjectId,
     },
     ExportPdf,
-    ExportPdfProject { proj: ProjectId, devs: Vec<DevId> },
+    ExportPdfProject {
+        proj: ProjectId,
+        devs: Vec<DevId>,
+    },
+    ExportSvgProject {
+        proj: ProjectId,
+        devs: Vec<DevId>,
+    },
     CreateMilestone(String),
     SetMilestoneColor {
         milestone: MilestoneId,
@@ -500,6 +507,20 @@ fn save_pdf_dialog(bytes: Vec<u8>, default_name: &str) {
         let p = path.to_string_lossy().to_string();
         if let Err(e) = std::fs::write(&p, bytes) {
             eprintln!("Errore scrittura PDF '{p}': {e}");
+        }
+    }
+}
+
+/// Mostra il dialog di salvataggio SVG e scrive il contenuto nel file scelto.
+fn save_svg_dialog(svg: String, default_name: &str) {
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter("SVG", &["svg"])
+        .set_file_name(default_name)
+        .save_file()
+    {
+        let p = path.to_string_lossy().to_string();
+        if let Err(e) = std::fs::write(&p, svg) {
+            eprintln!("Errore scrittura SVG '{p}': {e}");
         }
     }
 }
@@ -953,8 +974,7 @@ impl PjmApp {
                             self.ui.load_error = combine_issues(None, self.app.validate());
                         }
                         Err(e) => {
-                            self.ui.load_error =
-                                Some(format!("Impossibile aprire «{path}»:\n{e}"));
+                            self.ui.load_error = Some(format!("Impossibile aprire «{path}»:\n{e}"));
                         }
                     }
                 }
@@ -1167,6 +1187,12 @@ impl PjmApp {
                 match crate::pdf_export::build_pdf_project(&self.app, proj, &devs) {
                     None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
                     Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
+                }
+            }
+            Action::ExportSvgProject { proj, devs } => {
+                match crate::pdf_export::build_svg_project(&self.app, proj, &devs) {
+                    None => eprintln!("Progetto senza inizio/fine: SVG non creato."),
+                    Some(svg) => save_svg_dialog(svg, "grafico.svg"),
                 }
             }
             Action::CreateMilestone(name) => {
@@ -1581,7 +1607,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                 ui.close_menu();
             }
             ui.separator();
-            if ui.button("Esporta PDF…").clicked() {
+            if ui.button("Esporta…").clicked() {
                 actions.push(Action::ExportPdf);
                 ui.close_menu();
             }
@@ -1679,11 +1705,7 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             ui.separator();
             // Tema chiaro/scuro: Auto segue il sistema (macOS "Automatico" =
             // chiaro di giorno, scuro la sera), oppure forzato manualmente.
-            ui.label(
-                egui::RichText::new("Tema")
-                    .strong()
-                    .color(g(EFFORT_ORANGE)),
-            );
+            ui.label(egui::RichText::new("Tema").strong().color(g(EFFORT_ORANGE)));
             if ui
                 .selectable_label(state.theme_pref == ThemePref::Auto, "Auto (sistema)")
                 .clicked()
@@ -1787,7 +1809,11 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
 
 fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
     // zoom attivo solo in vista normale
-    let level = if state.compact_mode { 0 } else { state.zoom_level };
+    let level = if state.compact_mode {
+        0
+    } else {
+        state.zoom_level
+    };
     let cols = columns_vec(app, level);
     // Riserva i 300px sinistri con lo stesso meccanismo della griglia (SidePanel),
     // così l'origine X delle colonne coincide esattamente.
@@ -1927,7 +1953,11 @@ fn heat_colors(alloc: i32, cap: i32) -> (Color32, Color32) {
     if alloc > cap {
         return (g(Color32::from_rgb(0xcc, 0x30, 0x30)), Color32::WHITE); // sovra
     }
-    let r = if cap > 0 { alloc as f32 / cap as f32 } else { 1.0 };
+    let r = if cap > 0 {
+        alloc as f32 / cap as f32
+    } else {
+        1.0
+    };
     // verde (poco carico) → giallo (quasi pieno)
     let c = lerp_color(
         Color32::from_rgb(0x2e, 0x7d, 0x32),
@@ -2102,7 +2132,11 @@ fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     // Click su una cella → scrolla la griglia a quella settimana. Per capire quale
     // settimana è selezionata basta spostare la finestra (non è ridimensionabile).
     if let Some(w) = jump_week {
-        let level = if state.compact_mode { 0 } else { state.zoom_level };
+        let level = if state.compact_mode {
+            0
+        } else {
+            state.zoom_level
+        };
         let cols = columns_vec(app, level);
         let cw = col_w(state.compact_mode);
         if let Some(idx) = cols.iter().position(|c| c.contains_week(w)) {
@@ -2356,6 +2390,7 @@ fn pdf_export_window(
 
     let mut open = true;
     let mut do_export = false;
+    let mut do_export_svg = false;
     let mut cancel = false;
 
     egui::Window::new("Esporta PDF")
@@ -2434,8 +2469,15 @@ fn pdf_export_window(
             ui.separator();
             ui.horizontal(|ui| {
                 // Esportabile anche con zero dev: esce comunque il resto (milestone…).
-                if ui.button("Esporta…").clicked() {
+                if ui.button("Esporta PDF…").clicked() {
                     do_export = true;
+                }
+                if ui
+                    .button("Esporta SVG…")
+                    .on_hover_text("Solo il grafico, senza tripletta/descrizione né data")
+                    .clicked()
+                {
+                    do_export_svg = true;
                 }
                 if ui.button("Annulla").clicked() {
                     cancel = true;
@@ -2443,28 +2485,24 @@ fn pdf_export_window(
             });
         });
 
-    // Esito: raccolgo i dati prima di rilasciare il prestito di `px`.
-    let outcome: Option<Option<Vec<DevId>>> = if do_export {
-        let devs = px
-            .entries
+    // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
+    let devs_if_export = (do_export || do_export_svg).then(|| {
+        px.entries
             .iter()
             .filter(|(_, s)| *s)
             .map(|(d, _)| *d)
-            .collect();
-        Some(Some(devs))
-    } else if cancel || !open {
-        Some(None)
-    } else {
-        None
-    };
+            .collect::<Vec<_>>()
+    });
 
-    match outcome {
-        Some(Some(devs)) => {
+    if let Some(devs) = devs_if_export {
+        if do_export_svg {
+            actions.push(Action::ExportSvgProject { proj, devs });
+        } else {
             actions.push(Action::ExportPdfProject { proj, devs });
-            state.pdf_export = None;
         }
-        Some(None) => state.pdf_export = None,
-        None => {}
+        state.pdf_export = None;
+    } else if cancel || !open {
+        state.pdf_export = None;
     }
 }
 
@@ -3501,7 +3539,11 @@ fn footer_handle(ui: &mut egui::Ui, state: &mut UiState) {
 fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     let filter = state.worker_filter.clone();
     let workers = footer_workers(app, &filter);
-    let level = if state.compact_mode { 0 } else { state.zoom_level };
+    let level = if state.compact_mode {
+        0
+    } else {
+        state.zoom_level
+    };
     let cols = columns_vec(app, level);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
@@ -3845,11 +3887,7 @@ fn draw_right_footer(
             let y = rect.top() + (idx as f32 + 1.0) * ROW_H;
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(COL_W, ROW_H));
 
-            let bg = if idx % 2 == 0 {
-                row_even()
-            } else {
-                row_alt()
-            };
+            let bg = if idx % 2 == 0 { row_even() } else { row_alt() };
             ui.painter().rect_filled(cell, 0.0, bg);
 
             // Somma su tutte le settimane del gruppo (una sola al livello zoom 0).
@@ -4601,10 +4639,8 @@ fn draw_dev_cells(
         //    niente nomi worker. Occupa la riga sotto il cumulativo. ──
         if merged {
             if !hide_effort && (week_total > 0 || is_deadline) {
-                let cell = Rect::from_min_size(
-                    egui::pos2(x, rect.top() + ROW_H),
-                    Vec2::new(cw, ROW_H),
-                );
+                let cell =
+                    Rect::from_min_size(egui::pos2(x, rect.top() + ROW_H), Vec2::new(cw, ROW_H));
                 ui.painter().text(
                     cell.center(),
                     Align2::CENTER_CENTER,
@@ -5065,7 +5101,9 @@ fn left_column(
             filter.is_some(),
         );
         draw_left_dev_strip(ui, proj_rect, p.proj, state);
-        draw_left_devs(ui, proj_rect, app, state, actions, p.proj, &p.devs, compact, merged);
+        draw_left_devs(
+            ui, proj_rect, app, state, actions, p.proj, &p.devs, compact, merged,
+        );
 
         y += p.proj_h;
         paint_hstrip(ui, left, LEFT_W, y, BETWEEN_PROJECTS);
@@ -5283,7 +5321,8 @@ fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &m
         Vec2::new(DEV_STRIP_W, rect.height()),
     );
     let resp = ui.interact(strip, egui::Id::new(("devstrip", proj.0)), Sense::click());
-    ui.painter().rect_filled(strip, 0.0, strip_bg(resp.hovered()));
+    ui.painter()
+        .rect_filled(strip, 0.0, strip_bg(resp.hovered()));
     ui.painter().rect_stroke(
         strip,
         0.0,

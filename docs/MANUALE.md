@@ -492,6 +492,12 @@ Regole del PDF a singolo progetto:
 - si può esportare **anche senza alcun dev selezionato**: la pagina esce comunque
   con asse, milestone e resto delle informazioni.
 
+### Esportazione del solo grafico in SVG
+Nella stessa finestra c'è **Esporta SVG…**: salva **solo il grafico** (lo stesso
+Gantt del PDF) in formato **SVG** vettoriale, **senza** tripletta/descrizione del
+progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev.
+L'immagine è ritagliata al contenuto effettivo del grafico.
+
 ---
 
 ## 17. Salvataggio e modifiche esterne

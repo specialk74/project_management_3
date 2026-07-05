@@ -155,13 +155,22 @@ category/worker-max/etc.).
 - **Year boundary**: `Col::YearEnd` canary column shows per-dev missing hours and a
   project total (`T:…`) for projects straddling the year.
 
-### PDF export (`pdf_export.rs`)
+### PDF / SVG export (`pdf_export.rs`)
+
+Drawing is backend-agnostic: `page_shapes(...)` builds a `Vec<Shape>` (Rect/Poly/
+Line/Text in mm, origin bottom-left), then `render_pdf(fonts, &shapes)` emits
+printpdf `Op`s and `render_svg(&shapes)` emits an SVG string (Y-flipped, cropped to
+content). `project_shapes(app, proj, name, dev_info, today, created, order, chart_only)`
+gathers rows/flags for a project; `chart_only` drops the tripletta/description and
+the footer date.
 
 - `build_pdf(app)` — one Gantt page per eligible project (enabled, not closed, has
-  start AND end). Dev rows are only those **with** effort, sorted by start date.
-- `build_pdf_project(app, proj, ordered_devs)` — single project, dev order chosen by
-  the user. Devs **with** effort → normal colored bar; devs **without** effort → a
-  thin line spanning the full calendar width. Exports even with an empty dev list.
+  start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
+- `build_pdf_project(app, proj, ordered_devs)` — single project, user dev order.
+  Devs **with** effort → colored bar; **without** → thin full-width line. Exports even
+  with an empty dev list.
+- `build_svg_project(app, proj, ordered_devs)` — same chart as the single-project PDF
+  but chart-only (no tripletta/description/date) as an SVG string.
 - Triggering (in `Action::ExportPdf`): if exactly **one** project is visible
   (enabled and not closed) the UI opens `pdf_export_window` (Select All, drag-to-
   reorder via egui `dnd_drag_source`/`dnd_release_payload`, per-dev checkbox);

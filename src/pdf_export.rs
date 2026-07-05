@@ -68,6 +68,17 @@ const MONTHS_IT: [&str; 12] = [
     "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
 ];
 
+/// Primitiva di disegno indipendente dal formato: coordinate in mm, origine in
+/// basso a sinistra (come nel PDF). Renderizzata sia in PDF (`render_pdf`) sia in
+/// SVG (`render_svg`), così il grafico è identico nei due formati.
+#[derive(Clone)]
+enum Shape {
+    Rect { x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32) },
+    Poly { pts: Vec<(f32, f32)>, color: (f32, f32, f32) },
+    Line { x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32) },
+    Text { x: f32, y: f32, s: String, size: f32, bold: bool, color: (f32, f32, f32) },
+}
+
 fn rgb(c: (f32, f32, f32)) -> Color {
     Color::Rgb(Rgb { r: c.0, g: c.1, b: c.2, icc_profile: None })
 }
@@ -134,140 +145,224 @@ fn truncate_to_w(s: &str, size: f32, max_w: f32) -> String {
     format!("{out}…")
 }
 
-/// Ops per una stringa ancorata a sinistra a (x, y) in mm.
-fn text_left(
-    fonts: &Fonts,
-    x: f32,
-    y: f32,
-    s: &str,
-    size: f32,
-    bold: bool,
-    color: (f32, f32, f32),
-) -> Vec<Op> {
-    vec![
-        Op::StartTextSection,
-        Op::SetTextCursor { pos: Point::new(Mm(x), Mm(y)) },
-        Op::SetFont { font: fonts.handle(bold), size: Pt(size) },
-        Op::SetLineHeight { lh: Pt(size) },
-        Op::SetFillColor { col: rgb(color) },
-        Op::ShowText { items: vec![TextItem::Text(s.to_string())] },
-        Op::EndTextSection,
-    ]
+/// Testo ancorato a sinistra a (x, y) in mm (y = baseline).
+fn text_left(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
+    vec![Shape::Text { x, y, s: s.to_string(), size, bold, color }]
 }
 
 /// Come `text_left` ma centrato orizzontalmente su `x`.
-fn text_center(
-    fonts: &Fonts,
-    x: f32,
-    y: f32,
-    s: &str,
-    size: f32,
-    bold: bool,
-    color: (f32, f32, f32),
-) -> Vec<Op> {
+fn text_center(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
     let start = (x - text_w_mm(s, size) / 2.0).clamp(2.0, PAGE_W - 2.0);
-    text_left(fonts, start, y, s, size, bold, color)
+    text_left(start, y, s, size, bold, color)
 }
 
 /// Come `text_left` ma ancorato a destra: il testo termina a `x`.
-fn text_right(
-    fonts: &Fonts,
-    x: f32,
-    y: f32,
-    s: &str,
-    size: f32,
-    bold: bool,
-    color: (f32, f32, f32),
-) -> Vec<Op> {
-    text_left(fonts, x - text_w_mm(s, size), y, s, size, bold, color)
+fn text_right(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
+    text_left(x - text_w_mm(s, size), y, s, size, bold, color)
 }
 
 /// Rettangolo pieno tra gli angoli (x0,y0)-(x1,y1) in mm.
-fn rect_fill(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<Op> {
-    let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-    vec![
-        Op::SetFillColor { col: rgb(color) },
-        Op::DrawPolygon {
-            polygon: Polygon {
-                rings: vec![PolygonRing {
-                    points: pts
-                        .iter()
-                        .map(|(px, py)| LinePoint {
-                            p: Point::new(Mm(*px), Mm(*py)),
-                            bezier: false,
-                        })
-                        .collect(),
-                }],
-                mode: PaintMode::Fill,
-                winding_order: WindingOrder::NonZero,
-            },
-        },
-    ]
+fn rect_fill(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    vec![Shape::Rect { x0, y0, x1, y1, color }]
 }
 
 /// Poligono pieno da una lista di punti (mm).
-fn poly_fill(pts: &[(f32, f32)], color: (f32, f32, f32)) -> Vec<Op> {
-    vec![
-        Op::SetFillColor { col: rgb(color) },
-        Op::DrawPolygon {
-            polygon: Polygon {
-                rings: vec![PolygonRing {
-                    points: pts
-                        .iter()
-                        .map(|(px, py)| LinePoint {
-                            p: Point::new(Mm(*px), Mm(*py)),
-                            bezier: false,
-                        })
-                        .collect(),
-                }],
-                mode: PaintMode::Fill,
-                winding_order: WindingOrder::NonZero,
-            },
-        },
-    ]
+fn poly_fill(pts: &[(f32, f32)], color: (f32, f32, f32)) -> Vec<Shape> {
+    vec![Shape::Poly { pts: pts.to_vec(), color }]
 }
 
 /// Linea da (x0,y0) a (x1,y1) in mm.
-fn line(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Op> {
-    vec![
-        Op::SetOutlineColor { col: rgb(color) },
-        Op::SetOutlineThickness { pt: Pt(thick) },
-        Op::DrawLine {
-            line: Line {
-                points: vec![
-                    LinePoint { p: Point::new(Mm(x0), Mm(y0)), bezier: false },
-                    LinePoint { p: Point::new(Mm(x1), Mm(y1)), bezier: false },
-                ],
-                is_closed: false,
-            },
-        },
-    ]
+fn line(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    vec![Shape::Line { x0, y0, x1, y1, thick, color }]
 }
 
-/// Linea orizzontale tratteggiata da (x0,y) a (x1,y): resa come segmenti brevi
-/// (indipendente dal supporto dash della libreria).
-fn dashed_hline(x0: f32, x1: f32, y: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Op> {
+/// Linea orizzontale tratteggiata da (x0,y) a (x1,y): segmenti brevi.
+fn dashed_hline(x0: f32, x1: f32, y: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
     const DASH: f32 = 1.4;
     const GAP: f32 = 1.2;
-    let mut ops = vec![
-        Op::SetOutlineColor { col: rgb(color) },
-        Op::SetOutlineThickness { pt: Pt(thick) },
-    ];
+    let mut out = Vec::new();
     let mut x = x0;
     while x < x1 {
         let xe = (x + DASH).min(x1);
-        ops.push(Op::DrawLine {
-            line: Line {
-                points: vec![
-                    LinePoint { p: Point::new(Mm(x), Mm(y)), bezier: false },
-                    LinePoint { p: Point::new(Mm(xe), Mm(y)), bezier: false },
-                ],
-                is_closed: false,
-            },
-        });
+        out.push(Shape::Line { x0: x, y0: y, x1: xe, y1: y, thick, color });
         x += DASH + GAP;
     }
+    out
+}
+
+/// Converte le primitive in operazioni PDF (printpdf).
+fn render_pdf(fonts: &Fonts, shapes: &[Shape]) -> Vec<Op> {
+    let poly_ring = |pts: &[(f32, f32)]| PolygonRing {
+        points: pts
+            .iter()
+            .map(|(px, py)| LinePoint { p: Point::new(Mm(*px), Mm(*py)), bezier: false })
+            .collect(),
+    };
+    let mut ops = Vec::new();
+    for s in shapes {
+        match s {
+            Shape::Rect { x0, y0, x1, y1, color } => {
+                let pts = [(*x0, *y0), (*x1, *y0), (*x1, *y1), (*x0, *y1)];
+                ops.push(Op::SetFillColor { col: rgb(*color) });
+                ops.push(Op::DrawPolygon {
+                    polygon: Polygon {
+                        rings: vec![poly_ring(&pts)],
+                        mode: PaintMode::Fill,
+                        winding_order: WindingOrder::NonZero,
+                    },
+                });
+            }
+            Shape::Poly { pts, color } => {
+                ops.push(Op::SetFillColor { col: rgb(*color) });
+                ops.push(Op::DrawPolygon {
+                    polygon: Polygon {
+                        rings: vec![poly_ring(pts)],
+                        mode: PaintMode::Fill,
+                        winding_order: WindingOrder::NonZero,
+                    },
+                });
+            }
+            Shape::Line { x0, y0, x1, y1, thick, color } => {
+                ops.push(Op::SetOutlineColor { col: rgb(*color) });
+                ops.push(Op::SetOutlineThickness { pt: Pt(*thick) });
+                ops.push(Op::DrawLine {
+                    line: Line {
+                        points: vec![
+                            LinePoint { p: Point::new(Mm(*x0), Mm(*y0)), bezier: false },
+                            LinePoint { p: Point::new(Mm(*x1), Mm(*y1)), bezier: false },
+                        ],
+                        is_closed: false,
+                    },
+                });
+            }
+            Shape::Text { x, y, s, size, bold, color } => {
+                ops.push(Op::StartTextSection);
+                ops.push(Op::SetTextCursor { pos: Point::new(Mm(*x), Mm(*y)) });
+                ops.push(Op::SetFont { font: fonts.handle(*bold), size: Pt(*size) });
+                ops.push(Op::SetLineHeight { lh: Pt(*size) });
+                ops.push(Op::SetFillColor { col: rgb(*color) });
+                ops.push(Op::ShowText { items: vec![TextItem::Text(s.clone())] });
+                ops.push(Op::EndTextSection);
+            }
+        }
+    }
     ops
+}
+
+fn svg_color(c: (f32, f32, f32)) -> String {
+    let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", q(c.0), q(c.1), q(c.2))
+}
+
+fn svg_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Converte le primitive in un documento SVG, ritagliato al riquadro effettivo
+/// del disegno (più un piccolo margine). Le coordinate PDF (origine in basso a
+/// sinistra) vengono ribaltate in coordinate SVG (origine in alto a sinistra).
+fn render_svg(shapes: &[Shape]) -> String {
+    const PT_MM: f32 = 0.352_778; // punti → mm
+
+    // Bounding box in coordinate PDF.
+    let (mut minx, mut miny, mut maxx, mut maxy) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    let mut ext = |x: f32, y: f32| {
+        minx = minx.min(x);
+        maxx = maxx.max(x);
+        miny = miny.min(y);
+        maxy = maxy.max(y);
+    };
+    for s in shapes {
+        match s {
+            Shape::Rect { x0, y0, x1, y1, .. } | Shape::Line { x0, y0, x1, y1, .. } => {
+                ext(*x0, *y0);
+                ext(*x1, *y1);
+            }
+            Shape::Poly { pts, .. } => {
+                for (px, py) in pts {
+                    ext(*px, *py);
+                }
+            }
+            Shape::Text { x, y, s, size, .. } => {
+                let w = text_w_mm(s, *size);
+                let h = size * PT_MM;
+                ext(*x, *y - h * 0.25);
+                ext(*x + w, *y + h * 0.9);
+            }
+        }
+    }
+    if minx > maxx {
+        return String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+    }
+    let margin = 3.0;
+    minx -= margin;
+    miny -= margin;
+    maxx += margin;
+    maxy += margin;
+    let (w, h) = (maxx - minx, maxy - miny);
+    let tx = |x: f32| x - minx;
+    let ty = |y: f32| maxy - y; // ribalta l'asse verticale
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.2}mm\" height=\"{h:.2}mm\" \
+         viewBox=\"0 0 {w:.2} {h:.2}\" font-family=\"sans-serif\">\n"
+    ));
+    out.push_str(&format!(
+        "<rect x=\"0\" y=\"0\" width=\"{w:.2}\" height=\"{h:.2}\" fill=\"#ffffff\"/>\n"
+    ));
+    for s in shapes {
+        match s {
+            Shape::Rect { x0, y0, x1, y1, color } => {
+                out.push_str(&format!(
+                    "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\"/>\n",
+                    tx(x0.min(*x1)),
+                    ty(y0.max(*y1)),
+                    (x1 - x0).abs(),
+                    (y1 - y0).abs(),
+                    svg_color(*color)
+                ));
+            }
+            Shape::Poly { pts, color } => {
+                let p = pts
+                    .iter()
+                    .map(|(px, py)| format!("{:.2},{:.2}", tx(*px), ty(*py)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                out.push_str(&format!("<polygon points=\"{p}\" fill=\"{}\"/>\n", svg_color(*color)));
+            }
+            Shape::Line { x0, y0, x1, y1, thick, color } => {
+                out.push_str(&format!(
+                    "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" \
+                     stroke-width=\"{:.2}\"/>\n",
+                    tx(*x0),
+                    ty(*y0),
+                    tx(*x1),
+                    ty(*y1),
+                    svg_color(*color),
+                    thick * PT_MM
+                ));
+            }
+            Shape::Text { x, y, s, size, bold, color } => {
+                let weight = if *bold { " font-weight=\"bold\"" } else { "" };
+                out.push_str(&format!(
+                    "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\"{} fill=\"{}\">{}</text>\n",
+                    tx(*x),
+                    ty(*y),
+                    size * PT_MM,
+                    weight,
+                    svg_color(*color),
+                    svg_escape(s)
+                ));
+            }
+        }
+    }
+    out.push_str("</svg>\n");
+    out
 }
 
 /// Word-wrap grezzo: spezza `text` in righe di al più `max_chars` caratteri.
@@ -325,8 +420,7 @@ struct Flag {
 }
 
 /// Genera gli `Op` di una pagina Gantt per un progetto.
-fn page_ops(
-    fonts: &Fonts,
+fn page_shapes(
     tripletta: &str,
     descr: &str,
     proj_start: i32,
@@ -335,8 +429,9 @@ fn page_ops(
     mut flags: Vec<Flag>,
     today: i32,
     created: &str,
-) -> Vec<Op> {
-    let mut ops = Vec::new();
+    chart_only: bool,
+) -> Vec<Shape> {
+    let mut shapes: Vec<Shape> = Vec::new();
 
     // --- Intervallo dell'asse ----------------------------------------------
     // Copre tutti gli elementi (inizio/fine progetto, barre dev, milestone,
@@ -365,16 +460,18 @@ fn page_ops(
         (CHART_X0 + t * (CHART_X1 - CHART_X0)).clamp(CHART_X0, CHART_X1)
     };
 
-    // --- Titolo + descrizione ----------------------------------------------
-    if !tripletta.is_empty() {
-        ops.extend(text_left(fonts, X_LABEL, 200.0, tripletta, 16.0, true, BLACK));
-    }
-    // Descrizione completa: ogni riga logica (a-capo espliciti) mandata a capo
-    // automaticamente. Nessun limite di righe, così il testo non viene troncato.
-    let mut y = if tripletta.is_empty() { 200.0 } else { 193.0 };
-    for l in wrap_multiline(descr, 120) {
-        ops.extend(text_left(fonts, X_LABEL, y, &l, 9.0, false, TEXT_GRAY));
-        y -= 5.0;
+    // --- Titolo + descrizione (esclusi nell'export "solo grafico") ---------
+    if !chart_only {
+        if !tripletta.is_empty() {
+            shapes.extend(text_left(X_LABEL, 200.0, tripletta, 16.0, true, BLACK));
+        }
+        // Descrizione completa: ogni riga logica (a-capo espliciti) mandata a capo
+        // automaticamente. Nessun limite di righe, così il testo non viene troncato.
+        let mut y = if tripletta.is_empty() { 200.0 } else { 193.0 };
+        for l in wrap_multiline(descr, 120) {
+            shapes.extend(text_left(X_LABEL, y, &l, 9.0, false, TEXT_GRAY));
+            y -= 5.0;
+        }
     }
 
     // --- Asse dei mesi ------------------------------------------------------
@@ -385,15 +482,15 @@ fn page_ops(
         let next = add_months(m, 1);
         let cell_x1 = x_of(local_to_days(&next));
         let fill = if idx % 2 == 0 { GRAY_DK } else { GRAY_LT };
-        ops.extend(rect_fill(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
+        shapes.extend(rect_fill(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
         // Separatore bianco a destra della cella.
-        ops.extend(line(cell_x1, AXIS_BOT, cell_x1, AXIS_TOP, 0.6, WHITE));
+        shapes.extend(line(cell_x1, AXIS_BOT, cell_x1, AXIS_TOP, 0.6, WHITE));
         // Riga verticale del mese, attraverso la zona delle righe dev.
-        ops.extend(line(cell_x0, ROWS_BOT, cell_x0, AXIS_BOT, 0.4, GRAY_GUIDE));
+        shapes.extend(line(cell_x0, ROWS_BOT, cell_x0, AXIS_BOT, 0.4, GRAY_GUIDE));
         // Etichetta mese (bianca, in basso a sinistra della cella) se ci sta.
         let name = MONTHS_IT[(m.month() - 1) as usize];
         if cell_x1 - cell_x0 > text_w_mm(name, 8.0) + 1.5 {
-            ops.extend(text_left(fonts, cell_x0 + 1.5, AXIS_BOT + 1.6, name, 8.0, false, WHITE));
+            shapes.extend(text_left(cell_x0 + 1.5, AXIS_BOT + 1.6, name, 8.0, false, WHITE));
         }
         if local_to_days(&next) >= axis_end {
             break;
@@ -402,31 +499,31 @@ fn page_ops(
         idx += 1;
     }
     // Riga verticale di chiusura a destra dell'asse.
-    ops.extend(line(CHART_X1, ROWS_BOT, CHART_X1, AXIS_BOT, 0.4, GRAY_GUIDE));
+    shapes.extend(line(CHART_X1, ROWS_BOT, CHART_X1, AXIS_BOT, 0.4, GRAY_GUIDE));
 
     // Etichette anno agli estremi (arancione, in grassetto).
     let year_l = month_start(day_to_date(axis_start)).year();
     let year_r = add_months(month_start(day_to_date(axis_end)), -1).year();
     let axis_mid = (AXIS_BOT + AXIS_TOP) / 2.0 - 1.8;
-    ops.extend(text_right(fonts, CHART_X0 - 9.0, axis_mid, &year_l.to_string(), 13.0, true, ORANGE));
-    ops.extend(text_left(fonts, CHART_X1 + 2.0, axis_mid, &year_r.to_string(), 13.0, true, ORANGE));
+    shapes.extend(text_right(CHART_X0 - 9.0, axis_mid, &year_l.to_string(), 13.0, true, ORANGE));
+    shapes.extend(text_left(CHART_X1 + 2.0, axis_mid, &year_r.to_string(), 13.0, true, ORANGE));
 
     // --- Barra di avanzamento "Today" sull'asse ----------------------------
     let today_in_axis = today >= axis_start && today <= axis_end;
     if today_in_axis && today > proj_start {
         let xt = x_of(today);
-        ops.extend(rect_fill(x_of(proj_start), AXIS_TOP - 3.0, xt, AXIS_TOP, RED));
+        shapes.extend(rect_fill(x_of(proj_start), AXIS_TOP - 3.0, xt, AXIS_TOP, RED));
     }
     if today_in_axis {
         let xt = x_of(today);
         // Linea rossa verticale attraverso le righe.
-        ops.extend(line(xt, ROWS_BOT, xt, AXIS_BOT, 0.7, RED));
+        shapes.extend(line(xt, ROWS_BOT, xt, AXIS_BOT, 0.7, RED));
         // Triangolo + etichetta "Today" sopra l'asse.
-        ops.extend(poly_fill(
+        shapes.extend(poly_fill(
             &[(xt - 2.0, AXIS_TOP + 4.0), (xt + 2.0, AXIS_TOP + 4.0), (xt, AXIS_TOP)],
             RED,
         ));
-        ops.extend(text_center(fonts, xt, AXIS_TOP + 5.0, "Today", 8.0, false, BLACK));
+        shapes.extend(text_center(xt, AXIS_TOP + 5.0, "Today", 8.0, false, BLACK));
     }
 
     // --- Milestone come bandierine -----------------------------------------
@@ -481,14 +578,14 @@ fn page_ops(
     // delle bandierine vicine.
     for (i, f) in flags.iter().enumerate() {
         let x = x_of(f.day);
-        ops.extend(line(x, AXIS_TOP, x, pole_tops[i], 1.0, f.color));
+        shapes.extend(line(x, AXIS_TOP, x, pole_tops[i], 1.0, f.color));
     }
     // Seconda passata: pennant ed etichette, in primo piano.
     for (i, f) in flags.iter().enumerate() {
         let x = x_of(f.day);
         let pole_top = pole_tops[i];
         // Pennant: triangolo a destra dell'asta.
-        ops.extend(poly_fill(
+        shapes.extend(poly_fill(
             &[(x, pole_top), (x + 7.0, pole_top - 2.0), (x, pole_top - 4.0)],
             f.color,
         ));
@@ -496,7 +593,7 @@ fn page_ops(
         for (li, (txt, size, bold)) in flag_lines(f).iter().enumerate() {
             let ly = pole_top + 2.0 + li as f32 * 3.6;
             let col = if *bold { BLACK } else { TEXT_GRAY };
-            ops.extend(text_center(fonts, x, ly, txt, *size, *bold, col));
+            shapes.extend(text_center(x, ly, txt, *size, *bold, col));
         }
     }
 
@@ -509,14 +606,14 @@ fn page_ops(
         let yc = ROWS_TOP - (i as f32 + 0.5) * row_h;
         // Etichetta a sinistra (nome dev), troncata se troppo lunga.
         let label = truncate_to_w(&r.label, 8.0, label_w);
-        ops.extend(text_left(fonts, X_LABEL, yc - 1.3, &label, 8.0, false, BLACK));
+        shapes.extend(text_left(X_LABEL, yc - 1.3, &label, 8.0, false, BLACK));
         let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
 
         // Dev senza effort: riga sottile del colore del dev che copre tutta la
         // larghezza del calendario (dall'inizio alla fine dell'asse dei mesi).
         if r.no_effort {
             let thin_hh = 0.4;
-            ops.extend(rect_fill(
+            shapes.extend(rect_fill(
                 CHART_X0,
                 yc - thin_hh,
                 CHART_X1,
@@ -534,133 +631,75 @@ fn page_ops(
         // alternata: righe pari solida, righe dispari tratteggiata.
         if bx0 - 1.0 > lead_x0 {
             if i % 2 == 0 {
-                ops.extend(line(lead_x0, yc, bx0 - 1.0, yc, 0.3, GRAY_DK));
+                shapes.extend(line(lead_x0, yc, bx0 - 1.0, yc, 0.3, GRAY_DK));
             } else {
-                ops.extend(dashed_hline(lead_x0, bx0 - 1.0, yc, 0.3, GRAY_DK));
+                shapes.extend(dashed_hline(lead_x0, bx0 - 1.0, yc, 0.3, GRAY_DK));
             }
         }
-        ops.extend(rect_fill(bx0, yc - bar_hh, bx1.max(bx0 + 1.0), yc + bar_hh, r.color));
+        shapes.extend(rect_fill(bx0, yc - bar_hh, bx1.max(bx0 + 1.0), yc + bar_hh, r.color));
         // Etichetta date a fine barra (o prima, se non ci sta a destra).
         let lbl = format!("{} - {}", short_date(r.start_day), short_date(r.end_day));
         let w = text_w_mm(&lbl, 7.0);
         if bx1 + 2.0 + w <= CHART_X1 {
-            ops.extend(text_left(fonts, bx1 + 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
+            shapes.extend(text_left(bx1 + 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
         } else {
-            ops.extend(text_right(fonts, bx0 - 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
+            shapes.extend(text_right(bx0 - 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
         }
     }
 
-    // --- Footer -------------------------------------------------------------
-    ops.extend(rect_fill(X_LABEL, FOOTER_BOT, CHART_X1, FOOTER_TOP, GRAY_FOOTER));
-    ops.extend(text_center(
-        fonts,
-        (X_LABEL + CHART_X1) / 2.0,
-        (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
-        created,
-        8.0,
-        false,
-        TEXT_GRAY,
-    ));
+    // --- Footer (banda grigia + data; escluso nell'export "solo grafico") --
+    if !chart_only {
+        shapes.extend(rect_fill(X_LABEL, FOOTER_BOT, CHART_X1, FOOTER_TOP, GRAY_FOOTER));
+        shapes.extend(text_center(
+            (X_LABEL + CHART_X1) / 2.0,
+            (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+            created,
+            8.0,
+            false,
+            TEXT_GRAY,
+        ));
+    }
 
-    ops
+    shapes
 }
 
-/// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
-/// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
-pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
-    let mut doc = PdfDocument::new("Progetti");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
+type DevInfo = std::collections::HashMap<DevId, (String, (f32, f32, f32))>;
 
-    // Data di creazione (locale), uguale su tutte le pagine di questo PDF.
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
-
-    // Lookup dev → (nome, colore).
-    let dev_info: std::collections::HashMap<_, _> = app
-        .devs
+/// Lookup dev → (nome, colore di sfondo).
+fn dev_info_map(app: &App) -> DevInfo {
+    app.devs
         .list_full()
         .into_iter()
         .map(|(id, name, bg, _)| (id, (name, u32_rgb(bg as u32))))
-        .collect();
-
-    let mut pages = Vec::new();
-
-    for (id, name, enable) in app.projects.list_full() {
-        if !enable.0 || app.projects.is_closed(id) {
-            continue;
-        }
-        let (Some(start_w), Some(end_w)) = (
-            app.projects.get_project_start_week(id),
-            app.projects.get_project_end_week(id),
-        ) else {
-            continue;
-        };
-        let proj_start = start_w.0 as i32;
-        let proj_end = end_w.0 as i32;
-
-        // Righe dev: una per ogni dev con effort registrato, ordinata per data
-        // di inizio.
-        let mut rows = Vec::new();
-        for dev_id in app.projects.get_dev_ids(id) {
-            let Some(sd) = app.projects.get_single_dev(id, dev_id) else {
-                continue;
-            };
-            let Some((first, last)) = sd.effort_span() else {
-                continue;
-            };
-            let (label, color) = dev_info
-                .get(&dev_id)
-                .cloned()
-                .unwrap_or_else(|| ("?".to_string(), BLACK));
-            rows.push(Row {
-                label,
-                color,
-                start_day: first.0 as i32,
-                end_day: last.0 as i32,
-                no_effort: false,
-            });
-        }
-        rows.sort_by_key(|r| (r.start_day, r.end_day));
-
-        // Milestone del progetto.
-        let mut flags = Vec::new();
-        for (mid, week) in app.projects.list_project_milestones(id) {
-            let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
-            let mcol = app.milestones.get_color(mid).map(u32_rgb).unwrap_or(BLACK);
-            flags.push(Flag {
-                day: week.0 as i32,
-                title: mname,
-                date: short_date(week.0 as i32),
-                color: mcol,
-            });
-        }
-
-        let tripletta = app.projects.get_tripletta(id);
-        let ops = page_ops(
-            &fonts, &tripletta, &name, proj_start, proj_end, &rows, flags, today, &created,
-        );
-        pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), ops));
-    }
-
-    if pages.is_empty() {
-        return None;
-    }
-
-    let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
-    Some(bytes)
+        .collect()
 }
 
-/// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
-/// scelto dall'utente. I dev con effort producono la barra normale; quelli senza
-/// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
-/// Con `ordered_devs` vuoto esporta comunque la pagina (asse, milestone, today…)
-/// senza righe dev. `None` solo se il progetto non ha inizio E fine.
-pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<Vec<u8>> {
+/// Nome (descrizione) di un progetto.
+fn project_name(app: &App, proj: ProjectId) -> String {
+    app.projects
+        .list_full()
+        .into_iter()
+        .find(|(id, _, _)| *id == proj)
+        .map(|(_, n, _)| n)
+        .unwrap_or_default()
+}
+
+/// Primitive di disegno di una pagina Gantt per un progetto. `order`:
+/// - `None` → dev con effort ordinati per data (usato dall'export "tutti i progetti");
+/// - `Some(devs)` → dev nell'ordine dato (i senza effort → riga sottile).
+///
+/// `chart_only` esclude tripletta/descrizione e la banda della data in fondo.
+/// `None` se il progetto non ha inizio E fine.
+fn project_shapes(
+    app: &App,
+    proj: ProjectId,
+    name: &str,
+    dev_info: &DevInfo,
+    today: i32,
+    created: &str,
+    order: Option<&[DevId]>,
+    chart_only: bool,
+) -> Option<Vec<Shape>> {
     let (Some(start_w), Some(end_w)) = (
         app.projects.get_project_start_week(proj),
         app.projects.get_project_end_week(proj),
@@ -669,63 +708,61 @@ pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> 
     };
     let proj_start = start_w.0 as i32;
     let proj_end = end_w.0 as i32;
-
-    let mut doc = PdfDocument::new("Progetto");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
-
-    let dev_info: std::collections::HashMap<_, _> = app
-        .devs
-        .list_full()
-        .into_iter()
-        .map(|(id, name, bg, _)| (id, (name, u32_rgb(bg as u32))))
-        .collect();
-
-    // Nome (descrizione) del progetto.
-    let name = app
-        .projects
-        .list_full()
-        .into_iter()
-        .find(|(id, _, _)| *id == proj)
-        .map(|(_, n, _)| n)
-        .unwrap_or_default();
-
-    // Righe dev nell'ordine scelto dall'utente (nessun ordinamento automatico).
-    let mut rows = Vec::new();
-    for &dev_id in ordered_devs {
-        let (label, color) = dev_info
-            .get(&dev_id)
+    let color_of = |dev_id: &DevId| {
+        dev_info
+            .get(dev_id)
             .cloned()
-            .unwrap_or_else(|| ("?".to_string(), BLACK));
-        match app
-            .projects
-            .get_single_dev(proj, dev_id)
-            .and_then(|sd| sd.effort_span())
-        {
-            Some((first, last)) => rows.push(Row {
-                label,
-                color,
-                start_day: first.0 as i32,
-                end_day: last.0 as i32,
-                no_effort: false,
-            }),
-            None => rows.push(Row {
-                label,
-                color,
-                start_day: proj_start,
-                end_day: proj_end,
-                no_effort: true,
-            }),
+            .unwrap_or_else(|| ("?".to_string(), BLACK))
+    };
+
+    let mut rows = Vec::new();
+    match order {
+        None => {
+            for dev_id in app.projects.get_dev_ids(proj) {
+                let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
+                    continue;
+                };
+                let Some((first, last)) = sd.effort_span() else {
+                    continue;
+                };
+                let (label, color) = color_of(&dev_id);
+                rows.push(Row {
+                    label,
+                    color,
+                    start_day: first.0 as i32,
+                    end_day: last.0 as i32,
+                    no_effort: false,
+                });
+            }
+            rows.sort_by_key(|r| (r.start_day, r.end_day));
+        }
+        Some(devs) => {
+            for &dev_id in devs {
+                let (label, color) = color_of(&dev_id);
+                match app
+                    .projects
+                    .get_single_dev(proj, dev_id)
+                    .and_then(|sd| sd.effort_span())
+                {
+                    Some((first, last)) => rows.push(Row {
+                        label,
+                        color,
+                        start_day: first.0 as i32,
+                        end_day: last.0 as i32,
+                        no_effort: false,
+                    }),
+                    None => rows.push(Row {
+                        label,
+                        color,
+                        start_day: proj_start,
+                        end_day: proj_end,
+                        no_effort: true,
+                    }),
+                }
+            }
         }
     }
 
-    // Milestone del progetto.
     let mut flags = Vec::new();
     for (mid, week) in app.projects.list_project_milestones(proj) {
         let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
@@ -739,14 +776,97 @@ pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> 
     }
 
     let tripletta = app.projects.get_tripletta(proj);
-    let ops = page_ops(
-        &fonts, &tripletta, &name, proj_start, proj_end, &rows, flags, today, &created,
-    );
-    let page = PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), ops);
+    Some(page_shapes(
+        &tripletta, name, proj_start, proj_end, &rows, flags, today, created, chart_only,
+    ))
+}
+
+/// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
+/// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
+pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
+    let mut doc = PdfDocument::new("Progetti");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let dev_info = dev_info_map(app);
+
+    let mut pages = Vec::new();
+    for (id, name, enable) in app.projects.list_full() {
+        if !enable.0 || app.projects.is_closed(id) {
+            continue;
+        }
+        if let Some(shapes) =
+            project_shapes(app, id, &name, &dev_info, today, &created, None, false)
+        {
+            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+        }
+    }
+
+    if pages.is_empty() {
+        return None;
+    }
+    let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
+    Some(bytes)
+}
+
+/// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
+/// scelto dall'utente. I dev con effort producono la barra normale; quelli senza
+/// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
+/// Con `ordered_devs` vuoto esporta comunque la pagina (asse, milestone, today…)
+/// senza righe dev. `None` solo se il progetto non ha inizio E fine.
+pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<Vec<u8>> {
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let dev_info = dev_info_map(app);
+    let name = project_name(app, proj);
+    let shapes = project_shapes(
+        app,
+        proj,
+        &name,
+        &dev_info,
+        today,
+        &created,
+        Some(ordered_devs),
+        false,
+    )?;
+
+    let mut doc = PdfDocument::new("Progetto");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let page = PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes));
     let bytes = doc
         .with_pages(vec![page])
         .save(&PdfSaveOptions::default(), &mut Vec::new());
     Some(bytes)
+}
+
+/// Esporta il **solo grafico** di un progetto in SVG: come il PDF a singolo
+/// progetto ma senza tripletta/descrizione e senza la data in fondo. `None` se il
+/// progetto non ha inizio E fine.
+pub fn build_svg_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<String> {
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let dev_info = dev_info_map(app);
+    let name = project_name(app, proj);
+    let shapes = project_shapes(
+        app,
+        proj,
+        &name,
+        &dev_info,
+        today,
+        "",
+        Some(ordered_devs),
+        true, // solo grafico
+    )?;
+    Some(render_svg(&shapes))
 }
 
 #[cfg(test)]
@@ -817,5 +937,30 @@ mod tests {
         let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
         // niente fine → None anche col percorso singolo progetto
         assert!(build_pdf_project(&app, pid, &[]).is_none());
+    }
+
+    #[test]
+    fn svg_export_is_chart_only_valid_svg() {
+        let mut app = App::new();
+        let pid = app.projects.add("Descrizione lunga del progetto", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+
+        let svg = build_svg_project(&app, pid, &[dev]).expect("progetto valido → Some");
+        assert!(svg.trim_start().starts_with("<svg"), "deve essere un SVG");
+        assert!(svg.contains("</svg>"));
+        // "solo grafico": niente tripletta né descrizione del progetto.
+        assert!(!svg.contains("ABC"), "la tripletta non deve comparire");
+        assert!(
+            !svg.contains("Descrizione lunga"),
+            "la descrizione non deve comparire"
+        );
+
+        // Senza inizio/fine → None.
+        let p2 = app.projects.add("NoFine", Some("ZZZ"), Some(WeekId(20000)));
+        assert!(build_svg_project(&app, p2, &[]).is_none());
     }
 }
