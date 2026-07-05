@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, io::Write, path::Path};
 
 use crate::{
     categories::Categories,
@@ -61,8 +61,50 @@ impl App {
     }
 
     pub fn save(&self, path: &str) {
-        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap();
-        let _ = fs::write(path, content);
+        let content = match ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Serializzazione RON fallita: {e}");
+                return;
+            }
+        };
+        if let Err(e) = Self::write_atomic(path, content.as_bytes()) {
+            eprintln!("Errore salvataggio '{path}': {e}");
+        }
+    }
+
+    /// Scrittura **atomica**: scrive su un file temporaneo nella stessa cartella,
+    /// forza il flush su disco (`fsync`) e poi rinomina sul nome finale. Il
+    /// `rename` sullo stesso filesystem è atomico, quindi il file finale è sempre
+    /// completo: se due salvataggi si sovrappongono (es. cartella condivisa) non
+    /// si ottiene mai un file scritto a metà. Il temporaneo include il PID per non
+    /// collidere tra istanze/colleghi diversi.
+    fn write_atomic(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+        let final_path = Path::new(path);
+        let dir = final_path
+            .parent()
+            .filter(|d| !d.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let stem = final_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| SAVE_PATH.to_string());
+        let tmp = dir.join(format!(".{stem}.{}.tmp", std::process::id()));
+
+        // Scrivi tutto il contenuto e forzalo su disco prima di rinominare.
+        {
+            let mut f = fs::File::create(&tmp)?;
+            f.write_all(bytes)?;
+            f.sync_all()?;
+        }
+        // Rimpiazzo atomico del file finale (rename sostituisce anche su Windows).
+        match fs::rename(&tmp, final_path) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp); // niente temporanei orfani
+                Err(e)
+            }
+        }
     }
 
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -136,5 +178,34 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_save_round_trip_and_no_orphan_tmp() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("pjm_atomic_{}.ron", std::process::id()));
+        let path_str = path.to_string_lossy().to_string();
+
+        let app = App::new();
+        app.save(&path_str);
+
+        // Il file finale esiste, è completo e ricaricabile identico.
+        let reloaded = App::load(&path_str).expect("il file salvato deve essere leggibile");
+        assert_eq!(app.to_ron_string(), reloaded.to_ron_string());
+
+        // Nessun file temporaneo orfano accanto al file finale.
+        let tmp = std::env::temp_dir().join(format!(
+            ".pjm_atomic_{}.ron.{}.tmp",
+            std::process::id(),
+            std::process::id()
+        ));
+        assert!(!tmp.exists(), "il temporaneo deve essere stato rinominato");
+
+        let _ = fs::remove_file(&path_str);
     }
 }
