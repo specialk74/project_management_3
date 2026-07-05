@@ -4672,10 +4672,13 @@ fn draw_project_info(
     let x = rect.left();
     let w = LEFT_INFO_W;
     let mut y = rect.top();
+    // larghezza dei due pulsanti sposta (▲▼) a destra della riga tripletta
+    let btn_w = 16.0;
 
-    // tripletta (right-click per modificare)
+    // tripletta (right-click per modificare): centrata tra il bordo sinistro e i
+    // pulsanti ▲▼ (quindi nello spazio largo `w - 2*btn_w`).
     let trip = app.projects.get_tripletta(proj);
-    let trip_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
+    let trip_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w - 2.0 * btn_w, ROW_H));
     if trip.is_empty() {
         ui.painter().text(
             trip_rect.center(),
@@ -4709,7 +4712,6 @@ fn draw_project_info(
     }
 
     // Pulsanti sposta su/giù all'estrema destra della riga tripletta.
-    let btn_w = 16.0;
     let up_rect = Rect::from_min_size(egui::pos2(x + w - 2.0 * btn_w, y), Vec2::new(btn_w, ROW_H));
     let down_rect = Rect::from_min_size(egui::pos2(x + w - btn_w, y), Vec2::new(btn_w, ROW_H));
     if ui
@@ -4756,10 +4758,13 @@ fn draw_project_info(
         y += ROW_H;
     }
 
-    // nome progetto (editabile, multiriga)
+    // nome progetto (editabile, multiriga). Padding sinistro per non incollarlo
+    // al bordo della finestra.
+    let pad = 6.0;
     let name_top = y;
     let name_h = NAME_ROWS as f32 * ROW_H;
-    let name_rect = Rect::from_min_size(egui::pos2(x, name_top), Vec2::new(w, name_h));
+    let name_w = w - pad;
+    let name_rect = Rect::from_min_size(egui::pos2(x + pad, name_top), Vec2::new(name_w, name_h));
     let buf = state
         .name_buffers
         .entry(proj.0)
@@ -4772,7 +4777,7 @@ fn draw_project_info(
             .frame(egui::Frame::NONE)
             .margin(egui::Margin::ZERO)
             .desired_rows(NAME_ROWS)
-            .desired_width(w),
+            .desired_width(name_w),
     );
     if resp.lost_focus() {
         actions.push(Action::SetProjectName {
