@@ -482,10 +482,19 @@ riga per dev.
 
 Un progetto è **idoneo** se è abilitato, non chiuso e ha **sia inizio sia fine**.
 
-### Esportazione di tutti i progetti
-**File ▸ Esporta PDF…** con più progetti visibili: genera un PDF con una pagina per
-ogni progetto idoneo. Nel Gantt i dev **con effort** sono ordinati per data di
-inizio dell'effort; i dev senza effort non compaiono.
+### Esportazione con più progetti visibili
+**File ▸ Esporta…** con più progetti visibili apre una **finestra di selezione dei
+progetti**:
+
+- elenca i **progetti visibili** (abilitati e non chiusi), tutti pre-selezionati,
+  identificati dalla **tripletta** (o dalla descrizione se assente);
+- **Select All** in cima per selezionare/deselezionare tutti;
+- **checkbox** per includere/escludere ciascun progetto;
+- **Esporta PDF…** genera un PDF con una pagina per ogni progetto **selezionato e
+  idoneo**; **Annulla** chiude senza esportare.
+
+Nel Gantt i dev **con effort** sono ordinati per data di inizio dell'effort; i dev
+senza effort non compaiono.
 
 ### Esportazione di un singolo progetto
 Se hai **filtrato fino a un solo progetto visibile**, **File ▸ Esporta PDF…** apre

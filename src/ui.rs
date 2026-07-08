@@ -163,6 +163,12 @@ struct PdfExport {
     entries: Vec<(DevId, bool)>,
 }
 
+/// Stato della dialog "Esporta PDF" con più progetti visibili: l'elenco dei
+/// progetti esportabili con il flag di selezione (una pagina Gantt ciascuno).
+struct PdfMultiExport {
+    entries: Vec<(ProjectId, bool)>,
+}
+
 /// Stato della dialog "Minuta": progetti non chiusi con flag di selezione e la
 /// scelta se includere solo le note della settimana corrente oppure tutte.
 struct MinutaState {
@@ -242,6 +248,8 @@ pub struct UiState {
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
     // un solo progetto e si lancia l'export)
     pdf_export: Option<PdfExport>,
+    // dialog "Esporta PDF" con più progetti visibili: selezione dei progetti
+    pdf_multi_export: Option<PdfMultiExport>,
     // dialog "Minuta" (File ▸ Minuta…): selezione progetti + scelta note
     minuta: Option<MinutaState>,
     // autosave: istante (secondi, orologio egui) dell'ultimo salvataggio
@@ -395,6 +403,9 @@ enum Action {
         proj: ProjectId,
     },
     ExportPdf,
+    ExportPdfSelected {
+        projects: Vec<ProjectId>,
+    },
     ExportPdfProject {
         proj: ProjectId,
         devs: Vec<DevId>,
@@ -668,6 +679,7 @@ impl eframe::App for PjmApp {
             popup_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
+            pdf_multi_export_window(ui.ctx(), app, state, &mut actions);
             minuta_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
@@ -1203,9 +1215,10 @@ impl PjmApp {
                 }
             }
             Action::ExportPdf => {
-                // Progetti "visibili" = abilitati e non chiusi. Se ne resta uno
-                // solo (l'utente ha filtrato a un singolo progetto), apri la dialog
-                // di selezione/ordinamento dei dev; altrimenti esporta tutti.
+                // Progetti "visibili" = abilitati e non chiusi. Con un solo
+                // progetto (l'utente ha filtrato a uno) apri la dialog di
+                // selezione/ordinamento dei dev; con più di uno apri la dialog di
+                // selezione dei progetti; con nessuno non c'è nulla da esportare.
                 let eligible: Vec<ProjectId> = self
                     .app
                     .projects
@@ -1214,22 +1227,32 @@ impl PjmApp {
                     .filter(|(id, _, en)| en.0 && !self.app.projects.is_closed(*id))
                     .map(|(id, _, _)| id)
                     .collect();
-                if let [proj] = eligible[..] {
-                    let entries = self
-                        .app
-                        .projects
-                        .list_devs(proj)
-                        .into_iter()
-                        .map(|d| (d, true))
-                        .collect();
-                    self.ui.pdf_export = Some(PdfExport { proj, entries });
-                } else {
-                    match crate::pdf_export::build_pdf(&self.app) {
-                        None => {
-                            eprintln!("Nessun progetto visibile con inizio e fine: PDF non creato.")
-                        }
-                        Some(bytes) => save_pdf_dialog(bytes, "progetti.pdf"),
+                match eligible[..] {
+                    [] => {
+                        eprintln!("Nessun progetto visibile: PDF non creato.")
                     }
+                    [proj] => {
+                        let entries = self
+                            .app
+                            .projects
+                            .list_devs(proj)
+                            .into_iter()
+                            .map(|d| (d, true))
+                            .collect();
+                        self.ui.pdf_export = Some(PdfExport { proj, entries });
+                    }
+                    _ => {
+                        let entries = eligible.into_iter().map(|id| (id, true)).collect();
+                        self.ui.pdf_multi_export = Some(PdfMultiExport { entries });
+                    }
+                }
+            }
+            Action::ExportPdfSelected { projects } => {
+                match crate::pdf_export::build_pdf_selected(&self.app, &projects) {
+                    None => {
+                        eprintln!("Nessun progetto selezionato con inizio e fine: PDF non creato.")
+                    }
+                    Some(bytes) => save_pdf_dialog(bytes, "progetti.pdf"),
                 }
             }
             Action::ExportPdfProject { proj, devs } => {
@@ -2584,6 +2607,74 @@ fn pdf_export_window(
         state.pdf_export = None;
     } else if cancel || !open {
         state.pdf_export = None;
+    }
+}
+
+/// Dialog "Esporta PDF" con più progetti visibili: elenco dei progetti da
+/// esportare (una pagina Gantt ciascuno) con "Select All". Alla conferma lancia
+/// `Action::ExportPdfSelected` con i progetti selezionati.
+fn pdf_multi_export_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(px) = state.pdf_multi_export.as_mut() else {
+        return;
+    };
+    let mut open = true;
+    let mut do_export = false;
+    let mut cancel = false;
+
+    egui::Window::new("Esporta PDF")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label("Seleziona i progetti da esportare:");
+            ui.add_space(4.0);
+
+            // Select All in cima.
+            let mut all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+            if ui.checkbox(&mut all, "Select All").changed() {
+                for e in px.entries.iter_mut() {
+                    e.1 = all;
+                }
+            }
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .max_height((ui.ctx().screen_rect().height() - 200.0).clamp(120.0, 400.0))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (proj, sel) in px.entries.iter_mut() {
+                        ui.checkbox(sel, minuta_project_label(app, *proj));
+                    }
+                });
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Esporta PDF…").clicked() {
+                    do_export = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    if do_export {
+        let projects: Vec<ProjectId> = px
+            .entries
+            .iter()
+            .filter(|(_, s)| *s)
+            .map(|(p, _)| *p)
+            .collect();
+        actions.push(Action::ExportPdfSelected { projects });
+        state.pdf_multi_export = None;
+    } else if cancel || !open {
+        state.pdf_multi_export = None;
     }
 }
 

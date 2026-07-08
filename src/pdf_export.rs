@@ -814,6 +814,41 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+/// Come `build_pdf`, ma limitato ai soli progetti indicati in `selected`
+/// (una pagina Gantt ciascuno, nell'ordine di visualizzazione). Restano validi
+/// i vincoli per pagina: il progetto deve avere inizio E fine. `None` se nessun
+/// progetto selezionato produce una pagina.
+pub fn build_pdf_selected(app: &App, selected: &[ProjectId]) -> Option<Vec<u8>> {
+    let mut doc = PdfDocument::new("Progetti");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let dev_info = dev_info_map(app);
+
+    let mut pages = Vec::new();
+    for (id, name, enable) in app.projects.list_full() {
+        if !selected.contains(&id) || !enable.0 || app.projects.is_closed(id) {
+            continue;
+        }
+        if let Some(shapes) =
+            project_shapes(app, id, &name, &dev_info, today, &created, None, false)
+        {
+            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+        }
+    }
+
+    if pages.is_empty() {
+        return None;
+    }
+    let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
+    Some(bytes)
+}
+
 /// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
 /// scelto dall'utente. I dev con effort producono la barra normale; quelli senza
 /// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
@@ -906,6 +941,26 @@ mod tests {
         let mut app = App::new();
         app.projects.add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
         assert!(build_pdf(&app).is_none());
+    }
+
+    #[test]
+    fn build_pdf_selected_only_includes_selected_projects() {
+        let mut app = App::new();
+        let a = app.projects.add("Progetto A", Some("AAA"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(a, Some(WeekId(20070)));
+        let b = app.projects.add("Progetto B", Some("BBB"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(b, Some(WeekId(20070)));
+
+        // Solo A selezionato → PDF valido (una pagina).
+        let bytes = build_pdf_selected(&app, &[a]).expect("progetto selezionato idoneo → Some");
+        assert!(bytes.starts_with(b"%PDF"));
+
+        // Nessun progetto selezionato → None.
+        assert!(build_pdf_selected(&app, &[]).is_none());
+
+        // Progetto selezionato ma senza fine → None (non idoneo).
+        let c = app.projects.add("Senza fine", Some("CCC"), Some(WeekId(20000)));
+        assert!(build_pdf_selected(&app, &[c]).is_none());
     }
 
     #[test]

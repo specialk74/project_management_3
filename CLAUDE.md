@@ -166,6 +166,8 @@ the footer date.
 
 - `build_pdf(app)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
+- `build_pdf_selected(app, &[ProjectId])` — same as `build_pdf` but only the given
+  projects (still enabled/not-closed, has start AND end), in display order.
 - `build_pdf_project(app, proj, ordered_devs)` — single project, user dev order.
   Devs **with** effort → colored bar; **without** → thin full-width line. Exports even
   with an empty dev list.
@@ -173,8 +175,10 @@ the footer date.
   but chart-only (no tripletta/description/date) as an SVG string.
 - Triggering (in `Action::ExportPdf`): if exactly **one** project is visible
   (enabled and not closed) the UI opens `pdf_export_window` (Select All, drag-to-
-  reorder via egui `dnd_drag_source`/`dnd_release_payload`, per-dev checkbox);
-  otherwise it exports all projects.
+  reorder via egui `dnd_drag_source`/`dnd_release_payload`, per-dev checkbox); if
+  **more than one**, it opens `pdf_multi_export_window` (Select All + per-project
+  checkbox) → `Action::ExportPdfSelected` → `build_pdf_selected`; with **none**,
+  nothing is exported.
 
 ### RON persistence & external changes
 
