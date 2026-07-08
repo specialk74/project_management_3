@@ -122,6 +122,13 @@ impl Projects {
         id
     }
 
+    pub fn get_info(&self, project_id: ProjectId) -> String {
+        self.projects
+            .get(&project_id)
+            .map(|p| p.get_info())
+            .unwrap_or_default()
+    }
+
     pub fn get_tripletta(&self, project_id: ProjectId) -> String {
         self.projects
             .get(&project_id)

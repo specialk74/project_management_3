@@ -139,8 +139,16 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 ### File
 - **Salva** — salva il file `.ron` corrente (scorciatoia `Cmd/Ctrl+S`).
 - **Apri…** — apre un file `.ron` (selettore nativo).
-- **Esporta PDF…** — esporta in PDF (vedi §16; il comportamento cambia se è
+- **Esporta…** — esporta in PDF (vedi §16; il comportamento cambia se è
   visibile un solo progetto).
+- **Minuta…** — genera un file Markdown con le note dei progetti selezionati.
+  Apre una finestra dove scegli i **progetti non chiusi** da includere e se
+  riportare **tutte le note** o **solo la settimana corrente**. La casella
+  **Solo progetti con note** (attiva di default) esclude i progetti senza note
+  nell'ambito scelto; disattivandola compaiono comunque con un segnaposto
+  `_(nessuna nota)_`. Ogni progetto compare con la sua **tripletta** (o la
+  descrizione se la tripletta è vuota) e le note settimanali con la data di
+  riferimento (più recenti prima).
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
   conferma (Salva ed esci / Esci senza salvare / Annulla).
 

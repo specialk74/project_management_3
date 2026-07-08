@@ -163,6 +163,16 @@ struct PdfExport {
     entries: Vec<(DevId, bool)>,
 }
 
+/// Stato della dialog "Minuta": progetti non chiusi con flag di selezione e la
+/// scelta se includere solo le note della settimana corrente oppure tutte.
+struct MinutaState {
+    entries: Vec<(ProjectId, bool)>,
+    /// true = solo settimana corrente; false = tutte le note.
+    only_current: bool,
+    /// true = escludi i progetti senza note nell'ambito scelto (default).
+    only_with_notes: bool,
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -232,6 +242,8 @@ pub struct UiState {
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
     // un solo progetto e si lancia l'export)
     pdf_export: Option<PdfExport>,
+    // dialog "Minuta" (File ▸ Minuta…): selezione progetti + scelta note
+    minuta: Option<MinutaState>,
     // autosave: istante (secondi, orologio egui) dell'ultimo salvataggio
     last_save_time: f64,
     // messaggio di errore/incoerenza da mostrare dopo un caricamento fallito o
@@ -391,6 +403,11 @@ enum Action {
         proj: ProjectId,
         devs: Vec<DevId>,
     },
+    GenerateMinuta {
+        projects: Vec<ProjectId>,
+        only_current: bool,
+        only_with_notes: bool,
+    },
     CreateMilestone(String),
     SetMilestoneColor {
         milestone: MilestoneId,
@@ -538,6 +555,20 @@ fn save_svg_dialog(svg: String, default_name: &str) {
     }
 }
 
+/// Mostra il dialog di salvataggio Markdown e scrive il contenuto nel file scelto.
+fn save_md_dialog(md: String, default_name: &str) {
+    if let Some(path) = rfd::FileDialog::new()
+        .add_filter("Markdown", &["md"])
+        .set_file_name(default_name)
+        .save_file()
+    {
+        let p = path.to_string_lossy().to_string();
+        if let Err(e) = std::fs::write(&p, md) {
+            eprintln!("Errore scrittura Markdown '{p}': {e}");
+        }
+    }
+}
+
 /// mtime del file, se leggibile.
 fn file_mtime_of(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
@@ -637,6 +668,7 @@ impl eframe::App for PjmApp {
             popup_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
+            minuta_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
@@ -1212,6 +1244,14 @@ impl PjmApp {
                     Some(svg) => save_svg_dialog(svg, "grafico.svg"),
                 }
             }
+            Action::GenerateMinuta {
+                projects,
+                only_current,
+                only_with_notes,
+            } => {
+                let md = build_minuta(&self.app, &projects, only_current, only_with_notes);
+                save_md_dialog(md, "minuta.md");
+            }
             Action::CreateMilestone(name) => {
                 self.app.milestones.add(&name);
                 self.mark_changed();
@@ -1611,7 +1651,7 @@ fn add_field(
     });
 }
 
-fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     egui::menu::bar(ui, |ui| {
         // ── File ─────────────────────────────────────────────────────────────
         ui.menu_button("File", |ui| {
@@ -1626,6 +1666,21 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
             ui.separator();
             if ui.button("Esporta…").clicked() {
                 actions.push(Action::ExportPdf);
+                ui.close_menu();
+            }
+            if ui.button("Minuta…").clicked() {
+                // Apre la dialog con tutti i progetti non chiusi preselezionati.
+                state.minuta = Some(MinutaState {
+                    entries: app
+                        .projects
+                        .list()
+                        .into_iter()
+                        .filter(|(id, _)| !app.projects.is_closed(*id))
+                        .map(|(id, _)| (id, true))
+                        .collect(),
+                    only_current: true,
+                    only_with_notes: true,
+                });
                 ui.close_menu();
             }
             ui.separator();
@@ -2530,6 +2585,155 @@ fn pdf_export_window(
     } else if cancel || !open {
         state.pdf_export = None;
     }
+}
+
+// ── Minuta (esportazione note in Markdown) ──────────────────────────────────
+
+/// Dialog "Minuta" (File ▸ Minuta…): seleziona i progetti non chiusi e sceglie
+/// se includere solo le note della settimana corrente o tutte; alla conferma
+/// lancia `Action::GenerateMinuta`.
+fn minuta_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    let Some(m) = state.minuta.as_mut() else {
+        return;
+    };
+    let mut open = true;
+    let mut generate = false;
+    let mut cancel = false;
+
+    egui::Window::new("Minuta")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label("Progetti da includere nella minuta:");
+            ui.add_space(4.0);
+
+            // Select All in cima.
+            let mut all = !m.entries.is_empty() && m.entries.iter().all(|(_, s)| *s);
+            if ui.checkbox(&mut all, "Select All").changed() {
+                for e in m.entries.iter_mut() {
+                    e.1 = all;
+                }
+            }
+            ui.separator();
+
+            // Elenco progetti non chiusi (etichetta = tripletta, fallback nome).
+            egui::ScrollArea::vertical()
+                .max_height((ui.ctx().screen_rect().height() - 220.0).clamp(120.0, 400.0))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (proj, sel) in m.entries.iter_mut() {
+                        ui.checkbox(sel, minuta_project_label(app, *proj));
+                    }
+                });
+
+            ui.separator();
+            ui.label("Note da includere:");
+            ui.radio_value(&mut m.only_current, false, "Tutte le note");
+            ui.radio_value(
+                &mut m.only_current,
+                true,
+                "Solo la settimana corrente (ultime note)",
+            );
+
+            ui.add_space(4.0);
+            ui.checkbox(&mut m.only_with_notes, "Solo progetti con note")
+                .on_hover_text(
+                    "Se attivo, esclude i progetti senza note nell'ambito scelto; \
+                     altrimenti compaiono con un segnaposto.",
+                );
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Genera Minuta…").clicked() {
+                    generate = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    if generate {
+        let projects: Vec<ProjectId> = m
+            .entries
+            .iter()
+            .filter(|(_, s)| *s)
+            .map(|(p, _)| *p)
+            .collect();
+        actions.push(Action::GenerateMinuta {
+            projects,
+            only_current: m.only_current,
+            only_with_notes: m.only_with_notes,
+        });
+        state.minuta = None;
+    } else if cancel || !open {
+        state.minuta = None;
+    }
+}
+
+/// Etichetta del progetto nella minuta: la tripletta, o la descrizione se la
+/// tripletta è vuota, o infine l'id.
+fn minuta_project_label(app: &App, proj: ProjectId) -> String {
+    let trip = app.projects.get_tripletta(proj);
+    if !trip.is_empty() {
+        return trip;
+    }
+    let name = app.projects.get_info(proj);
+    if !name.trim().is_empty() {
+        name
+    } else {
+        format!("Progetto {}", proj.0)
+    }
+}
+
+/// Costruisce il testo Markdown della minuta per i progetti indicati.
+/// `only_current`: se true include solo la nota della settimana corrente, altrimenti
+/// tutte le settimane (più recenti prima). `only_with_notes`: se true i progetti
+/// senza note nell'ambito scelto vengono esclusi; altrimenti compaiono con un
+/// segnaposto.
+fn build_minuta(
+    app: &App,
+    projects: &[ProjectId],
+    only_current: bool,
+    only_with_notes: bool,
+) -> String {
+    let current = current_week_id();
+    let today = Utc::now().date_naive().format("%y-%m-%d");
+    let mut out = format!("# Minuta — {today}\n\n");
+
+    for &proj in projects {
+        let notes = app.projects.get_notes(proj);
+        // Settimane in ambito, ordinate per data decrescente, senza voci vuote.
+        let mut weeks: Vec<(WeekId, String)> = if only_current {
+            notes
+                .get(&current)
+                .map(|t| vec![(current, t.clone())])
+                .unwrap_or_default()
+        } else {
+            notes.into_iter().collect()
+        };
+        weeks.retain(|(_, t)| !t.trim().is_empty());
+        weeks.sort_by(|a, b| b.0.cmp(&a.0));
+
+        // Filtro "Solo progetti con note": salta i progetti vuoti nell'ambito.
+        if weeks.is_empty() && only_with_notes {
+            continue;
+        }
+
+        out.push_str(&format!("## {}\n\n", minuta_project_label(app, proj)));
+        if weeks.is_empty() {
+            out.push_str("_(nessuna nota)_\n\n");
+        } else {
+            for (w, t) in weeks {
+                let label = days_to_local(w.0 as i32).format("%y-%m-%d");
+                out.push_str(&format!("**{label}**\n\n{}\n\n", t.trim_end()));
+            }
+        }
+    }
+
+    out
 }
 
 // ── Aiuto / Manuale ─────────────────────────────────────────────────────────
