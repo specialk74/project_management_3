@@ -2472,6 +2472,16 @@ fn dev_manage_window(
     }
 }
 
+/// Checkbox "Select All" condivisa dai dialog con un elenco selezionabile.
+/// `currently_all` deve essere `true` solo se ogni elemento attualmente elencato
+/// è già selezionato. Ritorna `Some(nuovo_stato)` quando l'utente clicca la
+/// checkbox — il chiamante applica `nuovo_stato` a tutti gli elementi — altrimenti
+/// `None`.
+fn select_all_checkbox(ui: &mut egui::Ui, currently_all: bool) -> Option<bool> {
+    let mut all = currently_all;
+    ui.checkbox(&mut all, "Select All").changed().then_some(all)
+}
+
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
 /// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
 /// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
@@ -2636,10 +2646,10 @@ fn pdf_multi_export_window(
             ui.add_space(4.0);
 
             // Select All in cima.
-            let mut all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
-            if ui.checkbox(&mut all, "Select All").changed() {
+            let currently_all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+            if let Some(v) = select_all_checkbox(ui, currently_all) {
                 for e in px.entries.iter_mut() {
-                    e.1 = all;
+                    e.1 = v;
                 }
             }
             ui.separator();
@@ -2701,10 +2711,10 @@ fn minuta_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &
             ui.add_space(4.0);
 
             // Select All in cima.
-            let mut all = !m.entries.is_empty() && m.entries.iter().all(|(_, s)| *s);
-            if ui.checkbox(&mut all, "Select All").changed() {
+            let currently_all = !m.entries.is_empty() && m.entries.iter().all(|(_, s)| *s);
+            if let Some(v) = select_all_checkbox(ui, currently_all) {
                 for e in m.entries.iter_mut() {
-                    e.1 = all;
+                    e.1 = v;
                 }
             }
             ui.separator();
@@ -3020,12 +3030,13 @@ fn project_filter_window(
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     // "Select All" agisce sui progetti attualmente elencati.
-                    let mut all_on = !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
-                    if ui.checkbox(&mut all_on, "Select All").changed() {
+                    let currently_all =
+                        !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
+                    if let Some(v) = select_all_checkbox(ui, currently_all) {
                         for (id, _, _) in &projects {
                             actions.push(Action::SetProjectEnabled {
                                 proj: *id,
-                                enabled: all_on,
+                                enabled: v,
                             });
                         }
                     }
