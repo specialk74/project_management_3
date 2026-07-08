@@ -2519,10 +2519,10 @@ fn pdf_export_window(
             ui.add_space(4.0);
 
             // Select All in cima.
-            let mut all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
-            if ui.checkbox(&mut all, "Select All").changed() {
+            let currently_all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+            if let Some(v) = select_all_checkbox(ui, currently_all) {
                 for e in px.entries.iter_mut() {
-                    e.1 = all;
+                    e.1 = v;
                 }
             }
             ui.separator();
@@ -3253,12 +3253,12 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
             let min_w = title_width(ui, "Workers");
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.set_min_width(min_w);
-                let mut all_on = match &filter {
+                let currently_all = match &filter {
                     None => !all.is_empty(),
                     Some(s) => !all.is_empty() && all.iter().all(|n| s.contains(n)),
                 };
-                if ui.checkbox(&mut all_on, "Select All").changed() {
-                    filter = if all_on { None } else { Some(HashSet::new()) };
+                if let Some(v) = select_all_checkbox(ui, currently_all) {
+                    filter = if v { None } else { Some(HashSet::new()) };
                 }
                 for name in &all {
                     let mut sel = match &filter {
@@ -3360,9 +3360,9 @@ fn move_dialog_window(
                 .show(ctx, |ui| {
                     ui.label("Seleziona i dev da spostare:");
                     ui.add_space(4.0);
-                    let mut all = candidates.iter().all(|(id, _)| selected.contains(id));
-                    if ui.checkbox(&mut all, "Select All").changed() {
-                        if all {
+                    let currently_all = candidates.iter().all(|(id, _)| selected.contains(id));
+                    if let Some(v) = select_all_checkbox(ui, currently_all) {
+                        if v {
                             for (id, _) in candidates.iter() {
                                 selected.insert(*id);
                             }
@@ -3428,10 +3428,10 @@ fn move_dialog_window(
                     if !milestones.is_empty() {
                         ui.separator();
                         ui.label("Milestone da spostare insieme:");
-                        let mut all = milestones.iter().all(|(_, _, s)| *s);
-                        if ui.checkbox(&mut all, "Select All").changed() {
+                        let currently_all = milestones.iter().all(|(_, _, s)| *s);
+                        if let Some(v) = select_all_checkbox(ui, currently_all) {
                             for (_, _, s) in milestones.iter_mut() {
-                                *s = all;
+                                *s = v;
                             }
                         }
                         for (_, name, sel) in milestones.iter_mut() {
