@@ -182,8 +182,15 @@ griglia.
 tripletta, nome, inizio, fine, categoria e dev.
 
 ### Campi del progetto (colonna sinistra)
-- **Tripletta**: prima riga. Se vuota mostra un `—` tenue. **Tasto destro** per
-  modificarla.
+- **Tripletta**: prima riga. Se vuota mostra un `—` tenue. **Tasto sinistro** per
+  modificarla; **tasto destro** apre le **note del progetto** (vedi sotto).
+- **Note del progetto**: **tasto destro** sulla tripletta apre le note del
+  progetto, organizzate **per settimana**, con l'intestazione della data
+  (`--- aa-mm-gg ---`). Solo la **settimana corrente** (in cima ed evidenziata)
+  è **modificabile**; le settimane passate sono mostrate in **sola lettura**
+  (solo testo). L'elenco **scorre** quando le note sono molte. Con **Salva**
+  vengono memorizzate solo le settimane che contengono testo (una settimana
+  lasciata vuota non viene salvata); **Annulla** scarta le modifiche.
 - **Categoria**: sotto la tripletta (nascosta in vista compatta). **Click** per
   sceglierla dall'elenco.
 - **Nome/descrizione**: campo di testo editabile su più righe. Basta cliccarci e

@@ -314,6 +314,19 @@ impl Projects {
         }
     }
 
+    pub fn get_notes(&self, project_id: ProjectId) -> HashMap<WeekId, String> {
+        self.projects
+            .get(&project_id)
+            .map(|p| p.get_notes().clone())
+            .unwrap_or_default()
+    }
+
+    pub fn set_notes(&mut self, project_id: ProjectId, notes: HashMap<WeekId, String>) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_notes(notes);
+        }
+    }
+
     pub fn get_dev_ids(&self, project_id: ProjectId) -> Vec<DevId> {
         self.projects
             .get(&project_id)
@@ -460,3 +473,4 @@ mod tests {
         assert_eq!(names(&ps), vec!["B", "A", "C", "D"]);
     }
 }
+

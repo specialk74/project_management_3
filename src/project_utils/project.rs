@@ -45,26 +45,37 @@ pub struct Project {
     #[serde(skip, default = "enable_default")]
     enable: Enable,
     dev_id: HashMap<DevId, SingleDev>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_week: Option<WeekId>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_week: Option<WeekId>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     tripletta: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     category: Option<CategoryId>,
     /// Posizione di ordinamento nella colonna sinistra. I file vecchi (senza
     /// campo) partono tutti da 0 → tie-break per ProjectId = ordine attuale.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     order: usize,
     /// Progetto chiuso/archiviato. Optional per retro-compatibilità con i file
     /// .ron privi del campo. Un progetto chiuso è automaticamente non-enabled.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     closed: Option<bool>,
     /// Milestone collocate nel progetto: id milestone → settimana. La chiave
     /// garantisce che la stessa milestone non compaia più volte nel progetto.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     milestones: HashMap<MilestoneId, WeekId>,
+    /// Note del progetto per settimana: WeekId → testo libero. La chiave è il
+    /// primo giorno della settimana (come le etichette della griglia). Usate
+    /// come diario settimanale. `#[serde(default)]` per retro-compatibilità con
+    /// i .ron vecchi (privi del campo).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    notes: HashMap<WeekId, String>,
+}
+
+/// Helper per `skip_serializing_if`: vero se l'usize è 0 (valore di default).
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl Project {
@@ -80,6 +91,7 @@ impl Project {
             order: 0,
             closed: None,
             milestones: HashMap::new(),
+            notes: HashMap::new(),
         }
     }
 
@@ -95,6 +107,7 @@ impl Project {
             order: 0,
             closed: None,
             milestones: HashMap::new(),
+            notes: HashMap::new(),
         }
     }
 
@@ -179,6 +192,14 @@ impl Project {
         self.tripletta = if tripletta.is_empty() { None } else { Some(tripletta.to_string()) };
     }
 
+    pub fn get_notes(&self) -> &HashMap<WeekId, String> {
+        &self.notes
+    }
+
+    pub fn set_notes(&mut self, notes: HashMap<WeekId, String>) {
+        self.notes = notes;
+    }
+
     pub fn get_category(&self) -> Option<CategoryId> {
         self.category
     }
@@ -229,6 +250,7 @@ impl Project {
             && self.order == o.order
             && self.closed == o.closed
             && self.milestones == o.milestones
+            && self.notes == o.notes
     }
 
     /// Uguaglianza di contenuto (dati generali + dev), ignorando `enable`.

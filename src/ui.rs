@@ -68,6 +68,15 @@ enum Popup {
         proj: ProjectId,
         text: String,
     },
+    /// Note del progetto per settimana, aperte con tasto destro sulla tripletta.
+    /// `weeks` è il buffer editabile in ordine di visualizzazione: la settimana
+    /// corrente (`current`) sempre in cima ed evidenziata, poi le altre per data
+    /// decrescente. Al salvataggio le voci vuote vengono scartate.
+    ProjectNotes {
+        proj: ProjectId,
+        weeks: Vec<(WeekId, String)>,
+        current: WeekId,
+    },
     Start {
         proj: ProjectId,
         text: String,
@@ -305,6 +314,10 @@ enum Action {
     SetProjectTripletta {
         proj: ProjectId,
         text: String,
+    },
+    SetProjectNotes {
+        proj: ProjectId,
+        notes: HashMap<WeekId, String>,
     },
     SetProjectStartWeek {
         proj: ProjectId,
@@ -1068,6 +1081,10 @@ impl PjmApp {
                 self.app.projects.set_tripletta(proj, &text);
                 self.mark_changed();
             }
+            Action::SetProjectNotes { proj, notes } => {
+                self.app.projects.set_notes(proj, notes);
+                self.mark_changed();
+            }
             Action::SetProjectStartWeek { proj, date } => {
                 self.app
                     .projects
@@ -1633,39 +1650,39 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
             )
             .ui(ui, |ui| {
-            if ui.button("+ Progetto").clicked() {
-                actions.push(Action::NewProject);
-                ui.close_menu();
-            }
-            ui.separator();
+                if ui.button("+ Progetto").clicked() {
+                    actions.push(Action::NewProject);
+                    ui.close_menu();
+                }
+                ui.separator();
 
-            add_field(
-                ui,
-                "Worker",
-                "Nome worker…",
-                &mut state.new_worker,
-                |name| {
-                    actions.push(Action::AddWorker(name));
-                },
-            );
-            add_field(ui, "Dev", "Nome dev…", &mut state.new_dev, |name| {
-                actions.push(Action::AddDev(name));
+                add_field(
+                    ui,
+                    "Worker",
+                    "Nome worker…",
+                    &mut state.new_worker,
+                    |name| {
+                        actions.push(Action::AddWorker(name));
+                    },
+                );
+                add_field(ui, "Dev", "Nome dev…", &mut state.new_dev, |name| {
+                    actions.push(Action::AddDev(name));
+                });
+                add_field(
+                    ui,
+                    "Categoria",
+                    "Nome categoria…",
+                    &mut state.new_category,
+                    |name| actions.push(Action::AddCategory(name)),
+                );
+                add_field(
+                    ui,
+                    "Milestone",
+                    "Nome milestone…",
+                    &mut state.new_milestone,
+                    |name| actions.push(Action::CreateMilestone(name)),
+                );
             });
-            add_field(
-                ui,
-                "Categoria",
-                "Nome categoria…",
-                &mut state.new_category,
-                |name| actions.push(Action::AddCategory(name)),
-            );
-            add_field(
-                ui,
-                "Milestone",
-                "Nome milestone…",
-                &mut state.new_milestone,
-                |name| actions.push(Action::CreateMilestone(name)),
-            );
-        });
 
         // ── Filtri ───────────────────────────────────────────────────────────
         ui.menu_button("Filtri", |ui| {
@@ -3258,6 +3275,79 @@ fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &m
                             actions.push(Action::SetProjectTripletta {
                                 proj: *proj,
                                 text: text.clone(),
+                            });
+                            close = true;
+                        }
+                        if ui.button("Annulla").clicked() {
+                            close = true;
+                        }
+                    });
+                });
+        }
+        Popup::ProjectNotes {
+            proj,
+            weeks,
+            current,
+        } => {
+            let title = format!("Note progetto: {}", app.projects.get_tripletta(*proj));
+            egui::Window::new(title)
+                .collapsible(false)
+                .resizable(true)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    // Cap in altezza + scroll: con tante settimane l'elenco
+                    // scorre invece di far crescere la finestra oltre lo schermo.
+                    let max_h = (ui.ctx().screen_rect().height() - 160.0).max(200.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(max_h.min(480.0))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for (i, (week, text)) in weeks.iter_mut().enumerate() {
+                                let label =
+                                    days_to_local(week.0 as i32).format("%y-%m-%d").to_string();
+                                let is_current = *week == *current;
+                                if i > 0 {
+                                    ui.add_space(8.0);
+                                }
+                                if is_current {
+                                    // Settimana corrente: intestazione evidenziata
+                                    // e nota modificabile.
+                                    ui.colored_label(g(EFFORT_ORANGE), format!("--- {label} ---"));
+                                    let te = ui.add(
+                                        egui::TextEdit::multiline(text)
+                                            .desired_rows(3)
+                                            .desired_width(420.0)
+                                            .font(cell_font()),
+                                    );
+                                    if just_opened {
+                                        te.request_focus();
+                                    }
+                                } else {
+                                    // Settimane passate: sola lettura, solo testo.
+                                    ui.label(format!("--- {label} ---"));
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(text.as_str()).font(cell_font()),
+                                        )
+                                        .wrap(),
+                                    );
+                                }
+                            }
+                        });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Salva").clicked() {
+                            // Scarta le voci vuote: una settimana viene salvata
+                            // solo se contiene testo.
+                            let map: HashMap<WeekId, String> = weeks
+                                .iter()
+                                .filter(|(_, t)| !t.trim().is_empty())
+                                .map(|(w, t)| (*w, t.clone()))
+                                .collect();
+                            actions.push(Action::SetProjectNotes {
+                                proj: *proj,
+                                notes: map,
                             });
                             close = true;
                         }
@@ -5120,6 +5210,33 @@ fn left_column(
     }
 }
 
+/// WeekId della settimana che contiene oggi, normalizzata al primo giorno della
+/// settimana (come le etichette della griglia).
+fn current_week_id() -> WeekId {
+    let today = Utc::now().date_naive();
+    WeekId(local_to_days(&primo_giorno_settimana_corrente(&today)) as usize)
+}
+
+/// Costruisce il popup delle note di progetto a partire dalla mappa salvata.
+/// La settimana corrente è sempre in cima (con il testo esistente o vuoto), le
+/// altre seguono per data decrescente (più recente prima).
+fn make_project_notes_popup(proj: ProjectId, notes: &HashMap<WeekId, String>) -> Popup {
+    let current = current_week_id();
+    let mut weeks: Vec<(WeekId, String)> = notes
+        .iter()
+        .filter(|(w, _)| **w != current)
+        .map(|(w, t)| (*w, t.clone()))
+        .collect();
+    weeks.sort_by(|a, b| b.0.cmp(&a.0));
+    let cur_text = notes.get(&current).cloned().unwrap_or_default();
+    weeks.insert(0, (current, cur_text));
+    Popup::ProjectNotes {
+        proj,
+        weeks,
+        current,
+    }
+}
+
 fn draw_project_info(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -5159,13 +5276,22 @@ fn draw_project_info(
         );
     }
     let tr = ui.interact(trip_rect, egui::Id::new(("trip", proj.0)), Sense::click());
-    if tr.secondary_clicked() {
+    // Tasto sinistro: modifica la tripletta.
+    if tr.clicked() {
         state.popup = Some(Popup::Tripletta {
             proj,
             text: trip.clone(),
         });
     }
-    tr.on_hover_text("Tasto destro: modifica tripletta");
+    // Tasto destro: note del progetto per settimana. La settimana corrente è in
+    // cima, pronta da compilare; le altre seguono per data decrescente.
+    if tr.secondary_clicked() {
+        state.popup = Some(make_project_notes_popup(
+            proj,
+            &app.projects.get_notes(proj),
+        ));
+    }
+    tr.on_hover_text("Tasto sinistro: modifica tripletta · Tasto destro: note progetto");
 
     // Con filtro worker attivo resta visibile solo la tripletta: niente pulsanti
     // sposta, categoria, nome, inizio/fine (così non crea spessore).
