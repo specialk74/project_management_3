@@ -1623,7 +1623,16 @@ fn toolbar(ui: &mut egui::Ui, _app: &App, state: &mut UiState, actions: &mut Vec
         // ── Aggiungi ─────────────────────────────────────────────────────────
         // I campi di testo restano nel menù: non chiudiamo la tendina dopo un
         // inserimento, così si possono aggiungere più elementi di seguito.
-        ui.menu_button("Aggiungi", |ui| {
+        // Con il comportamento predefinito (`CloseOnClick`) un click su una
+        // casella di testo interna chiuderebbe subito la tendina, impedendo di
+        // digitare: usiamo `CloseOnClickOutside` così i click sui campi e sui
+        // bottoni "+ …" la lasciano aperta.
+        egui::containers::menu::MenuButton::new("Aggiungi")
+            .config(
+                egui::containers::menu::MenuConfig::new()
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+            )
+            .ui(ui, |ui| {
             if ui.button("+ Progetto").clicked() {
                 actions.push(Action::NewProject);
                 ui.close_menu();
