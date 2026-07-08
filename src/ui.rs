@@ -2482,6 +2482,35 @@ fn select_all_checkbox(ui: &mut egui::Ui, currently_all: bool) -> Option<bool> {
     ui.checkbox(&mut all, "Select All").changed().then_some(all)
 }
 
+/// "Select All" + elenco scrollabile di progetti con checkbox, condiviso dai
+/// dialog che selezionano un sottoinsieme di progetti. `entries` sono coppie
+/// `(progetto, selezionato)` mutate in place.
+fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bool)]) {
+    // Select All in cima.
+    let currently_all = !entries.is_empty() && entries.iter().all(|(_, s)| *s);
+    if let Some(v) = select_all_checkbox(ui, currently_all) {
+        for e in entries.iter_mut() {
+            e.1 = v;
+        }
+    }
+    ui.separator();
+
+    // La lista usa lo spazio effettivamente disponibile nella finestra, meno un
+    // margine per i controlli che restano SOTTO (separatore + bottoni, e nella
+    // minuta i radio delle note). Con pochi progetti si restringe al contenuto
+    // (`auto_shrink` verticale) evitando un riquadro vuoto.
+    const BOTTOM_RESERVE: f32 = 140.0;
+    let max_h = (ui.available_height() - BOTTOM_RESERVE).max(120.0);
+    egui::ScrollArea::vertical()
+        .max_height(max_h)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for (proj, sel) in entries.iter_mut() {
+                ui.checkbox(sel, minuta_project_label(app, *proj));
+            }
+        });
+}
+
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
 /// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
 /// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
@@ -2645,23 +2674,7 @@ fn pdf_multi_export_window(
             ui.label("Seleziona i progetti da esportare:");
             ui.add_space(4.0);
 
-            // Select All in cima.
-            let currently_all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
-            if let Some(v) = select_all_checkbox(ui, currently_all) {
-                for e in px.entries.iter_mut() {
-                    e.1 = v;
-                }
-            }
-            ui.separator();
-
-            egui::ScrollArea::vertical()
-                .max_height((ui.ctx().screen_rect().height() - 200.0).clamp(120.0, 400.0))
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for (proj, sel) in px.entries.iter_mut() {
-                        ui.checkbox(sel, minuta_project_label(app, *proj));
-                    }
-                });
+            project_checklist(ui, app, &mut px.entries);
 
             ui.separator();
             ui.horizontal(|ui| {
@@ -2710,24 +2723,8 @@ fn minuta_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &
             ui.label("Progetti da includere nella minuta:");
             ui.add_space(4.0);
 
-            // Select All in cima.
-            let currently_all = !m.entries.is_empty() && m.entries.iter().all(|(_, s)| *s);
-            if let Some(v) = select_all_checkbox(ui, currently_all) {
-                for e in m.entries.iter_mut() {
-                    e.1 = v;
-                }
-            }
-            ui.separator();
-
             // Elenco progetti non chiusi (etichetta = tripletta, fallback nome).
-            egui::ScrollArea::vertical()
-                .max_height((ui.ctx().screen_rect().height() - 220.0).clamp(120.0, 400.0))
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for (proj, sel) in m.entries.iter_mut() {
-                        ui.checkbox(sel, minuta_project_label(app, *proj));
-                    }
-                });
+            project_checklist(ui, app, &mut m.entries);
 
             ui.separator();
             ui.label("Note da includere:");
@@ -5963,5 +5960,65 @@ fn draw_left_devs(
         ui.painter().rect_filled(bot_b, 0.0, color);
 
         y += block_h;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// Renderizza `project_checklist` con `n` progetti dentro una finestra grande
+    /// come `screen_h` px e restituisce l'altezza verticale consumata dalla lista.
+    fn checklist_height(n: usize, screen_h: f32) -> f32 {
+        let app = App::new();
+        let mut entries: Vec<(ProjectId, bool)> =
+            (0..n).map(|i| (ProjectId(i), false)).collect();
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(1000.0, screen_h),
+        ));
+
+        let consumed = Cell::new(0.0);
+        // Due frame: la prima registra le aree, la seconda misura a layout stabile.
+        for _ in 0..2 {
+            let _ = ctx.run(input.clone(), |ctx| {
+                egui::Window::new("test").show(ctx, |ui| {
+                    let before = ui.cursor().top();
+                    project_checklist(ui, &app, &mut entries);
+                    consumed.set(ui.cursor().top() - before);
+                });
+            });
+        }
+        consumed.get()
+    }
+
+    #[test]
+    fn project_checklist_shrinks_and_caps() {
+        let screen_h = 400.0;
+        let h_empty = checklist_height(0, screen_h);
+        let h_one = checklist_height(1, screen_h);
+        let h_many = checklist_height(50, screen_h);
+
+        // Nessun panic (arrivare qui basta) e la lista non cresce illimitata:
+        // con 50 progetti resta ampiamente sotto le ~50 righe che occuperebbe
+        // senza cap, e comunque entro l'altezza dello schermo.
+        assert!(
+            h_many <= screen_h,
+            "lista non limitata: {h_many} > schermo {screen_h}"
+        );
+        assert!(h_many < 500.0, "cap non applicato: {h_many}");
+
+        // auto_shrink: con pochi progetti la lista è più bassa che con molti.
+        assert!(
+            h_one < h_many,
+            "auto_shrink non attivo: 1 progetto ({h_one}) >= 50 ({h_many})"
+        );
+        // Con zero progetti la lista è comunque disegnata (Select All + area),
+        // quindi non nulla ma piccola.
+        assert!(h_empty > 0.0 && h_empty <= h_one + 40.0, "vuota: {h_empty}");
     }
 }
