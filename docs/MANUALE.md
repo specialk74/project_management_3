@@ -1,6 +1,6 @@
 # Manuale d'uso — Project Management Effort Tracker
 
-Versione applicazione: **0.3.0**
+Versione applicazione: **{{VERSION}}**
 
 Questo manuale descrive tutte le funzionalità del programma. È scritto per essere
 riutilizzato in un futuro "Help" interno all'applicazione.
@@ -23,7 +23,7 @@ riutilizzato in un futuro "Help" interno all'applicazione.
 12. [Il confine di fine anno](#12-il-confine-di-fine-anno)
 13. [Il footer (worker e totali)](#13-il-footer-worker-e-totali)
 14. [Filtri](#14-filtri)
-15. [Viste: compatta, bianco/nero, tema, zoom](#15-viste-compatta-biancnero-tema-zoom)
+15. [Viste: compatta, bianco/nero, tema, zoom](#15-viste-compatta-bianconero-tema-zoom)
 16. [Esportazione PDF](#16-esportazione-pdf)
 17. [Salvataggio e modifiche esterne](#17-salvataggio-e-modifiche-esterne)
 18. [Scorciatoie da tastiera](#18-scorciatoie-da-tastiera)

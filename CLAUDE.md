@@ -5,6 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > User-facing manual: see **`docs/MANUALE.md`** (Italian, complete). It is embedded
 > into the app via `include_str!` and shown by the in-app Help window
 > (**Aiuto ▸ Manuale d'uso…**). Keep it in sync when you change user-visible behavior.
+> The `{{VERSION}}` placeholder in the manual is substituted at runtime with
+> `CARGO_PKG_VERSION` (don't hardcode a version). The in-app TOC is **not** the
+> Markdown index (egui_commonmark can't follow `#anchor` links): `help_window`
+> rebuilds a clickable chapter list from the `## N.` headings (`chapter_title`) and
+> scrolls with `scroll_to_rect`, hiding the Markdown `## Indice` (`is_index_section`).
 
 ## Commands
 

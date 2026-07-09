@@ -319,6 +319,9 @@ pub struct UiState {
     saturation_future_only: bool, // mostra solo dalla settimana corrente in poi
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
+    // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
+    // impostato dal click sull'indice laterale del manuale)
+    help_scroll_to: Option<usize>,
     // cache di rendering Markdown (immagini/impostazioni), persistente tra i frame
     help_md_cache: CommonMarkCache,
     // selettori per i totali-anno per dev nel footer
@@ -3091,17 +3094,27 @@ fn build_minuta(
 /// Testo del manuale d'uso, incorporato a compile-time da `docs/MANUALE.md`.
 const MANUAL_MD: &str = include_str!("../docs/MANUALE.md");
 
-/// Finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…): resa Markdown completa via
-/// `egui_commonmark` + casella di ricerca che filtra le sezioni (livello `##`).
+/// Finestra "Manuale d'uso" (Aiuto ▸ Manuale d'uso…): indice cliccabile a
+/// sinistra (che scrolla al capitolo) e testo Markdown a destra, reso via
+/// `egui_commonmark`; una casella di ricerca filtra le sezioni (livello `##`).
+///
+/// La versione mostrata nel manuale viene sostituita a runtime dal segnaposto
+/// `{{VERSION}}` con quella di `Cargo.toml`, così non resta mai indietro. Le
+/// ancore Markdown (`[cap](#…)`) non sono navigabili in `egui_commonmark`: per
+/// questo l'indice è ricostruito con veri pulsanti che usano `scroll_to_rect`.
 fn help_window(ctx: &egui::Context, state: &mut UiState) {
     if !state.show_help {
         return;
     }
+    // Versione sempre allineata a Cargo.toml.
+    let manual = MANUAL_MD.replace("{{VERSION}}", env!("CARGO_PKG_VERSION"));
+    let sections = manual_sections(&manual);
+
     let mut open = true;
     egui::Window::new("Manuale d'uso")
         .collapsible(true)
         .resizable(true)
-        .default_size(egui::vec2(820.0, 620.0))
+        .default_size(egui::vec2(880.0, 640.0))
         .open(&mut open)
         .show(ctx, |ui| {
             // Barra di ricerca.
@@ -3119,16 +3132,15 @@ fn help_window(ctx: &egui::Context, state: &mut UiState) {
             ui.separator();
 
             let q = state.help_search.trim().to_lowercase();
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    if q.is_empty() {
-                        // Manuale intero.
-                        CommonMarkViewer::new().show(ui, &mut state.help_md_cache, MANUAL_MD);
-                    } else {
-                        // Solo le sezioni (## ) che contengono il testo cercato.
+
+            // ── Ricerca attiva: elenco piatto delle sezioni che combaciano ──
+            if !q.is_empty() {
+                egui::ScrollArea::vertical()
+                    .id_salt("help_search_results")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                         let mut any = false;
-                        for sec in manual_sections(MANUAL_MD) {
+                        for sec in &sections {
                             if sec.to_lowercase().contains(&q) {
                                 any = true;
                                 CommonMarkViewer::new().show(ui, &mut state.help_md_cache, sec);
@@ -3138,12 +3150,79 @@ fn help_window(ctx: &egui::Context, state: &mut UiState) {
                         if !any {
                             ui.label(format!("Nessun risultato per «{}».", state.help_search));
                         }
-                    }
+                    });
+                return;
+            }
+
+            // ── Indice cliccabile a sinistra + contenuto a destra ──
+            egui::SidePanel::left("help_toc")
+                .resizable(true)
+                .default_width(230.0)
+                .show_inside(ui, |ui| {
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new("Indice").strong().color(g(EFFORT_ORANGE)));
+                    ui.add_space(4.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("help_toc_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for (i, sec) in sections.iter().enumerate() {
+                                if let Some(title) = chapter_title(sec) {
+                                    if ui.link(title).clicked() {
+                                        state.help_scroll_to = Some(i);
+                                    }
+                                }
+                            }
+                        });
                 });
+
+            egui::CentralPanel::default().show_inside(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("help_content_scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for (i, sec) in sections.iter().enumerate() {
+                            // L'indice del Markdown è sostituito dalla colonna a
+                            // sinistra: non lo ripetiamo nel contenuto.
+                            if is_index_section(sec) {
+                                continue;
+                            }
+                            // Ancora invisibile a inizio sezione: se è il capitolo
+                            // scelto, porta lì lo scroll.
+                            let (anchor, _) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width(), 0.1),
+                                Sense::hover(),
+                            );
+                            if state.help_scroll_to == Some(i) {
+                                ui.scroll_to_rect(anchor, Some(egui::Align::TOP));
+                                state.help_scroll_to = None;
+                            }
+                            CommonMarkViewer::new().show(ui, &mut state.help_md_cache, sec);
+                        }
+                    });
+            });
         });
     if !open {
         state.show_help = false;
+        state.help_scroll_to = None;
     }
+}
+
+/// Titolo di capitolo per l'indice laterale: `Some("1. Cos'è il programma")` per
+/// le sezioni `## N. …`; `None` per il titolo/intro e per la stessa sezione
+/// "Indice" (che l'app rimpiazza con la colonna cliccabile).
+fn chapter_title(section: &str) -> Option<&str> {
+    let first = section.lines().next()?.trim();
+    let rest = first.strip_prefix("## ")?.trim();
+    (rest != "Indice").then_some(rest)
+}
+
+/// True se la sezione è l'indice del Markdown (`## Indice`).
+fn is_index_section(section: &str) -> bool {
+    section
+        .lines()
+        .next()
+        .is_some_and(|l| l.trim() == "## Indice")
 }
 
 /// Divide il manuale in sezioni tagliando all'inizio di ogni intestazione di
@@ -6285,6 +6364,29 @@ mod tests {
         // Con zero progetti la lista è comunque disegnata (Select All + area),
         // quindi non nulla ma piccola.
         assert!(h_empty > 0.0 && h_empty <= h_one + 40.0, "vuota: {h_empty}");
+    }
+
+    #[test]
+    fn manual_version_is_dynamic_and_toc_parses() {
+        // Il file usa il segnaposto, non un numero fisso, così non invecchia.
+        assert!(
+            MANUAL_MD.contains("{{VERSION}}"),
+            "il manuale deve usare il segnaposto {{{{VERSION}}}}"
+        );
+        let manual = MANUAL_MD.replace("{{VERSION}}", env!("CARGO_PKG_VERSION"));
+        assert!(!manual.contains("{{VERSION}}"));
+        assert!(manual.contains(env!("CARGO_PKG_VERSION")));
+
+        let sections = manual_sections(&manual);
+        // Esattamente una sezione "## Indice", sostituita in-app dalla colonna.
+        assert_eq!(sections.iter().filter(|s| is_index_section(s)).count(), 1);
+        // I capitoli navigabili nell'indice laterale sono i 19 numerati.
+        let chapters: Vec<&str> = sections.iter().filter_map(|s| chapter_title(s)).collect();
+        assert_eq!(chapters.len(), 19, "attesi 19 capitoli, trovati {}", chapters.len());
+        assert!(chapters[0].starts_with("1. "), "primo: {}", chapters[0]);
+        assert!(chapters[18].starts_with("19. "), "ultimo: {}", chapters[18]);
+        // "Indice" non deve comparire tra i capitoli navigabili.
+        assert!(!chapters.iter().any(|c| *c == "Indice"));
     }
 
     #[test]
