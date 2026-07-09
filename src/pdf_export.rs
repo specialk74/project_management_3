@@ -64,6 +64,12 @@ const TEXT_GRAY: (f32, f32, f32) = (0.35, 0.35, 0.35);
 const ORANGE: (f32, f32, f32) = (0.90, 0.45, 0.10);
 const RED: (f32, f32, f32) = (0.86, 0.15, 0.15);
 
+/// Riferimento minimo (in ore) per l'altezza delle barre nel formato
+/// `Proportional`: se il massimo settimanale del dev non supera queste ore, si
+/// usa comunque questo valore come denominatore (100% = altezza piena). Così una
+/// settimana piena "standard" non riempie tutta l'altezza se il dev è scarico.
+const PROPORTIONAL_REF_MIN: u32 = 40;
+
 const MONTHS_IT: [&str; 12] = [
     "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
 ];
@@ -401,6 +407,22 @@ fn wrap_multiline(text: &str, max_chars: usize) -> Vec<String> {
 
 // --- Dati della pagina ------------------------------------------------------
 
+/// Formato di disegno delle barre dei dev nell'export (scelto dall'utente).
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum BarFormat {
+    /// Un unico rettangolo dalla prima all'ultima settimana con effort (default,
+    /// storico): i buchi interni non si vedono.
+    #[default]
+    Continuous,
+    /// Un rettangolo per ogni tratto di settimane consecutive con effort: dove
+    /// manca l'effort resta un gap. Altezza fissa.
+    Segmented,
+    /// Come `Segmented` ma un rettangolo per settimana, con altezza proporzionale
+    /// al massimo settimanale del dev (la settimana più carica = altezza piena,
+    /// pari a quella di `Continuous`/`Segmented`).
+    Proportional,
+}
+
 /// Una riga del Gantt (un dev). Con effort: barra dalla prima all'ultima
 /// settimana. Senza effort (`no_effort`): riga sottile fino al margine destro.
 struct Row {
@@ -409,6 +431,12 @@ struct Row {
     start_day: i32,
     end_day: i32,
     no_effort: bool,
+    /// Settimane con effort del dev, ordinate: `(giorno, ore totali della
+    /// settimana)`. Vuoto se `no_effort`. Usato dai formati `Segmented` e
+    /// `Proportional`.
+    weeks: Vec<(i32, u32)>,
+    /// Massimo delle ore settimanali del dev (denominatore per `Proportional`).
+    max_week: u32,
 }
 
 /// Una milestone (bandierina in alto).
@@ -417,6 +445,35 @@ struct Flag {
     title: String,
     date: String,
     color: (f32, f32, f32),
+}
+
+/// Riferimento (denominatore) per l'altezza delle barre `Proportional`: il
+/// massimo settimanale del dev, ma mai sotto `PROPORTIONAL_REF_MIN`.
+fn proportional_ref(max_week: u32) -> u32 {
+    max_week.max(PROPORTIONAL_REF_MIN)
+}
+
+/// Raggruppa settimane (già ordinate per giorno) in tratti di settimane
+/// consecutive — giorni adiacenti che distano esattamente 7 — restituendo il
+/// `(primo_giorno, ultimo_giorno)` di ciascun tratto.
+fn contiguous_runs(weeks: &[(i32, u32)]) -> Vec<(i32, i32)> {
+    let mut runs = Vec::new();
+    let mut it = weeks.iter();
+    let Some(&(first, _)) = it.next() else {
+        return runs;
+    };
+    let (mut run_start, mut run_end) = (first, first);
+    for &(day, _) in it {
+        if day - run_end == 7 {
+            run_end = day;
+        } else {
+            runs.push((run_start, run_end));
+            run_start = day;
+            run_end = day;
+        }
+    }
+    runs.push((run_start, run_end));
+    runs
 }
 
 /// Genera gli `Op` di una pagina Gantt per un progetto.
@@ -430,6 +487,7 @@ fn page_shapes(
     today: i32,
     created: &str,
     chart_only: bool,
+    fmt: BarFormat,
 ) -> Vec<Shape> {
     let mut shapes: Vec<Shape> = Vec::new();
 
@@ -636,7 +694,34 @@ fn page_shapes(
                 shapes.extend(dashed_hline(lead_x0, bx0 - 1.0, yc, 0.3, GRAY_DK));
             }
         }
-        shapes.extend(rect_fill(bx0, yc - bar_hh, bx1.max(bx0 + 1.0), yc + bar_hh, r.color));
+        // Disegno della/e barra/e secondo il formato scelto.
+        match fmt {
+            BarFormat::Continuous => {
+                // Un unico rettangolo dalla prima all'ultima settimana.
+                shapes.extend(rect_fill(bx0, yc - bar_hh, bx1.max(bx0 + 1.0), yc + bar_hh, r.color));
+            }
+            BarFormat::Segmented => {
+                // Un rettangolo per ogni tratto di settimane consecutive (diff 7).
+                for (s, e) in contiguous_runs(&r.weeks) {
+                    let rx0 = x_of(s);
+                    let rx1 = x_of(e + 7);
+                    shapes.extend(rect_fill(rx0, yc - bar_hh, rx1.max(rx0 + 1.0), yc + bar_hh, r.color));
+                }
+            }
+            BarFormat::Proportional => {
+                // Un rettangolo per settimana, altezza ∝ ore/riferimento. Il
+                // riferimento è il massimo settimanale del dev, ma mai sotto
+                // `PROPORTIONAL_REF_MIN` ore: così una settimana da 40h è "piena"
+                // solo se il dev non lavora di più altrove.
+                let denom = proportional_ref(r.max_week) as f32;
+                for &(day, hours) in &r.weeks {
+                    let hh = (bar_hh * hours as f32 / denom).max(0.15);
+                    let rx0 = x_of(day);
+                    let rx1 = x_of(day + 7);
+                    shapes.extend(rect_fill(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, r.color));
+                }
+            }
+        }
         // Etichetta date a fine barra (o prima, se non ci sta a destra).
         let lbl = format!("{} - {}", short_date(r.start_day), short_date(r.end_day));
         let w = text_w_mm(&lbl, 7.0);
@@ -699,6 +784,7 @@ fn project_shapes(
     created: &str,
     order: Option<&[DevId]>,
     chart_only: bool,
+    fmt: BarFormat,
 ) -> Option<Vec<Shape>> {
     let (Some(start_w), Some(end_w)) = (
         app.projects.get_project_start_week(proj),
@@ -714,6 +800,19 @@ fn project_shapes(
             .cloned()
             .unwrap_or_else(|| ("?".to_string(), BLACK))
     };
+    // Settimane con effort del dev: `(giorno, ore totali)` ordinate, + massimo.
+    let week_data = |dev_id: DevId| -> (Vec<(i32, u32)>, u32) {
+        let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
+            return (Vec::new(), 0);
+        };
+        let weeks: Vec<(i32, u32)> = sd
+            .effort_weeks()
+            .into_iter()
+            .map(|w| (w.0 as i32, sd.get_effort_by_week(w).0 as u32))
+            .collect();
+        let max = weeks.iter().map(|(_, h)| *h).max().unwrap_or(0);
+        (weeks, max)
+    };
 
     let mut rows = Vec::new();
     match order {
@@ -726,12 +825,15 @@ fn project_shapes(
                     continue;
                 };
                 let (label, color) = color_of(&dev_id);
+                let (weeks, max_week) = week_data(dev_id);
                 rows.push(Row {
                     label,
                     color,
                     start_day: first.0 as i32,
                     end_day: last.0 as i32,
                     no_effort: false,
+                    weeks,
+                    max_week,
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -744,19 +846,26 @@ fn project_shapes(
                     .get_single_dev(proj, dev_id)
                     .and_then(|sd| sd.effort_span())
                 {
-                    Some((first, last)) => rows.push(Row {
-                        label,
-                        color,
-                        start_day: first.0 as i32,
-                        end_day: last.0 as i32,
-                        no_effort: false,
-                    }),
+                    Some((first, last)) => {
+                        let (weeks, max_week) = week_data(dev_id);
+                        rows.push(Row {
+                            label,
+                            color,
+                            start_day: first.0 as i32,
+                            end_day: last.0 as i32,
+                            no_effort: false,
+                            weeks,
+                            max_week,
+                        })
+                    }
                     None => rows.push(Row {
                         label,
                         color,
                         start_day: proj_start,
                         end_day: proj_end,
                         no_effort: true,
+                        weeks: Vec::new(),
+                        max_week: 0,
                     }),
                 }
             }
@@ -777,13 +886,13 @@ fn project_shapes(
 
     let tripletta = app.projects.get_tripletta(proj);
     Some(page_shapes(
-        &tripletta, name, proj_start, proj_end, &rows, flags, today, created, chart_only,
+        &tripletta, name, proj_start, proj_end, &rows, flags, today, created, chart_only, fmt,
     ))
 }
 
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
-pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
+pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
     let mut doc = PdfDocument::new("Progetti");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
@@ -801,7 +910,7 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
             continue;
         }
         if let Some(shapes) =
-            project_shapes(app, id, &name, &dev_info, today, &created, None, false)
+            project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
         {
             pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
         }
@@ -818,7 +927,7 @@ pub fn build_pdf(app: &App) -> Option<Vec<u8>> {
 /// (una pagina Gantt ciascuno, nell'ordine di visualizzazione). Restano validi
 /// i vincoli per pagina: il progetto deve avere inizio E fine. `None` se nessun
 /// progetto selezionato produce una pagina.
-pub fn build_pdf_selected(app: &App, selected: &[ProjectId]) -> Option<Vec<u8>> {
+pub fn build_pdf_selected(app: &App, selected: &[ProjectId], fmt: BarFormat) -> Option<Vec<u8>> {
     let mut doc = PdfDocument::new("Progetti");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
@@ -838,7 +947,7 @@ pub fn build_pdf_selected(app: &App, selected: &[ProjectId]) -> Option<Vec<u8>> 
             continue;
         }
         if let Some(shapes) =
-            project_shapes(app, id, &name, &dev_info, today, &created, None, false)
+            project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
         {
             pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
         }
@@ -856,7 +965,12 @@ pub fn build_pdf_selected(app: &App, selected: &[ProjectId]) -> Option<Vec<u8>> 
 /// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
 /// Con `ordered_devs` vuoto esporta comunque la pagina (asse, milestone, today…)
 /// senza righe dev. `None` solo se il progetto non ha inizio E fine.
-pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<Vec<u8>> {
+pub fn build_pdf_project(
+    app: &App,
+    proj: ProjectId,
+    ordered_devs: &[DevId],
+    fmt: BarFormat,
+) -> Option<Vec<u8>> {
     let created = chrono::Local::now().format("%Y-%m-%d").to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
@@ -870,6 +984,7 @@ pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> 
         &created,
         Some(ordered_devs),
         false,
+        fmt,
     )?;
 
     let mut doc = PdfDocument::new("Progetto");
@@ -889,7 +1004,12 @@ pub fn build_pdf_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> 
 /// Esporta il **solo grafico** di un progetto in SVG: come il PDF a singolo
 /// progetto ma senza tripletta/descrizione e senza la data in fondo. `None` se il
 /// progetto non ha inizio E fine.
-pub fn build_svg_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> Option<String> {
+pub fn build_svg_project(
+    app: &App,
+    proj: ProjectId,
+    ordered_devs: &[DevId],
+    fmt: BarFormat,
+) -> Option<String> {
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
@@ -902,6 +1022,7 @@ pub fn build_svg_project(app: &App, proj: ProjectId, ordered_devs: &[DevId]) -> 
         "",
         Some(ordered_devs),
         true, // solo grafico
+        fmt,
     )?;
     Some(render_svg(&shapes))
 }
@@ -916,7 +1037,7 @@ mod tests {
     #[test]
     fn no_eligible_projects_returns_none() {
         let app = App::new();
-        assert!(build_pdf(&app).is_none());
+        assert!(build_pdf(&app, BarFormat::Continuous).is_none());
     }
 
     #[test]
@@ -934,7 +1055,7 @@ mod tests {
         let mid = app.milestones.add("Beta");
         app.projects.add_project_milestone(pid, mid, WeekId(20035));
 
-        let bytes = build_pdf(&app).expect("un progetto idoneo → Some");
+        let bytes = build_pdf(&app, BarFormat::Continuous).expect("un progetto idoneo → Some");
         assert!(bytes.starts_with(b"%PDF"), "l'output deve essere un PDF valido");
     }
 
@@ -942,7 +1063,7 @@ mod tests {
     fn project_without_end_is_skipped() {
         let mut app = App::new();
         app.projects.add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
-        assert!(build_pdf(&app).is_none());
+        assert!(build_pdf(&app, BarFormat::Continuous).is_none());
     }
 
     #[test]
@@ -954,15 +1075,15 @@ mod tests {
         app.projects.set_project_end_week(b, Some(WeekId(20070)));
 
         // Solo A selezionato → PDF valido (una pagina).
-        let bytes = build_pdf_selected(&app, &[a]).expect("progetto selezionato idoneo → Some");
+        let bytes = build_pdf_selected(&app, &[a], BarFormat::Continuous).expect("progetto selezionato idoneo → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun progetto selezionato → None.
-        assert!(build_pdf_selected(&app, &[]).is_none());
+        assert!(build_pdf_selected(&app, &[], BarFormat::Continuous).is_none());
 
         // Progetto selezionato ma senza fine → None (non idoneo).
         let c = app.projects.add("Senza fine", Some("CCC"), Some(WeekId(20000)));
-        assert!(build_pdf_selected(&app, &[c]).is_none());
+        assert!(build_pdf_selected(&app, &[c], BarFormat::Continuous).is_none());
     }
 
     #[test]
@@ -979,12 +1100,12 @@ mod tests {
             .add_effort(pid, dev_eff, WeekId(20007), WorkerId(0), Effort(8));
 
         // Ordine scelto dall'utente: prima il dev senza effort.
-        let bytes = build_pdf_project(&app, pid, &[dev_empty, dev_eff])
+        let bytes = build_pdf_project(&app, pid, &[dev_empty, dev_eff], BarFormat::Continuous)
             .expect("progetto con inizio/fine e dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun dev selezionato → esporta comunque il resto (milestone, asse…).
-        let bytes = build_pdf_project(&app, pid, &[]).expect("senza dev → Some");
+        let bytes = build_pdf_project(&app, pid, &[], BarFormat::Continuous).expect("senza dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
     }
 
@@ -993,7 +1114,7 @@ mod tests {
         let mut app = App::new();
         let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
         // niente fine → None anche col percorso singolo progetto
-        assert!(build_pdf_project(&app, pid, &[]).is_none());
+        assert!(build_pdf_project(&app, pid, &[], BarFormat::Continuous).is_none());
     }
 
     #[test]
@@ -1006,7 +1127,7 @@ mod tests {
         app.projects
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
 
-        let svg = build_svg_project(&app, pid, &[dev]).expect("progetto valido → Some");
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).expect("progetto valido → Some");
         assert!(svg.trim_start().starts_with("<svg"), "deve essere un SVG");
         assert!(svg.contains("</svg>"));
         // "solo grafico": niente tripletta né descrizione del progetto.
@@ -1018,6 +1139,57 @@ mod tests {
 
         // Senza inizio/fine → None.
         let p2 = app.projects.add("NoFine", Some("ZZZ"), Some(WeekId(20000)));
-        assert!(build_svg_project(&app, p2, &[]).is_none());
+        assert!(build_svg_project(&app, p2, &[], BarFormat::Continuous).is_none());
+    }
+
+    #[test]
+    fn proportional_reference_never_below_40() {
+        assert_eq!(proportional_ref(0), 40, "dev scarico → riferimento 40");
+        assert_eq!(proportional_ref(20), 40, "max 20h → riferimento comunque 40");
+        assert_eq!(proportional_ref(40), 40);
+        assert_eq!(proportional_ref(56), 56, "oltre 40 → il massimo reale del dev");
+    }
+
+    #[test]
+    fn contiguous_runs_groups_consecutive_weeks() {
+        // 20007 e 20014 contigui (dist 7); 20035 isolato (gap).
+        let weeks = [(20007, 8), (20014, 40), (20035, 16)];
+        assert_eq!(contiguous_runs(&weeks), vec![(20007, 20014), (20035, 20035)]);
+        assert!(contiguous_runs(&[]).is_empty());
+        assert_eq!(contiguous_runs(&[(100, 5)]), vec![(100, 100)]);
+    }
+
+    #[test]
+    fn segmented_and_proportional_formats_produce_valid_output() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        // Due settimane contigue (una con due worker → somma), un buco, poi un'altra.
+        app.projects.add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        app.projects.add_effort(pid, dev, WeekId(20007), WorkerId(1), Effort(4));
+        app.projects.add_effort(pid, dev, WeekId(20014), WorkerId(0), Effort(40));
+        app.projects.add_effort(pid, dev, WeekId(20035), WorkerId(0), Effort(16));
+
+        // Conteggio dei rettangoli nell'SVG: tutto è identico tra i formati
+        // tranne le barre del dev, quindi il totale isola il numero di barre.
+        // 3 settimane con effort, 2 tratti contigui (20007-20014 e 20035):
+        //   Continua = 1 barra, Segmentata = 2, Proporzionale = 3 (una a settimana).
+        let rects = |fmt| build_svg_project(&app, pid, &[dev], fmt).unwrap().matches("<rect").count();
+        let (cont, seg, prop) = (
+            rects(BarFormat::Continuous),
+            rects(BarFormat::Segmented),
+            rects(BarFormat::Proportional),
+        );
+        assert_eq!(seg - cont, 1, "Segmentata deve avere 1 barra in più (2 tratti vs 1)");
+        assert_eq!(prop - cont, 2, "Proporzionale deve avere 2 barre in più (3 settimane vs 1)");
+
+        for fmt in [BarFormat::Segmented, BarFormat::Proportional] {
+            let bytes = build_pdf_project(&app, pid, &[dev], fmt).expect("PDF valido");
+            assert!(bytes.starts_with(b"%PDF"));
+            let svg = build_svg_project(&app, pid, &[dev], fmt).expect("SVG valido");
+            assert!(svg.contains("</svg>"));
+        }
     }
 }

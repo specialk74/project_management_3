@@ -542,6 +542,23 @@ Gantt del PDF) in formato **SVG** vettoriale, **senza** tripletta/descrizione de
 progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev.
 L'immagine è ritagliata al contenuto effettivo del grafico.
 
+### Formato delle barre dei dev
+In tutte le finestre di export c'è un selettore **Formato barre**, con una piccola
+**anteprima** per ciascuna opzione. Vale sia per il PDF sia per l'SVG e viene
+ricordato tra un export e l'altro (non è salvato sul file). Le tre opzioni:
+
+- **Barra continua** *(predefinito)* — un **unico rettangolo** dalla prima
+  all'ultima settimana con effort; gli eventuali buchi interni non si vedono.
+- **Segmentata** — un **rettangolo per ogni tratto** di settimane consecutive con
+  effort; dove una settimana è a zero resta un **buco**. Altezza fissa.
+- **Segmentata + altezza %** — come la segmentata ma con un rettangolo per
+  settimana, la cui **altezza è proporzionale** al massimo settimanale del dev
+  (la settimana più carica — somma degli effort dei worker in quella settimana —
+  ha l'altezza piena, uguale alle altre due opzioni; tutte le altre sono più basse).
+  Il riferimento non scende mai **sotto le 40 ore**: se il dev non supera mai le
+  40h in una settimana, una settimana da 40h resta comunque all'altezza piena e le
+  più scariche restano proporzionalmente più basse.
+
 ---
 
 ## 17. Salvataggio e modifiche esterne

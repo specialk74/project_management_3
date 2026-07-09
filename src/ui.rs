@@ -294,6 +294,9 @@ pub struct UiState {
     // modalità progetti (Vista ▸ Solo aperti / Solo chiusi / Tutti). Filtro di
     // sola visualizzazione, non persistito: riparte da "Tutti" a ogni avvio.
     project_view: ProjectViewMode,
+    // formato barre scelto per l'export PDF/SVG (ricordato tra un export e
+    // l'altro, non persistito su file).
+    bar_format: crate::pdf_export::BarFormat,
     // tema chiaro/scuro: Auto = segue il sistema, altrimenti forzato
     theme_pref: ThemePref,
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
@@ -1307,7 +1310,11 @@ impl PjmApp {
                 }
             }
             Action::ExportPdfSelected { projects } => {
-                match crate::pdf_export::build_pdf_selected(&self.app, &projects) {
+                match crate::pdf_export::build_pdf_selected(
+                    &self.app,
+                    &projects,
+                    self.ui.bar_format,
+                ) {
                     None => {
                         eprintln!("Nessun progetto selezionato con inizio e fine: PDF non creato.")
                     }
@@ -1315,13 +1322,23 @@ impl PjmApp {
                 }
             }
             Action::ExportPdfProject { proj, devs } => {
-                match crate::pdf_export::build_pdf_project(&self.app, proj, &devs) {
+                match crate::pdf_export::build_pdf_project(
+                    &self.app,
+                    proj,
+                    &devs,
+                    self.ui.bar_format,
+                ) {
                     None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
                     Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
                 }
             }
             Action::ExportSvgProject { proj, devs } => {
-                match crate::pdf_export::build_svg_project(&self.app, proj, &devs) {
+                match crate::pdf_export::build_svg_project(
+                    &self.app,
+                    proj,
+                    &devs,
+                    self.ui.bar_format,
+                ) {
                     None => eprintln!("Progetto senza inizio/fine: SVG non creato."),
                     Some(svg) => save_svg_dialog(svg, "grafico.svg"),
                 }
@@ -2606,6 +2623,130 @@ fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bo
         });
 }
 
+/// Disegna una mini-anteprima (foglio bianco stile Gantt) di come vengono rese
+/// le barre di un dev nel formato `fmt`, sugli stessi dati campione. Serve nel
+/// selettore del formato di export per far scegliere l'utente a colpo d'occhio.
+fn draw_bar_format_preview(ui: &egui::Ui, rect: Rect, fmt: crate::pdf_export::BarFormat) {
+    use crate::pdf_export::BarFormat;
+    let p = ui.painter();
+    // Foglio bianco col bordo (indipendente dal tema, come il PDF stampato).
+    p.rect_filled(rect, 3.0, Color32::WHITE);
+    p.rect_stroke(
+        rect,
+        3.0,
+        Stroke::new(1.0, Color32::from_gray(200)),
+        egui::StrokeKind::Inside,
+    );
+
+    // Geometria ricavata dalla dimensione del riquadro, così scala con esso.
+    let pad = (rect.height() * 0.12).clamp(5.0, 10.0);
+    let x0 = rect.left() + pad;
+    let x1 = rect.right() - pad;
+    let span = 181.0;
+    let xof = |d: f32| x0 + (d / span) * (x1 - x0);
+
+    // Banda dei mesi (6 celle grigie alternate) come nell'export.
+    let mtop = rect.top() + pad;
+    let mband = (rect.height() * 0.17).clamp(7.0, 16.0);
+    let mbot = mtop + mband;
+    let mstart = [0.0, 31.0, 59.0, 90.0, 120.0, 151.0, 181.0];
+    for m in 0..6 {
+        let col = if m % 2 == 0 {
+            Color32::from_rgb(0x9e, 0x9e, 0x9e)
+        } else {
+            Color32::from_rgb(0xb8, 0xb8, 0xb8)
+        };
+        p.rect_filled(
+            Rect::from_min_max(egui::pos2(xof(mstart[m]), mtop), egui::pos2(xof(mstart[m + 1]), mbot)),
+            0.0,
+            col,
+        );
+    }
+
+    // Dati campione (gli stessi delle immagini di esempio): giorno, ore. Il
+    // riferimento per l'altezza segue la regola dell'export (mai sotto 40h).
+    let days = [14.0, 21.0, 28.0, 56.0, 63.0, 91.0, 112.0, 119.0, 126.0];
+    let hours = [20.0, 32.0, 32.0, 40.0, 24.0, 12.0, 28.0, 28.0, 16.0];
+    let denom = hours.iter().copied().fold(0.0, f32::max).max(40.0);
+    let dev = Color32::from_rgb(0x2e, 0x8b, 0x9e);
+    let rowtop = mbot + pad * 0.6;
+    let rowbot = rect.bottom() - pad;
+    let yc = (rowtop + rowbot) * 0.5;
+    let bhh = (rowbot - rowtop) * 0.42;
+
+    let bar = |a: f32, b: f32, hh: f32| {
+        let r = Rect::from_min_max(
+            egui::pos2(xof(a), yc - hh),
+            egui::pos2(xof(b).max(xof(a) + 1.5), yc + hh),
+        );
+        p.rect_filled(r, 1.0, dev);
+    };
+
+    match fmt {
+        // Un unico rettangolo dal primo all'ultimo effort (+1 settimana).
+        BarFormat::Continuous => bar(days[0], days[days.len() - 1] + 7.0, bhh),
+        // Un rettangolo per tratto di settimane consecutive, con i gap.
+        BarFormat::Segmented => {
+            for (a, b) in [
+                (14.0, 28.0 + 7.0),
+                (56.0, 63.0 + 7.0),
+                (91.0, 91.0 + 7.0),
+                (112.0, 126.0 + 7.0),
+            ] {
+                bar(a, b, bhh);
+            }
+        }
+        // Un rettangolo per settimana, altezza ∝ ore/riferimento.
+        BarFormat::Proportional => {
+            for i in 0..days.len() {
+                bar(days[i], days[i] + 7.0, bhh * hours[i] / denom);
+            }
+        }
+    }
+}
+
+/// Selettore del formato barre (Continuo / Segmentato / Proporzionale): per ogni
+/// opzione un radio con titolo/descrizione e sotto una **anteprima grande**.
+/// Condiviso dai dialog di export.
+fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export::BarFormat) {
+    use crate::pdf_export::BarFormat;
+    ui.label(egui::RichText::new("Formato barre").strong());
+    ui.add_space(4.0);
+    for (val, title, desc) in [
+        (
+            BarFormat::Continuous,
+            "Barra continua",
+            "un unico rettangolo dal primo all'ultimo effort",
+        ),
+        (
+            BarFormat::Segmented,
+            "Segmentata",
+            "un rettangolo per tratto: i buchi restano vuoti",
+        ),
+        (
+            BarFormat::Proportional,
+            "Segmentata + altezza %",
+            "altezza ∝ effort della settimana (max = piena)",
+        ),
+    ] {
+        ui.horizontal(|ui| {
+            ui.radio_value(fmt, val, "");
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(title).strong());
+                ui.label(egui::RichText::new(desc).small().color(text_dim()));
+            });
+        });
+        // Anteprima larga e alta, cliccabile per selezionare l'opzione.
+        let w = ui.available_width().clamp(280.0, 460.0);
+        let (prect, presp) = ui.allocate_exact_size(egui::vec2(w, 66.0), Sense::click());
+        draw_bar_format_preview(ui, prect, val);
+        if presp.clicked() {
+            *fmt = val;
+        }
+        ui.add_space(10.0);
+    }
+}
+
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
 /// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
 /// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
@@ -2618,6 +2759,9 @@ fn pdf_export_window(
     let Some(px) = state.pdf_export.as_mut() else {
         return;
     };
+    // Copia locale del formato: evita conflitti di prestito con `px` dentro la
+    // closure della finestra; riscritta in `state` a fine funzione.
+    let mut fmt = state.bar_format;
     let proj = px.proj;
     let trip = app.projects.get_tripletta(proj);
     let title = if trip.is_empty() {
@@ -2705,6 +2849,9 @@ fn pdf_export_window(
             }
 
             ui.separator();
+            bar_format_selector(ui, &mut fmt);
+
+            ui.separator();
             ui.horizontal(|ui| {
                 // Esportabile anche con zero dev: esce comunque il resto (milestone…).
                 if ui.button("Esporta PDF…").clicked() {
@@ -2722,6 +2869,9 @@ fn pdf_export_window(
                 }
             });
         });
+
+    // Ricorda il formato scelto per i prossimi export.
+    state.bar_format = fmt;
 
     // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
     let devs_if_export = (do_export || do_export_svg).then(|| {
@@ -2756,6 +2906,8 @@ fn pdf_multi_export_window(
     let Some(px) = state.pdf_multi_export.as_mut() else {
         return;
     };
+    // Copia locale del formato (vedi nota in `pdf_export_window`).
+    let mut fmt = state.bar_format;
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
@@ -2772,6 +2924,9 @@ fn pdf_multi_export_window(
             project_checklist(ui, app, &mut px.entries);
 
             ui.separator();
+            bar_format_selector(ui, &mut fmt);
+
+            ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("Esporta PDF…").clicked() {
                     do_export = true;
@@ -2781,6 +2936,8 @@ fn pdf_multi_export_window(
                 }
             });
         });
+
+    state.bar_format = fmt;
 
     if do_export {
         let projects: Vec<ProjectId> = px

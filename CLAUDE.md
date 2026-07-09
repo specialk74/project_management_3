@@ -172,19 +172,30 @@ category/worker-max/etc.).
 Drawing is backend-agnostic: `page_shapes(...)` builds a `Vec<Shape>` (Rect/Poly/
 Line/Text in mm, origin bottom-left), then `render_pdf(fonts, &shapes)` emits
 printpdf `Op`s and `render_svg(&shapes)` emits an SVG string (Y-flipped, cropped to
-content). `project_shapes(app, proj, name, dev_info, today, created, order, chart_only)`
+content). `project_shapes(app, proj, name, dev_info, today, created, order, chart_only, fmt)`
 gathers rows/flags for a project; `chart_only` drops the tripletta/description and
 the footer date.
 
-- `build_pdf(app)` — one Gantt page per eligible project (enabled, not closed, has
+- **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
+  drawn. `Continuous` (default, historical) = one rect first→last effort week;
+  `Segmented` = one rect per run of consecutive effort weeks (gaps show), via
+  `contiguous_runs`; `Proportional` = one rect per week, half-height ∝ week-sum /
+  `proportional_ref(max_week)` — the dev's max weekly sum but never below
+  `PROPORTIONAL_REF_MIN` (40h), so a 40h week is only full-height if the dev never
+  works more elsewhere (busiest week reaches full `bar_hh`, same as the other two).
+  `Row` carries `weeks: Vec<(day, hours)>` + `max_week` for the last two. The choice
+  lives in `UiState.bar_format` (remembered across exports, **not** persisted) and is
+  picked in the export dialogs via `bar_format_selector` (live `draw_bar_format_preview`
+  thumbnails, no image assets).
+- `build_pdf(app, fmt)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
-- `build_pdf_selected(app, &[ProjectId])` — same as `build_pdf` but only the given
+- `build_pdf_selected(app, &[ProjectId], fmt)` — same as `build_pdf` but only the given
   projects (still enabled + has start AND end; **closed are allowed** — the caller's
   selection already reflects the view mode), in display order.
-- `build_pdf_project(app, proj, ordered_devs)` — single project, user dev order.
+- `build_pdf_project(app, proj, ordered_devs, fmt)` — single project, user dev order.
   Devs **with** effort → colored bar; **without** → thin full-width line. Exports even
   with an empty dev list.
-- `build_svg_project(app, proj, ordered_devs)` — same chart as the single-project PDF
+- `build_svg_project(app, proj, ordered_devs, fmt)` — same chart as the single-project PDF
   but chart-only (no tripletta/description/date) as an SVG string.
 - Triggering (in `Action::ExportPdf`): the visible set is `body_projects(app,
   view)` (enabled + current Vista mode). If exactly **one** project is visible
