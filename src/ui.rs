@@ -156,6 +156,54 @@ enum ThemePref {
     Dark,
 }
 
+/// Modalità di visualizzazione dei progetti nel corpo centrale (menù Vista).
+/// Filtra quali progetti compaiono, in aggiunta al filtro di visibilità
+/// (enable) e a quello worker. **Non è persistita**: si riparte da `Open`
+/// (solo aperti) a ogni avvio.
+#[derive(Clone, Copy, PartialEq, Default)]
+enum ProjectViewMode {
+    /// Solo progetti aperti (non chiusi).
+    #[default]
+    Open,
+    /// Solo progetti chiusi.
+    Closed,
+    /// Tutti i progetti (aperti e chiusi).
+    All,
+}
+
+/// True se il progetto va mostrato nel corpo centrale in base alla modalità
+/// Vista corrente.
+///
+/// Nota importante: chiudere un progetto ne forza `enable = false` (vedi
+/// `Project::set_closed`), quindi il flag `enable` distingue solo gli **aperti**
+/// nascosti dal filtro «Filtri ▸ Progetti…». Per questo il filtro `enable` si
+/// applica ai soli progetti aperti; i chiusi vengono decisi dal solo stato
+/// `closed`.
+fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
+    let closed = app.projects.is_closed(proj);
+    let enabled = app.projects.get_enable(&proj).0;
+    match view {
+        ProjectViewMode::Open => !closed && enabled,
+        ProjectViewMode::Closed => closed,
+        // Aperti solo se non nascosti dal filtro; chiusi sempre visibili.
+        ProjectViewMode::All => closed || enabled,
+    }
+}
+
+/// Progetti attualmente presenti nel corpo centrale, coerenti con la modalità
+/// Vista (aperti / chiusi / tutti) e con il filtro di visibilità. Non tiene
+/// conto del filtro worker (che nasconde solo dev, non progetti interi ai fini
+/// dell'export). Usato per allineare gli elenchi di PDF/SVG/minuta a ciò che si
+/// vede a schermo, in ordine di visualizzazione.
+fn body_projects(app: &App, view: ProjectViewMode) -> Vec<ProjectId> {
+    app.projects
+        .list_full()
+        .into_iter()
+        .filter(|(id, _, _)| project_in_body(app, view, *id))
+        .map(|(id, _, _)| id)
+        .collect()
+}
+
 /// Stato della dialog "Esporta PDF" del singolo progetto: i dev del progetto con
 /// il flag di selezione, nell'ordine (riordinabile con ▲▼) scelto dall'utente.
 struct PdfExport {
@@ -243,6 +291,9 @@ pub struct UiState {
     footer_hidden: bool,
     // resa in bianco/nero (senza colori)
     bw_mode: bool,
+    // modalità progetti (Vista ▸ Solo aperti / Solo chiusi / Tutti). Filtro di
+    // sola visualizzazione, non persistito: riparte da "Tutti" a ogni avvio.
+    project_view: ProjectViewMode,
     // tema chiaro/scuro: Auto = segue il sistema, altrimenti forzato
     theme_pref: ThemePref,
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
@@ -619,17 +670,31 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_p, shift) = ui.ctx().input(|i| {
+            let (key_s, key_f, key_p, shift, key_1, key_2, key_3) = ui.ctx().input(|i| {
                 let cmd = i.modifiers.command || i.modifiers.ctrl;
                 (
                     cmd && i.key_pressed(egui::Key::S),
                     cmd && i.key_pressed(egui::Key::F),
                     cmd && i.key_pressed(egui::Key::P),
                     i.modifiers.shift,
+                    cmd && i.key_pressed(egui::Key::Num1),
+                    cmd && i.key_pressed(egui::Key::Num2),
+                    cmd && i.key_pressed(egui::Key::Num3),
                 )
             });
             if key_s {
                 actions.push(Action::Save);
+            }
+            // Modalità progetti (non persistita): Ctrl+1 solo aperti, Ctrl+2 solo
+            // chiusi, Ctrl+3 tutti.
+            if key_1 {
+                state.project_view = ProjectViewMode::Open;
+            }
+            if key_2 {
+                state.project_view = ProjectViewMode::Closed;
+            }
+            if key_3 {
+                state.project_view = ProjectViewMode::All;
             }
             if key_f {
                 if shift {
@@ -1215,18 +1280,12 @@ impl PjmApp {
                 }
             }
             Action::ExportPdf => {
-                // Progetti "visibili" = abilitati e non chiusi. Con un solo
-                // progetto (l'utente ha filtrato a uno) apri la dialog di
-                // selezione/ordinamento dei dev; con più di uno apri la dialog di
-                // selezione dei progetti; con nessuno non c'è nulla da esportare.
-                let eligible: Vec<ProjectId> = self
-                    .app
-                    .projects
-                    .list_full()
-                    .into_iter()
-                    .filter(|(id, _, en)| en.0 && !self.app.projects.is_closed(*id))
-                    .map(|(id, _, _)| id)
-                    .collect();
+                // Progetti "visibili" = quelli mostrati nel corpo centrale
+                // (abilitati + modalità Vista corrente). Con un solo progetto apri
+                // la dialog di selezione/ordinamento dei dev; con più di uno apri
+                // la dialog di selezione dei progetti; con nessuno non c'è nulla da
+                // esportare.
+                let eligible: Vec<ProjectId> = body_projects(&self.app, self.ui.project_view);
                 match eligible[..] {
                     [] => {
                         eprintln!("Nessun progetto visibile: PDF non creato.")
@@ -1692,14 +1751,12 @@ fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<
                 ui.close_menu();
             }
             if ui.button("Minuta…").clicked() {
-                // Apre la dialog con tutti i progetti non chiusi preselezionati.
+                // Apre la dialog con i progetti del corpo centrale (abilitati +
+                // modalità Vista corrente) preselezionati.
                 state.minuta = Some(MinutaState {
-                    entries: app
-                        .projects
-                        .list()
+                    entries: body_projects(app, state.project_view)
                         .into_iter()
-                        .filter(|(id, _)| !app.projects.is_closed(*id))
-                        .map(|(id, _)| (id, true))
+                        .map(|id| (id, true))
                         .collect(),
                     only_current: true,
                     only_with_notes: true,
@@ -1804,6 +1861,44 @@ fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<
             }
             if ui.selectable_label(state.bw_mode, "Bianco/Nero").clicked() {
                 state.bw_mode = !state.bw_mode;
+                ui.close_menu();
+            }
+            ui.separator();
+            // Modalità progetti: filtra il corpo centrale (e di riflesso gli
+            // export) tra soli aperti / soli chiusi / tutti. Non persistita.
+            ui.label(
+                egui::RichText::new("Progetti")
+                    .strong()
+                    .color(g(EFFORT_ORANGE)),
+            );
+            if ui
+                .selectable_label(
+                    state.project_view == ProjectViewMode::Open,
+                    "Solo progetti aperti  (⌘/Ctrl+1)",
+                )
+                .clicked()
+            {
+                state.project_view = ProjectViewMode::Open;
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(
+                    state.project_view == ProjectViewMode::Closed,
+                    "Solo progetti chiusi  (⌘/Ctrl+2)",
+                )
+                .clicked()
+            {
+                state.project_view = ProjectViewMode::Closed;
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(
+                    state.project_view == ProjectViewMode::All,
+                    "Tutti  (⌘/Ctrl+3)",
+                )
+                .clicked()
+            {
+                state.project_view = ProjectViewMode::All;
                 ui.close_menu();
             }
             ui.separator();
@@ -2264,7 +2359,7 @@ fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Act
     if let Some(target) = state.jump_to_project.take() {
         let compact = state.compact_mode;
         let merged = !compact && state.zoom_level > 0;
-        let layout = project_layout(ui, app, &filter, compact, merged);
+        let layout = project_layout(ui, app, &filter, state.project_view, compact, merged);
         let mut y = DEV_BORDER;
         let mut found = false;
         for p in &layout {
@@ -4480,6 +4575,7 @@ fn project_layout(
     ui: &egui::Ui,
     app: &App,
     filter: &Filter,
+    view: ProjectViewMode,
     compact: bool,
     merged: bool,
 ) -> Vec<ProjLayout> {
@@ -4488,7 +4584,10 @@ fn project_layout(
     let extra_rows = if compact { 1.0 } else { 4.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
-        if !app.projects.get_enable(&proj_id).0 {
+        // Visibilità (filtro «Progetti…») + modalità Vista (Solo aperti / Solo
+        // chiusi / Tutti). Il filtro `enable` conta solo per gli aperti: i chiusi
+        // sono sempre `enable = false` (vedi `project_in_body`).
+        if !project_in_body(app, view, proj_id) {
             continue;
         }
         let devs: Vec<(DevId, usize)> = app
@@ -4647,7 +4746,7 @@ fn grid(
     let cw = col_w(compact);
     let cols = columns_vec(app, level);
     let content_w = cols_width(&cols, cw);
-    let layout = project_layout(ui, app, filter, compact, merged);
+    let layout = project_layout(ui, app, filter, state.project_view, compact, merged);
     let total_h = total_content_h(&layout);
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
@@ -4659,6 +4758,9 @@ fn grid(
     y += DEV_BORDER;
 
     for p in &layout {
+        // I progetti chiusi si disegnano in scala di grigi (come la modalità B/N),
+        // indipendentemente dal B/N globale; ripristinato a fine progetto.
+        set_bw_mode(state.bw_mode || app.projects.is_closed(p.proj));
         let proj_start = app
             .projects
             .get_project_start_week(p.proj)
@@ -4727,6 +4829,8 @@ fn grid(
         paint_hstrip(ui, left, content_w, y, BETWEEN_PROJECTS);
         y += DEV_BORDER;
     }
+    // Ripristina il B/N globale dopo l'eventuale grigio dei progetti chiusi.
+    set_bw_mode(state.bw_mode);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5478,7 +5582,7 @@ fn left_column(
     let compact = state.compact_mode;
     // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
     let merged = !compact && state.zoom_level > 0;
-    let layout = project_layout(ui, app, filter, compact, merged);
+    let layout = project_layout(ui, app, filter, state.project_view, compact, merged);
     let total_h = total_content_h(&layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
@@ -5490,6 +5594,8 @@ fn left_column(
     y += DEV_BORDER;
 
     for p in &layout {
+        // Progetti chiusi in grigio (come la griglia), a prescindere dal B/N globale.
+        set_bw_mode(state.bw_mode || app.projects.is_closed(p.proj));
         let proj_rect = Rect::from_min_size(egui::pos2(left, y), Vec2::new(LEFT_W, p.proj_h));
         draw_project_info(
             ui,
@@ -5511,6 +5617,8 @@ fn left_column(
         paint_hstrip(ui, left, LEFT_W, y, BETWEEN_PROJECTS);
         y += DEV_BORDER;
     }
+    // Ripristina il B/N globale dopo l'eventuale grigio dei progetti chiusi.
+    set_bw_mode(state.bw_mode);
 }
 
 /// WeekId della settimana che contiene oggi, normalizzata al primo giorno della
@@ -6020,5 +6128,42 @@ mod tests {
         // Con zero progetti la lista è comunque disegnata (Select All + area),
         // quindi non nulla ma piccola.
         assert!(h_empty > 0.0 && h_empty <= h_one + 40.0, "vuota: {h_empty}");
+    }
+
+    #[test]
+    fn body_projects_respects_view_mode_and_closed() {
+        let mut app = App::new();
+        // aperto e visibile
+        let open = app.projects.add("Aperto", Some("AAA"), None);
+        // aperto ma nascosto dal filtro «Progetti…» (enable = false)
+        let hidden = app.projects.add("Nascosto", Some("BBB"), None);
+        app.projects.set_enable(hidden, Enable(false));
+        // chiuso (set_closed forza enable = false)
+        let closed = app.projects.add("Chiuso", Some("CCC"), None);
+        app.projects.set_closed(closed, true);
+
+        // ProjectId non implementa Debug: confronto sugli id interni.
+        let ids = |v: Vec<ProjectId>| v.into_iter().map(|p| p.0).collect::<Vec<_>>();
+
+        // Solo aperti: solo l'aperto e visibile.
+        assert_eq!(
+            ids(body_projects(&app, ProjectViewMode::Open)),
+            vec![open.0],
+            "Open deve mostrare solo l'aperto visibile"
+        );
+
+        // Solo chiusi: solo il chiuso, malgrado enable = false.
+        assert_eq!(
+            ids(body_projects(&app, ProjectViewMode::Closed)),
+            vec![closed.0],
+            "Closed deve mostrare il progetto chiuso"
+        );
+
+        // Tutti: aperto visibile + chiuso; l'aperto nascosto resta escluso.
+        assert_eq!(
+            ids(body_projects(&app, ProjectViewMode::All)),
+            vec![open.0, closed.0],
+            "All: aperto visibile + chiuso"
+        );
     }
 }

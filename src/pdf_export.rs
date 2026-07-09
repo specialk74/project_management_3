@@ -832,7 +832,9 @@ pub fn build_pdf_selected(app: &App, selected: &[ProjectId]) -> Option<Vec<u8>> 
 
     let mut pages = Vec::new();
     for (id, name, enable) in app.projects.list_full() {
-        if !selected.contains(&id) || !enable.0 || app.projects.is_closed(id) {
+        // I chiusi non sono esclusi a priori: la selezione a monte riflette la
+        // modalità Vista (può includere progetti chiusi).
+        if !selected.contains(&id) || !enable.0 {
             continue;
         }
         if let Some(shapes) =

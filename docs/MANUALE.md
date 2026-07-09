@@ -174,6 +174,9 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 ### Vista
 - **Vista compatta** — vista a barre compresse (vedi §15).
 - **Bianco/Nero** — resa in scala di grigi (toglie i colori).
+- **Progetti** — filtra quali progetti compaiono nel corpo centrale (vedi §15):
+  *Solo progetti aperti* (`Cmd/Ctrl+1`), *Solo progetti chiusi* (`Cmd/Ctrl+2`),
+  *Tutti* (`Cmd/Ctrl+3`).
 - **Tema** — *Auto (sistema)* / *Chiaro* / *Scuro* (vedi §15).
 - **Zoom settimane** — *Normale* / *2 settimane* / *4 settimane* (vedi §15).
 - **Saturazione worker…** — cruscotto di sintesi del carico (vedi §15).
@@ -420,6 +423,23 @@ panoramica su periodi lunghi.
 
 ### Bianco/Nero (Vista ▸ Bianco/Nero)
 Rende tutta l'interfaccia in scala di grigi (nessun colore).
+
+### Progetti: aperti / chiusi / tutti (Vista ▸ Progetti)
+Sceglie quali progetti mostrare nel corpo centrale, **in aggiunta** al filtro di
+visibilità (Filtri ▸ Progetti…) e al filtro worker:
+- **Solo progetti aperti** (`Cmd/Ctrl+1`) — nasconde i progetti chiusi.
+- **Solo progetti chiusi** (`Cmd/Ctrl+2`) — mostra solo i progetti chiusi.
+- **Tutti** (`Cmd/Ctrl+3`) — mostra sia gli aperti sia i chiusi.
+
+I **progetti chiusi si vedono sempre in grigio** (scala di grigi), anche quando il
+Bianco/Nero generale è spento, così si distinguono a colpo d'occhio dagli aperti.
+
+Questa scelta **non viene salvata**: a ogni avvio si riparte da *Solo progetti
+aperti*.
+
+Gli elenchi di **esportazione PDF, SVG e Minuta** seguono questa modalità: propongono
+esattamente i progetti presenti nel corpo centrale (ad es. in *Solo progetti chiusi*
+esportano i progetti chiusi).
 
 ### Tema (Vista ▸ Tema)
 Tre stati:

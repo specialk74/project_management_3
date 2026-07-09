@@ -126,7 +126,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF), Minuta… (esporta note progetti in Markdown), Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
 - **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F`), Milestone… (manager), Closed…
-- **Vista**: Vista compatta, Bianco/Nero, **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`).
+- **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
 ### Dialogs / windows
@@ -149,6 +149,18 @@ category/worker-max/etc.).
   milestone qui** and **Sposta** (blocco / devs).
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
+- **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`Closed`/
+  `All`, default `Open`, **not persisted**; menu Vista + `Cmd/Ctrl+1`/`2`/`3`) filters
+  which projects the central body shows, on top of the worker filter. The predicate
+  `project_in_body(app, view, proj)` is the single rule (used by `project_layout` and
+  `body_projects`). **Gotcha**: closing a project forces `enable = false`
+  (`Project::set_closed` / `reset_enable_from_closed`), so `enable` only distinguishes
+  *open* projects hidden via «Filtri ▸ Progetti…». Hence: `Open` → `!closed && enable`,
+  `Closed` → `closed` (enable ignored), `All` → `closed || enable`.
+  `body_projects(app, view)` returns that set (ignoring the worker filter) and drives
+  the PDF/SVG/minuta project lists so they match what's on screen. **Closed projects
+  always render grayscale**: `grid`/`left_column` call
+  `set_bw_mode(state.bw_mode || is_closed(proj))` per project and restore after.
 - **Zoom (merge weeks)** → merged columns are **read-only**, sum effort, hide worker
   names (per dev: cumulative row + one summed cell); milestones/start/end stay
   visible; a group never crosses the year boundary. Only in non-compact view.
@@ -167,14 +179,16 @@ the footer date.
 - `build_pdf(app)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
 - `build_pdf_selected(app, &[ProjectId])` — same as `build_pdf` but only the given
-  projects (still enabled/not-closed, has start AND end), in display order.
+  projects (still enabled + has start AND end; **closed are allowed** — the caller's
+  selection already reflects the view mode), in display order.
 - `build_pdf_project(app, proj, ordered_devs)` — single project, user dev order.
   Devs **with** effort → colored bar; **without** → thin full-width line. Exports even
   with an empty dev list.
 - `build_svg_project(app, proj, ordered_devs)` — same chart as the single-project PDF
   but chart-only (no tripletta/description/date) as an SVG string.
-- Triggering (in `Action::ExportPdf`): if exactly **one** project is visible
-  (enabled and not closed) the UI opens `pdf_export_window` (Select All, drag-to-
+- Triggering (in `Action::ExportPdf`): the visible set is `body_projects(app,
+  view)` (enabled + current Vista mode). If exactly **one** project is visible
+  the UI opens `pdf_export_window` (Select All, drag-to-
   reorder via egui `dnd_drag_source`/`dnd_release_payload`, per-dev checkbox); if
   **more than one**, it opens `pdf_multi_export_window` (Select All + per-project
   checkbox) → `Action::ExportPdfSelected` → `build_pdf_selected`; with **none**,
