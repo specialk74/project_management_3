@@ -2222,9 +2222,16 @@ fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
         return;
     }
     let this_week = state.this_week;
-    let filter = state.worker_filter.clone();
-    // Solo i worker visibili nel footer (esclude nascosti e fuori-filtro).
-    let workers = footer_workers(app, &filter);
+    // Worker mostrati nel cruscotto: quelli con `show_in_find` attivo OPPURE non
+    // nascosti nel footer. Non dipende dal filtro worker (Ctrl+F).
+    let workers: Vec<(WorkerId, String)> = app
+        .workers
+        .list()
+        .into_iter()
+        .filter(|(id, _)| {
+            app.workers.is_shown_in_find(*id) || !app.workers.is_hidden_in_footer(*id)
+        })
+        .collect();
 
     let mut columns = saturation_columns(app, state.saturation_monthly);
     if state.saturation_future_only {

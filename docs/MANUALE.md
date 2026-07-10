@@ -475,9 +475,9 @@ Lo zoom si può aumentare e diminuire liberamente (avanti/indietro).
 ### Saturazione worker (Vista ▸ Saturazione worker…)
 Cruscotto di sintesi del carico delle persone, per **pianificare e ribilanciare**
 senza scorrere la griglia. È in sola lettura e aggrega i dati esistenti (ore
-allocate `sovra`, capacità = max ore effettive della settimana). Mostra **solo i
-worker visibili nel footer** (esclude quelli nascosti o esclusi dal filtro).
-Contiene:
+allocate `sovra`, capacità = max ore effettive della settimana). Mostra **tutti i
+worker con `show_in_find` attivo _oppure_ non nascosti nel footer** (non dipende dal
+filtro worker Ctrl+F). Contiene:
 
 - un selettore **Settimana / Mese** (granularità);
 - una casella **"Solo da settimana corrente"** che nasconde le settimane passate
