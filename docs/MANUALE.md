@@ -571,12 +571,14 @@ ricordato tra un export e l'altro (non è salvato sul file). Le tre opzioni:
 - Le modifiche non salvate sono segnalate in alto a destra (asterisco e colore
   arancione). Alla chiusura con modifiche pendenti viene chiesta conferma.
 - **Sincronizzazione git automatica**: se la cartella del file `.ron` è (dentro) un
-  repository git, a **ogni salvataggio** (manuale, automatico o in uscita) il file
-  viene aggiunto, **committato** (solo se è cambiato) e inviato con **`git push`**.
-  Avviene in background senza rallentare l'app; se la cartella non è un repository,
-  manca il remoto o la rete/credenziali non sono disponibili, semplicemente non
-  succede nulla (il salvataggio su disco funziona comunque). Vengono committati solo
-  i file `.ron`, non i backup `.bak`.
+  repository git **e il file è già tracciato** (aggiunto in precedenza al repo), a
+  **ogni salvataggio** (manuale, automatico o in uscita) viene **committato** (solo se
+  è cambiato) e inviato con **`git push`**. Un file `.ron` **non ancora tracciato non
+  viene aggiunto**: il programma non lo mette da solo sotto controllo di versione.
+  Avviene in background senza rallentare l'app; se la cartella non è un repository, il
+  file non è tracciato, manca il remoto o la rete/credenziali non sono disponibili,
+  semplicemente non succede nulla (il salvataggio su disco funziona comunque). Vengono
+  committati solo i file `.ron`, non i backup `.bak`.
 - **Rilevamento modifiche esterne**: se il file `.ron` viene cambiato da un altro
   programma mentre è aperto, l'app lo segnala. Puoi scegliere di **mantenere le
   tue** modifiche o **ricaricare** (scartando le tue). In alcuni casi

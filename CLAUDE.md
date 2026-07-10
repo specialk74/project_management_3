@@ -221,9 +221,11 @@ see `sync_merge.rs`.
 
 Every save goes through `PjmApp::save_to_disk` (manual `Action::Save` + autosave) or,
 on exit-save, an explicit blocking call. If the data file's folder is inside a git
-work tree, the module runs `git add -- <file>` → `git commit` (only the `.ron`; skips
-if nothing changed) → `git push`. It is **best-effort**: not a repo / no remote /
-offline just logs to stderr and never blocks or breaks the on-disk save.
+work tree **and the `.ron` is already tracked** (`git ls-files` non-empty), the module
+runs `git add -- <file>` → `git commit` (only the `.ron`; skips if nothing changed) →
+`git push`. An **untracked** `.ron` is left alone — the program never `git add`s a file
+the user hasn't chosen to track. It is **best-effort**: not a repo / untracked file /
+no remote / offline just logs to stderr and never blocks or breaks the on-disk save.
 `commit_and_push` runs on a background thread (single-flight via an `AtomicBool`, so
 autosaves can't pile up); `commit_and_push_blocking` runs inline and is used on exit
 so the push finishes before the process ends. `GIT_TERMINAL_PROMPT=0` prevents git

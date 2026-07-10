@@ -1,14 +1,17 @@
 //! Sincronizzazione git opzionale del file dati.
 //!
-//! Se la cartella che contiene il file `.ron` è (dentro) un repository git,
-//! dopo ogni salvataggio il file viene **aggiunto**, **committato** (solo se è
-//! effettivamente cambiato) e inviato con **`git push`**.
+//! Se la cartella che contiene il file `.ron` è (dentro) un repository git **e il
+//! file è già tracciato** (aggiunto in precedenza), dopo ogni salvataggio il file
+//! viene **committato** (solo se è effettivamente cambiato) e inviato con
+//! **`git push`**. Un file `.ron` **non ancora tracciato non viene aggiunto**: il
+//! programma non mette da solo sotto controllo di versione un file che l'utente
+//! non ha scelto di tracciare.
 //!
-//! Tutto è best-effort: se la cartella non è un repo, se manca il remoto, se la
-//! rete o le credenziali non ci sono, l'operazione fallisce silenziosamente
-//! (solo un log su stderr) e non blocca né altera il salvataggio su disco.
-//! `GIT_TERMINAL_PROMPT=0` impedisce a git di restare bloccato a chiedere le
-//! credenziali in modo interattivo.
+//! Tutto è best-effort: se la cartella non è un repo, se il file non è tracciato,
+//! se manca il remoto, se la rete o le credenziali non ci sono, l'operazione
+//! non fa nulla (al più un log su stderr) e non blocca né altera il salvataggio
+//! su disco. `GIT_TERMINAL_PROMPT=0` impedisce a git di restare bloccato a
+//! chiedere le credenziali in modo interattivo.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -76,6 +79,15 @@ fn run(dir: &Path, filename: &OsStr) {
     let inside = matches!(&inside, Ok(o)
         if o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true");
     if !inside {
+        return;
+    }
+
+    // Sincronizziamo **solo** se il file è GIÀ tracciato dal repo (aggiunto in
+    // precedenza). Se non lo è, non lo aggiungiamo noi: il programma non deve
+    // mettere sotto controllo di versione un file che l'utente non ha tracciato.
+    let tracked = git().args(["ls-files", "--"]).arg(filename).output();
+    let tracked = matches!(&tracked, Ok(o) if o.status.success() && !o.stdout.is_empty());
+    if !tracked {
         return;
     }
 
@@ -189,6 +201,76 @@ mod tests {
             .unwrap();
         assert!(show.status.success(), "il remoto deve avere il file dopo il push");
         assert_eq!(String::from_utf8_lossy(&show.stdout), "(v2-changed)");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn untracked_ron_is_left_alone() {
+        // Repo con un commit iniziale (un README) e upstream, ma il .ron NON è
+        // ancora stato aggiunto al repo (file non tracciato): non deve essere
+        // aggiunto/committato/pushato dal programma.
+        let base = unique_dir("gituntracked");
+        let remote = base.join("remote.git");
+        let work = base.join("work");
+        std::fs::create_dir_all(&remote).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare"])
+                .arg(&remote)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            Command::new("git")
+                .args(["init"])
+                .arg(&work)
+                .status()
+                .unwrap()
+                .success()
+        );
+        git_ok(&work, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        git_ok(&work, &["config", "user.email", "test@example.com"]);
+        git_ok(&work, &["config", "user.name", "Test"]);
+        git_ok(&work, &["config", "commit.gpgsign", "false"]);
+        git_ok(&work, &["remote", "add", "origin", remote.to_str().unwrap()]);
+
+        // Commit iniziale SENZA il .ron, poi upstream.
+        std::fs::write(work.join("README.md"), b"hello").unwrap();
+        git_ok(&work, &["add", "README.md"]);
+        git_ok(&work, &["commit", "-m", "init"]);
+        git_ok(&work, &["push", "-u", "origin", "main"]);
+
+        // Ora arriva il file dati, MAI aggiunto al repo: la funzione NON deve
+        // aggiungerlo.
+        std::fs::write(work.join("workers.ron"), b"(nuovo)").unwrap();
+        run(&work, OsStr::new("workers.ron"));
+
+        // Il remoto non deve avere il file.
+        let show = Command::new("git")
+            .arg("-C")
+            .arg(&remote)
+            .args(["show", "main:workers.ron"])
+            .output()
+            .unwrap();
+        assert!(
+            !show.status.success(),
+            "un .ron non tracciato non deve finire nel remoto"
+        );
+        // E localmente deve restare non tracciato (non messo in stage).
+        let staged = Command::new("git")
+            .arg("-C")
+            .arg(&work)
+            .args(["ls-files", "--", "workers.ron"])
+            .output()
+            .unwrap();
+        assert!(
+            staged.stdout.is_empty(),
+            "il .ron non tracciato non deve essere aggiunto al repo"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }
