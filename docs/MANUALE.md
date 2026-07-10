@@ -408,6 +408,10 @@ Permette di mostrare solo alcuni worker. Con un filtro attivo:
 Scorciatoie: `Cmd/Ctrl+F` apre il filtro; `Shift+Cmd/Ctrl+F` **deseleziona tutti**
 i worker.
 
+Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
+(impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — al
+momento impostabile modificando il file `.ron` — non appare in questa lista.
+
 ### Progetti chiusi (Filtri ▸ Closed…)
 Finestra per marcare/smarcare i progetti come chiusi.
 

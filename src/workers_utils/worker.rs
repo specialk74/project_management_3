@@ -17,6 +17,18 @@ pub enum WeekStatus {
     Malattia,
 }
 
+/// Default per `show_in_find`: un worker è mostrato nel filtro (Ctrl+F) se non
+/// specificato diversamente.
+fn show_in_find_default() -> bool {
+    true
+}
+
+/// Usata da `skip_serializing_if`: non salvare il campo quando è al valore di
+/// default (`true`).
+fn is_true(b: &bool) -> bool {
+    *b
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Worker {
     pub name: String,
@@ -39,6 +51,11 @@ pub struct Worker {
     /// When true, the worker row is hidden in the right-footer (totals are still counted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hide_in_footer: Option<bool>,
+    /// When true (default), the worker appears in the Ctrl+F filter list. Default
+    /// is `true` even if the field is absent from the .ron; it is not serialized
+    /// while it stays `true`.
+    #[serde(default = "show_in_find_default", skip_serializing_if = "is_true")]
+    pub show_in_find: bool,
 }
 
 impl Worker {
@@ -52,6 +69,7 @@ impl Worker {
             week_notes: HashMap::new(),
             week_status: HashMap::new(),
             hide_in_footer: None,
+            show_in_find: true,
         }
     }
 
@@ -90,6 +108,15 @@ impl Worker {
 
     pub fn is_hidden_in_footer(&self) -> bool {
         self.hide_in_footer.unwrap_or(false)
+    }
+
+    /// True se il worker va mostrato nella lista del filtro (Ctrl+F).
+    pub fn is_shown_in_find(&self) -> bool {
+        self.show_in_find
+    }
+
+    pub fn set_shown_in_find(&mut self, shown: bool) {
+        self.show_in_find = shown;
     }
 
     pub fn get_max_hours(&self) -> u32 {

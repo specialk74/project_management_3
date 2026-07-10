@@ -56,7 +56,7 @@ references; the UI lives entirely in `src/ui.rs`.
 ```
 App (workers.ron)
 ├── start_week / end_week : WeekId   — grid time range
-├── workers   : Workers              — named people (max hours, colors, hidden-in-footer)
+├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
 ├── milestones: Milestones           — name + color, shared across projects
@@ -130,7 +130,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF), Minuta… (esporta note progetti in Markdown), Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
-- **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F`), Milestone… (manager), Closed…
+- **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F` — elenca solo i worker con `Worker.show_in_find` true, default true; la visibilità nel footer non conta), Milestone… (manager), Closed…
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 

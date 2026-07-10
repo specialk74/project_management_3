@@ -3589,12 +3589,13 @@ fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     if !state.show_worker_filter {
         return;
     }
-    // i worker nascosti nel footer non compaiono nemmeno nel filtro
+    // L'unico filtro dell'elenco è `show_in_find` (default true): la visibilità
+    // nel footer non influenza più questa lista.
     let all: Vec<String> = app
         .workers
         .list()
         .into_iter()
-        .filter(|(id, _)| !app.workers.is_hidden_in_footer(*id))
+        .filter(|(id, _)| app.workers.is_shown_in_find(*id))
         .map(|(_, n)| n)
         .collect();
     let mut open = true;

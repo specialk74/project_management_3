@@ -121,6 +121,18 @@ impl Workers {
             .map_or(false, |w| w.is_hidden_in_footer())
     }
 
+    /// True se il worker va mostrato nel filtro (Ctrl+F). Default `true` (anche
+    /// per un id sconosciuto).
+    pub fn is_shown_in_find(&self, id: WorkerId) -> bool {
+        self.worker_id.get(&id).map_or(true, |w| w.is_shown_in_find())
+    }
+
+    pub fn set_shown_in_find(&mut self, id: WorkerId, shown: bool) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_shown_in_find(shown);
+        }
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id
@@ -141,6 +153,33 @@ mod tests {
     fn new_initializes_with_zero_worker() {
         let ws = Workers::new();
         assert_eq!(ws.get_name_by_id(WORKER_ID_ZERO), "");
+    }
+
+    #[test]
+    fn show_in_find_defaults_true_when_absent_from_ron() {
+        // Un worker serializzato senza il campo (com'era prima della feature).
+        let w: Worker = ron::from_str(r#"(name: "Alice")"#).expect("deserializza");
+        assert!(w.is_shown_in_find(), "assente nel .ron ⇒ default true");
+    }
+
+    #[test]
+    fn show_in_find_true_is_not_serialized() {
+        let w = Worker::new("Alice"); // default: show_in_find = true
+        let ron = ron::ser::to_string_pretty(&w, ron::ser::PrettyConfig::default()).unwrap();
+        assert!(
+            !ron.contains("show_in_find"),
+            "col valore di default (true) il campo non va salvato: {ron}"
+        );
+    }
+
+    #[test]
+    fn show_in_find_false_round_trips_through_ron() {
+        let mut w = Worker::new("Alice");
+        w.set_shown_in_find(false);
+        let ron = ron::ser::to_string_pretty(&w, ron::ser::PrettyConfig::default()).unwrap();
+        assert!(ron.contains("show_in_find"), "false va salvato: {ron}");
+        let back: Worker = ron::from_str(&ron).expect("deserializza");
+        assert!(!back.is_shown_in_find(), "false deve persistere");
     }
 
     #[test]
