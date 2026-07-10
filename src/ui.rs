@@ -2708,46 +2708,57 @@ fn draw_bar_format_preview(ui: &egui::Ui, rect: Rect, fmt: crate::pdf_export::Ba
     }
 }
 
-/// Selettore del formato barre (Continuo / Segmentato / Proporzionale): per ogni
-/// opzione un radio con titolo/descrizione e sotto una **anteprima grande**.
-/// Condiviso dai dialog di export.
+/// Selettore del formato barre (Continuo / Segmentato / Proporzionale): le tre
+/// opzioni sono **affiancate**, ognuna con anteprima + radio, così l'insieme
+/// resta compatto in altezza (adatto a schermi HD). Condiviso dai dialog di
+/// export. Scorre in orizzontale se la finestra è più stretta delle tre colonne.
 fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export::BarFormat) {
     use crate::pdf_export::BarFormat;
+    const COL_W: f32 = 196.0;
+    const PREVIEW: egui::Vec2 = egui::vec2(190.0, 56.0);
     ui.label(egui::RichText::new("Formato barre").strong());
     ui.add_space(4.0);
-    for (val, title, desc) in [
-        (
-            BarFormat::Continuous,
-            "Barra continua",
-            "un unico rettangolo dal primo all'ultimo effort",
-        ),
-        (
-            BarFormat::Segmented,
-            "Segmentata",
-            "un rettangolo per tratto: i buchi restano vuoti",
-        ),
-        (
-            BarFormat::Proportional,
-            "Segmentata + altezza %",
-            "altezza ∝ effort della settimana (max = piena)",
-        ),
-    ] {
-        ui.horizontal(|ui| {
-            ui.radio_value(fmt, val, "");
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(title).strong());
-                ui.label(egui::RichText::new(desc).small().color(text_dim()));
+    egui::ScrollArea::horizontal()
+        .id_salt("bar_format_row")
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                for (val, title, desc) in [
+                    (
+                        BarFormat::Continuous,
+                        "Barra continua",
+                        "un rettangolo dal primo\nall'ultimo effort",
+                    ),
+                    (
+                        BarFormat::Segmented,
+                        "Segmentata",
+                        "un rettangolo per tratto,\ni buchi restano vuoti",
+                    ),
+                    (
+                        BarFormat::Proportional,
+                        "Segmentata + altezza %",
+                        "altezza ∝ all'effort\ndella settimana",
+                    ),
+                ] {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(COL_W, 0.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            let (prect, presp) =
+                                ui.allocate_exact_size(PREVIEW, Sense::click());
+                            draw_bar_format_preview(ui, prect, val);
+                            if presp.clicked() {
+                                *fmt = val;
+                            }
+                            ui.horizontal(|ui| {
+                                ui.radio_value(fmt, val, "");
+                                ui.label(egui::RichText::new(title).strong());
+                            });
+                            ui.label(egui::RichText::new(desc).small().color(text_dim()));
+                        },
+                    );
+                }
             });
         });
-        // Anteprima larga e alta, cliccabile per selezionare l'opzione.
-        let w = ui.available_width().clamp(280.0, 460.0);
-        let (prect, presp) = ui.allocate_exact_size(egui::vec2(w, 66.0), Sense::click());
-        draw_bar_format_preview(ui, prect, val);
-        if presp.clicked() {
-            *fmt = val;
-        }
-        ui.add_space(10.0);
-    }
 }
 
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
@@ -2778,9 +2789,16 @@ fn pdf_export_window(
     let mut do_export_svg = false;
     let mut cancel = false;
 
+    // Altezza massima della finestra e dell'elenco dev, in base allo schermo,
+    // così su monitor HD la dialog resta gestibile (contenuti scrollabili).
+    let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
+    let list_max = (ctx.screen_rect().height() * 0.42).max(120.0);
+
     egui::Window::new("Esporta PDF")
         .collapsible(false)
-        .resizable(false)
+        .resizable(true)
+        .default_width(640.0)
+        .max_height(maxh)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .open(&mut open)
         .show(ctx, |ui| {
@@ -2798,9 +2816,15 @@ fn pdf_export_window(
             }
             ui.separator();
 
-            // Elenco dev con riordino drag & drop (payload = indice di partenza).
+            // Elenco dev con riordino drag & drop (payload = indice di partenza),
+            // in un'area scorrevole per non far crescere la finestra oltre lo schermo.
             let mut from: Option<usize> = None;
             let mut to: Option<usize> = None;
+            egui::ScrollArea::vertical()
+                .id_salt("pdf_dev_list")
+                .max_height(list_max)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
             for i in 0..px.entries.len() {
                 let dev = px.entries[i].0;
                 let mut sel = px.entries[i].1;
@@ -2842,6 +2866,7 @@ fn pdf_export_window(
                     to = Some(if after { i + 1 } else { i });
                 }
             }
+                });
             // Applica lo spostamento a fine passata.
             if let (Some(f), Some(t)) = (from, to) {
                 if f != t {
@@ -2915,19 +2940,25 @@ fn pdf_multi_export_window(
     let mut do_export = false;
     let mut cancel = false;
 
+    // Cap dell'altezza per schermi HD: l'elenco progetti scorre da sé.
+    let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
+
     egui::Window::new("Esporta PDF")
         .collapsible(false)
         .resizable(true)
+        .default_width(640.0)
+        .max_height(maxh)
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .open(&mut open)
         .show(ctx, |ui| {
+            // Formato in alto (compatto e ad altezza fissa); sotto l'elenco
+            // progetti, che scorre e riserva lo spazio per i pulsanti in fondo.
+            bar_format_selector(ui, &mut fmt);
+            ui.separator();
+
             ui.label("Seleziona i progetti da esportare:");
             ui.add_space(4.0);
-
             project_checklist(ui, app, &mut px.entries);
-
-            ui.separator();
-            bar_format_selector(ui, &mut fmt);
 
             ui.separator();
             ui.horizontal(|ui| {
