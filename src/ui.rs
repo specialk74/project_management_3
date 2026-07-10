@@ -850,7 +850,10 @@ impl PjmApp {
 
         match choice {
             Some(ExitChoice::Save) => {
+                // In uscita il push è bloccante: il thread di background verrebbe
+                // ucciso dalla chiusura del processo prima di completare.
                 self.app.save(&self.ui.current_file);
+                crate::git_autosync::commit_and_push_blocking(&self.ui.current_file);
                 self.ui.changed = false;
                 self.ui.show_exit_confirm = false;
                 self.ui.allow_close = true;
@@ -872,6 +875,13 @@ impl PjmApp {
         self.app.recompute_week_range();
         self.app.compute_sovra();
         self.ui.changed = true;
+    }
+
+    /// Salva su disco e, se la cartella del file è un repo git, committa e pusha
+    /// il file in background (non blocca la UI). Vedi `git_autosync`.
+    fn save_to_disk(&self) {
+        self.app.save(&self.ui.current_file);
+        crate::git_autosync::commit_and_push(&self.ui.current_file);
     }
 
     /// Aggiorna lo snapshot "base" e l'mtime dopo che lo stato è tornato
@@ -897,7 +907,7 @@ impl PjmApp {
             return;
         }
         if now - self.ui.last_save_time >= AUTOSAVE_SECS {
-            self.app.save(&self.ui.current_file);
+            self.save_to_disk();
             self.ui.changed = false;
             self.sync_baseline();
             self.ui.last_save_time = now;
@@ -1077,7 +1087,7 @@ impl PjmApp {
     fn apply(&mut self, a: Action) {
         match a {
             Action::Save => {
-                self.app.save(&self.ui.current_file);
+                self.save_to_disk();
                 self.ui.changed = false;
                 self.sync_baseline();
                 self.ui.external_notice = None;

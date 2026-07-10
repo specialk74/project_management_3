@@ -2,6 +2,7 @@ mod app;
 mod categories;
 mod date_utils;
 mod dev_utils;
+mod git_autosync;
 mod milestones;
 mod pdf_export;
 mod project_utils;

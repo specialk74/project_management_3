@@ -216,3 +216,16 @@ the footer date.
 backward compatibility. The app watches the file's mtime and, if it changes on disk
 while open, either notifies + auto-applies or asks (Mantieni le mie / Ricarica);
 see `sync_merge.rs`.
+
+### Git auto-sync (`git_autosync.rs`)
+
+Every save goes through `PjmApp::save_to_disk` (manual `Action::Save` + autosave) or,
+on exit-save, an explicit blocking call. If the data file's folder is inside a git
+work tree, the module runs `git add -- <file>` → `git commit` (only the `.ron`; skips
+if nothing changed) → `git push`. It is **best-effort**: not a repo / no remote /
+offline just logs to stderr and never blocks or breaks the on-disk save.
+`commit_and_push` runs on a background thread (single-flight via an `AtomicBool`, so
+autosaves can't pile up); `commit_and_push_blocking` runs inline and is used on exit
+so the push finishes before the process ends. `GIT_TERMINAL_PROMPT=0` prevents git
+from hanging on a credentials prompt. Only the `.ron` is staged — the `.bakN` files
+are never committed.
