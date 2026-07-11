@@ -317,6 +317,12 @@ pub struct UiState {
     show_saturation: bool,
     saturation_monthly: bool,     // false = per settimana, true = per mese
     saturation_future_only: bool, // mostra solo dalla settimana corrente in poi
+    // worker con la riga effort selezionata nel cruscotto (multi-selezione a
+    // toggle: click seleziona, ri-click deseleziona, altri click si sommano)
+    sat_selected: HashSet<WorkerId>,
+    // offset verticale condiviso tra colonna fissa (nome+Σ) e heatmap, così le
+    // due parti scorrono insieme mentre la heatmap scorre in orizzontale
+    sat_scroll_y: f32,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -2197,20 +2203,24 @@ fn heat_colors(alloc: i32, cap: i32) -> (Color32, Color32) {
 }
 
 /// Cella colorata della heatmap. `current` evidenzia la settimana corrente con un
-/// bordo verde; le altre hanno un bordo tenue per delimitarle.
+/// bordo verde; `selected` (riga worker selezionata) con un bordo arancione che
+/// prevale, così tutta la riga risulta evidenziata; le altre hanno un bordo tenue.
 fn heat_cell(
     ui: &mut egui::Ui,
     label: &str,
     bgc: Color32,
     fg: Color32,
     current: bool,
+    selected: bool,
     tip: &str,
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(32.0, 16.0), Sense::click());
     ui.painter().rect_filled(rect, 2.0, bgc);
-    // Settimana corrente: bordo verde brillante e spesso, ben visibile su
-    // qualsiasi colore di cella; le altre hanno un bordo tenue.
-    let stroke = if current {
+    // Riga selezionata → bordo arancione su tutte le celle (prevale). Altrimenti
+    // settimana corrente → bordo verde; le altre un bordo tenue.
+    let stroke = if selected {
+        Stroke::new(2.0, g(EFFORT_ORANGE))
+    } else if current {
         Stroke::new(2.5, g(Color32::from_rgb(0x00, 0xe0, 0x4b)))
     } else {
         Stroke::new(0.5, text_faint())
@@ -2292,77 +2302,130 @@ fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
                  bordo verde = settimana corrente",
             );
 
-            egui::ScrollArea::both()
-                .id_salt("sat_heat")
-                // Riempie la larghezza della finestra (scroll orizzontale se serve);
-                // allargando la finestra si vedono più colonne. Altezza limitata.
-                .max_height(440.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    egui::Grid::new("sat_grid")
-                        .spacing(egui::vec2(2.0, 2.0))
-                        .show(ui, |ui| {
-                            // Intestazione: nome, poi Σ (a sinistra, sempre visibile),
-                            // poi le colonne dei periodi.
-                            ui.label("");
-                            ui.label(egui::RichText::new("Σ  all/cap").strong());
-                            for (lab, wks) in &columns {
-                                let mut rt = egui::RichText::new(lab).monospace().small();
-                                if wks.contains(&this_week) {
-                                    // "chip" pieno verde brillante: settimana corrente.
-                                    rt = rt
-                                        .strong()
-                                        .color(Color32::BLACK)
-                                        .background_color(g(Color32::from_rgb(0x00, 0xe0, 0x4b)));
-                                }
-                                ui.label(rt);
-                            }
-                            ui.end_row();
+            // Altezza uguale delle righe nelle due griglie affiancate (colonna fissa
+            // + heatmap), così restano allineate riga per riga. Il valore supera con
+            // margine sia le celle (16px) sia il testo, così `min_row_height` fissa
+            // ogni riga esattamente a `SAT_RH` in entrambe le griglie.
+            const SAT_RH: f32 = 22.0;
+            const SAT_H: f32 = 440.0;
+            ui.horizontal_top(|ui| {
+                // ── Colonna fissa: nome worker + Σ (all/cap). Non scorre in
+                //    orizzontale; scorre in verticale insieme alla heatmap (offset
+                //    condiviso, barra nascosta). Click sul nome = seleziona/deseleziona
+                //    la riga effort (multi-selezione).
+                egui::ScrollArea::vertical()
+                    .id_salt("sat_left")
+                    .max_height(SAT_H)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .vertical_scroll_offset(state.sat_scroll_y)
+                    .show(ui, |ui| {
+                        egui::Grid::new("sat_left_grid")
+                            .min_row_height(SAT_RH)
+                            .spacing(egui::vec2(8.0, 2.0))
+                            .show(ui, |ui| {
+                                // Nomi cliccabili senza padding verticale extra: così
+                                // la loro altezza non supera `SAT_RH` (righe allineate).
+                                ui.spacing_mut().button_padding.y = 0.0;
+                                ui.label("");
+                                ui.label(egui::RichText::new("Σ  all/cap").strong());
+                                ui.end_row();
 
-                            for (wid, wname) in &workers {
-                                // Totali del worker: calcolati prima, così la colonna Σ
-                                // può stare subito dopo il nome (visibile senza scorrere).
-                                let mut tot_a = 0;
-                                let mut tot_c = 0;
-                                let mut over_w = 0;
-                                for (_, wks) in &columns {
-                                    let (a, c) = saturation_cell(app, *wid, wks);
-                                    tot_a += a;
-                                    tot_c += c;
-                                    if a > c {
-                                        over_w += 1;
+                                for (wid, wname) in &workers {
+                                    let mut tot_a = 0;
+                                    let mut tot_c = 0;
+                                    let mut over_w = 0;
+                                    for (_, wks) in &columns {
+                                        let (a, c) = saturation_cell(app, *wid, wks);
+                                        tot_a += a;
+                                        tot_c += c;
+                                        if a > c {
+                                            over_w += 1;
+                                        }
                                     }
-                                }
-                                ui.label(egui::RichText::new(wname).monospace());
-                                let tcol = if over_w > 0 {
-                                    g(Color32::from_rgb(0xcc, 0x30, 0x30))
-                                } else {
-                                    text()
-                                };
-                                ui.label(
-                                    egui::RichText::new(format!("{tot_a}/{tot_c}  ({over_w}⚠)"))
-                                        .color(tcol)
-                                        .monospace(),
-                                );
-
-                                for (lab, wks) in &columns {
-                                    let (alloc, cap) = saturation_cell(app, *wid, wks);
-                                    let (bgc, fg) = heat_colors(alloc, cap);
-                                    let is_cur = wks.contains(&this_week);
-                                    let txt = if alloc == 0 {
-                                        String::new()
+                                    // Nome cliccabile: toggle della selezione riga.
+                                    let sel = state.sat_selected.contains(wid);
+                                    if ui
+                                        .selectable_label(
+                                            sel,
+                                            egui::RichText::new(wname).monospace(),
+                                        )
+                                        .on_hover_text("Click: seleziona/deseleziona la riga")
+                                        .clicked()
+                                    {
+                                        if sel {
+                                            state.sat_selected.remove(wid);
+                                        } else {
+                                            state.sat_selected.insert(*wid);
+                                        }
+                                    }
+                                    let tcol = if over_w > 0 {
+                                        g(Color32::from_rgb(0xcc, 0x30, 0x30))
                                     } else {
-                                        alloc.to_string()
+                                        text()
                                     };
-                                    let tip = format!("{wname} · {lab}\n{alloc} / {cap} h");
-                                    if heat_cell(ui, &txt, bgc, fg, is_cur, &tip).clicked() {
-                                        jump_week = Some(wks[0]);
+                                    // Anche la cella Σ risalta quando la riga è
+                                    // selezionata (stesso sfondo del nome).
+                                    let mut sigma_rt = egui::RichText::new(format!(
+                                        "{tot_a}/{tot_c}  ({over_w}⚠)"
+                                    ))
+                                    .color(tcol)
+                                    .monospace();
+                                    if state.sat_selected.contains(wid) {
+                                        sigma_rt = sigma_rt
+                                            .background_color(ui.visuals().selection.bg_fill);
                                     }
+                                    ui.label(sigma_rt);
+                                    ui.end_row();
+                                }
+                            });
+                    });
+
+                // ── Heatmap: scorre in orizzontale (e verticale). Guida l'offset
+                //    verticale condiviso con la colonna fissa.
+                let out = egui::ScrollArea::both()
+                    .id_salt("sat_heat")
+                    .max_height(SAT_H)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        egui::Grid::new("sat_grid")
+                            .min_row_height(SAT_RH)
+                            .spacing(egui::vec2(2.0, 2.0))
+                            .show(ui, |ui| {
+                                for (lab, wks) in &columns {
+                                    let mut rt = egui::RichText::new(lab).monospace().small();
+                                    if wks.contains(&this_week) {
+                                        rt = rt.strong().color(Color32::BLACK).background_color(g(
+                                            Color32::from_rgb(0x00, 0xe0, 0x4b),
+                                        ));
+                                    }
+                                    ui.label(rt);
                                 }
                                 ui.end_row();
-                            }
-                        });
-                });
+
+                                for (wid, wname) in &workers {
+                                    let sel = state.sat_selected.contains(wid);
+                                    for (lab, wks) in &columns {
+                                        let (alloc, cap) = saturation_cell(app, *wid, wks);
+                                        let (bgc, fg) = heat_colors(alloc, cap);
+                                        let is_cur = wks.contains(&this_week);
+                                        let txt = if alloc == 0 {
+                                            String::new()
+                                        } else {
+                                            alloc.to_string()
+                                        };
+                                        let tip = format!("{wname} · {lab}\n{alloc} / {cap} h");
+                                        if heat_cell(ui, &txt, bgc, fg, is_cur, sel, &tip).clicked()
+                                        {
+                                            jump_week = Some(wks[0]);
+                                        }
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                // La heatmap comanda: la colonna fissa seguirà questo offset.
+                state.sat_scroll_y = out.state.offset.y;
+            });
         });
 
     // Click su una cella → scrolla la griglia a quella settimana. Per capire quale
@@ -2677,7 +2740,10 @@ fn draw_bar_format_preview(ui: &egui::Ui, rect: Rect, fmt: crate::pdf_export::Ba
             Color32::from_rgb(0xb8, 0xb8, 0xb8)
         };
         p.rect_filled(
-            Rect::from_min_max(egui::pos2(xof(mstart[m]), mtop), egui::pos2(xof(mstart[m + 1]), mbot)),
+            Rect::from_min_max(
+                egui::pos2(xof(mstart[m]), mtop),
+                egui::pos2(xof(mstart[m + 1]), mbot),
+            ),
             0.0,
             col,
         );
@@ -2760,8 +2826,7 @@ fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export::BarFormat
                         egui::vec2(COL_W, 0.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            let (prect, presp) =
-                                ui.allocate_exact_size(PREVIEW, Sense::click());
+                            let (prect, presp) = ui.allocate_exact_size(PREVIEW, Sense::click());
                             draw_bar_format_preview(ui, prect, val);
                             if presp.clicked() {
                                 *fmt = val;
@@ -2842,47 +2907,47 @@ fn pdf_export_window(
                 .max_height(list_max)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-            for i in 0..px.entries.len() {
-                let dev = px.entries[i].0;
-                let mut sel = px.entries[i].1;
-                let inner = ui.horizontal(|ui| {
-                    ui.checkbox(&mut sel, "");
-                    ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!("≡  {}", dev_name(app, dev)))
-                                    .monospace()
-                                    .color(dev_color(app, dev)),
-                            )
-                            .selectable(false),
-                        );
-                    });
-                });
-                px.entries[i].1 = sel;
+                    for i in 0..px.entries.len() {
+                        let dev = px.entries[i].0;
+                        let mut sel = px.entries[i].1;
+                        let inner = ui.horizontal(|ui| {
+                            ui.checkbox(&mut sel, "");
+                            ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(format!("≡  {}", dev_name(app, dev)))
+                                            .monospace()
+                                            .color(dev_color(app, dev)),
+                                    )
+                                    .selectable(false),
+                                );
+                            });
+                        });
+                        px.entries[i].1 = sel;
 
-                let resp = inner.response;
-                let ptr = ui.input(|i| i.pointer.interact_pos());
-                // Indicatore di inserimento mentre si trascina sopra la riga.
-                if resp.dnd_hover_payload::<usize>().is_some() {
-                    if let Some(p) = ptr {
-                        let y = if p.y > resp.rect.center().y {
-                            resp.rect.bottom()
-                        } else {
-                            resp.rect.top()
-                        };
-                        ui.painter().hline(
-                            resp.rect.x_range(),
-                            y,
-                            Stroke::new(2.0, g(EFFORT_ORANGE)),
-                        );
+                        let resp = inner.response;
+                        let ptr = ui.input(|i| i.pointer.interact_pos());
+                        // Indicatore di inserimento mentre si trascina sopra la riga.
+                        if resp.dnd_hover_payload::<usize>().is_some() {
+                            if let Some(p) = ptr {
+                                let y = if p.y > resp.rect.center().y {
+                                    resp.rect.bottom()
+                                } else {
+                                    resp.rect.top()
+                                };
+                                ui.painter().hline(
+                                    resp.rect.x_range(),
+                                    y,
+                                    Stroke::new(2.0, g(EFFORT_ORANGE)),
+                                );
+                            }
+                        }
+                        if let Some(payload) = resp.dnd_release_payload::<usize>() {
+                            from = Some(*payload);
+                            let after = ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
+                            to = Some(if after { i + 1 } else { i });
+                        }
                     }
-                }
-                if let Some(payload) = resp.dnd_release_payload::<usize>() {
-                    from = Some(*payload);
-                    let after = ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
-                    to = Some(if after { i + 1 } else { i });
-                }
-            }
                 });
             // Applica lo spostamento a fine passata.
             if let (Some(f), Some(t)) = (from, to) {
@@ -3208,7 +3273,11 @@ fn help_window(ctx: &egui::Context, state: &mut UiState) {
                 .default_width(230.0)
                 .show_inside(ui, |ui| {
                     ui.add_space(2.0);
-                    ui.label(egui::RichText::new("Indice").strong().color(g(EFFORT_ORANGE)));
+                    ui.label(
+                        egui::RichText::new("Indice")
+                            .strong()
+                            .color(g(EFFORT_ORANGE)),
+                    );
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical()
                         .id_salt("help_toc_scroll")
@@ -6365,8 +6434,7 @@ mod tests {
     /// come `screen_h` px e restituisce l'altezza verticale consumata dalla lista.
     fn checklist_height(n: usize, screen_h: f32) -> f32 {
         let app = App::new();
-        let mut entries: Vec<(ProjectId, bool)> =
-            (0..n).map(|i| (ProjectId(i), false)).collect();
+        let mut entries: Vec<(ProjectId, bool)> = (0..n).map(|i| (ProjectId(i), false)).collect();
 
         let ctx = egui::Context::default();
         let mut input = egui::RawInput::default();
@@ -6431,7 +6499,12 @@ mod tests {
         assert_eq!(sections.iter().filter(|s| is_index_section(s)).count(), 1);
         // I capitoli navigabili nell'indice laterale sono i 19 numerati.
         let chapters: Vec<&str> = sections.iter().filter_map(|s| chapter_title(s)).collect();
-        assert_eq!(chapters.len(), 19, "attesi 19 capitoli, trovati {}", chapters.len());
+        assert_eq!(
+            chapters.len(),
+            19,
+            "attesi 19 capitoli, trovati {}",
+            chapters.len()
+        );
         assert!(chapters[0].starts_with("1. "), "primo: {}", chapters[0]);
         assert!(chapters[18].starts_with("19. "), "ultimo: {}", chapters[18]);
         // "Indice" non deve comparire tra i capitoli navigabili.

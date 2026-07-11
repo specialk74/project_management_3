@@ -483,8 +483,14 @@ filtro worker Ctrl+F). Contiene:
 - una casella **"Solo da settimana corrente"** che nasconde le settimane passate
   (mostra solo presente e futuro);
 - un **riepilogo**: numero di sovra-allocazioni e ore in eccesso totali;
-- una colonna **Σ** (subito dopo il nome del worker, quindi sempre visibile senza
-  scorrere) con totale allocato/capacità e numero di settimane in sovra;
+- una **colonna fissa** a sinistra con il **nome del worker** e la colonna **Σ**
+  (totale allocato/capacità e numero di settimane in sovra): resta **sempre visibile**
+  anche scorrendo la heatmap verso destra (scorre solo in verticale, insieme alle
+  righe);
+- **selezione delle righe**: un **click sul nome** di un worker **seleziona** tutta la
+  sua riga di effort (evidenziata con bordo arancione); un secondo click la
+  **deseleziona**; si possono tenere selezionate **più righe** contemporaneamente (il
+  click su un altro worker non annulla le selezioni precedenti);
 - una **heatmap** worker × (settimana|mese) colorata per saturazione
   (**verde** = libero, **giallo** = pieno, **rosso** = oltre capacità); ogni cella
   mostra le ore, col tooltip `allocato / capacità`, ed è cliccabile per saltare a
