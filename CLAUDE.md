@@ -40,13 +40,30 @@ native file-picker (via the `rfd` crate) filtered to `.ron` files.
 This is a **Rust + egui/eframe** project management effort tracker (immediate-mode
 GUI). It was originally written in Slint and has since been **fully rewritten in
 egui** — there are no `.slint` files and no `build.rs`. Ignore any lingering Slint
-references; the UI lives entirely in `src/ui.rs`.
+references; the UI lives entirely in the `src/ui/` module.
 
 ### Source layout
 
 - `src/main.rs` — module list, `eframe::run_native`, loads the RON file, launches `PjmApp`.
 - `src/app.rs` — `App`: the whole persisted state; RON (de)serialization (`to_ron_string` / `from_ron_str`).
-- `src/ui.rs` — the `eframe::App` (`PjmApp`), `UiState`, the `Action` enum, and **all** drawing (toolbar, header, grid, footer, dialogs). This is the big file.
+- `src/ui/` — the UI, split into a module (was one big `ui.rs`; see improvement #16):
+  - `mod.rs` — the **core**: `eframe::App` (`PjmApp`), `UiState`, the `Action` enum + apply
+    loop, all shared **types** (`Editing`/`Popup`/`Col`/`ProjLayout`/…), and shared helpers
+    (`columns_vec`, `col_*`, `dev_*`, `project_in_body`, `select_all_checkbox`,
+    `project_checklist`, save dialogs, `weeks_vec`…). The `#[cfg(test)]` tests live here.
+  - `toolbar.rs` (`toolbar`/`header`/`add_field`), `grid.rs` (`body`/`grid`/`left_column`/
+    `draw_dev_cells`/`project_layout`/`draw_project_info`/paint helpers…), `footer.rs`
+    (`footer`/`draw_left_footer`/`draw_right_footer`…), `dialogs.rs` (all the modeless
+    `*_window` fns + `move`/`popup` helpers), `export.rs` (PDF/SVG/minuta dialogs +
+    `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
+    `saturation.rs` (worker-saturation dashboard).
+  - **Module mechanics** (mechanical split, verified by the compiler): only free **functions**
+    moved to submodules; every shared **type/enum/const stays in `mod.rs`**. Submodules do
+    `use super::*` (so they see the core's items and, since the top-of-file crate imports were
+    made `pub(crate) use`, the external types too); `mod.rs` re-exports each submodule with
+    `pub(crate) use <m>::*` so the parent and siblings can call moved fns. Moved fns are
+    `pub(crate)`, as are the types they expose (`Action`/`Col`/`ProjLayout`/… — otherwise
+    `private_interfaces` warns). Note the `include_str!` for the manual is `../../docs/…` now.
 - `src/ui_style.rs` — sizes, fonts, colors, theme (light/dark) and B/W mode, `cumulative_color`.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
 - Data modules: `workers_utils/`, `dev_utils/`, `project_utils/`, `single_dev_utils/`, `single_effort_utils/`, `categories.rs`, `milestones.rs`, `date_utils/`, `sync_merge.rs`.
