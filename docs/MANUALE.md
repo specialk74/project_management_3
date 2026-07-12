@@ -244,8 +244,9 @@ Per ogni dev del progetto:
   - **% dichiarata** (editabile): la percentuale di completamento che dichiara lo
     sviluppatore (default 0, salvata nel file `.ron`). Lo **sfondo** del campo è
     **rosso se la dichiarata è minore della presunta**, **verde** se è maggiore o
-    uguale; **neutro** se non c'è una presunta (pianificato 0). Serve ad accorgersi
-    subito quando il lavoro dichiarato non sta al passo con l'effort consumato.
+    uguale. Serve ad accorgersi subito quando il lavoro dichiarato non sta al passo
+    con l'effort consumato. Se l'**effort pianificato è 0** il campo **non compare**
+    e non è modificabile.
 - **Effort pianificato** (editabile): le ore previste per quel dev.
 - **Residuo**: pianificato − totale allocato. Se il residuo è negativo (o pari al
   pianificato con pianificato ≠ 0) lo sfondo diventa rosso e il numero è sempre

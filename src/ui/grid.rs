@@ -1515,9 +1515,10 @@ pub(crate) fn draw_left_devs(
         // Campo editabile "% dichiarata" dallo sviluppatore, a destra della
         // presunta e sotto il nome. Aggiunto DOPO l'interazione del nome così il
         // widget resta in primo piano (il click non innesca l'aggiunta riga).
-        // Sfondo rosso se dichiarata < presunta, verde se ≥; neutro se manca la
-        // presunta (pianificato 0). Nascosto in compatta, come gli altri campi.
-        if !compact {
+        // Sfondo rosso se dichiarata < presunta, verde se ≥. Nascosto in compatta
+        // e quando l'effort pianificato è 0 (`used_pct` è `Some` sse pianificato
+        // ≠ 0): in tal caso il campo non compare e non è modificabile.
+        if !compact && used_pct.is_some() {
             let declared = app
                 .projects
                 .get_single_dev(proj, *dev)

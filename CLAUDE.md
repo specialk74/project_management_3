@@ -174,8 +174,9 @@ category/worker-max/etc.).
   hidden when planned=0), and next to it an **editable declared** % typed by the dev
   (`Action::SetDevDeclaredPct` → `Projects::set_dev_declared_pct`, buffer in
   `UiState.declared_buffers`). The declared field's background is **red when declared <
-  presumed, green when ≥**, neutral when there's no presumed (planned=0). Both are
-  optionally drawn in PDF/SVG (see export toggle below).
+  presumed, green when ≥**; when the **planned effort is 0 the declared field is hidden
+  and not editable** (gated on `used_pct.is_some()`). Both are optionally drawn in
+  PDF/SVG (see export toggle below).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
   milestone qui** and **Sposta** (blocco / devs).
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
