@@ -61,15 +61,4 @@ impl Dev {
         self.font_color.unwrap_or(0xFFFFFF)
     }
 
-    pub fn set_name(&mut self, name: &str) {
-        self.name = name.to_string();
-    }
-
-    pub fn set_bg_color(&mut self, color: Option<usize>) {
-        self.bg_color = color;
-    }
-
-    pub fn set_font_color(&mut self, color: Option<usize>) {
-        self.font_color = color;
-    }
 }

@@ -19,10 +19,6 @@ impl Devs {
         }
     }
 
-    pub fn del(&mut self, id: DevId) {
-        self.dev_id.remove(&id);
-    }
-
     pub fn add(&mut self, name: &str) -> DevId {
         if let Some((&id, _)) = self.dev_id.iter().find(|(_, dev)| dev.get_name() == name) {
             return id;

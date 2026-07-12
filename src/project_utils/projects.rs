@@ -188,10 +188,6 @@ impl Projects {
         }
     }
 
-    pub fn project_has_milestone(&self, id: ProjectId, mid: MilestoneId) -> bool {
-        self.projects.get(&id).is_some_and(|p| p.has_milestone(mid))
-    }
-
     pub fn list_project_milestones(&self, id: ProjectId) -> Vec<(MilestoneId, WeekId)> {
         self.projects.get(&id).map(|p| p.list_milestones()).unwrap_or_default()
     }
@@ -419,13 +415,6 @@ impl Projects {
         }
     }
 
-    pub fn clear_category_from_all(&mut self, category_id: CategoryId) {
-        for project in self.projects.values_mut() {
-            if project.get_category() == Some(category_id) {
-                project.set_category(None);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

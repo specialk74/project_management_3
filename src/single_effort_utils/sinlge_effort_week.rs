@@ -43,12 +43,6 @@ impl SingleEffortWeek {
         self.worker_id.values().map(|f| f.get_effort()).sum()
     }
 
-    pub fn effort(&self, worker_id: WorkerId) -> Effort {
-        self.worker_id
-            .get(&worker_id)
-            .map_or(Effort(0), |f| f.get_effort())
-    }
-
     pub fn add(&mut self, id_worker: WorkerId, effort: Effort) {
         self.worker_id
             .entry(id_worker)
@@ -60,10 +54,6 @@ impl SingleEffortWeek {
         if let Some(single_effort) = self.worker_id.get_mut(&id_worker) {
             single_effort.set_note(note);
         }
-    }
-
-    pub fn get_workers(&self) -> Vec<&WorkerId> {
-        self.worker_id.keys().collect()
     }
 
     pub fn num_workers(&self) -> usize {

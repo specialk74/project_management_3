@@ -290,10 +290,6 @@ impl Project {
         }
     }
 
-    pub fn get_dev_hide_effort(&self, id_dev: DevId) -> bool {
-        self.dev_id.get(&id_dev).map(|sd| sd.get_hide_effort()).unwrap_or(false)
-    }
-
     /// Colloca (o sposta) una milestone in una settimana. La stessa milestone
     /// non può comparire più volte: se già presente, ne aggiorna la settimana.
     pub fn add_milestone(&mut self, id: MilestoneId, week: WeekId) {
@@ -302,10 +298,6 @@ impl Project {
 
     pub fn remove_milestone(&mut self, id: MilestoneId) {
         self.milestones.remove(&id);
-    }
-
-    pub fn has_milestone(&self, id: MilestoneId) -> bool {
-        self.milestones.contains_key(&id)
     }
 
     /// Rimuove ogni collocazione della milestone (usato quando viene eliminata

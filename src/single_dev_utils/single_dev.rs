@@ -104,12 +104,6 @@ impl SingleDev {
             .sum()
     }
 
-    pub fn get_effort(&self, week: WeekId, worker_id: WorkerId) -> Effort {
-        self.weeks
-            .get(&week)
-            .map_or(Effort(0), |f| f.effort(worker_id))
-    }
-
     pub fn add(&mut self, week: WeekId, id_worker: WorkerId, effort: Effort) {
         self.weeks
             .entry(week)
@@ -238,19 +232,6 @@ impl SingleDev {
 
     pub fn get_all(&self, week: WeekId) -> Option<&SingleEffortWeek> {
         self.weeks.get(&week)
-    }
-
-    pub fn has_worker(&self, worker_id: WorkerId) -> bool {
-        self.weeks
-            .values()
-            .any(|week| week.worker_id.contains_key(&worker_id))
-    }
-
-    pub fn get_workers(&self, week: WeekId) -> Vec<&WorkerId> {
-        self.weeks
-            .get(&week)
-            .map(|s| s.get_workers())
-            .unwrap_or_default()
     }
 
     pub fn set_hide_effort(&mut self, hide: bool) {

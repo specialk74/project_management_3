@@ -103,17 +103,6 @@ impl Workers {
         }
     }
 
-    pub fn all_workers_have_override(&self, week: usize) -> bool {
-        let workers = self.list();
-        if workers.is_empty() {
-            return false;
-        }
-        workers.iter().all(|(id, _)| {
-            self.worker_id
-                .get(id)
-                .is_some_and(|w| w.week_overrides.contains_key(&week))
-        })
-    }
 
     pub fn is_hidden_in_footer(&self, id: WorkerId) -> bool {
         self.worker_id
@@ -125,12 +114,6 @@ impl Workers {
     /// per un id sconosciuto).
     pub fn is_shown_in_find(&self, id: WorkerId) -> bool {
         self.worker_id.get(&id).map_or(true, |w| w.is_shown_in_find())
-    }
-
-    pub fn set_shown_in_find(&mut self, id: WorkerId, shown: bool) {
-        if let Some(w) = self.worker_id.get_mut(&id) {
-            w.set_shown_in_find(shown);
-        }
     }
 
     pub fn list(&self) -> Vec<(WorkerId, String)> {

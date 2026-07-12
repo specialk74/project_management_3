@@ -109,12 +109,6 @@ impl Milestones {
         }
     }
 
-    pub fn set_name(&mut self, id: MilestoneId, name: &str) {
-        if let Some(m) = self.milestones.get_mut(&id) {
-            m.name = name.to_string();
-        }
-    }
-
     /// Elenco (id, nome, colore) ordinato per id di creazione.
     pub fn list(&self) -> Vec<(MilestoneId, String, u32)> {
         let mut items: Vec<(MilestoneId, String, u32)> = self
