@@ -1410,13 +1410,52 @@ pub(crate) fn draw_left_devs(
         let name_rect =
             Rect::from_min_size(egui::pos2(x0, inner_y), Vec2::new(DEV_NAME_W, inner_h));
         ui.painter().rect_filled(name_rect, 0.0, color);
-        ui.painter().text(
-            name_rect.center(),
-            Align2::CENTER_CENTER,
-            dev_name(app, *dev),
-            cell_font(),
-            tcol,
-        );
+        // % di effort usato fino a oggi sul pianificato (nascosta in compatta,
+        // come gli altri campi effort; assente se il pianificato è 0).
+        let used_pct = if compact {
+            None
+        } else {
+            app.projects.get_single_dev(proj, *dev).and_then(|sd| {
+                let planned = sd.planned_effort().0;
+                (planned != 0).then(|| {
+                    let used = sd.effort_up_to(current_week_id()).0;
+                    (used * 100 + planned / 2) / planned
+                })
+            })
+        };
+        if compact {
+            ui.painter().text(
+                name_rect.center(),
+                Align2::CENTER_CENTER,
+                dev_name(app, *dev),
+                cell_font(),
+                tcol,
+            );
+        } else {
+            // Nome allineato verticalmente con l'effort (riga 1) e percentuali
+            // col residuo (riga 2), che stanno sempre alle prime due righe a
+            // destra: presunta a sinistra, dichiarata (editabile) a destra.
+            let eff_y = name_rect.top() + ROW_H * 0.5;
+            let rem_y = name_rect.top() + ROW_H * 1.5;
+            ui.painter().text(
+                egui::pos2(name_rect.center().x, eff_y),
+                Align2::CENTER_CENTER,
+                dev_name(app, *dev),
+                cell_font(),
+                tcol,
+            );
+            if let Some(pct) = used_pct {
+                // oltre il 100% = sforamento del pianificato → rosso.
+                let pct_col = if pct > 100 { g(Color32::RED) } else { tcol };
+                ui.painter().text(
+                    egui::pos2(x0 + DEV_NAME_W * 0.27, rem_y),
+                    Align2::CENTER_CENTER,
+                    format!("{pct}%"),
+                    cell_font(),
+                    pct_col,
+                );
+            }
+        }
         let dev_note = app
             .projects
             .get_single_dev(proj, *dev)
@@ -1471,6 +1510,58 @@ pub(crate) fn draw_left_devs(
         });
         if !dev_note.is_empty() {
             nresp.on_hover_text(dev_note);
+        }
+
+        // Campo editabile "% dichiarata" dallo sviluppatore, a destra della
+        // presunta e sotto il nome. Aggiunto DOPO l'interazione del nome così il
+        // widget resta in primo piano (il click non innesca l'aggiunta riga).
+        // Sfondo rosso se dichiarata < presunta, verde se ≥; neutro se manca la
+        // presunta (pianificato 0). Nascosto in compatta, come gli altri campi.
+        if !compact {
+            let declared = app
+                .projects
+                .get_single_dev(proj, *dev)
+                .map(|sd| sd.declared_pct())
+                .unwrap_or(0);
+            let bg = used_pct.map(|presumed| {
+                if (declared as usize) < presumed {
+                    g(Color32::RED)
+                } else {
+                    g(ok_green())
+                }
+            });
+            // Allineata verticalmente col residuo (riga 2), come la presunta.
+            let decl_rect = Rect::from_center_size(
+                egui::pos2(x0 + DEV_NAME_W * 0.72, name_rect.top() + ROW_H * 1.5),
+                Vec2::new(DEV_NAME_W * 0.42, ROW_H - 2.0),
+            );
+            if let Some(bg) = bg {
+                ui.painter().rect_filled(decl_rect, 2.0, bg);
+            }
+            let txt_col = if bg.is_some() { Color32::WHITE } else { tcol };
+            let dbuf = state
+                .declared_buffers
+                .entry((proj.0, dev.0))
+                .or_insert_with(|| declared.to_string());
+            let resp = ui.put(
+                decl_rect,
+                egui::TextEdit::singleline(dbuf)
+                    .font(cell_font())
+                    .text_color(txt_col)
+                    .frame(egui::Frame::NONE)
+                    .horizontal_align(egui::Align::Center),
+            );
+            if resp.lost_focus() {
+                if let Ok(v) = dbuf.trim().trim_end_matches('%').trim().parse::<u8>() {
+                    actions.push(Action::SetDevDeclaredPct {
+                        proj,
+                        dev: *dev,
+                        pct: v.min(100),
+                    });
+                }
+            } else if !resp.has_focus() && *dbuf != declared.to_string() {
+                *dbuf = declared.to_string();
+            }
         }
 
         // area effort/remains (65px) — i campi sono nascosti in compatta

@@ -251,6 +251,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn declared_pct_survives_ron_round_trip() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), None);
+        let dev = app.devs.add("Frontend");
+        app.projects.set_dev_declared_pct(pid, dev, 55);
+
+        let reloaded = App::from_ron_str(&app.to_ron_string()).expect("RON valido");
+        assert_eq!(
+            reloaded
+                .projects
+                .get_single_dev(pid, dev)
+                .unwrap()
+                .declared_pct(),
+            55
+        );
+    }
+
+    #[test]
     fn atomic_save_round_trip_and_no_orphan_tmp() {
         let mut path = std::env::temp_dir();
         path.push(format!("pjm_atomic_{}.ron", std::process::id()));

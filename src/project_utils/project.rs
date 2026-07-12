@@ -148,6 +148,11 @@ impl Project {
         self.dev_id.get_mut(&id_dev).unwrap().set_effort(effort);
     }
 
+    pub fn set_dev_declared_pct(&mut self, id_dev: DevId, pct: u8) {
+        self.add_dev(id_dev);
+        self.dev_id.get_mut(&id_dev).unwrap().set_declared_pct(pct);
+    }
+
     pub fn set_dev_note(&mut self, id_dev: DevId, note: &str) {
         if let Some(sd) = self.dev_id.get_mut(&id_dev) {
             sd.set_dev_note(note);

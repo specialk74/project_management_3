@@ -24,6 +24,10 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+fn is_zero_u8(v: &u8) -> bool {
+    *v == 0
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct SingleDev {
     weeks: HashMap<WeekId, SingleEffortWeek>,
@@ -32,6 +36,10 @@ pub struct SingleDev {
     note: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     hide_effort: bool,
+    /// Percentuale di avanzamento dichiarata dallo sviluppatore (0..=100).
+    /// Default 0; confrontata con la % "presunta" (usato/pianificato) in UI.
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    declared_pct: u8,
 }
 
 impl SingleDev {
@@ -41,6 +49,7 @@ impl SingleDev {
             effort: Effort(0),
             note: None,
             hide_effort: false,
+            declared_pct: 0,
         }
     }
 
@@ -83,6 +92,16 @@ impl SingleDev {
 
     pub fn get_effort_by_week(&self, week: WeekId) -> Effort {
         self.weeks.get(&week).map_or(Effort(0), |f| f.effort_tot())
+    }
+
+    /// Effort registrato nelle settimane fino a (e inclusa) `week` — ossia
+    /// l'effort "usato" a una certa data. Usato per la % sotto il nome del dev.
+    pub fn effort_up_to(&self, week: WeekId) -> Effort {
+        self.weeks
+            .iter()
+            .filter(|(w, _)| **w <= week)
+            .map(|(_, s)| s.effort_tot())
+            .sum()
     }
 
     pub fn get_effort(&self, week: WeekId, worker_id: WorkerId) -> Effort {
@@ -240,5 +259,44 @@ impl SingleDev {
 
     pub fn get_hide_effort(&self) -> bool {
         self.hide_effort
+    }
+
+    /// Percentuale di avanzamento dichiarata dallo sviluppatore (0..=100).
+    pub fn declared_pct(&self) -> u8 {
+        self.declared_pct
+    }
+
+    pub fn set_declared_pct(&mut self, pct: u8) {
+        self.declared_pct = pct.min(100);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workers_utils::worker::WorkerId;
+
+    #[test]
+    fn effort_up_to_only_counts_weeks_at_or_before() {
+        let mut sd = SingleDev::new();
+        let w = WorkerId(1);
+        sd.add(WeekId(0), w, Effort(10)); // fino a oggi
+        sd.add(WeekId(7), w, Effort(20)); // fino a oggi (== soglia)
+        sd.add(WeekId(14), w, Effort(30)); // futura → esclusa
+
+        assert_eq!(sd.effort_up_to(WeekId(7)).0, 30);
+        assert_eq!(sd.get_effort_tot().0, 60);
+        assert_eq!(sd.effort_up_to(WeekId(14)).0, 60);
+        assert_eq!(sd.effort_up_to(WeekId(0)).0, 10);
+    }
+
+    #[test]
+    fn declared_pct_defaults_zero_and_clamps_to_100() {
+        let mut sd = SingleDev::new();
+        assert_eq!(sd.declared_pct(), 0);
+        sd.set_declared_pct(60);
+        assert_eq!(sd.declared_pct(), 60);
+        sd.set_declared_pct(200);
+        assert_eq!(sd.declared_pct(), 100);
     }
 }

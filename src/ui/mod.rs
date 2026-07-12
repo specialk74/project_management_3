@@ -360,6 +360,11 @@ pub struct UiState {
     // buffer di editing per nomi progetto ed effort dev
     name_buffers: HashMap<usize, String>,
     effort_buffers: HashMap<(usize, usize), String>,
+    // buffer di editing per la % dichiarata dal dev (chiave: proj, dev)
+    declared_buffers: HashMap<(usize, usize), String>,
+    // includere le percentuali (presunta/dichiarata) nel PDF/SVG esportato;
+    // scelta chiesta nelle dialog di export, ricordata tra un export e l'altro.
+    export_progress_pct: bool,
 }
 
 // Scelta dell'utente nella finestra di conferma uscita.
@@ -386,6 +391,11 @@ pub(crate) enum Action {
         proj: ProjectId,
         dev: DevId,
         effort: usize,
+    },
+    SetDevDeclaredPct {
+        proj: ProjectId,
+        dev: DevId,
+        pct: u8,
     },
     AddRow {
         proj: ProjectId,
@@ -972,6 +982,7 @@ impl PjmApp {
         self.ui.changed = false;
         self.ui.name_buffers.clear();
         self.ui.effort_buffers.clear();
+        self.ui.declared_buffers.clear();
         self.ui.editing = None;
         self.ui.external_notice = Some(notice_now("File changed..."));
     }
@@ -1097,6 +1108,7 @@ impl PjmApp {
                     self.ui.changed = false;
                     self.ui.name_buffers.clear();
                     self.ui.effort_buffers.clear();
+                    self.ui.declared_buffers.clear();
                     self.ui.editing = None;
                     self.ui.external_notice =
                         Some(notice_now("File Changed (your change discarded)"));
@@ -1126,6 +1138,7 @@ impl PjmApp {
                             self.ui.current_file = path;
                             self.ui.name_buffers.clear();
                             self.ui.effort_buffers.clear();
+                            self.ui.declared_buffers.clear();
                             self.ui.editing = None;
                             self.app.compute_sovra();
                             self.ui.changed = false;
@@ -1173,6 +1186,10 @@ impl PjmApp {
             }
             Action::SetDevEffort { proj, dev, effort } => {
                 self.app.projects.add_dev_effort(proj, dev, Effort(effort));
+                self.mark_changed();
+            }
+            Action::SetDevDeclaredPct { proj, dev, pct } => {
+                self.app.projects.set_dev_declared_pct(proj, dev, pct);
                 self.mark_changed();
             }
             Action::AddRow { proj, dev } => {
@@ -1345,6 +1362,7 @@ impl PjmApp {
                 }
             }
             Action::ExportPdfSelected { projects } => {
+                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
                 match crate::pdf_export::build_pdf_selected(
                     &self.app,
                     &projects,
@@ -1357,6 +1375,7 @@ impl PjmApp {
                 }
             }
             Action::ExportPdfProject { proj, devs } => {
+                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
                 match crate::pdf_export::build_pdf_project(
                     &self.app,
                     proj,
@@ -1368,6 +1387,7 @@ impl PjmApp {
                 }
             }
             Action::ExportSvgProject { proj, devs } => {
+                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
                 match crate::pdf_export::build_svg_project(
                     &self.app,
                     proj,

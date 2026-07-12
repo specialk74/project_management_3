@@ -84,6 +84,7 @@ App (workers.ron)
             ├── effort : Effort              — planned hours
             ├── note   : Option<String>      — dev-level note
             ├── hide_effort : bool
+            ├── declared_pct : u8            — dev-declared progress % (0..=100, default 0)
             └── weeks  : HashMap<WeekId, SingleEffortWeek>
                 └── worker_id : HashMap<WorkerId, SingleEffort>  { effort, note }
 ```
@@ -167,6 +168,14 @@ category/worker-max/etc.).
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
 - **Notes** (yellow triangle indicator): right-click a non-empty cell → effort note;
   right-click a dev name → **Nota Dev…**; right-click a footer worker cell → **Note**.
+- **Dev progress %** (under the dev name, non-compact only, in `draw_left_devs`): two
+  small figures — a **presumed** % (read-only) = effort used up to today ÷ planned
+  (`SingleDev::effort_up_to(current_week_id())` / `planned_effort()`; red when >100%,
+  hidden when planned=0), and next to it an **editable declared** % typed by the dev
+  (`Action::SetDevDeclaredPct` → `Projects::set_dev_declared_pct`, buffer in
+  `UiState.declared_buffers`). The declared field's background is **red when declared <
+  presumed, green when ≥**, neutral when there's no presumed (planned=0). Both are
+  optionally drawn in PDF/SVG (see export toggle below).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
   milestone qui** and **Sposta** (blocco / devs).
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
@@ -197,6 +206,19 @@ printpdf `Op`s and `render_svg(&shapes)` emits an SVG string (Y-flipped, cropped
 content). `project_shapes(app, proj, name, dev_info, today, created, order, chart_only, fmt)`
 gathers rows/flags for a project; `chart_only` drops the tripletta/description and
 the footer date.
+
+- **Progress % in export** (`set_show_pct(bool)` / `show_pct()` — a thread-local flag
+  in `pdf_export.rs`, mirroring `ui_style`'s theme/B-W flags; default off): when on,
+  each dev row appends `presunta%/dichiarata%` **after the date label (far right,
+  same 7.0 date font)** — `Row.presumed_pct` / `Row.declared_pct`, computed in
+  `project_shapes` from `today` (`-` when planned=0). **No-effort rows omit it** (they
+  `continue` before the date label), so only devs with effort show percentages.
+  (In the on-screen grid the two under-name percentages instead use `cell_font`, the
+  effort/residuo size — a separate choice from the PDF's date-font.)
+  The export dialogs (`pdf_export_window`, `pdf_multi_export_window`) expose a
+  **«Includi percentuali di avanzamento»** checkbox bound to `UiState.export_progress_pct`
+  (remembered across exports, not persisted); the `Action::ExportPdf*/ExportSvgProject`
+  handlers call `set_show_pct(self.ui.export_progress_pct)` before `build_*`.
 
 - **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
   drawn. `Continuous` (default, historical) = one rect first→last effort week;

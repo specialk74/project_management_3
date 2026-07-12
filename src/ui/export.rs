@@ -154,6 +154,8 @@ pub(crate) fn pdf_export_window(
     // Copia locale del formato: evita conflitti di prestito con `px` dentro la
     // closure della finestra; riscritta in `state` a fine funzione.
     let mut fmt = state.bar_format;
+    // Idem per la scelta "includi percentuali di avanzamento" nell'export.
+    let mut show_pct = state.export_progress_pct;
     let proj = px.proj;
     let trip = app.projects.get_tripletta(proj);
     let title = if trip.is_empty() {
@@ -258,6 +260,12 @@ pub(crate) fn pdf_export_window(
             bar_format_selector(ui, &mut fmt);
 
             ui.separator();
+            ui.checkbox(
+                &mut show_pct,
+                "Includi percentuali di avanzamento (presunta/dichiarata)",
+            );
+
+            ui.separator();
             ui.horizontal(|ui| {
                 // Esportabile anche con zero dev: esce comunque il resto (milestone…).
                 if ui.button("Esporta PDF…").clicked() {
@@ -278,6 +286,7 @@ pub(crate) fn pdf_export_window(
 
     // Ricorda il formato scelto per i prossimi export.
     state.bar_format = fmt;
+    state.export_progress_pct = show_pct;
 
     // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
     let devs_if_export = (do_export || do_export_svg).then(|| {
@@ -314,6 +323,7 @@ pub(crate) fn pdf_multi_export_window(
     };
     // Copia locale del formato (vedi nota in `pdf_export_window`).
     let mut fmt = state.bar_format;
+    let mut show_pct = state.export_progress_pct;
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
@@ -339,6 +349,10 @@ pub(crate) fn pdf_multi_export_window(
             project_checklist(ui, app, &mut px.entries);
 
             ui.separator();
+            ui.checkbox(
+                &mut show_pct,
+                "Includi percentuali di avanzamento (presunta/dichiarata)",
+            );
             ui.horizontal(|ui| {
                 if ui.button("Esporta PDF…").clicked() {
                     do_export = true;
@@ -350,6 +364,7 @@ pub(crate) fn pdf_multi_export_window(
         });
 
     state.bar_format = fmt;
+    state.export_progress_pct = show_pct;
 
     if do_export {
         let projects: Vec<ProjectId> = px

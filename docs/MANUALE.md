@@ -237,6 +237,15 @@ La **striscia verticale "Dev"** (tra le info del progetto e le righe dei dev):
 ### Colonna dei dev (a sinistra della griglia)
 Per ogni dev del progetto:
 - **Nome dev** su sfondo del colore del dev.
+- **Percentuali di avanzamento** (sotto il nome, non in vista compatta):
+  - **% presunta** (sola lettura): effort usato fino a oggi ÷ effort pianificato.
+    Diventa **rossa oltre il 100 %** (stai sforando il pianificato); non compare se
+    il pianificato è 0.
+  - **% dichiarata** (editabile): la percentuale di completamento che dichiara lo
+    sviluppatore (default 0, salvata nel file `.ron`). Lo **sfondo** del campo è
+    **rosso se la dichiarata è minore della presunta**, **verde** se è maggiore o
+    uguale; **neutro** se non c'è una presunta (pianificato 0). Serve ad accorgersi
+    subito quando il lavoro dichiarato non sta al passo con l'effort consumato.
 - **Effort pianificato** (editabile): le ore previste per quel dev.
 - **Residuo**: pianificato − totale allocato. Se il residuo è negativo (o pari al
   pianificato con pianificato ≠ 0) lo sfondo diventa rosso e il numero è sempre
@@ -568,6 +577,18 @@ ricordato tra un export e l'altro (non è salvato sul file). Le tre opzioni:
   Il riferimento non scende mai **sotto le 40 ore**: se il dev non supera mai le
   40h in una settimana, una settimana da 40h resta comunque all'altezza piena e le
   più scariche restano proporzionalmente più basse.
+
+### Percentuali di avanzamento nel PDF/SVG
+In tutte le finestre di export c'è la casella **«Includi percentuali di avanzamento
+(presunta/dichiarata)»**. Se attiva, le due percentuali nel formato
+`presunta%/dichiarata%` (un trattino al posto della presunta quando il pianificato è
+0) compaiono **a destra, accanto all'etichetta delle date** a fine barra, con lo
+stesso font delle date. Compaiono
+**solo per i dev con effort**: un dev senza effort
+(riga sottile) non mostra alcuna percentuale. Se la casella è disattivata
+(impostazione predefinita) le percentuali non vengono stampate. La scelta vale sia
+per il PDF sia per l'SVG ed è ricordata tra un export e l'altro (non è salvata sul
+file).
 
 ---
 

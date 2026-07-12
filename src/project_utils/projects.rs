@@ -309,6 +309,12 @@ impl Projects {
             .add_dev_effort(id_dev, effort);
     }
 
+    pub fn set_dev_declared_pct(&mut self, id_project: ProjectId, id_dev: DevId, pct: u8) {
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.set_dev_declared_pct(id_dev, pct);
+        }
+    }
+
     pub fn set_project_info(&mut self, project_id: ProjectId, info: &str) {
         if let Some(p) = self.projects.get_mut(&project_id) {
             p.set_info(info);

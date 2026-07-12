@@ -14,6 +14,23 @@ use crate::app::App;
 use crate::date_utils::dates::{days_to_local, local_to_days};
 use crate::dev_utils::dev::DevId;
 use crate::project_utils::project::ProjectId;
+use crate::single_dev_utils::single_dev::WeekId;
+
+// Flag di rendering "mostra percentuali di avanzamento" nell'export, scelto
+// dall'utente nelle dialog. Thread-local come i flag tema/B-N di `ui_style`:
+// impostato prima di ogni `build_*`, letto da `page_shapes`. Default: off.
+thread_local! {
+    static SHOW_PCT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
+pub fn set_show_pct(v: bool) {
+    SHOW_PCT.with(|c| c.set(v));
+}
+
+fn show_pct() -> bool {
+    SHOW_PCT.with(|c| c.get())
+}
 
 // Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
 // accenti/Unicode, che i font builtin PDF (WinAnsi) non garantiscono.
@@ -28,7 +45,11 @@ struct Fonts {
 
 impl Fonts {
     fn handle(&self, bold: bool) -> PdfFontHandle {
-        PdfFontHandle::External(if bold { self.bold.clone() } else { self.regular.clone() })
+        PdfFontHandle::External(if bold {
+            self.bold.clone()
+        } else {
+            self.regular.clone()
+        })
     }
 }
 
@@ -79,14 +100,42 @@ const MONTHS_IT: [&str; 12] = [
 /// SVG (`render_svg`), così il grafico è identico nei due formati.
 #[derive(Clone)]
 enum Shape {
-    Rect { x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32) },
-    Poly { pts: Vec<(f32, f32)>, color: (f32, f32, f32) },
-    Line { x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32) },
-    Text { x: f32, y: f32, s: String, size: f32, bold: bool, color: (f32, f32, f32) },
+    Rect {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        color: (f32, f32, f32),
+    },
+    Poly {
+        pts: Vec<(f32, f32)>,
+        color: (f32, f32, f32),
+    },
+    Line {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        thick: f32,
+        color: (f32, f32, f32),
+    },
+    Text {
+        x: f32,
+        y: f32,
+        s: String,
+        size: f32,
+        bold: bool,
+        color: (f32, f32, f32),
+    },
 }
 
 fn rgb(c: (f32, f32, f32)) -> Color {
-    Color::Rgb(Rgb { r: c.0, g: c.1, b: c.2, icc_profile: None })
+    Color::Rgb(Rgb {
+        r: c.0,
+        g: c.1,
+        b: c.2,
+        icc_profile: None,
+    })
 }
 
 fn u32_rgb(c: u32) -> (f32, f32, f32) {
@@ -153,33 +202,70 @@ fn truncate_to_w(s: &str, size: f32, max_w: f32) -> String {
 
 /// Testo ancorato a sinistra a (x, y) in mm (y = baseline).
 fn text_left(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
-    vec![Shape::Text { x, y, s: s.to_string(), size, bold, color }]
+    vec![Shape::Text {
+        x,
+        y,
+        s: s.to_string(),
+        size,
+        bold,
+        color,
+    }]
 }
 
 /// Come `text_left` ma centrato orizzontalmente su `x`.
-fn text_center(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
+fn text_center(
+    x: f32,
+    y: f32,
+    s: &str,
+    size: f32,
+    bold: bool,
+    color: (f32, f32, f32),
+) -> Vec<Shape> {
     let start = (x - text_w_mm(s, size) / 2.0).clamp(2.0, PAGE_W - 2.0);
     text_left(start, y, s, size, bold, color)
 }
 
 /// Come `text_left` ma ancorato a destra: il testo termina a `x`.
-fn text_right(x: f32, y: f32, s: &str, size: f32, bold: bool, color: (f32, f32, f32)) -> Vec<Shape> {
+fn text_right(
+    x: f32,
+    y: f32,
+    s: &str,
+    size: f32,
+    bold: bool,
+    color: (f32, f32, f32),
+) -> Vec<Shape> {
     text_left(x - text_w_mm(s, size), y, s, size, bold, color)
 }
 
 /// Rettangolo pieno tra gli angoli (x0,y0)-(x1,y1) in mm.
 fn rect_fill(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<Shape> {
-    vec![Shape::Rect { x0, y0, x1, y1, color }]
+    vec![Shape::Rect {
+        x0,
+        y0,
+        x1,
+        y1,
+        color,
+    }]
 }
 
 /// Poligono pieno da una lista di punti (mm).
 fn poly_fill(pts: &[(f32, f32)], color: (f32, f32, f32)) -> Vec<Shape> {
-    vec![Shape::Poly { pts: pts.to_vec(), color }]
+    vec![Shape::Poly {
+        pts: pts.to_vec(),
+        color,
+    }]
 }
 
 /// Linea da (x0,y0) a (x1,y1) in mm.
 fn line(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
-    vec![Shape::Line { x0, y0, x1, y1, thick, color }]
+    vec![Shape::Line {
+        x0,
+        y0,
+        x1,
+        y1,
+        thick,
+        color,
+    }]
 }
 
 /// Linea orizzontale tratteggiata da (x0,y) a (x1,y): segmenti brevi.
@@ -190,7 +276,14 @@ fn dashed_hline(x0: f32, x1: f32, y: f32, thick: f32, color: (f32, f32, f32)) ->
     let mut x = x0;
     while x < x1 {
         let xe = (x + DASH).min(x1);
-        out.push(Shape::Line { x0: x, y0: y, x1: xe, y1: y, thick, color });
+        out.push(Shape::Line {
+            x0: x,
+            y0: y,
+            x1: xe,
+            y1: y,
+            thick,
+            color,
+        });
         x += DASH + GAP;
     }
     out
@@ -201,13 +294,22 @@ fn render_pdf(fonts: &Fonts, shapes: &[Shape]) -> Vec<Op> {
     let poly_ring = |pts: &[(f32, f32)]| PolygonRing {
         points: pts
             .iter()
-            .map(|(px, py)| LinePoint { p: Point::new(Mm(*px), Mm(*py)), bezier: false })
+            .map(|(px, py)| LinePoint {
+                p: Point::new(Mm(*px), Mm(*py)),
+                bezier: false,
+            })
             .collect(),
     };
     let mut ops = Vec::new();
     for s in shapes {
         match s {
-            Shape::Rect { x0, y0, x1, y1, color } => {
+            Shape::Rect {
+                x0,
+                y0,
+                x1,
+                y1,
+                color,
+            } => {
                 let pts = [(*x0, *y0), (*x1, *y0), (*x1, *y1), (*x0, *y1)];
                 ops.push(Op::SetFillColor { col: rgb(*color) });
                 ops.push(Op::DrawPolygon {
@@ -228,26 +330,53 @@ fn render_pdf(fonts: &Fonts, shapes: &[Shape]) -> Vec<Op> {
                     },
                 });
             }
-            Shape::Line { x0, y0, x1, y1, thick, color } => {
+            Shape::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                thick,
+                color,
+            } => {
                 ops.push(Op::SetOutlineColor { col: rgb(*color) });
                 ops.push(Op::SetOutlineThickness { pt: Pt(*thick) });
                 ops.push(Op::DrawLine {
                     line: Line {
                         points: vec![
-                            LinePoint { p: Point::new(Mm(*x0), Mm(*y0)), bezier: false },
-                            LinePoint { p: Point::new(Mm(*x1), Mm(*y1)), bezier: false },
+                            LinePoint {
+                                p: Point::new(Mm(*x0), Mm(*y0)),
+                                bezier: false,
+                            },
+                            LinePoint {
+                                p: Point::new(Mm(*x1), Mm(*y1)),
+                                bezier: false,
+                            },
                         ],
                         is_closed: false,
                     },
                 });
             }
-            Shape::Text { x, y, s, size, bold, color } => {
+            Shape::Text {
+                x,
+                y,
+                s,
+                size,
+                bold,
+                color,
+            } => {
                 ops.push(Op::StartTextSection);
-                ops.push(Op::SetTextCursor { pos: Point::new(Mm(*x), Mm(*y)) });
-                ops.push(Op::SetFont { font: fonts.handle(*bold), size: Pt(*size) });
+                ops.push(Op::SetTextCursor {
+                    pos: Point::new(Mm(*x), Mm(*y)),
+                });
+                ops.push(Op::SetFont {
+                    font: fonts.handle(*bold),
+                    size: Pt(*size),
+                });
                 ops.push(Op::SetLineHeight { lh: Pt(*size) });
                 ops.push(Op::SetFillColor { col: rgb(*color) });
-                ops.push(Op::ShowText { items: vec![TextItem::Text(s.clone())] });
+                ops.push(Op::ShowText {
+                    items: vec![TextItem::Text(s.clone())],
+                });
                 ops.push(Op::EndTextSection);
             }
         }
@@ -323,7 +452,13 @@ fn render_svg(shapes: &[Shape]) -> String {
     ));
     for s in shapes {
         match s {
-            Shape::Rect { x0, y0, x1, y1, color } => {
+            Shape::Rect {
+                x0,
+                y0,
+                x1,
+                y1,
+                color,
+            } => {
                 out.push_str(&format!(
                     "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"{}\"/>\n",
                     tx(x0.min(*x1)),
@@ -339,9 +474,19 @@ fn render_svg(shapes: &[Shape]) -> String {
                     .map(|(px, py)| format!("{:.2},{:.2}", tx(*px), ty(*py)))
                     .collect::<Vec<_>>()
                     .join(" ");
-                out.push_str(&format!("<polygon points=\"{p}\" fill=\"{}\"/>\n", svg_color(*color)));
+                out.push_str(&format!(
+                    "<polygon points=\"{p}\" fill=\"{}\"/>\n",
+                    svg_color(*color)
+                ));
             }
-            Shape::Line { x0, y0, x1, y1, thick, color } => {
+            Shape::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                thick,
+                color,
+            } => {
                 out.push_str(&format!(
                     "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" \
                      stroke-width=\"{:.2}\"/>\n",
@@ -353,7 +498,14 @@ fn render_svg(shapes: &[Shape]) -> String {
                     thick * PT_MM
                 ));
             }
-            Shape::Text { x, y, s, size, bold, color } => {
+            Shape::Text {
+                x,
+                y,
+                s,
+                size,
+                bold,
+                color,
+            } => {
                 let weight = if *bold { " font-weight=\"bold\"" } else { "" };
                 out.push_str(&format!(
                     "<text x=\"{:.2}\" y=\"{:.2}\" font-size=\"{:.2}\"{} fill=\"{}\">{}</text>\n",
@@ -437,6 +589,10 @@ struct Row {
     weeks: Vec<(i32, u32)>,
     /// Massimo delle ore settimanali del dev (denominatore per `Proportional`).
     max_week: u32,
+    /// % "presunta" (usato fino a oggi / pianificato); `None` se pianificato 0.
+    presumed_pct: Option<u32>,
+    /// % di avanzamento dichiarata dallo sviluppatore (0 di default).
+    declared_pct: u8,
 }
 
 /// Una milestone (bandierina in alto).
@@ -548,7 +704,14 @@ fn page_shapes(
         // Etichetta mese (bianca, in basso a sinistra della cella) se ci sta.
         let name = MONTHS_IT[(m.month() - 1) as usize];
         if cell_x1 - cell_x0 > text_w_mm(name, 8.0) + 1.5 {
-            shapes.extend(text_left(cell_x0 + 1.5, AXIS_BOT + 1.6, name, 8.0, false, WHITE));
+            shapes.extend(text_left(
+                cell_x0 + 1.5,
+                AXIS_BOT + 1.6,
+                name,
+                8.0,
+                false,
+                WHITE,
+            ));
         }
         if local_to_days(&next) >= axis_end {
             break;
@@ -557,20 +720,42 @@ fn page_shapes(
         idx += 1;
     }
     // Riga verticale di chiusura a destra dell'asse.
-    shapes.extend(line(CHART_X1, ROWS_BOT, CHART_X1, AXIS_BOT, 0.4, GRAY_GUIDE));
+    shapes.extend(line(
+        CHART_X1, ROWS_BOT, CHART_X1, AXIS_BOT, 0.4, GRAY_GUIDE,
+    ));
 
     // Etichette anno agli estremi (arancione, in grassetto).
     let year_l = month_start(day_to_date(axis_start)).year();
     let year_r = add_months(month_start(day_to_date(axis_end)), -1).year();
     let axis_mid = (AXIS_BOT + AXIS_TOP) / 2.0 - 1.8;
-    shapes.extend(text_right(CHART_X0 - 9.0, axis_mid, &year_l.to_string(), 13.0, true, ORANGE));
-    shapes.extend(text_left(CHART_X1 + 2.0, axis_mid, &year_r.to_string(), 13.0, true, ORANGE));
+    shapes.extend(text_right(
+        CHART_X0 - 9.0,
+        axis_mid,
+        &year_l.to_string(),
+        13.0,
+        true,
+        ORANGE,
+    ));
+    shapes.extend(text_left(
+        CHART_X1 + 2.0,
+        axis_mid,
+        &year_r.to_string(),
+        13.0,
+        true,
+        ORANGE,
+    ));
 
     // --- Barra di avanzamento "Today" sull'asse ----------------------------
     let today_in_axis = today >= axis_start && today <= axis_end;
     if today_in_axis && today > proj_start {
         let xt = x_of(today);
-        shapes.extend(rect_fill(x_of(proj_start), AXIS_TOP - 3.0, xt, AXIS_TOP, RED));
+        shapes.extend(rect_fill(
+            x_of(proj_start),
+            AXIS_TOP - 3.0,
+            xt,
+            AXIS_TOP,
+            RED,
+        ));
     }
     if today_in_axis {
         let xt = x_of(today);
@@ -578,7 +763,11 @@ fn page_shapes(
         shapes.extend(line(xt, ROWS_BOT, xt, AXIS_BOT, 0.7, RED));
         // Triangolo + etichetta "Today" sopra l'asse.
         shapes.extend(poly_fill(
-            &[(xt - 2.0, AXIS_TOP + 4.0), (xt + 2.0, AXIS_TOP + 4.0), (xt, AXIS_TOP)],
+            &[
+                (xt - 2.0, AXIS_TOP + 4.0),
+                (xt + 2.0, AXIS_TOP + 4.0),
+                (xt, AXIS_TOP),
+            ],
             RED,
         ));
         shapes.extend(text_center(xt, AXIS_TOP + 5.0, "Today", 8.0, false, BLACK));
@@ -644,7 +833,11 @@ fn page_shapes(
         let pole_top = pole_tops[i];
         // Pennant: triangolo a destra dell'asta.
         shapes.extend(poly_fill(
-            &[(x, pole_top), (x + 7.0, pole_top - 2.0), (x, pole_top - 4.0)],
+            &[
+                (x, pole_top),
+                (x + 7.0, pole_top - 2.0),
+                (x, pole_top - 4.0),
+            ],
             f.color,
         ));
         // Etichetta sopra la bandierina, centrata sull'asta.
@@ -698,14 +891,26 @@ fn page_shapes(
         match fmt {
             BarFormat::Continuous => {
                 // Un unico rettangolo dalla prima all'ultima settimana.
-                shapes.extend(rect_fill(bx0, yc - bar_hh, bx1.max(bx0 + 1.0), yc + bar_hh, r.color));
+                shapes.extend(rect_fill(
+                    bx0,
+                    yc - bar_hh,
+                    bx1.max(bx0 + 1.0),
+                    yc + bar_hh,
+                    r.color,
+                ));
             }
             BarFormat::Segmented => {
                 // Un rettangolo per ogni tratto di settimane consecutive (diff 7).
                 for (s, e) in contiguous_runs(&r.weeks) {
                     let rx0 = x_of(s);
                     let rx1 = x_of(e + 7);
-                    shapes.extend(rect_fill(rx0, yc - bar_hh, rx1.max(rx0 + 1.0), yc + bar_hh, r.color));
+                    shapes.extend(rect_fill(
+                        rx0,
+                        yc - bar_hh,
+                        rx1.max(rx0 + 1.0),
+                        yc + bar_hh,
+                        r.color,
+                    ));
                 }
             }
             BarFormat::Proportional => {
@@ -718,12 +923,28 @@ fn page_shapes(
                     let hh = (bar_hh * hours as f32 / denom).max(0.15);
                     let rx0 = x_of(day);
                     let rx1 = x_of(day + 7);
-                    shapes.extend(rect_fill(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, r.color));
+                    shapes.extend(rect_fill(
+                        rx0,
+                        yc - hh,
+                        rx1.max(rx0 + 1.0),
+                        yc + hh,
+                        r.color,
+                    ));
                 }
             }
         }
-        // Etichetta date a fine barra (o prima, se non ci sta a destra).
-        let lbl = format!("{} - {}", short_date(r.start_day), short_date(r.end_day));
+        // Etichetta date a fine barra (o prima, se non ci sta a destra); se
+        // richiesto, le percentuali (presunta/dichiarata) la seguono, tutto a
+        // destra e con lo **stesso font delle date** (7.0). Le righe senza effort
+        // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
+        let mut lbl = format!("{} - {}", short_date(r.start_day), short_date(r.end_day));
+        if show_pct() {
+            let pct = match r.presumed_pct {
+                Some(p) => format!("({p}%/{}%)", r.declared_pct),
+                None => format!("(-/{}%)", r.declared_pct),
+            };
+            lbl = format!("{lbl}  {pct}");
+        }
         let w = text_w_mm(&lbl, 7.0);
         if bx1 + 2.0 + w <= CHART_X1 {
             shapes.extend(text_left(bx1 + 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
@@ -734,7 +955,13 @@ fn page_shapes(
 
     // --- Footer (banda grigia + data; escluso nell'export "solo grafico") --
     if !chart_only {
-        shapes.extend(rect_fill(X_LABEL, FOOTER_BOT, CHART_X1, FOOTER_TOP, GRAY_FOOTER));
+        shapes.extend(rect_fill(
+            X_LABEL,
+            FOOTER_BOT,
+            CHART_X1,
+            FOOTER_TOP,
+            GRAY_FOOTER,
+        ));
         shapes.extend(text_center(
             (X_LABEL + CHART_X1) / 2.0,
             (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
@@ -813,6 +1040,18 @@ fn project_shapes(
         let max = weeks.iter().map(|(_, h)| *h).max().unwrap_or(0);
         (weeks, max)
     };
+    // % presunta (usato fino a oggi / pianificato) e % dichiarata dal dev.
+    let pct_data = |dev_id: DevId| -> (Option<u32>, u8) {
+        let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
+            return (None, 0);
+        };
+        let planned = sd.planned_effort().0;
+        let presumed = (planned != 0).then(|| {
+            let used = sd.effort_up_to(WeekId(today as usize)).0;
+            ((used * 100 + planned / 2) / planned) as u32
+        });
+        (presumed, sd.declared_pct())
+    };
 
     let mut rows = Vec::new();
     match order {
@@ -826,6 +1065,7 @@ fn project_shapes(
                 };
                 let (label, color) = color_of(&dev_id);
                 let (weeks, max_week) = week_data(dev_id);
+                let (presumed_pct, declared_pct) = pct_data(dev_id);
                 rows.push(Row {
                     label,
                     color,
@@ -834,6 +1074,8 @@ fn project_shapes(
                     no_effort: false,
                     weeks,
                     max_week,
+                    presumed_pct,
+                    declared_pct,
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -848,6 +1090,7 @@ fn project_shapes(
                 {
                     Some((first, last)) => {
                         let (weeks, max_week) = week_data(dev_id);
+                        let (presumed_pct, declared_pct) = pct_data(dev_id);
                         rows.push(Row {
                             label,
                             color,
@@ -856,17 +1099,24 @@ fn project_shapes(
                             no_effort: false,
                             weeks,
                             max_week,
+                            presumed_pct,
+                            declared_pct,
                         })
                     }
-                    None => rows.push(Row {
-                        label,
-                        color,
-                        start_day: proj_start,
-                        end_day: proj_end,
-                        no_effort: true,
-                        weeks: Vec::new(),
-                        max_week: 0,
-                    }),
+                    None => {
+                        let (presumed_pct, declared_pct) = pct_data(dev_id);
+                        rows.push(Row {
+                            label,
+                            color,
+                            start_day: proj_start,
+                            end_day: proj_end,
+                            no_effort: true,
+                            weeks: Vec::new(),
+                            max_week: 0,
+                            presumed_pct,
+                            declared_pct,
+                        })
+                    }
                 }
             }
         }
@@ -912,14 +1162,20 @@ pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
         if let Some(shapes) =
             project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
         {
-            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+            pages.push(PdfPage::new(
+                Mm(PAGE_W),
+                Mm(PAGE_H),
+                render_pdf(&fonts, &shapes),
+            ));
         }
     }
 
     if pages.is_empty() {
         return None;
     }
-    let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
+    let bytes = doc
+        .with_pages(pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
     Some(bytes)
 }
 
@@ -949,14 +1205,20 @@ pub fn build_pdf_selected(app: &App, selected: &[ProjectId], fmt: BarFormat) -> 
         if let Some(shapes) =
             project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
         {
-            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+            pages.push(PdfPage::new(
+                Mm(PAGE_W),
+                Mm(PAGE_H),
+                render_pdf(&fonts, &shapes),
+            ));
         }
     }
 
     if pages.is_empty() {
         return None;
     }
-    let bytes = doc.with_pages(pages).save(&PdfSaveOptions::default(), &mut Vec::new());
+    let bytes = doc
+        .with_pages(pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
     Some(bytes)
 }
 
@@ -1044,45 +1306,60 @@ mod tests {
     fn project_with_start_and_end_produces_valid_pdf() {
         let mut app = App::new();
         let start = WeekId(20000);
-        let pid = app.projects.add("Descrizione progetto", Some("ABC"), Some(start));
+        let pid = app
+            .projects
+            .add("Descrizione progetto", Some("ABC"), Some(start));
         app.projects.set_project_end_week(pid, Some(WeekId(20070)));
         // Un dev con effort su alcune settimane → una riga del Gantt.
         let dev = app.devs.add("Frontend");
         let worker = WorkerId(0);
         app.projects.add_dev(pid, dev);
-        app.projects.add_effort(pid, dev, WeekId(20007), worker, Effort(8));
-        app.projects.add_effort(pid, dev, WeekId(20035), worker, Effort(8));
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), worker, Effort(8));
+        app.projects
+            .add_effort(pid, dev, WeekId(20035), worker, Effort(8));
         let mid = app.milestones.add("Beta");
         app.projects.add_project_milestone(pid, mid, WeekId(20035));
 
         let bytes = build_pdf(&app, BarFormat::Continuous).expect("un progetto idoneo → Some");
-        assert!(bytes.starts_with(b"%PDF"), "l'output deve essere un PDF valido");
+        assert!(
+            bytes.starts_with(b"%PDF"),
+            "l'output deve essere un PDF valido"
+        );
     }
 
     #[test]
     fn project_without_end_is_skipped() {
         let mut app = App::new();
-        app.projects.add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
+        app.projects
+            .add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
         assert!(build_pdf(&app, BarFormat::Continuous).is_none());
     }
 
     #[test]
     fn build_pdf_selected_only_includes_selected_projects() {
         let mut app = App::new();
-        let a = app.projects.add("Progetto A", Some("AAA"), Some(WeekId(20000)));
+        let a = app
+            .projects
+            .add("Progetto A", Some("AAA"), Some(WeekId(20000)));
         app.projects.set_project_end_week(a, Some(WeekId(20070)));
-        let b = app.projects.add("Progetto B", Some("BBB"), Some(WeekId(20000)));
+        let b = app
+            .projects
+            .add("Progetto B", Some("BBB"), Some(WeekId(20000)));
         app.projects.set_project_end_week(b, Some(WeekId(20070)));
 
         // Solo A selezionato → PDF valido (una pagina).
-        let bytes = build_pdf_selected(&app, &[a], BarFormat::Continuous).expect("progetto selezionato idoneo → Some");
+        let bytes = build_pdf_selected(&app, &[a], BarFormat::Continuous)
+            .expect("progetto selezionato idoneo → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun progetto selezionato → None.
         assert!(build_pdf_selected(&app, &[], BarFormat::Continuous).is_none());
 
         // Progetto selezionato ma senza fine → None (non idoneo).
-        let c = app.projects.add("Senza fine", Some("CCC"), Some(WeekId(20000)));
+        let c = app
+            .projects
+            .add("Senza fine", Some("CCC"), Some(WeekId(20000)));
         assert!(build_pdf_selected(&app, &[c], BarFormat::Continuous).is_none());
     }
 
@@ -1105,7 +1382,8 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun dev selezionato → esporta comunque il resto (milestone, asse…).
-        let bytes = build_pdf_project(&app, pid, &[], BarFormat::Continuous).expect("senza dev → Some");
+        let bytes =
+            build_pdf_project(&app, pid, &[], BarFormat::Continuous).expect("senza dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
     }
 
@@ -1120,14 +1398,19 @@ mod tests {
     #[test]
     fn svg_export_is_chart_only_valid_svg() {
         let mut app = App::new();
-        let pid = app.projects.add("Descrizione lunga del progetto", Some("ABC"), Some(WeekId(20000)));
+        let pid = app.projects.add(
+            "Descrizione lunga del progetto",
+            Some("ABC"),
+            Some(WeekId(20000)),
+        );
         app.projects.set_project_end_week(pid, Some(WeekId(20070)));
         let dev = app.devs.add("Frontend");
         app.projects.add_dev(pid, dev);
         app.projects
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
 
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).expect("progetto valido → Some");
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous)
+            .expect("progetto valido → Some");
         assert!(svg.trim_start().starts_with("<svg"), "deve essere un SVG");
         assert!(svg.contains("</svg>"));
         // "solo grafico": niente tripletta né descrizione del progetto.
@@ -1143,18 +1426,59 @@ mod tests {
     }
 
     #[test]
+    fn show_pct_toggle_adds_percentages_to_svg() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        // Pianificato 10h, usato 8h in una settimana passata → presunta 80%.
+        app.projects.add_dev_effort(pid, dev, Effort(10));
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        app.projects.set_dev_declared_pct(pid, dev, 60);
+        // Dev SENZA effort ma con % dichiarata: non deve mostrare percentuali.
+        let dev_empty = app.devs.add("Backend");
+        app.projects.add_dev(pid, dev_empty);
+        app.projects.set_dev_declared_pct(pid, dev_empty, 33);
+
+        // Flag off (default): niente percentuali.
+        set_show_pct(false);
+        let svg = build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous).unwrap();
+        assert!(!svg.contains("80%/60%"), "senza flag non devono comparire");
+
+        // Flag on: compare "presunta/dichiarata" solo per il dev con effort.
+        set_show_pct(true);
+        let svg = build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("80%/60%"), "con flag deve comparire 80%/60%");
+        assert!(!svg.contains("33%"), "il dev senza effort non mostra la %");
+        set_show_pct(false);
+    }
+
+    #[test]
     fn proportional_reference_never_below_40() {
         assert_eq!(proportional_ref(0), 40, "dev scarico → riferimento 40");
-        assert_eq!(proportional_ref(20), 40, "max 20h → riferimento comunque 40");
+        assert_eq!(
+            proportional_ref(20),
+            40,
+            "max 20h → riferimento comunque 40"
+        );
         assert_eq!(proportional_ref(40), 40);
-        assert_eq!(proportional_ref(56), 56, "oltre 40 → il massimo reale del dev");
+        assert_eq!(
+            proportional_ref(56),
+            56,
+            "oltre 40 → il massimo reale del dev"
+        );
     }
 
     #[test]
     fn contiguous_runs_groups_consecutive_weeks() {
         // 20007 e 20014 contigui (dist 7); 20035 isolato (gap).
         let weeks = [(20007, 8), (20014, 40), (20035, 16)];
-        assert_eq!(contiguous_runs(&weeks), vec![(20007, 20014), (20035, 20035)]);
+        assert_eq!(
+            contiguous_runs(&weeks),
+            vec![(20007, 20014), (20035, 20035)]
+        );
         assert!(contiguous_runs(&[]).is_empty());
         assert_eq!(contiguous_runs(&[(100, 5)]), vec![(100, 100)]);
     }
@@ -1167,23 +1491,40 @@ mod tests {
         let dev = app.devs.add("Frontend");
         app.projects.add_dev(pid, dev);
         // Due settimane contigue (una con due worker → somma), un buco, poi un'altra.
-        app.projects.add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
-        app.projects.add_effort(pid, dev, WeekId(20007), WorkerId(1), Effort(4));
-        app.projects.add_effort(pid, dev, WeekId(20014), WorkerId(0), Effort(40));
-        app.projects.add_effort(pid, dev, WeekId(20035), WorkerId(0), Effort(16));
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(1), Effort(4));
+        app.projects
+            .add_effort(pid, dev, WeekId(20014), WorkerId(0), Effort(40));
+        app.projects
+            .add_effort(pid, dev, WeekId(20035), WorkerId(0), Effort(16));
 
         // Conteggio dei rettangoli nell'SVG: tutto è identico tra i formati
         // tranne le barre del dev, quindi il totale isola il numero di barre.
         // 3 settimane con effort, 2 tratti contigui (20007-20014 e 20035):
         //   Continua = 1 barra, Segmentata = 2, Proporzionale = 3 (una a settimana).
-        let rects = |fmt| build_svg_project(&app, pid, &[dev], fmt).unwrap().matches("<rect").count();
+        let rects = |fmt| {
+            build_svg_project(&app, pid, &[dev], fmt)
+                .unwrap()
+                .matches("<rect")
+                .count()
+        };
         let (cont, seg, prop) = (
             rects(BarFormat::Continuous),
             rects(BarFormat::Segmented),
             rects(BarFormat::Proportional),
         );
-        assert_eq!(seg - cont, 1, "Segmentata deve avere 1 barra in più (2 tratti vs 1)");
-        assert_eq!(prop - cont, 2, "Proporzionale deve avere 2 barre in più (3 settimane vs 1)");
+        assert_eq!(
+            seg - cont,
+            1,
+            "Segmentata deve avere 1 barra in più (2 tratti vs 1)"
+        );
+        assert_eq!(
+            prop - cont,
+            2,
+            "Proporzionale deve avere 2 barre in più (3 settimane vs 1)"
+        );
 
         for fmt in [BarFormat::Segmented, BarFormat::Proportional] {
             let bytes = build_pdf_project(&app, pid, &[dev], fmt).expect("PDF valido");
