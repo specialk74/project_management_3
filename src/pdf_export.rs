@@ -11,10 +11,10 @@ use chrono::{Datelike, NaiveDate};
 use printpdf::*;
 
 use crate::app::App;
-use crate::date_utils::dates::{days_to_local, local_to_days};
+use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
 use crate::dev_utils::dev::DevId;
 use crate::project_utils::project::ProjectId;
-use crate::single_dev_utils::single_dev::WeekId;
+use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 
 // Flag di rendering "mostra percentuali di avanzamento" nell'export, scelto
 // dall'utente nelle dialog. Thread-local come i flag tema/B-N di `ui_style`:
@@ -1312,6 +1312,362 @@ pub fn build_svg_project(
     Some(render_svg(&shapes))
 }
 
+// ── PDF andamento nel tempo (presunta/dichiarata per dev e progetto) ─────────
+
+// Area del grafico (percentuale nel tempo): sotto il titolo, sopra la legenda.
+const TREND_PLOT_TOP: f32 = 186.0;
+const TREND_PLOT_BOT: f32 = 46.0;
+
+/// Segmento tratteggiato di direzione qualsiasi (i tratti seguono la retta).
+fn dashed_seg(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    const DASH: f32 = 1.6;
+    const GAP: f32 = 1.3;
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-4 {
+        return Vec::new();
+    }
+    let (ux, uy) = (dx / len, dy / len);
+    let mut out = Vec::new();
+    let mut d = 0.0;
+    while d < len {
+        let e = (d + DASH).min(len);
+        out.extend(line(x0 + ux * d, y0 + uy * d, x0 + ux * e, y0 + uy * e, thick, color));
+        d += DASH + GAP;
+    }
+    out
+}
+
+/// Pallino pieno (cerchio approssimato con un ottagono) centrato in (x,y).
+fn dot(x: f32, y: f32, r: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    let n = 8;
+    let pts: Vec<(f32, f32)> = (0..n)
+        .map(|i| {
+            let a = std::f32::consts::TAU * i as f32 / n as f32;
+            (x + r * a.cos(), y + r * a.sin())
+        })
+        .collect();
+    vec![Shape::Poly { pts, color }]
+}
+
+/// Disegna i pallini su ogni vertice di una polilinea.
+fn dots(pts: &[(f32, f32)], r: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    pts.iter().flat_map(|&(x, y)| dot(x, y, r, color)).collect()
+}
+
+/// Polilinea continua (punti già in mm).
+fn polyline(pts: &[(f32, f32)], thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    let mut out = Vec::new();
+    for w in pts.windows(2) {
+        out.extend(line(w[0].0, w[0].1, w[1].0, w[1].1, thick, color));
+    }
+    out
+}
+
+/// Polilinea tratteggiata (punti già in mm).
+fn polyline_dashed(pts: &[(f32, f32)], thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    let mut out = Vec::new();
+    for w in pts.windows(2) {
+        out.extend(dashed_seg(w[0].0, w[0].1, w[1].0, w[1].1, thick, color));
+    }
+    out
+}
+
+/// Valore dichiarato "tenuto" alla settimana `w` (ultima voce con settimana ≤ w).
+fn declared_at(hist: &[DeclaredPoint], w: i32) -> u8 {
+    hist.iter()
+        .rev()
+        .find(|p| p.week.0 as i32 <= w)
+        .map_or(0, |p| p.pct)
+}
+
+/// Una pagina del PDF andamento per un progetto: linee presunta (continua) e
+/// dichiarata (tratteggiata) per ogni dev (colore GUI) + una coppia aggregata di
+/// progetto (nera). `None` se il progetto non ha dev con effort pianificato.
+fn trend_page_shapes(
+    app: &App,
+    proj: ProjectId,
+    name: &str,
+    dev_info: &DevInfo,
+    today: i32,
+    today_week: i32,
+    created: &str,
+) -> Option<Vec<Shape>> {
+    // Dev con pianificato > 0 (gli unici con presunta/dichiarata definite).
+    let mut devs: Vec<(&crate::single_dev_utils::single_dev::SingleDev, u64, (f32, f32, f32), String)> =
+        Vec::new();
+    for id in app.projects.get_dev_ids(proj) {
+        if let Some(sd) = app.projects.get_single_dev(proj, id) {
+            let planned = sd.planned_effort().0;
+            if planned == 0 {
+                continue;
+            }
+            let (dname, color) = dev_info
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| ("?".to_string(), BLACK));
+            devs.push((sd, planned as u64, color, dname));
+        }
+    }
+    if devs.is_empty() {
+        return None;
+    }
+    let total_planned: u64 = devs.iter().map(|d| d.1).sum();
+
+    // --- Asse dei tempi (X): copre dati + oggi + inizio/fine progetto ---------
+    // L'asse copre solo i dati (effort + dichiarazioni) e oggi: parte dal primo
+    // effort/dichiarazione in assoluto (non dall'inizio progetto) e non arriva alla
+    // fine progetto — la presunta va all'ultima settimana con effort (anche oltre
+    // oggi), la dichiarata a oggi.
+    let mut days: Vec<i32> = vec![today_week];
+    for (sd, _, _, _) in &devs {
+        for w in sd.effort_weeks() {
+            days.push(w.0 as i32);
+        }
+        for p in sd.declared_history() {
+            days.push(p.week.0 as i32);
+        }
+    }
+    let min_day = *days.iter().min().unwrap();
+    let max_day = *days.iter().max().unwrap();
+    let axis_start = local_to_days(&month_start(day_to_date(min_day)));
+    let axis_end = local_to_days(&add_months(month_start(day_to_date(max_day)), 1));
+    let span = (axis_end - axis_start).max(1) as f32;
+    let x_of = |d: i32| -> f32 {
+        (CHART_X0 + (d - axis_start) as f32 / span * (CHART_X1 - CHART_X0)).clamp(CHART_X0, CHART_X1)
+    };
+
+    // --- Asse Y (percentuale, auto 0..max arrotondato a multipli di 20) -------
+    let mut ymax = 100.0f32;
+    for (sd, planned, _, _) in &devs {
+        if let Some(last) = sd.effort_weeks().last() {
+            ymax = ymax.max(sd.effort_up_to(*last).0 as f32 * 100.0 / *planned as f32);
+        }
+    }
+    let agg_used_max: u64 = devs
+        .iter()
+        .map(|(sd, _, _, _)| sd.effort_up_to(WeekId(max_day as usize)).0 as u64)
+        .sum();
+    ymax = ymax.max(agg_used_max as f32 * 100.0 / total_planned as f32);
+    let mut y_top = (ymax / 20.0).ceil() * 20.0;
+    if (y_top - ymax).abs() < 0.01 {
+        y_top += 20.0; // margine sopra il massimo (la linea non tocca il bordo)
+    }
+    let y_of = |pct: f32| -> f32 { TREND_PLOT_BOT + (pct / y_top) * (TREND_PLOT_TOP - TREND_PLOT_BOT) };
+
+    // Punti presunta/dichiarata di un dev. La presunta parte dal PRIMO effort del
+    // dev stesso (non dall'inizio progetto né dal primo effort di altri dev): un
+    // punto per ogni settimana con effort, valore = effort cumulato / pianificato.
+    let dev_presumed = |sd: &crate::single_dev_utils::single_dev::SingleDev, planned: u64| -> Vec<(f32, f32)> {
+        sd.effort_weeks()
+            .iter()
+            .map(|w| {
+                let pct = sd.effort_up_to(*w).0 as f32 * 100.0 / planned as f32;
+                (x_of(w.0 as i32), y_of(pct))
+            })
+            .collect()
+    };
+    let dev_declared = |sd: &crate::single_dev_utils::single_dev::SingleDev| -> Vec<(f32, f32)> {
+        let hist = sd.declared_history();
+        let mut pts: Vec<(f32, f32)> = hist
+            .iter()
+            .map(|p| (x_of(p.week.0 as i32), y_of(p.pct as f32)))
+            .collect();
+        // La dichiarata si ferma a oggi: estende piatto l'ultimo valore.
+        if let Some(last) = hist.last() {
+            if (last.week.0 as i32) < today_week {
+                pts.push((x_of(today_week), y_of(last.pct as f32)));
+            }
+        }
+        pts
+    };
+
+    let mut shapes: Vec<Shape> = Vec::new();
+
+    // --- Titolo (tripletta + nome) --------------------------------------------
+    let tripletta = app.projects.get_tripletta(proj);
+    if !tripletta.is_empty() {
+        shapes.extend(text_left(X_LABEL, 200.0, &tripletta, 16.0, true, BLACK));
+    }
+    if !name.is_empty() {
+        let ty = if tripletta.is_empty() { 200.0 } else { 193.0 };
+        for l in wrap_multiline(name, 90).into_iter().take(2) {
+            shapes.extend(text_left(X_LABEL, ty, &l, 9.0, false, TEXT_GRAY));
+        }
+    }
+
+    // Legenda stili in alto a destra: continua = presunta, tratteggiata = dichiarata.
+    let kx = CHART_X1 - 46.0;
+    shapes.extend(line(kx, 200.5, kx + 8.0, 200.5, 0.9, BLACK));
+    shapes.extend(text_left(kx + 10.0, 199.5, "presunta", 7.0, false, TEXT_GRAY));
+    shapes.extend(dashed_seg(kx, 196.5, kx + 8.0, 196.5, 0.9, BLACK));
+    shapes.extend(text_left(kx + 10.0, 195.5, "dichiarata", 7.0, false, TEXT_GRAY));
+
+    // --- Griglia Y (percentuali) ----------------------------------------------
+    let mut pct = 0.0;
+    while pct <= y_top + 0.1 {
+        let yy = y_of(pct);
+        // Il 100% (budget/lavoro completo) è evidenziato con una riga rossa.
+        let is_full = (pct - 100.0).abs() < 0.01;
+        let (col, thick) = if is_full { (RED, 0.5) } else { (GRAY_GUIDE, 0.2) };
+        shapes.extend(line(CHART_X0, yy, CHART_X1, yy, thick, col));
+        let lbl_col = if is_full { RED } else { TEXT_GRAY };
+        shapes.extend(text_right(CHART_X0 - 1.5, yy - 1.0, &format!("{}%", pct as i32), 6.5, false, lbl_col));
+        pct += 20.0;
+    }
+
+    // --- Griglia X (mesi) + etichette -----------------------------------------
+    let mut m = month_start(day_to_date(axis_start));
+    let mut first = true;
+    loop {
+        let mx = x_of(local_to_days(&m));
+        shapes.extend(line(mx, TREND_PLOT_BOT, mx, TREND_PLOT_TOP, 0.2, GRAY_GUIDE));
+        let mname = MONTHS_IT[(m.month() - 1) as usize];
+        let lbl = if first || m.month() == 1 {
+            format!("{} {:02}", mname, m.year() % 100)
+        } else {
+            mname.to_string()
+        };
+        shapes.extend(text_left(mx + 0.5, TREND_PLOT_BOT - 4.0, &lbl, 6.5, false, TEXT_GRAY));
+        first = false;
+        let next = add_months(m, 1);
+        if local_to_days(&next) >= axis_end {
+            break;
+        }
+        m = next;
+    }
+
+    // Bordi assi.
+    shapes.extend(line(CHART_X0, TREND_PLOT_BOT, CHART_X0, TREND_PLOT_TOP, 0.4, TEXT_GRAY));
+    shapes.extend(line(CHART_X0, TREND_PLOT_BOT, CHART_X1, TREND_PLOT_BOT, 0.4, TEXT_GRAY));
+
+    // Linea verticale "oggi".
+    if today >= axis_start && today <= axis_end {
+        let xt = x_of(today);
+        shapes.extend(line(xt, TREND_PLOT_BOT, xt, TREND_PLOT_TOP, 0.5, RED));
+        shapes.extend(text_center(xt, TREND_PLOT_TOP + 1.0, "oggi", 6.5, false, RED));
+    }
+
+    // --- Linee dei dev (presunta continua, dichiarata tratteggiata) -----------
+    // Con un pallino su ogni vertice, per vedere i punti che costruiscono il grafico.
+    for (sd, planned, color, _) in &devs {
+        let pres = dev_presumed(sd, *planned);
+        shapes.extend(polyline(&pres, 0.8, *color));
+        shapes.extend(dots(&pres, 0.6, *color));
+        let decl = dev_declared(sd);
+        shapes.extend(polyline_dashed(&decl, 0.8, *color));
+        shapes.extend(dots(&decl, 0.6, *color));
+    }
+
+    // --- Linee aggregate di progetto (nere, più spesse) -----------------------
+    let mut eweeks: Vec<i32> = devs
+        .iter()
+        .flat_map(|(sd, _, _, _)| sd.effort_weeks().into_iter().map(|w| w.0 as i32))
+        .collect();
+    eweeks.sort();
+    eweeks.dedup();
+    if !eweeks.is_empty() {
+        // La presunta di progetto parte dal primo effort in assoluto (eweeks[0]).
+        let pts: Vec<(f32, f32)> = eweeks
+            .iter()
+            .map(|w| {
+                let used: u64 = devs
+                    .iter()
+                    .map(|(sd, _, _, _)| sd.effort_up_to(WeekId(*w as usize)).0 as u64)
+                    .sum();
+                (x_of(*w), y_of(used as f32 * 100.0 / total_planned as f32))
+            })
+            .collect();
+        shapes.extend(polyline(&pts, 1.4, BLACK));
+        shapes.extend(dots(&pts, 0.85, BLACK));
+    }
+    let mut hweeks: Vec<i32> = devs
+        .iter()
+        .flat_map(|(sd, _, _, _)| sd.declared_history().iter().map(|p| p.week.0 as i32))
+        .collect();
+    hweeks.sort();
+    hweeks.dedup();
+    if let Some(&last_w) = hweeks.last() {
+        let agg_decl = |w: i32| -> f32 {
+            let num: u64 = devs
+                .iter()
+                .map(|(sd, planned, _, _)| *planned * declared_at(sd.declared_history(), w) as u64)
+                .sum();
+            num as f32 / total_planned as f32
+        };
+        let mut pts: Vec<(f32, f32)> = hweeks.iter().map(|w| (x_of(*w), y_of(agg_decl(*w)))).collect();
+        if last_w < today_week {
+            pts.push((x_of(today_week), y_of(agg_decl(last_w))));
+        }
+        shapes.extend(polyline_dashed(&pts, 1.4, BLACK));
+        shapes.extend(dots(&pts, 0.85, BLACK));
+    }
+
+    // --- Legenda colori dev (in basso, sopra il footer) -----------------------
+    let mut lx = X_LABEL;
+    let mut ly = TREND_PLOT_BOT - 10.0;
+    let legend: Vec<(&str, (f32, f32, f32))> = devs
+        .iter()
+        .map(|(_, _, c, n)| (n.as_str(), *c))
+        .chain(std::iter::once(("Progetto", BLACK)))
+        .collect();
+    for (label, color) in legend {
+        let entry_w = 6.0 + 1.5 + text_w_mm(label, 7.0) + 5.0;
+        if lx + entry_w > CHART_X1 {
+            lx = X_LABEL;
+            ly -= 4.2;
+        }
+        shapes.extend(line(lx, ly, lx + 6.0, ly, 1.4, color));
+        shapes.extend(text_left(lx + 7.5, ly - 1.1, label, 7.0, false, BLACK));
+        lx += entry_w;
+    }
+
+    // --- Footer (banda grigia + data, come gli altri export) ------------------
+    shapes.extend(rect_fill(X_LABEL, FOOTER_BOT, CHART_X1, FOOTER_TOP, GRAY_FOOTER));
+    shapes.extend(text_center(
+        (X_LABEL + CHART_X1) / 2.0,
+        (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+        created,
+        8.0,
+        false,
+        TEXT_GRAY,
+    ));
+
+    Some(shapes)
+}
+
+/// PDF dell'andamento nel tempo: una pagina per progetto (con dati), linee
+/// presunta/dichiarata per dev e progetto. `None` se nessun progetto ha dati.
+pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
+    let mut doc = PdfDocument::new("Andamento");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let now = chrono::Local::now().date_naive();
+    let today = local_to_days(&now);
+    let today_week = local_to_days(&primo_giorno_settimana_corrente(&now));
+    let dev_info = dev_info_map(app);
+
+    let mut pages = Vec::new();
+    for &id in projects {
+        let name = project_name(app, id);
+        if let Some(shapes) = trend_page_shapes(app, id, &name, &dev_info, today, today_week, &created) {
+            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+        }
+    }
+    if pages.is_empty() {
+        return None;
+    }
+    Some(
+        doc.with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut Vec::new()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1506,6 +1862,30 @@ mod tests {
             "col flag presunta/attuale tra parentesi sotto Today"
         );
         set_show_pct(false);
+    }
+
+    #[test]
+    fn build_trend_pdf_produces_valid_pdf_and_none_without_planned() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let a = app.devs.add("Frontend");
+        let b = app.devs.add("Backend");
+        app.projects.add_dev_effort(pid, a, Effort(100));
+        app.projects.add_dev_effort(pid, b, Effort(50));
+        app.projects.add_effort(pid, a, WeekId(20007), WorkerId(0), Effort(30));
+        app.projects.add_effort(pid, a, WeekId(20014), WorkerId(0), Effort(20));
+        app.projects.add_effort(pid, b, WeekId(20007), WorkerId(0), Effort(25));
+        app.projects.set_dev_declared_pct(pid, a, WeekId(20007), 20);
+        app.projects.set_dev_declared_pct(pid, a, WeekId(20014), 45);
+        app.projects.set_dev_declared_pct(pid, b, WeekId(20007), 30);
+
+        let bytes = build_trend_pdf(&app, &[pid]).expect("progetto con dati → Some");
+        assert!(bytes.starts_with(b"%PDF"));
+
+        // Progetto senza dev con pianificato → nessuna pagina → None.
+        let empty = app.projects.add("Vuoto", Some("ZZZ"), Some(WeekId(20000)));
+        assert!(build_trend_pdf(&app, &[empty]).is_none());
     }
 
     #[test]

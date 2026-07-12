@@ -147,7 +147,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 ### Toolbar menus (in `toolbar`)
 
-- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF), Minuta… (esporta note progetti in Markdown), Esci.
+- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
 - **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F` — elenca solo i worker con `Worker.show_in_find` true, default true; la visibilità nel footer non conta), Milestone… (manager), Closed…
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
@@ -271,6 +271,23 @@ the footer date.
   with an empty dev list.
 - `build_svg_project(app, proj, ordered_devs, fmt)` — same chart as the single-project PDF
   but chart-only (no tripletta/description/date) as an SVG string.
+- **Trend PDF** (`build_trend_pdf(app, &[ProjectId])`, **File ▸ Andamento…** →
+  `Action::ExportTrend` on `body_projects`): a **line chart of % over time**, **one page
+  per project** (with a plottable dev). `trend_page_shapes` draws, for each dev with
+  planned > 0 (color = GUI dev bg color): **presunta** as a solid polyline (weekly
+  cumulative `effort_up_to(w)/planned`, **from that dev's own first effort week** — no
+  0-anchor before it — to the last effort week, **can go past today**) and **dichiarata**
+  as a dashed polyline (from `declared_history`, **held to the current week and no
+  further**), plus a **black aggregate project pair** (planned-weighted; presunta starts
+  at the **first effort in absolute**). X axis = months (only data weeks + today, snapped;
+  project start **and** end excluded, so the chart starts at the first data point), Y axis
+  = **auto 0..max** (rounded to a multiple of 20 with headroom, so over-budget >100% is
+  visible). Includes title (tripletta+name), a solid/dashed style key, a dev-colour
+  legend, a red **"oggi"** line, a **red horizontal 100% reference line** (the rest of
+  the Y grid is grey, every 20%), and the same grey footer bar; **no milestone flags**.
+  Every polyline **vertex is marked with a dot** (`dot`/`dots` helpers) so the exact
+  data points that build each line are visible. Reusable drawing helpers:
+  `dashed_seg`/`polyline`/`polyline_dashed`/`dot`/`dots`, `declared_at`.
 - Triggering (in `Action::ExportPdf`): the visible set is `body_projects(app,
   view)` (enabled + current Vista mode). If exactly **one** project is visible
   the UI opens `pdf_export_window` (Select All, drag-to-

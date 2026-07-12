@@ -140,8 +140,11 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 ### File
 - **Salva** — salva il file `.ron` corrente (scorciatoia `Cmd/Ctrl+S`).
 - **Apri…** — apre un file `.ron` (selettore nativo).
-- **Esporta…** — esporta in PDF (vedi §16; il comportamento cambia se è
+- **Esporta…** — esporta il PDF Gantt (vedi §16; il comportamento cambia se è
   visibile un solo progetto).
+- **Andamento…** — esporta un PDF con l'**andamento nel tempo** delle percentuali
+  presunta e dichiarata (vedi §16, «Andamento nel tempo»), una pagina per progetto
+  visibile.
 - **Minuta…** — genera un file Markdown con le note dei progetti selezionati.
   Apre una finestra dove scegli i **progetti non chiusi** da includere e se
   riportare **tutte le note** o **solo la settimana corrente**. La casella
@@ -611,6 +614,27 @@ ricade nell'intervallo del grafico. Se la casella è disattivata
 (impostazione predefinita) le percentuali non vengono stampate. La scelta vale sia
 per il PDF sia per l'SVG ed è ricordata tra un export e l'altro (non è salvata sul
 file).
+
+### Andamento nel tempo (PDF)
+**File ▸ Andamento…** esporta un PDF con l'**andamento nel tempo** delle percentuali
+di avanzamento, **una pagina per progetto** visibile. In ogni pagina, per ciascun dev
+(nel **colore della griglia**) ci sono due linee:
+
+- **presunta** (linea **continua**): la % usata sul pianificato settimana per settimana;
+  parte dal **primo effort di quel dev** (non prima) e prosegue fino all'**ultima
+  settimana con effort**, quindi **può andare oltre oggi**;
+- **dichiarata** (linea **tratteggiata**): l'andamento delle percentuali dichiarate
+  dallo sviluppatore; si **ferma alla settimana corrente**.
+
+Ogni **vertice** delle linee è segnato da un **pallino**, così si vedono i punti
+esatti con cui è costruito il grafico. C'è anche una coppia di linee **nere** per
+l'andamento **aggregato di progetto** (che parte dal **primo effort in assoluto**). L'asse
+verticale si adatta al valore massimo (se una presunta supera il 100% lo sforamento è
+visibile); una **riga rossa orizzontale** segna il **100%** e una linea rossa verticale
+segna **«oggi»**. In alto la tripletta+nome del
+progetto e una legenda dei colori; in basso la solita banda grigia con la data. Non ci
+sono le bandierine delle milestone. Un progetto senza dev con effort pianificato non
+produce pagina.
 
 ---
 

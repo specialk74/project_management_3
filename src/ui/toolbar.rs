@@ -43,6 +43,14 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions
                 actions.push(Action::ExportPdf);
                 ui.close_menu();
             }
+            if ui
+                .button("Andamento…")
+                .on_hover_text("PDF dell'andamento nel tempo di % presunta e dichiarata, una pagina per progetto")
+                .clicked()
+            {
+                actions.push(Action::ExportTrend);
+                ui.close_menu();
+            }
             if ui.button("Minuta…").clicked() {
                 // Apre la dialog con i progetti del corpo centrale (abilitati +
                 // modalità Vista corrente) preselezionati.

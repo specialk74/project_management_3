@@ -492,6 +492,7 @@ pub(crate) enum Action {
         proj: ProjectId,
     },
     ExportPdf,
+    ExportTrend,
     ExportPdfSelected {
         projects: Vec<ProjectId>,
     },
@@ -1366,6 +1367,15 @@ impl PjmApp {
                         let entries = eligible.into_iter().map(|id| (id, true)).collect();
                         self.ui.pdf_multi_export = Some(PdfMultiExport { entries });
                     }
+                }
+            }
+            Action::ExportTrend => {
+                // PDF andamento nel tempo: una pagina per ogni progetto visibile
+                // (abilitato + modalità Vista corrente) con dati di avanzamento.
+                let visible = body_projects(&self.app, self.ui.project_view);
+                match crate::pdf_export::build_trend_pdf(&self.app, &visible) {
+                    Some(bytes) => save_pdf_dialog(bytes, "andamento.pdf"),
+                    None => eprintln!("Nessun progetto con dati di avanzamento: PDF non creato."),
                 }
             }
             Action::ExportPdfSelected { projects } => {
