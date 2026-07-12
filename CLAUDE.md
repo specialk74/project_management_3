@@ -168,6 +168,22 @@ category/worker-max/etc.).
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
 - **Notes** (yellow triangle indicator): right-click a non-empty cell → effort note;
   right-click a dev name → **Nota Dev…**; right-click a footer worker cell → **Note**.
+- **Project progress %** — two figures, both planned-effort-weighted and both `None`
+  (⇒ `—`) when there's no planned effort:
+  - **actual/declared** (`Project::progress_pct` → `Projects::project_progress_pct`):
+    `Σ(planned_i · declared_i) / Σ(planned_i)` (earned value).
+  - **presumed** (`Project::presumed_progress_pct(today)` →
+    `Projects::project_presumed_progress_pct`): budget consumed so far =
+    `Σ(effort_up_to(today)_i) / Σ(planned_i)` — can exceed 100 (over-budget), so it's
+    `Option<u32>`. `today` is `current_week_id()` in the grid, `WeekId(today)` in export.
+  Shown together as **`presunta%/attuale%`**: an **«Avanz.: PP%/AA%»** row at the
+  bottom of the project info header in `draw_project_info` (non-compact,
+  non-worker-filter). Adds one info row, so `project_layout`'s `extra_rows` is **5** in
+  normal mode. Both percentages **and** the value shown by the grid come from a single
+  source, `Project::progress_breakdown(today) -> Option<(used, planned, weighted_declared)>`
+  (`progress_pct`/`presumed_progress_pct` are thin wrappers over it); the grid's hover
+  tooltip prints the **actual numbers** behind each figure (`usato/pianificato`,
+  `dichiarate≈…/pianificato`).
 - **Dev progress %** (under the dev name, non-compact only, in `draw_left_devs`): two
   small figures — a **presumed** % (read-only) = effort used up to today ÷ planned
   (`SingleDev::effort_up_to(current_week_id())` / `planned_effort()`; red when >100%,
@@ -214,6 +230,10 @@ the footer date.
   same 7.0 date font)** — `Row.presumed_pct` / `Row.declared_pct`, computed in
   `project_shapes` from `today` (`-` when planned=0). **No-effort rows omit it** (they
   `continue` before the date label), so only devs with effort show percentages.
+  The same flag also prints the **overall project progress under the "Today" marker**:
+  **"Today" in bold** with `(presunta%/attuale%)` on the line below it, at the flag-date
+  font (7.0); `progress_pct`+`presumed_pct` are passed into `page_shapes`. Shown only
+  when today is within the chart axis.
   (In the on-screen grid the two under-name percentages instead use `cell_font`, the
   effort/residuo size — a separate choice from the PDF's date-font.)
   The export dialogs (`pdf_export_window`, `pdf_multi_export_window`) expose a

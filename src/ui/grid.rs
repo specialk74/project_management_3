@@ -97,8 +97,8 @@ pub(crate) fn project_layout(
     merged: bool,
 ) -> Vec<ProjLayout> {
     // Righe info oltre al nome: compatta = solo tripletta; normale = tripletta +
-    // categoria + inizio + fine.
-    let extra_rows = if compact { 1.0 } else { 4.0 };
+    // categoria + inizio + fine + avanzamento.
+    let extra_rows = if compact { 1.0 } else { 5.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
         // Visibilità (filtro «Progetti…») + modalità Vista (Solo aperti / Solo
@@ -1342,6 +1342,42 @@ pub(crate) fn draw_project_info(
         });
     }
     err.on_hover_text("Tasto destro: modifica deadline");
+    y += ROW_H;
+
+    // Avanzamento complessivo del progetto nel formato "presunta%/attuale%" — la
+    // presunta è l'effort usato fino a oggi sul pianificato, l'attuale la media
+    // delle % dichiarate pesata sul pianificato. Valore e numeri del tooltip
+    // vengono dalla stessa breakdown. "—" se non c'è alcun pianificato.
+    let (prog_txt, prog_tip) =
+        match app.projects.project_progress_breakdown(proj, current_week_id()) {
+            Some((used, planned, wdecl)) => {
+                let pres = (used * 100 + planned / 2) / planned; // presunta
+                let act = (wdecl + planned / 2) / planned; // attuale (≤100)
+                let done = (wdecl + 50) / 100; // ore "dichiarate completate" (≈)
+                (
+                    format!("Avanz.: {pres}%/{act}%"),
+                    format!(
+                        "Presunta {pres}% = usato {used}h / pianificato {planned}h\n\
+                         Attuale {act}% = dichiarate ≈{done}h / pianificato {planned}h\n\
+                         (pesate sull'effort pianificato di ogni dev)"
+                    ),
+                )
+            }
+            None => (
+                "Avanz.: —".to_string(),
+                "Nessun effort pianificato: avanzamento non calcolabile".to_string(),
+            ),
+        };
+    let pr = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
+    ui.painter().text(
+        pr.center(),
+        Align2::CENTER_CENTER,
+        prog_txt,
+        mono(FONT_SIZE - 2.0),
+        text_dim(),
+    );
+    ui.interact(pr, egui::Id::new(("prog", proj.0)), Sense::hover())
+        .on_hover_text(prog_tip);
 }
 
 pub(crate) fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &mut UiState) {

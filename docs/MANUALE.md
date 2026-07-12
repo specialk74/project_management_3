@@ -122,7 +122,8 @@ Dall'alto verso il basso:
 2. **Header**: le date delle settimane (una colonna per settimana).
 3. **Corpo**, diviso in due colonne sincronizzate verticalmente:
    - **Colonna sinistra**: per ogni progetto le info (tripletta, categoria, nome,
-     inizio, fine) e la striscia dei dev con nome, effort pianificato e residuo.
+     inizio, fine, avanzamento) e la striscia dei dev con nome, effort pianificato
+     e residuo.
    - **Griglia (destra)**: la matrice settimane × (dev/worker) dove si inserisce
      l'effort.
 4. **Footer**: in basso, i totali e il controllo di saturazione dei worker.
@@ -209,6 +210,19 @@ tripletta, nome, inizio, fine, categoria e dev.
 - **Inizio** e **Fine**: date del progetto (nascoste in vista compatta). **Tasto
   destro** su ciascuna riga per modificarle. L'inizio tinge la sua colonna di
   azzurro, la fine (deadline) di verde.
+- **Avanz.** (avanzamento complessivo, nascosto in vista compatta): due percentuali
+  dell'intero progetto nel formato **`presunta%/attuale%`**, entrambe pesate
+  sull'effort pianificato (un dev con molte ore incide più di uno con poche):
+  - **presunta** = effort fornito fino a oggi / pianificato totale
+    (`Σ(usato_fino_a_oggi) / Σ(pianificato)`): la quota di budget consumata finora;
+    può superare il 100% se si sta sforando.
+  - **attuale** = media delle percentuali **dichiarate** dai dev pesata sul
+    pianificato (`Σ(pianificato × dichiarata) / Σ(pianificato)`).
+
+  Contano solo i dev con pianificato > 0; mostra `—` se il progetto non ha alcun
+  effort pianificato. Passando il **mouse sopra la riga** appare un tooltip con il
+  **calcolo e i numeri** che generano le due percentuali (es. «Presunta 60% = usato
+  120h / pianificato 200h», «Attuale 65% = dichiarate ≈130h / pianificato 200h»).
 
 ### Riordinare i progetti
 Sulla riga della tripletta, a destra, i pulsanti **▲ / ▼** spostano il progetto
@@ -586,7 +600,11 @@ In tutte le finestre di export c'è la casella **«Includi percentuali di avanza
 0) compaiono **a destra, accanto all'etichetta delle date** a fine barra, con lo
 stesso font delle date. Compaiono
 **solo per i dev con effort**: un dev senza effort
-(riga sottile) non mostra alcuna percentuale. Se la casella è disattivata
+(riga sottile) non mostra alcuna percentuale. Con la stessa casella attiva viene
+stampato anche l'**avanzamento complessivo del progetto sotto il marker «Today»**:
+«Today» in **grassetto** e, sulla riga sotto, le percentuali tra parentesi
+`(presunta%/attuale%)` (stesso font della data delle bandierine), quando «oggi»
+ricade nell'intervallo del grafico. Se la casella è disattivata
 (impostazione predefinita) le percentuali non vengono stampate. La scelta vale sia
 per il PDF sia per l'SVG ed è ricordata tra un export e l'altro (non è salvata sul
 file).

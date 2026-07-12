@@ -153,6 +153,48 @@ impl Project {
         self.dev_id.get_mut(&id_dev).unwrap().set_declared_pct(pct);
     }
 
+    /// Somme (sui dev con pianificato > 0) che generano le percentuali di
+    /// avanzamento, così i valori mostrati e i numeri del tooltip vengono da
+    /// un'unica fonte: `(usato_fino_a_today, pianificato, Σ pianificato·dichiarata)`.
+    /// `None` se non c'è alcun pianificato.
+    pub fn progress_breakdown(&self, today: WeekId) -> Option<(u64, u64, u64)> {
+        let mut used: u64 = 0; // Σ effort usato fino a today
+        let mut planned: u64 = 0; // Σ pianificato
+        let mut weighted_declared: u64 = 0; // Σ pianificato · dichiarata
+        for sd in self.dev_id.values() {
+            let p = sd.planned_effort().0 as u64;
+            if p == 0 {
+                continue;
+            }
+            used += sd.effort_up_to(today).0 as u64;
+            planned += p;
+            weighted_declared += p * sd.declared_pct() as u64;
+        }
+        (planned != 0).then_some((used, planned, weighted_declared))
+    }
+
+    /// Avanzamento complessivo del progetto: media delle percentuali dichiarate
+    /// dai dev, pesata sull'effort pianificato di ciascuno (earned value):
+    /// `Σ(pianificato_i · dichiarata_i) / Σ(pianificato_i)`. Considera solo i dev
+    /// con pianificato > 0 (gli unici con % dichiarata). `None` se non c'è alcun
+    /// pianificato, cioè nessun dato su cui misurare l'avanzamento.
+    pub fn progress_pct(&self) -> Option<u8> {
+        // La parte dichiarata non dipende da `today`: qualunque valore va bene.
+        self.progress_breakdown(WeekId(0))
+            .map(|(_, planned, wdecl)| ((wdecl + planned / 2) / planned) as u8)
+    }
+
+    /// Avanzamento "presunto" del progetto in base all'effort fornito fino a
+    /// `today`: `Σ(effort_usato_fino_a_today) / Σ(pianificato)`. È la quota di
+    /// budget consumata finora (può superare 100 in caso di sforamento).
+    /// Considera solo i dev con pianificato > 0. `None` se non c'è alcun
+    /// pianificato (stesso criterio di `progress_pct`, così le due % ci sono
+    /// sempre insieme o nessuna delle due).
+    pub fn presumed_progress_pct(&self, today: WeekId) -> Option<u32> {
+        self.progress_breakdown(today)
+            .map(|(used, planned, _)| ((used * 100 + planned / 2) / planned) as u32)
+    }
+
     pub fn set_dev_note(&mut self, id_dev: DevId, note: &str) {
         if let Some(sd) = self.dev_id.get_mut(&id_dev) {
             sd.set_dev_note(note);
@@ -674,5 +716,43 @@ mod tests {
         p.add_milestone(m, WeekId(W1));
         p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[], OverflowResolution::None);
         assert_eq!(p.list_milestones(), vec![(m, WeekId(W1))]);
+    }
+
+    #[test]
+    fn progress_pct_is_planned_weighted_average_of_declared() {
+        let mut p = Project::new("t");
+        // dev A: 200h @ 60%, dev B: 40h @ 90% → (12000+3600)/240 = 65%.
+        p.add_dev_effort(DevId(1), Effort(200));
+        p.set_dev_declared_pct(DevId(1), 60);
+        p.add_dev_effort(DevId(2), Effort(40));
+        p.set_dev_declared_pct(DevId(2), 90);
+        assert_eq!(p.progress_pct(), Some(65));
+
+        // Un dev con pianificato 0 non pesa (né compare la sua dichiarata).
+        p.add_dev_effort(DevId(3), Effort(0));
+        p.set_dev_declared_pct(DevId(3), 100);
+        assert_eq!(p.progress_pct(), Some(65));
+
+        // Nessun pianificato → nessun dato su cui misurare.
+        assert_eq!(Project::new("vuoto").progress_pct(), None);
+    }
+
+    #[test]
+    fn presumed_progress_pct_is_used_effort_over_planned_up_to_today() {
+        let mut p = Project::new("t");
+        let (a, b) = (DevId(1), DevId(2));
+        p.add_dev_effort(a, Effort(100));
+        p.add_dev_effort(b, Effort(100));
+        // A: 30h in W0 (passata) + 40h in W2 (futura); B: 50h in W0.
+        p.add_effort(a, WeekId(W0), WorkerId(1), Effort(30));
+        p.add_effort(a, WeekId(W2), WorkerId(1), Effort(40));
+        p.add_effort(b, WeekId(W0), WorkerId(1), Effort(50));
+
+        // Fino a W1: usato = 30 (A) + 50 (B) = 80 su 200 pianificate = 40%.
+        assert_eq!(p.presumed_progress_pct(WeekId(W1)), Some(40));
+        // Fino a W2: si aggiungono i 40h di A → 120/200 = 60%.
+        assert_eq!(p.presumed_progress_pct(WeekId(W2)), Some(60));
+        // Nessun pianificato → None.
+        assert_eq!(Project::new("v").presumed_progress_pct(WeekId(W2)), None);
     }
 }

@@ -311,6 +311,27 @@ impl Projects {
         }
     }
 
+    /// Avanzamento complessivo del progetto (earned value). Vedi
+    /// `Project::progress_pct`. `None` se il progetto non esiste o non ha
+    /// alcun effort pianificato.
+    pub fn project_progress_pct(&self, id: ProjectId) -> Option<u8> {
+        self.projects.get(&id).and_then(|p| p.progress_pct())
+    }
+
+    /// Avanzamento "presunto" del progetto (budget consumato fino a `today`).
+    /// Vedi `Project::presumed_progress_pct`.
+    pub fn project_presumed_progress_pct(&self, id: ProjectId, today: WeekId) -> Option<u32> {
+        self.projects
+            .get(&id)
+            .and_then(|p| p.presumed_progress_pct(today))
+    }
+
+    /// Numeri che compongono le percentuali di avanzamento (per il tooltip):
+    /// `(usato_fino_a_today, pianificato, Σ pianificato·dichiarata)`.
+    pub fn project_progress_breakdown(&self, id: ProjectId, today: WeekId) -> Option<(u64, u64, u64)> {
+        self.projects.get(&id).and_then(|p| p.progress_breakdown(today))
+    }
+
     pub fn set_project_info(&mut self, project_id: ProjectId, info: &str) {
         if let Some(p) = self.projects.get_mut(&project_id) {
             p.set_info(info);

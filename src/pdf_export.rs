@@ -644,6 +644,8 @@ fn page_shapes(
     created: &str,
     chart_only: bool,
     fmt: BarFormat,
+    progress_pct: Option<u8>,
+    presumed_pct: Option<u32>,
 ) -> Vec<Shape> {
     let mut shapes: Vec<Shape> = Vec::new();
 
@@ -770,7 +772,23 @@ fn page_shapes(
             ],
             RED,
         ));
-        shapes.extend(text_center(xt, AXIS_TOP + 5.0, "Today", 8.0, false, BLACK));
+        // "Today" in grassetto; sotto, solo col toggle attivo, l'avanzamento del
+        // progetto "(presunta%/attuale%)" con lo stesso font della data delle
+        // bandierine (7.0).
+        match (show_pct(), presumed_pct, progress_pct) {
+            (true, Some(pres), Some(act)) => {
+                shapes.extend(text_center(xt, AXIS_TOP + 8.5, "Today", 8.0, true, BLACK));
+                shapes.extend(text_center(
+                    xt,
+                    AXIS_TOP + 5.0,
+                    &format!("({pres}%/{act}%)"),
+                    7.0,
+                    false,
+                    BLACK,
+                ));
+            }
+            _ => shapes.extend(text_center(xt, AXIS_TOP + 5.0, "Today", 8.0, true, BLACK)),
+        }
     }
 
     // --- Milestone come bandierine -----------------------------------------
@@ -1135,8 +1153,13 @@ fn project_shapes(
     }
 
     let tripletta = app.projects.get_tripletta(proj);
+    let progress_pct = app.projects.project_progress_pct(proj);
+    let presumed_pct = app
+        .projects
+        .project_presumed_progress_pct(proj, WeekId(today as usize));
     Some(page_shapes(
         &tripletta, name, proj_start, proj_end, &rows, flags, today, created, chart_only, fmt,
+        progress_pct, presumed_pct,
     ))
 }
 
@@ -1452,6 +1475,36 @@ mod tests {
         let svg = build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous).unwrap();
         assert!(svg.contains("80%/60%"), "con flag deve comparire 80%/60%");
         assert!(!svg.contains("33%"), "il dev senza effort non mostra la %");
+        set_show_pct(false);
+    }
+
+    #[test]
+    fn show_pct_adds_project_progress_next_to_today() {
+        // Progetto che contiene "oggi" nell'asse, così il marker Today è disegnato.
+        let base = local_to_days(&chrono::Local::now().date_naive());
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId((base - 28) as usize)));
+        app.projects.set_project_end_week(pid, Some(WeekId((base + 28) as usize)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects.add_dev_effort(pid, dev, Effort(100)); // pianificato
+        app.projects
+            .add_effort(pid, dev, WeekId((base - 7) as usize), WorkerId(0), Effort(50));
+        app.projects.set_dev_declared_pct(pid, dev, 70);
+        // presunta = usato 50 / pianificato 100 = 50%; attuale (dichiarata) = 70%.
+
+        set_show_pct(false);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("Today"), "oggi è nell'asse: Today deve comparire");
+        assert!(!svg.contains("(50%/70%)"), "senza flag niente % sotto Today");
+
+        set_show_pct(true);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("Today"), "Today resta presente");
+        assert!(
+            svg.contains("(50%/70%)"),
+            "col flag presunta/attuale tra parentesi sotto Today"
+        );
         set_show_pct(false);
     }
 
