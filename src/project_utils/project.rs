@@ -148,9 +148,14 @@ impl Project {
         self.dev_id.get_mut(&id_dev).unwrap().set_effort(effort);
     }
 
-    pub fn set_dev_declared_pct(&mut self, id_dev: DevId, pct: u8) {
+    /// Registra la % dichiarata dal dev per la settimana `week` (storico).
+    /// Ritorna `true` se lo storico è cambiato. Vedi `SingleDev::set_declared_pct`.
+    pub fn set_dev_declared_pct(&mut self, id_dev: DevId, week: WeekId, pct: u8) -> bool {
         self.add_dev(id_dev);
-        self.dev_id.get_mut(&id_dev).unwrap().set_declared_pct(pct);
+        self.dev_id
+            .get_mut(&id_dev)
+            .unwrap()
+            .set_declared_pct(week, pct)
     }
 
     /// Somme (sui dev con pianificato > 0) che generano le percentuali di
@@ -723,14 +728,14 @@ mod tests {
         let mut p = Project::new("t");
         // dev A: 200h @ 60%, dev B: 40h @ 90% → (12000+3600)/240 = 65%.
         p.add_dev_effort(DevId(1), Effort(200));
-        p.set_dev_declared_pct(DevId(1), 60);
+        p.set_dev_declared_pct(DevId(1), WeekId(W0), 60);
         p.add_dev_effort(DevId(2), Effort(40));
-        p.set_dev_declared_pct(DevId(2), 90);
+        p.set_dev_declared_pct(DevId(2), WeekId(W0), 90);
         assert_eq!(p.progress_pct(), Some(65));
 
         // Un dev con pianificato 0 non pesa (né compare la sua dichiarata).
         p.add_dev_effort(DevId(3), Effort(0));
-        p.set_dev_declared_pct(DevId(3), 100);
+        p.set_dev_declared_pct(DevId(3), WeekId(W0), 100);
         assert_eq!(p.progress_pct(), Some(65));
 
         // Nessun pianificato → nessun dato su cui misurare.

@@ -305,10 +305,18 @@ impl Projects {
             .add_dev_effort(id_dev, effort);
     }
 
-    pub fn set_dev_declared_pct(&mut self, id_project: ProjectId, id_dev: DevId, pct: u8) {
-        if let Some(p) = self.projects.get_mut(&id_project) {
-            p.set_dev_declared_pct(id_dev, pct);
-        }
+    /// Registra la % dichiarata dal dev per la settimana `week` (storico).
+    /// Ritorna `true` se lo storico è cambiato.
+    pub fn set_dev_declared_pct(
+        &mut self,
+        id_project: ProjectId,
+        id_dev: DevId,
+        week: WeekId,
+        pct: u8,
+    ) -> bool {
+        self.projects
+            .get_mut(&id_project)
+            .is_some_and(|p| p.set_dev_declared_pct(id_dev, week, pct))
     }
 
     /// Avanzamento complessivo del progetto (earned value). Vedi

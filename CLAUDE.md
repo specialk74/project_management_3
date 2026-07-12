@@ -84,7 +84,8 @@ App (workers.ron)
             ├── effort : Effort              — planned hours
             ├── note   : Option<String>      — dev-level note
             ├── hide_effort : bool
-            ├── declared_pct : u8            — dev-declared progress % (0..=100, default 0)
+            ├── declared_history : Vec<DeclaredPoint{week,pct}>  — dev-declared progress %
+            │                       over time (one entry per week, latest = current value)
             └── weeks  : HashMap<WeekId, SingleEffortWeek>
                 └── worker_id : HashMap<WorkerId, SingleEffort>  { effort, note }
 ```
@@ -192,7 +193,15 @@ category/worker-max/etc.).
   `UiState.declared_buffers`). The declared field's background is **red when declared <
   presumed, green when ≥**; when the **planned effort is 0 the declared field is hidden
   and not editable** (gated on `used_pct.is_some()`). Both are optionally drawn in
-  PDF/SVG (see export toggle below).
+  PDF/SVG (see export toggle below). The declared value is stored as a **dated history**
+  `SingleDev.declared_history: Vec<DeclaredPoint{week, pct}>`: `set_declared_pct(week,
+  pct)` records it for the **current week** (`current_week_id()`) — one entry per week
+  (same week overwrites), no-ops when unchanged (returns `bool`, so the handler only
+  `mark_changed()`s on a real change); `declared_pct()` returns the latest (or 0).
+  **Not backward compatible**: the old `declared_pct: u8` RON field was removed — old
+  files still load (unknown field ignored) but their previous declared value is
+  discarded (history starts empty). `declared_history()` exposes the series for the
+  planned dev/project progress **trend PDF** (to be built next).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
   milestone qui** and **Sposta** (blocco / devs).
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other

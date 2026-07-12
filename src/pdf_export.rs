@@ -1459,11 +1459,11 @@ mod tests {
         app.projects.add_dev_effort(pid, dev, Effort(10));
         app.projects
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
-        app.projects.set_dev_declared_pct(pid, dev, 60);
+        app.projects.set_dev_declared_pct(pid, dev, WeekId(0), 60);
         // Dev SENZA effort ma con % dichiarata: non deve mostrare percentuali.
         let dev_empty = app.devs.add("Backend");
         app.projects.add_dev(pid, dev_empty);
-        app.projects.set_dev_declared_pct(pid, dev_empty, 33);
+        app.projects.set_dev_declared_pct(pid, dev_empty, WeekId(0), 33);
 
         // Flag off (default): niente percentuali.
         set_show_pct(false);
@@ -1490,7 +1490,7 @@ mod tests {
         app.projects.add_dev_effort(pid, dev, Effort(100)); // pianificato
         app.projects
             .add_effort(pid, dev, WeekId((base - 7) as usize), WorkerId(0), Effort(50));
-        app.projects.set_dev_declared_pct(pid, dev, 70);
+        app.projects.set_dev_declared_pct(pid, dev, WeekId(0), 70);
         // presunta = usato 50 / pianificato 100 = 50%; attuale (dichiarata) = 70%.
 
         set_show_pct(false);

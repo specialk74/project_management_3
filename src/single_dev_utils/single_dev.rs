@@ -24,8 +24,14 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-fn is_zero_u8(v: &u8) -> bool {
-    *v == 0
+/// Una voce dello storico della percentuale dichiarata dallo sviluppatore:
+/// il valore `pct` e la **settimana** in cui è stato registrato (`WeekId`, come
+/// per la griglia). Lo storico serve per l'andamento nel tempo (una voce per
+/// settimana, l'ultimo valore).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct DeclaredPoint {
+    pub week: WeekId,
+    pub pct: u8,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -36,10 +42,11 @@ pub struct SingleDev {
     note: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     hide_effort: bool,
-    /// Percentuale di avanzamento dichiarata dallo sviluppatore (0..=100).
-    /// Default 0; confrontata con la % "presunta" (usato/pianificato) in UI.
-    #[serde(default, skip_serializing_if = "is_zero_u8")]
-    declared_pct: u8,
+    /// Storico della percentuale dichiarata dallo sviluppatore: `(settimana,
+    /// valore)` ordinato per settimana, una voce per settimana (l'ultima è il
+    /// valore corrente). Vuoto = mai dichiarata (corrente = 0).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    declared_history: Vec<DeclaredPoint>,
 }
 
 impl SingleDev {
@@ -49,7 +56,7 @@ impl SingleDev {
             effort: Effort(0),
             note: None,
             hide_effort: false,
-            declared_pct: 0,
+            declared_history: Vec::new(),
         }
     }
 
@@ -242,13 +249,35 @@ impl SingleDev {
         self.hide_effort
     }
 
-    /// Percentuale di avanzamento dichiarata dallo sviluppatore (0..=100).
+    /// Percentuale dichiarata **corrente** (l'ultima voce dello storico), o 0 se
+    /// mai dichiarata.
     pub fn declared_pct(&self) -> u8 {
-        self.declared_pct
+        self.declared_history.last().map_or(0, |p| p.pct)
     }
 
-    pub fn set_declared_pct(&mut self, pct: u8) {
-        self.declared_pct = pct.min(100);
+    /// Storico completo `(settimana, valore)` ordinato per settimana. Usato per
+    /// il futuro grafico dell'andamento nel tempo.
+    pub fn declared_history(&self) -> &[DeclaredPoint] {
+        &self.declared_history
+    }
+
+    /// Registra il valore dichiarato per la settimana `week`. Una voce per
+    /// settimana (se esiste già quella settimana, ne aggiorna il valore),
+    /// altrimenti la aggiunge mantenendo l'ordine. Non registra nulla se il
+    /// valore coincide con quello corrente (nessuna modifica). Ritorna `true`
+    /// solo se lo storico è cambiato.
+    pub fn set_declared_pct(&mut self, week: WeekId, pct: u8) -> bool {
+        let pct = pct.min(100);
+        if pct == self.declared_pct() {
+            return false;
+        }
+        if let Some(p) = self.declared_history.iter_mut().find(|p| p.week == week) {
+            p.pct = pct;
+        } else {
+            self.declared_history.push(DeclaredPoint { week, pct });
+            self.declared_history.sort_by_key(|p| p.week);
+        }
+        true
     }
 }
 
@@ -275,9 +304,45 @@ mod tests {
     fn declared_pct_defaults_zero_and_clamps_to_100() {
         let mut sd = SingleDev::new();
         assert_eq!(sd.declared_pct(), 0);
-        sd.set_declared_pct(60);
+        assert!(sd.declared_history().is_empty());
+        assert!(sd.set_declared_pct(WeekId(700), 60));
         assert_eq!(sd.declared_pct(), 60);
-        sd.set_declared_pct(200);
+        // Nuova settimana con valore diverso → clamp e nuova voce.
+        assert!(sd.set_declared_pct(WeekId(707), 200));
         assert_eq!(sd.declared_pct(), 100);
+        assert_eq!(sd.declared_history().len(), 2);
+    }
+
+    #[test]
+    fn old_declared_pct_field_is_ignored_on_load() {
+        // File "vecchio" con il campo `declared_pct`: deve caricarsi ignorandolo
+        // (storico vuoto), non dare errore — non retro-compatibile ma non rompe
+        // il load degli altri dati.
+        let sd: SingleDev = ron::from_str("(weeks: {}, effort: (0), declared_pct: 60)")
+            .expect("il vecchio campo declared_pct va ignorato");
+        assert!(sd.declared_history().is_empty());
+        assert_eq!(sd.declared_pct(), 0);
+    }
+
+    #[test]
+    fn declared_history_one_entry_per_week_last_value() {
+        let mut sd = SingleDev::new();
+        // Due modifiche nella stessa settimana → una sola voce, l'ultimo valore.
+        assert!(sd.set_declared_pct(WeekId(700), 40));
+        assert!(sd.set_declared_pct(WeekId(700), 55));
+        assert_eq!(sd.declared_history().len(), 1);
+        assert_eq!(sd.declared_pct(), 55);
+        // Stesso valore corrente → nessuna nuova voce, ritorna false.
+        assert!(!sd.set_declared_pct(WeekId(707), 55));
+        assert_eq!(sd.declared_history().len(), 1);
+        // Settimana successiva con valore diverso → seconda voce.
+        assert!(sd.set_declared_pct(WeekId(707), 70));
+        assert_eq!(
+            sd.declared_history(),
+            &[
+                DeclaredPoint { week: WeekId(700), pct: 55 },
+                DeclaredPoint { week: WeekId(707), pct: 70 },
+            ]
+        );
     }
 }

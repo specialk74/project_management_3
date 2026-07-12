@@ -1189,8 +1189,15 @@ impl PjmApp {
                 self.mark_changed();
             }
             Action::SetDevDeclaredPct { proj, dev, pct } => {
-                self.app.projects.set_dev_declared_pct(proj, dev, pct);
-                self.mark_changed();
+                // Registra nello storico con la settimana corrente; marca come
+                // modificato solo se lo storico è davvero cambiato.
+                if self
+                    .app
+                    .projects
+                    .set_dev_declared_pct(proj, dev, current_week_id(), pct)
+                {
+                    self.mark_changed();
+                }
             }
             Action::AddRow { proj, dev } => {
                 if let Some(week) = self.app.projects.get_week_with_max_worker(proj, dev) {

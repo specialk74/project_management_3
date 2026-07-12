@@ -251,21 +251,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn declared_pct_survives_ron_round_trip() {
+    fn declared_history_survives_ron_round_trip() {
         let mut app = App::new();
         let pid = app.projects.add("Prog", Some("ABC"), None);
         let dev = app.devs.add("Frontend");
-        app.projects.set_dev_declared_pct(pid, dev, 55);
+        // Due settimane distinte → due voci nello storico, con data e valore.
+        app.projects.set_dev_declared_pct(pid, dev, WeekId(700), 40);
+        app.projects.set_dev_declared_pct(pid, dev, WeekId(707), 55);
 
         let reloaded = App::from_ron_str(&app.to_ron_string()).expect("RON valido");
-        assert_eq!(
-            reloaded
-                .projects
-                .get_single_dev(pid, dev)
-                .unwrap()
-                .declared_pct(),
-            55
-        );
+        let sd = reloaded.projects.get_single_dev(pid, dev).unwrap();
+        assert_eq!(sd.declared_pct(), 55, "valore corrente = ultima voce");
+        let hist = sd.declared_history();
+        assert_eq!(hist.len(), 2, "lo storico con le date deve persistere");
+        assert_eq!((hist[0].week, hist[0].pct), (WeekId(700), 40));
+        assert_eq!((hist[1].week, hist[1].pct), (WeekId(707), 55));
     }
 
     #[test]
