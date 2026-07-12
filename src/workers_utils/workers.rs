@@ -33,7 +33,7 @@ impl Workers {
         self.worker_id
             .get(&worker_id)
             .map(|s| s.name.as_str())
-            .unwrap_or("unknown")
+            .unwrap_or("")
     }
 
     pub fn add(&mut self, name: &str) -> WorkerId {
