@@ -423,7 +423,8 @@ Un'unica finestra con:
 
 Fai **click sulla tripletta**, o premi **Invio** per il primo risultato, e la
 griglia scorre fino a quel progetto. "Select All" agisce sui progetti elencati.
-`Esc` chiude.
+`Esc` chiude. Premere di nuovo `Cmd/Ctrl+P` a **finestra già aperta** fa il
+**toggle di "Select All"** (come cliccarlo).
 
 > Suggerimento: se resta **un solo progetto visibile**, l'esportazione PDF passa
 > alla modalità "singolo progetto" (vedi §16).
@@ -435,8 +436,9 @@ Permette di mostrare solo alcuni worker. Con un filtro attivo:
 - nella colonna sinistra, per ogni progetto **resta visibile solo la tripletta**
   (categoria, nome, inizio/fine spariscono) così da non occupare spazio.
 
-Scorciatoie: `Cmd/Ctrl+F` apre il filtro; `Shift+Cmd/Ctrl+F` **deseleziona tutti**
-i worker.
+Scorciatoie: `Cmd/Ctrl+F` apre il filtro; premuto a **finestra già aperta** fa il
+**toggle di "Select All"** (come cliccarlo); `Shift+Cmd/Ctrl+F` **deseleziona
+tutti** i worker.
 
 Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
 (impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — al

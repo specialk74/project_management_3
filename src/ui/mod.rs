@@ -288,6 +288,10 @@ pub struct UiState {
     worker_filter_just_opened: bool,
     project_filter_just_opened: bool,
     closed_filter_just_opened: bool,
+    // richiesta (da Ctrl+F / Ctrl+P a pannello già aperto) di fare il toggle del
+    // "Select All"; consumata dalla rispettiva finestra nello stesso frame.
+    worker_filter_toggle_all: bool,
+    project_filter_toggle_all: bool,
     // true finché la finestra popup/nota è già stata mostrata almeno un frame:
     // serve a dare il focus al campo di testo solo alla prima comparsa.
     popup_was_open: bool,
@@ -738,14 +742,22 @@ impl eframe::App for PjmApp {
             if key_f {
                 if shift {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
+                } else if state.show_worker_filter {
+                    // pannello già aperto → toggle del "Select All"
+                    state.worker_filter_toggle_all = true;
                 } else {
                     state.show_worker_filter = true;
                     state.worker_filter_just_opened = true;
                 }
             }
             if key_p {
-                state.show_project_filter = true;
-                state.project_filter_just_opened = true;
+                if state.show_project_filter {
+                    // pannello già aperto → toggle del "Select All"
+                    state.project_filter_toggle_all = true;
+                } else {
+                    state.show_project_filter = true;
+                    state.project_filter_just_opened = true;
+                }
             }
 
             egui::TopBottomPanel::top("toolbar")

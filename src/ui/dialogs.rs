@@ -229,6 +229,18 @@ pub(crate) fn project_filter_window(
     let just_opened = state.project_filter_just_opened;
     state.project_filter_just_opened = false;
 
+    // Ctrl+P a pannello aperto → toggle del "Select All" (come cliccarlo): agisce
+    // sui progetti attualmente elencati (rispetta la ricerca).
+    if std::mem::take(&mut state.project_filter_toggle_all) {
+        let currently_all = !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
+        for (id, _, _) in &projects {
+            actions.push(Action::SetProjectEnabled {
+                proj: *id,
+                enabled: !currently_all,
+            });
+        }
+    }
+
     let mut jump: Option<ProjectId> = None;
     let mut esc = false;
 
@@ -472,6 +484,15 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
 
     let just_opened = state.worker_filter_just_opened;
     state.worker_filter_just_opened = false;
+
+    // Ctrl+F a pannello aperto → toggle del "Select All" (come cliccarlo).
+    if std::mem::take(&mut state.worker_filter_toggle_all) {
+        let currently_all = match &filter {
+            None => !all.is_empty(),
+            Some(s) => !all.is_empty() && all.iter().all(|n| s.contains(n)),
+        };
+        filter = if currently_all { Some(HashSet::new()) } else { None };
+    }
 
     let resp = egui::Window::new("Workers")
         .collapsible(false)
