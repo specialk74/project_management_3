@@ -1009,13 +1009,21 @@ impl PjmApp {
     /// resetta a ogni aggiornamento in background fatto da un collega.
     fn preserve_project_filter(&self, target: &mut App) {
         for id in target.projects.ids() {
+            // Un progetto chiuso (nel nuovo stato) resta sempre non-enabled.
+            if target.projects.is_closed(id) {
+                target.projects.set_enable(id, Enable(false));
+                continue;
+            }
+            // Progetto ancora presente nel mio stato ⇒ mantengo la mia scelta di
+            // filtro. NB: NON richiamare `reset_enable_from_closed` qui, perché
+            // rimetterebbe `enable = true` su tutti i progetti aperti, azzerando
+            // il filtro. I progetti nuovi del collega restano come dal load
+            // (enabled, cioè visibili).
             if self.app.projects.get(id).is_some() {
                 let mine = self.app.projects.get_enable(&id);
                 target.projects.set_enable(id, mine);
             }
         }
-        // Un progetto chiuso resta comunque non-enabled.
-        target.projects.reset_enable_from_closed();
     }
 
     /// Adotta integralmente lo stato del disco (ricarica automatica: nessuna
