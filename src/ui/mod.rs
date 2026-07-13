@@ -973,10 +973,28 @@ impl PjmApp {
         }
     }
 
+    /// Il flag `enable` (filtro «Filtri ▸ Progetti…») è uno stato di sola
+    /// visualizzazione **non persistito**: quando lo stato viene ricaricato o
+    /// fuso da un aggiornamento del file condiviso, `enable` verrebbe azzerato
+    /// (ricalcolato da `closed` in `from_ron_str`). Qui ripristiniamo le scelte
+    /// locali per i progetti ancora presenti, così il filtro attivo non si
+    /// resetta a ogni aggiornamento in background fatto da un collega.
+    fn preserve_project_filter(&self, target: &mut App) {
+        for id in target.projects.ids() {
+            if self.app.projects.get(id).is_some() {
+                let mine = self.app.projects.get_enable(&id);
+                target.projects.set_enable(id, mine);
+            }
+        }
+        // Un progetto chiuso resta comunque non-enabled.
+        target.projects.reset_enable_from_closed();
+    }
+
     /// Adotta integralmente lo stato del disco (ricarica automatica: nessuna
     /// modifica locale da preservare).
     fn adopt_disk(&mut self, mut theirs: App, mtime: std::time::SystemTime) {
         theirs.compute_sovra();
+        self.preserve_project_filter(&mut theirs);
         self.ui.base_ron = theirs.to_ron_string();
         self.app = theirs;
         self.ui.file_mtime = Some(mtime);
@@ -1042,7 +1060,9 @@ impl PjmApp {
         if outcome.conflicts.is_empty() {
             // Fusione pulita: applico e sposto la base sul disco. Restano le mie
             // modifiche non salvate → `changed` resta true.
-            self.app = outcome.app;
+            let mut merged = outcome.app;
+            self.preserve_project_filter(&mut merged);
+            self.app = merged;
             self.ui.base_ron = theirs.to_ron_string();
             self.ui.file_mtime = Some(disk_mtime);
             self.ui.external_notice = Some(notice_now("Uniti i cambiamenti di un collega"));
@@ -1092,7 +1112,9 @@ impl PjmApp {
         match choice {
             Some(true) => {
                 if let Some(p) = self.ui.pending_reload.take() {
-                    self.app = p.merged; // sovra già ricalcolata nel merge
+                    let mut merged = p.merged; // sovra già ricalcolata nel merge
+                    self.preserve_project_filter(&mut merged);
+                    self.app = merged;
                     self.ui.base_ron = p.theirs.to_ron_string();
                     self.ui.changed = true;
                     self.ui.external_notice = Some(notice_now(
@@ -1105,6 +1127,7 @@ impl PjmApp {
                     let mut theirs = p.theirs;
                     theirs.compute_sovra();
                     self.ui.base_ron = theirs.to_ron_string();
+                    self.preserve_project_filter(&mut theirs);
                     self.app = theirs;
                     self.ui.changed = false;
                     self.ui.name_buffers.clear();
