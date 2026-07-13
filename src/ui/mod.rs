@@ -640,6 +640,13 @@ fn combine_issues(err: Option<String>, warnings: Vec<String>) -> Option<String> 
     (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
 
+/// Nome file predefinito per gli export, con la **data corrente** (locale)
+/// aggiunta in formato `AAAA_MM_GG`, es. `progetti_2026_07_13.pdf`.
+fn dated_file_name(stem: &str, ext: &str) -> String {
+    let date = chrono::Local::now().format("%Y_%m_%d");
+    format!("{stem}_{date}.{ext}")
+}
+
 /// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
 fn save_pdf_dialog(bytes: Vec<u8>, default_name: &str) {
     if let Some(path) = rfd::FileDialog::new()
@@ -1422,7 +1429,7 @@ impl PjmApp {
                 // (abilitato + modalità Vista corrente) con dati di avanzamento.
                 let visible = body_projects(&self.app, self.ui.project_view);
                 match crate::pdf_export::build_trend_pdf(&self.app, &visible) {
-                    Some(bytes) => save_pdf_dialog(bytes, "andamento.pdf"),
+                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("andamento", "pdf")),
                     None => eprintln!("Nessun progetto con dati di avanzamento: PDF non creato."),
                 }
             }
@@ -1436,7 +1443,7 @@ impl PjmApp {
                     None => {
                         eprintln!("Nessun progetto selezionato con inizio e fine: PDF non creato.")
                     }
-                    Some(bytes) => save_pdf_dialog(bytes, "progetti.pdf"),
+                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("progetti", "pdf")),
                 }
             }
             Action::ExportPdfProject { proj, devs } => {
@@ -1448,7 +1455,7 @@ impl PjmApp {
                     self.ui.bar_format,
                 ) {
                     None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
-                    Some(bytes) => save_pdf_dialog(bytes, "progetto.pdf"),
+                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("progetto", "pdf")),
                 }
             }
             Action::ExportSvgProject { proj, devs } => {
@@ -1460,7 +1467,7 @@ impl PjmApp {
                     self.ui.bar_format,
                 ) {
                     None => eprintln!("Progetto senza inizio/fine: SVG non creato."),
-                    Some(svg) => save_svg_dialog(svg, "grafico.svg"),
+                    Some(svg) => save_svg_dialog(svg, &dated_file_name("grafico", "svg")),
                 }
             }
             Action::GenerateMinuta {
@@ -1469,7 +1476,7 @@ impl PjmApp {
                 only_with_notes,
             } => {
                 let md = build_minuta(&self.app, &projects, only_current, only_with_notes);
-                save_md_dialog(md, "minuta.md");
+                save_md_dialog(md, &dated_file_name("minuta", "md"));
             }
             Action::CreateMilestone(name) => {
                 self.app.milestones.add(&name);
