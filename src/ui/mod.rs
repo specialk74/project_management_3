@@ -361,6 +361,10 @@ pub struct UiState {
     // finestra di gestione milestone (elenco, colore, elimina)
     show_milestone_manager: bool,
     milestone_manager_just_opened: bool,
+    // finestra di gestione "ghost": elenca TUTTI i worker (anche nascosti nel
+    // footer o filtrati) con una spunta Ghost ciascuno.
+    show_ghost_manager: bool,
+    ghost_manager_just_opened: bool,
     // buffer di editing per nomi progetto ed effort dev
     name_buffers: HashMap<usize, String>,
     effort_buffers: HashMap<(usize, usize), String>,
@@ -469,6 +473,10 @@ pub(crate) enum Action {
     SetWorkerMaxHours {
         worker: WorkerId,
         hours: u32,
+    },
+    SetWorkerGhost {
+        worker: WorkerId,
+        ghost: bool,
     },
     SetWorkerWeekOverride {
         worker: WorkerId,
@@ -802,6 +810,7 @@ impl eframe::App for PjmApp {
             worker_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
+            ghost_manager_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
@@ -1335,6 +1344,10 @@ impl PjmApp {
             }
             Action::SetWorkerMaxHours { worker, hours } => {
                 self.app.workers.set_max_hours(worker, hours);
+                self.mark_changed();
+            }
+            Action::SetWorkerGhost { worker, ghost } => {
+                self.app.workers.set_ghost(worker, ghost);
                 self.mark_changed();
             }
             Action::SetWorkerWeekOverride {

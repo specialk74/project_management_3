@@ -593,6 +593,9 @@ struct Row {
     presumed_pct: Option<u32>,
     /// % di avanzamento dichiarata dallo sviluppatore (0 di default).
     declared_pct: u8,
+    /// Giorni (settimane) in cui un worker "ghost" ha effort > 0: quei tratti
+    /// della barra vengono ridisegnati in rosso, anche se in mezzo alla barra.
+    ghost_weeks: Vec<i32>,
 }
 
 /// Una milestone (bandierina in alto).
@@ -875,7 +878,9 @@ fn page_shapes(
         let yc = ROWS_TOP - (i as f32 + 0.5) * row_h;
         // Etichetta a sinistra (nome dev), troncata se troppo lunga.
         let label = truncate_to_w(&r.label, 8.0, label_w);
-        shapes.extend(text_left(X_LABEL, yc - 1.3, &label, 8.0, false, BLACK));
+        // Nome del dev in rosso se contiene almeno un worker "ghost".
+        let label_col = if r.ghost_weeks.is_empty() { BLACK } else { RED };
+        shapes.extend(text_left(X_LABEL, yc - 1.3, &label, 8.0, false, label_col));
         let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
 
         // Dev senza effort: riga sottile del colore del dev che copre tutta la
@@ -949,6 +954,27 @@ fn page_shapes(
                         r.color,
                     ));
                 }
+            }
+        }
+        // Overlay rosso sulle settimane con worker "ghost": quei rettangoli sono
+        // sempre rossi, anche in mezzo alla barra del colore del dev. In formato
+        // proporzionale l'altezza segue le ore di quella settimana.
+        if !r.ghost_weeks.is_empty() {
+            let denom = proportional_ref(r.max_week) as f32;
+            for &day in &r.ghost_weeks {
+                let rx0 = x_of(day);
+                let rx1 = x_of(day + 7);
+                let hh = if matches!(fmt, BarFormat::Proportional) {
+                    let hours = r
+                        .weeks
+                        .iter()
+                        .find(|(d, _)| *d == day)
+                        .map_or(0, |(_, h)| *h);
+                    (bar_hh * hours as f32 / denom).max(0.15)
+                } else {
+                    bar_hh
+                };
+                shapes.extend(rect_fill(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, RED));
             }
         }
         // Etichetta date a fine barra (o prima, se non ci sta a destra); se
@@ -1058,6 +1084,16 @@ fn project_shapes(
         let max = weeks.iter().map(|(_, h)| *h).max().unwrap_or(0);
         (weeks, max)
     };
+    // Settimane (giorni) del dev in cui un worker "ghost" ha effort > 0.
+    let ghost_weeks = |dev_id: DevId| -> Vec<i32> {
+        let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
+            return Vec::new();
+        };
+        sd.weeks_with_worker(|wid| app.workers.is_ghost(wid))
+            .into_iter()
+            .map(|w| w.0 as i32)
+            .collect()
+    };
     // % presunta (usato fino a oggi / pianificato) e % dichiarata dal dev.
     let pct_data = |dev_id: DevId| -> (Option<u32>, u8) {
         let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
@@ -1094,6 +1130,7 @@ fn project_shapes(
                     max_week,
                     presumed_pct,
                     declared_pct,
+                    ghost_weeks: ghost_weeks(dev_id),
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -1119,6 +1156,7 @@ fn project_shapes(
                             max_week,
                             presumed_pct,
                             declared_pct,
+                            ghost_weeks: ghost_weeks(dev_id),
                         })
                     }
                     None => {
@@ -1133,6 +1171,7 @@ fn project_shapes(
                             max_week: 0,
                             presumed_pct,
                             declared_pct,
+                            ghost_weeks: Vec::new(),
                         })
                     }
                 }
@@ -1645,8 +1684,42 @@ fn trend_page_shapes(
     // colori sono simili, così l'associazione linea/dev è data dalla posizione.
     for (sd, planned, color, name) in &devs {
         let pres = dev_presumed(sd, *planned);
-        shapes.extend(polyline(&pres, 0.8, *color));
-        shapes.extend(dots(&pres, 0.6, *color));
+        // Settimane con worker "ghost" (effort > 0): il segmento in ingresso al
+        // vertice di quella settimana — e il suo pallino — sono rossi, anche in
+        // mezzo alla linea del colore del dev.
+        let eweek_days: Vec<i32> = sd.effort_weeks().iter().map(|w| w.0 as i32).collect();
+        let ghost: std::collections::HashSet<i32> = sd
+            .weeks_with_worker(|wid| app.workers.is_ghost(wid))
+            .into_iter()
+            .map(|w| w.0 as i32)
+            .collect();
+        for i in 1..pres.len() {
+            // Il segmento i-1 → i "appartiene" alla settimana i (l'incremento di
+            // quella settimana): rosso e più spesso se la settimana i ha un ghost,
+            // così l'anomalia risalta rispetto alla linea normale.
+            let is_ghost_seg = ghost.contains(&eweek_days[i]);
+            let (seg_col, thick) = if is_ghost_seg {
+                (RED, 1.8)
+            } else {
+                (*color, 0.8)
+            };
+            shapes.extend(line(
+                pres[i - 1].0,
+                pres[i - 1].1,
+                pres[i].0,
+                pres[i].1,
+                thick,
+                seg_col,
+            ));
+        }
+        for (i, &(x, y)) in pres.iter().enumerate() {
+            let (dot_col, r) = if ghost.contains(&eweek_days[i]) {
+                (RED, 1.0)
+            } else {
+                (*color, 0.6)
+            };
+            shapes.extend(dot(x, y, r, dot_col));
+        }
         let decl = dev_declared(sd);
         shapes.extend(polyline_dashed(&decl, 0.8, *color));
         shapes.extend(dots(&decl, 0.6, *color));

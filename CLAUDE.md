@@ -73,7 +73,7 @@ references; the UI lives entirely in the `src/ui/` module.
 ```
 App (workers.ron)
 ├── start_week / end_week : WeekId   — grid time range
-├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find)
+├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
 ├── milestones: Milestones           — name + color, shared across projects
@@ -149,7 +149,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
-- **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F` — elenca solo i worker con `Worker.show_in_find` true, default true; la visibilità nel footer non conta), Milestone… (manager), Closed…
+- **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F` — elenca solo i worker con `Worker.show_in_find` true, default true; la visibilità nel footer non conta), Milestone… (manager), Ghost worker… (`ghost_manager_window`: elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost), Closed…
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
@@ -164,6 +164,16 @@ category/worker-max/etc.).
 
 ### Key UI mechanics
 
+- **Ghost worker** (`Worker.ghost`, `#[serde(default, skip_serializing_if)]`): a
+  worker flagged as an anomaly — its effective max is treated as 0. Toggle via
+  **Filtri ▸ Ghost worker…** (all workers) or right-click the footer worker name
+  (`Action::SetWorkerGhost`). Detection helpers on `SingleDev`:
+  `has_worker_matching(pred)` / `weeks_with_worker(pred)` (effort>0 only). Effects
+  when a ghost has effort in a dev: (1) the dev **name blinks** normal↔red in
+  `draw_left_devs` (time-based, requests repaint); (2) the grid cell and the
+  footer week cell are **always red** (highest priority, beats hidden/saturation);
+  (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks`; (4) the trend PDF
+  draws the incoming presunta segment + dot **red and thicker** for a ghost week.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).

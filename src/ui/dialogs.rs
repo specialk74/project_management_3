@@ -543,6 +543,68 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
     }
 }
 
+// ── Gestione "ghost" (Filtri ▸ Ghost worker…) ───────────────────────────────
+
+/// Elenca **tutti** i worker (escluso solo il worker "zero"), a prescindere da
+/// `hide_in_footer`, `show_in_find` o dal filtro attivo, ognuno con una spunta
+/// **Ghost**. È l'unico punto sempre raggiungibile per associare/togliere il
+/// ghost anche a worker non visibili nel footer.
+pub(crate) fn ghost_manager_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_ghost_manager {
+        return;
+    }
+    let workers = app.workers.list(); // (WorkerId, nome), ordinati per nome, senza lo zero
+    let mut open = true;
+    let just_opened = state.ghost_manager_just_opened;
+    state.ghost_manager_just_opened = false;
+
+    let resp = egui::Window::new("Ghost worker")
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(160.0, 40.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_min_width(title_width(ui, "Ghost worker").max(240.0));
+            ui.label(
+                "Spunta i worker \"ghost\": se inseriti nell'effort di un dev vengono \
+                 evidenziati come anomalia (cella rossa, nome dev lampeggiante, barra/linea \
+                 rossa negli export).",
+            );
+            ui.add_space(4.0);
+            ui.separator();
+            if workers.is_empty() {
+                ui.label("Nessun worker.");
+            }
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for (id, name) in &workers {
+                        let mut on = app.workers.is_ghost(*id);
+                        if ui.checkbox(&mut on, name).changed() {
+                            actions.push(Action::SetWorkerGhost {
+                                worker: *id,
+                                ghost: on,
+                            });
+                        }
+                    }
+                });
+        });
+
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
+        state.show_ghost_manager = false;
+    }
+}
+
 // ── Flusso "Sposta" effort (blocco / devs) ──────────────────────────────────
 
 /// Intervallo [min, max] di settimana coperto da un insieme di spostamenti.

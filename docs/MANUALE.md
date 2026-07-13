@@ -310,9 +310,33 @@ Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,
 sua nota; incollando testo esterno si incolla solo il testo.
 
 ### Colori del testo nelle celle
+- Worker **ghost**: **sempre rosso** (ha di fatto massimo ore 0 → qualsiasi
+  inserimento è un'anomalia); ha la precedenza su tutti gli altri colori. Vedi
+  **Worker "ghost"** più sotto.
 - Worker **nascosto nel footer**: grigio.
 - Worker **in sovra-saturazione** (oltre il massimo ore della settimana): rosso.
 - Altrimenti: colore testo standard (adattato al tema chiaro/scuro).
+
+### Worker "ghost"
+Un worker può essere marcato come **ghost**. Serve a segnalare un'assegnazione
+anomala: quando un worker ghost viene inserito nell'effort di un dev,
+
+1. il **nome del dev lampeggia** (alterna colore normale/rosso);
+2. la **cella è sempre rossa**, indipendentemente dal massimo ore (il suo massimo
+   è di fatto 0); anche il suo **effort nel footer** è sempre rosso;
+3. nel **PDF/SVG dei progetti** il rettangolo della barra è **rosso** nelle
+   settimane in cui è stato inserito, anche se in mezzo alla barra del colore del
+   dev, e il **nome del dev** (etichetta della riga) è scritto in **rosso**;
+4. nel **PDF degli andamenti** il tratto di linea (presunta) che sale in quella
+   settimana — e il relativo pallino — è **rosso e più spesso**, per far risaltare
+   il problema anche in mezzo alla linea del colore del dev.
+
+**Come marcare un worker come ghost:**
+- **Filtri ▸ Ghost worker…** — finestra che elenca **tutti** i worker (anche
+  quelli nascosti nel footer o esclusi dal filtro Ctrl+F) con una spunta Ghost
+  ciascuno. È il modo sempre disponibile.
+- In alternativa, **tasto destro sul nome del worker nel footer ▸ Ghost** (comodo,
+  ma solo per i worker visibili nel footer).
 
 ---
 
@@ -402,6 +426,8 @@ Interazioni:
   **Note**.
 - **Click sul nome del worker** (colonna sinistra del footer) → massimo ore
   **globale** del worker.
+- **Tasto destro sul nome del worker** → toggle **Ghost** (vedi §8, «Worker
+  "ghost"»).
 - **Click sull'intestazione di una settimana** (header) → imposta il massimo ore
   di quella settimana **per tutti i worker**.
 
@@ -443,6 +469,11 @@ tutti** i worker.
 Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
 (impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — al
 momento impostabile modificando il file `.ron` — non appare in questa lista.
+
+### Ghost worker (Filtri ▸ Ghost worker…)
+Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
+dal filtro Ctrl+F) con una spunta **Ghost** ciascuno. È il modo sempre raggiungibile
+per associare/togliere il ghost. Vedi §8, «Worker "ghost"».
 
 ### Progetti chiusi (Filtri ▸ Closed…)
 Finestra per marcare/smarcare i progetti come chiusi.

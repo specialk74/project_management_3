@@ -141,6 +141,11 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions
                 state.milestone_manager_just_opened = state.show_milestone_manager;
                 ui.close_menu();
             }
+            if ui.button("Ghost worker…").clicked() {
+                state.show_ghost_manager = !state.show_ghost_manager;
+                state.ghost_manager_just_opened = state.show_ghost_manager;
+                ui.close_menu();
+            }
             let closed_btn = ui.button("Closed…");
             // La finestra "Closed" si ancora sotto questa voce di menù.
             state.closed_btn_pos = closed_btn.rect.left_bottom();

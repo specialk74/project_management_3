@@ -143,6 +143,35 @@ impl SingleDev {
         Some((min?, max?))
     }
 
+    /// True se in una qualsiasi settimana c'è un worker con effort > 0 per cui
+    /// `pred(worker)` è vero (es. worker "ghost"). Usato per far lampeggiare il
+    /// nome del dev quando contiene un worker ghost.
+    pub fn has_worker_matching<F: Fn(WorkerId) -> bool>(&self, pred: F) -> bool {
+        self.weeks.values().any(|wk| {
+            wk.worker_id
+                .iter()
+                .any(|(id, e)| e.get_effort().0 > 0 && pred(*id))
+        })
+    }
+
+    /// Settimane (ordinate) in cui almeno un worker con effort > 0 soddisfa
+    /// `pred` (es. worker "ghost"). Usato per colorare di rosso le barre/linee
+    /// di quei periodi negli export.
+    pub fn weeks_with_worker<F: Fn(WorkerId) -> bool>(&self, pred: F) -> Vec<WeekId> {
+        let mut v: Vec<WeekId> = self
+            .weeks
+            .iter()
+            .filter(|(_, wk)| {
+                wk.worker_id
+                    .iter()
+                    .any(|(id, e)| e.get_effort().0 > 0 && pred(*id))
+            })
+            .map(|(w, _)| *w)
+            .collect();
+        v.sort();
+        v
+    }
+
     /// Settimane con effort effettivo (>0), ordinate.
     pub fn effort_weeks(&self) -> Vec<WeekId> {
         let mut v: Vec<WeekId> = self
@@ -298,6 +327,32 @@ mod tests {
         assert_eq!(sd.get_effort_tot().0, 60);
         assert_eq!(sd.effort_up_to(WeekId(14)).0, 60);
         assert_eq!(sd.effort_up_to(WeekId(0)).0, 10);
+    }
+
+    #[test]
+    fn ghost_worker_detection_by_predicate() {
+        let mut sd = SingleDev::new();
+        let normal = WorkerId(1);
+        let ghost = WorkerId(2);
+        sd.add(WeekId(0), normal, Effort(10));
+        sd.add(WeekId(7), ghost, Effort(5));
+        sd.add(WeekId(14), normal, Effort(8));
+        let is_ghost = |w: WorkerId| w == ghost;
+
+        assert!(sd.has_worker_matching(is_ghost));
+        assert_eq!(sd.weeks_with_worker(is_ghost), vec![WeekId(7)]);
+        // Nessun worker soddisfa il predicato → nessuna corrispondenza.
+        assert!(!sd.has_worker_matching(|w| w == WorkerId(99)));
+        assert!(sd.weeks_with_worker(|w| w == WorkerId(99)).is_empty());
+    }
+
+    #[test]
+    fn ghost_worker_with_zero_effort_is_ignored() {
+        let mut sd = SingleDev::new();
+        let ghost = WorkerId(2);
+        sd.add(WeekId(0), ghost, Effort(0));
+        assert!(!sd.has_worker_matching(|w| w == ghost));
+        assert!(sd.weeks_with_worker(|w| w == ghost).is_empty());
     }
 
     #[test]

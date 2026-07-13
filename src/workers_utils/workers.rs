@@ -116,6 +116,18 @@ impl Workers {
         self.worker_id.get(&id).map_or(true, |w| w.is_shown_in_find())
     }
 
+    /// True se il worker è di tipo "ghost". Default `false` (anche per un id
+    /// sconosciuto).
+    pub fn is_ghost(&self, id: WorkerId) -> bool {
+        self.worker_id.get(&id).map_or(false, |w| w.is_ghost())
+    }
+
+    pub fn set_ghost(&mut self, id: WorkerId, ghost: bool) {
+        if let Some(w) = self.worker_id.get_mut(&id) {
+            w.set_ghost(ghost);
+        }
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id

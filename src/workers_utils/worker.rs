@@ -29,6 +29,12 @@ fn is_true(b: &bool) -> bool {
     *b
 }
 
+/// Usata da `skip_serializing_if`: non salvare il campo quando è `false`
+/// (valore di default, es. per `ghost`).
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Worker {
     pub name: String,
@@ -56,6 +62,11 @@ pub struct Worker {
     /// while it stays `true`.
     #[serde(default = "show_in_find_default", skip_serializing_if = "is_true")]
     pub show_in_find: bool,
+    /// Worker "ghost": quando inserito negli effort di un dev viene evidenziato
+    /// come anomalia — cella sempre rossa (max effort di fatto 0), nome del dev
+    /// lampeggiante, barra/linea rossa negli export. Default `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ghost: bool,
 }
 
 impl Worker {
@@ -70,7 +81,16 @@ impl Worker {
             week_status: HashMap::new(),
             hide_in_footer: None,
             show_in_find: true,
+            ghost: false,
         }
+    }
+
+    pub fn is_ghost(&self) -> bool {
+        self.ghost
+    }
+
+    pub fn set_ghost(&mut self, ghost: bool) {
+        self.ghost = ghost;
     }
 
     pub fn get_week_note(&self, week: usize) -> Option<&str> {
@@ -227,5 +247,29 @@ mod tests {
         w.set_font_color(Some(99));
         w.set_font_color(None);
         assert!(w.font_color.is_none());
+    }
+
+    #[test]
+    fn ghost_defaults_false_and_is_not_serialized() {
+        let w = Worker::new("Alice");
+        assert!(!w.is_ghost());
+        let ron = ron::ser::to_string_pretty(&w, ron::ser::PrettyConfig::default()).unwrap();
+        assert!(!ron.contains("ghost"), "col default (false) non va salvato: {ron}");
+    }
+
+    #[test]
+    fn ghost_true_round_trips_through_ron() {
+        let mut w = Worker::new("Alice");
+        w.set_ghost(true);
+        let ron = ron::ser::to_string_pretty(&w, ron::ser::PrettyConfig::default()).unwrap();
+        assert!(ron.contains("ghost"), "true va salvato: {ron}");
+        let back: Worker = ron::from_str(&ron).expect("deserializza");
+        assert!(back.is_ghost(), "true deve persistere");
+    }
+
+    #[test]
+    fn ghost_absent_from_old_ron_defaults_false() {
+        let w: Worker = ron::from_str(r#"(name: "Alice")"#).expect("deserializza");
+        assert!(!w.is_ghost(), "assente nel .ron ⇒ default false");
     }
 }

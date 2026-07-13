@@ -96,7 +96,7 @@ pub(crate) fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions:
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let (lrect, _) = ui.allocate_exact_size(Vec2::new(LEFT_W, footer_h), Sense::hover());
-            draw_left_footer(ui, lrect, app, state, &workers);
+            draw_left_footer(ui, lrect, app, state, &workers, actions);
         });
 
     // Footer destro — scroll orizzontale sincronizzato con header/griglia.
@@ -178,6 +178,7 @@ pub(crate) fn draw_left_footer(
     app: &App,
     state: &mut UiState,
     workers: &[(crate::workers_utils::worker::WorkerId, String)],
+    actions: &mut Vec<Action>,
 ) {
     let total_x = rect.left() + DEV_NAME_W; // 90
     let dev_section_w = DEV_NAME_W + DEV_TOTAL_W; // 150
@@ -358,6 +359,24 @@ pub(crate) fn draw_left_footer(
                 text: cur.to_string(),
             });
         }
+        // Tasto destro sul nome → toggle "Ghost" per il worker.
+        let is_ghost = app.workers.is_ghost(*wid);
+        resp.context_menu(|ui| {
+            if ui
+                .selectable_label(is_ghost, "Ghost")
+                .on_hover_text(
+                    "Worker \"ghost\": se inserito negli effort di un dev lo evidenzia \
+                     come anomalia (cella rossa, nome dev lampeggiante, barra/linea rossa).",
+                )
+                .clicked()
+            {
+                actions.push(Action::SetWorkerGhost {
+                    worker: *wid,
+                    ghost: !is_ghost,
+                });
+                ui.close();
+            }
+        });
     }
 }
 
@@ -465,7 +484,12 @@ pub(crate) fn draw_right_footer(
                 }
             }
 
-            let color = if value > eff_max {
+            // Worker "ghost": max effort di fatto 0 → qualunque effort (>0) è
+            // un'anomalia, sempre in rosso.
+            let is_ghost = app.workers.is_ghost(*wid);
+            let color = if is_ghost && value > 0 {
+                g(Color32::RED)
+            } else if value > eff_max {
                 g(Color32::RED)
             } else if eff_max == 0 {
                 g(override_brown()) // marrone: override a zero

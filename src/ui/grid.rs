@@ -836,6 +836,7 @@ pub(crate) fn draw_dev_cells(
                     let wname = text.split('|').next().unwrap_or("").trim();
                     let wid = app.workers.get_id_by_name(wname);
                     let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
+                    let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));
                     let sovra = wid
                         .map(|id| {
                             app.sovra
@@ -846,8 +847,12 @@ pub(crate) fn draw_dev_cells(
                     let max_h = wid
                         .map(|id| app.workers.get_effective_max_hours(id, *w as usize) as i32)
                         .unwrap_or(DEFAULT_MAX_HOURS as i32);
-                    // worker nascosti nel footer → grigi, a prescindere dall'effort
-                    let color = if hidden {
+                    // worker "ghost" → sempre rossi (max effort di fatto 0), anche
+                    // se nascosti nel footer; worker nascosti → grigi; oltre il max
+                    // → rossi; altrimenti colore testo normale.
+                    let color = if is_ghost {
+                        g(Color32::RED)
+                    } else if hidden {
                         Color32::from_gray(0x80)
                     } else if sovra > max_h {
                         g(Color32::RED)
@@ -1434,6 +1439,24 @@ pub(crate) fn draw_left_devs(
         let max_rows = *max_rows;
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
+        // Se il dev contiene un worker "ghost" (con effort), il suo nome lampeggia
+        // fra il colore normale e il rosso (~0.5s per fase) come segnale d'allarme.
+        let has_ghost = app
+            .projects
+            .get_single_dev(proj, *dev)
+            .map_or(false, |sd| sd.has_worker_matching(|id| app.workers.is_ghost(id)));
+        let name_col = if has_ghost {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(120));
+            let t = ui.ctx().input(|i| i.time);
+            if t.rem_euclid(1.0) < 0.5 {
+                g(Color32::RED)
+            } else {
+                tcol
+            }
+        } else {
+            tcol
+        };
         let block_h = dev_block_height(max_rows, compact, merged);
 
         // bordo superiore
@@ -1465,7 +1488,7 @@ pub(crate) fn draw_left_devs(
                 Align2::CENTER_CENTER,
                 dev_name(app, *dev),
                 cell_font(),
-                tcol,
+                name_col,
             );
         } else {
             // Nome allineato verticalmente con l'effort (riga 1) e percentuali
@@ -1478,7 +1501,7 @@ pub(crate) fn draw_left_devs(
                 Align2::CENTER_CENTER,
                 dev_name(app, *dev),
                 cell_font(),
-                tcol,
+                name_col,
             );
             if let Some(pct) = used_pct {
                 // oltre il 100% = sforamento del pianificato → rosso.
