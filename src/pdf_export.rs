@@ -1158,8 +1158,18 @@ fn project_shapes(
         .projects
         .project_presumed_progress_pct(proj, WeekId(today as usize));
     Some(page_shapes(
-        &tripletta, name, proj_start, proj_end, &rows, flags, today, created, chart_only, fmt,
-        progress_pct, presumed_pct,
+        &tripletta,
+        name,
+        proj_start,
+        proj_end,
+        &rows,
+        flags,
+        today,
+        created,
+        chart_only,
+        fmt,
+        progress_pct,
+        presumed_pct,
     ))
 }
 
@@ -1319,7 +1329,14 @@ const TREND_PLOT_TOP: f32 = 186.0;
 const TREND_PLOT_BOT: f32 = 46.0;
 
 /// Segmento tratteggiato di direzione qualsiasi (i tratti seguono la retta).
-fn dashed_seg(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+fn dashed_seg(
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    thick: f32,
+    color: (f32, f32, f32),
+) -> Vec<Shape> {
     const DASH: f32 = 1.6;
     const GAP: f32 = 1.3;
     let (dx, dy) = (x1 - x0, y1 - y0);
@@ -1332,7 +1349,14 @@ fn dashed_seg(x0: f32, y0: f32, x1: f32, y1: f32, thick: f32, color: (f32, f32, 
     let mut d = 0.0;
     while d < len {
         let e = (d + DASH).min(len);
-        out.extend(line(x0 + ux * d, y0 + uy * d, x0 + ux * e, y0 + uy * e, thick, color));
+        out.extend(line(
+            x0 + ux * d,
+            y0 + uy * d,
+            x0 + ux * e,
+            y0 + uy * e,
+            thick,
+            color,
+        ));
         d += DASH + GAP;
     }
     out
@@ -1394,8 +1418,12 @@ fn trend_page_shapes(
     created: &str,
 ) -> Option<Vec<Shape>> {
     // Dev con pianificato > 0 (gli unici con presunta/dichiarata definite).
-    let mut devs: Vec<(&crate::single_dev_utils::single_dev::SingleDev, u64, (f32, f32, f32), String)> =
-        Vec::new();
+    let mut devs: Vec<(
+        &crate::single_dev_utils::single_dev::SingleDev,
+        u64,
+        (f32, f32, f32),
+        String,
+    )> = Vec::new();
     for id in app.projects.get_dev_ids(proj) {
         if let Some(sd) = app.projects.get_single_dev(proj, id) {
             let planned = sd.planned_effort().0;
@@ -1434,7 +1462,8 @@ fn trend_page_shapes(
     let axis_end = local_to_days(&add_months(month_start(day_to_date(max_day)), 1));
     let span = (axis_end - axis_start).max(1) as f32;
     let x_of = |d: i32| -> f32 {
-        (CHART_X0 + (d - axis_start) as f32 / span * (CHART_X1 - CHART_X0)).clamp(CHART_X0, CHART_X1)
+        (CHART_X0 + (d - axis_start) as f32 / span * (CHART_X1 - CHART_X0))
+            .clamp(CHART_X0, CHART_X1)
     };
 
     // --- Asse Y (percentuale, auto 0..max arrotondato a multipli di 20) -------
@@ -1453,20 +1482,22 @@ fn trend_page_shapes(
     if (y_top - ymax).abs() < 0.01 {
         y_top += 20.0; // margine sopra il massimo (la linea non tocca il bordo)
     }
-    let y_of = |pct: f32| -> f32 { TREND_PLOT_BOT + (pct / y_top) * (TREND_PLOT_TOP - TREND_PLOT_BOT) };
+    let y_of =
+        |pct: f32| -> f32 { TREND_PLOT_BOT + (pct / y_top) * (TREND_PLOT_TOP - TREND_PLOT_BOT) };
 
     // Punti presunta/dichiarata di un dev. La presunta parte dal PRIMO effort del
     // dev stesso (non dall'inizio progetto né dal primo effort di altri dev): un
     // punto per ogni settimana con effort, valore = effort cumulato / pianificato.
-    let dev_presumed = |sd: &crate::single_dev_utils::single_dev::SingleDev, planned: u64| -> Vec<(f32, f32)> {
-        sd.effort_weeks()
-            .iter()
-            .map(|w| {
-                let pct = sd.effort_up_to(*w).0 as f32 * 100.0 / planned as f32;
-                (x_of(w.0 as i32), y_of(pct))
-            })
-            .collect()
-    };
+    let dev_presumed =
+        |sd: &crate::single_dev_utils::single_dev::SingleDev, planned: u64| -> Vec<(f32, f32)> {
+            sd.effort_weeks()
+                .iter()
+                .map(|w| {
+                    let pct = sd.effort_up_to(*w).0 as f32 * 100.0 / planned as f32;
+                    (x_of(w.0 as i32), y_of(pct))
+                })
+                .collect()
+        };
     let dev_declared = |sd: &crate::single_dev_utils::single_dev::SingleDev| -> Vec<(f32, f32)> {
         let hist = sd.declared_history();
         let mut pts: Vec<(f32, f32)> = hist
@@ -1499,9 +1530,23 @@ fn trend_page_shapes(
     // Legenda stili in alto a destra: continua = presunta, tratteggiata = dichiarata.
     let kx = CHART_X1 - 46.0;
     shapes.extend(line(kx, 200.5, kx + 8.0, 200.5, 0.9, BLACK));
-    shapes.extend(text_left(kx + 10.0, 199.5, "presunta", 7.0, false, TEXT_GRAY));
+    shapes.extend(text_left(
+        kx + 10.0,
+        199.5,
+        "presunta/rendicontata",
+        7.0,
+        false,
+        TEXT_GRAY,
+    ));
     shapes.extend(dashed_seg(kx, 196.5, kx + 8.0, 196.5, 0.9, BLACK));
-    shapes.extend(text_left(kx + 10.0, 195.5, "dichiarata", 7.0, false, TEXT_GRAY));
+    shapes.extend(text_left(
+        kx + 10.0,
+        195.5,
+        "dichiarata",
+        7.0,
+        false,
+        TEXT_GRAY,
+    ));
 
     // --- Griglia Y (percentuali) ----------------------------------------------
     let mut pct = 0.0;
@@ -1509,10 +1554,21 @@ fn trend_page_shapes(
         let yy = y_of(pct);
         // Il 100% (budget/lavoro completo) è evidenziato con una riga rossa.
         let is_full = (pct - 100.0).abs() < 0.01;
-        let (col, thick) = if is_full { (RED, 0.5) } else { (GRAY_GUIDE, 0.2) };
+        let (col, thick) = if is_full {
+            (RED, 0.5)
+        } else {
+            (GRAY_GUIDE, 0.2)
+        };
         shapes.extend(line(CHART_X0, yy, CHART_X1, yy, thick, col));
         let lbl_col = if is_full { RED } else { TEXT_GRAY };
-        shapes.extend(text_right(CHART_X0 - 1.5, yy - 1.0, &format!("{}%", pct as i32), 6.5, false, lbl_col));
+        shapes.extend(text_right(
+            CHART_X0 - 1.5,
+            yy - 1.0,
+            &format!("{}%", pct as i32),
+            6.5,
+            false,
+            lbl_col,
+        ));
         pct += 20.0;
     }
 
@@ -1521,14 +1577,28 @@ fn trend_page_shapes(
     let mut first = true;
     loop {
         let mx = x_of(local_to_days(&m));
-        shapes.extend(line(mx, TREND_PLOT_BOT, mx, TREND_PLOT_TOP, 0.2, GRAY_GUIDE));
+        shapes.extend(line(
+            mx,
+            TREND_PLOT_BOT,
+            mx,
+            TREND_PLOT_TOP,
+            0.2,
+            GRAY_GUIDE,
+        ));
         let mname = MONTHS_IT[(m.month() - 1) as usize];
         let lbl = if first || m.month() == 1 {
             format!("{} {:02}", mname, m.year() % 100)
         } else {
             mname.to_string()
         };
-        shapes.extend(text_left(mx + 0.5, TREND_PLOT_BOT - 4.0, &lbl, 6.5, false, TEXT_GRAY));
+        shapes.extend(text_left(
+            mx + 0.5,
+            TREND_PLOT_BOT - 4.0,
+            &lbl,
+            6.5,
+            false,
+            TEXT_GRAY,
+        ));
         first = false;
         let next = add_months(m, 1);
         if local_to_days(&next) >= axis_end {
@@ -1538,25 +1608,58 @@ fn trend_page_shapes(
     }
 
     // Bordi assi.
-    shapes.extend(line(CHART_X0, TREND_PLOT_BOT, CHART_X0, TREND_PLOT_TOP, 0.4, TEXT_GRAY));
-    shapes.extend(line(CHART_X0, TREND_PLOT_BOT, CHART_X1, TREND_PLOT_BOT, 0.4, TEXT_GRAY));
+    shapes.extend(line(
+        CHART_X0,
+        TREND_PLOT_BOT,
+        CHART_X0,
+        TREND_PLOT_TOP,
+        0.4,
+        TEXT_GRAY,
+    ));
+    shapes.extend(line(
+        CHART_X0,
+        TREND_PLOT_BOT,
+        CHART_X1,
+        TREND_PLOT_BOT,
+        0.4,
+        TEXT_GRAY,
+    ));
 
     // Linea verticale "oggi".
     if today >= axis_start && today <= axis_end {
         let xt = x_of(today);
         shapes.extend(line(xt, TREND_PLOT_BOT, xt, TREND_PLOT_TOP, 0.5, RED));
-        shapes.extend(text_center(xt, TREND_PLOT_TOP + 1.0, "oggi", 6.5, false, RED));
+        shapes.extend(text_center(
+            xt,
+            TREND_PLOT_TOP + 1.0,
+            "oggi",
+            6.5,
+            false,
+            RED,
+        ));
     }
 
     // --- Linee dei dev (presunta continua, dichiarata tratteggiata) -----------
     // Con un pallino su ogni vertice, per vedere i punti che costruiscono il grafico.
-    for (sd, planned, color, _) in &devs {
+    // Il nome del dev è scritto alla fine della sua linea colorata (presunta): i
+    // colori sono simili, così l'associazione linea/dev è data dalla posizione.
+    for (sd, planned, color, name) in &devs {
         let pres = dev_presumed(sd, *planned);
         shapes.extend(polyline(&pres, 0.8, *color));
         shapes.extend(dots(&pres, 0.6, *color));
         let decl = dev_declared(sd);
         shapes.extend(polyline_dashed(&decl, 0.8, *color));
         shapes.extend(dots(&decl, 0.6, *color));
+        if let Some(&(lx, ly)) = pres.last() {
+            shapes.extend(text_left(
+                (lx + 1.5).min(CHART_X1 - text_w_mm(name, 7.0)),
+                ly - 1.0,
+                name,
+                7.0,
+                false,
+                *color,
+            ));
+        }
     }
 
     // --- Linee aggregate di progetto (nere, più spesse) -----------------------
@@ -1580,6 +1683,16 @@ fn trend_page_shapes(
             .collect();
         shapes.extend(polyline(&pts, 1.4, BLACK));
         shapes.extend(dots(&pts, 0.85, BLACK));
+        if let Some(&(lx, ly)) = pts.last() {
+            shapes.extend(text_left(
+                (lx + 1.5).min(CHART_X1 - text_w_mm("Progetto", 7.0)),
+                ly - 1.0,
+                "Progetto",
+                7.0,
+                true,
+                BLACK,
+            ));
+        }
     }
     let mut hweeks: Vec<i32> = devs
         .iter()
@@ -1595,7 +1708,10 @@ fn trend_page_shapes(
                 .sum();
             num as f32 / total_planned as f32
         };
-        let mut pts: Vec<(f32, f32)> = hweeks.iter().map(|w| (x_of(*w), y_of(agg_decl(*w)))).collect();
+        let mut pts: Vec<(f32, f32)> = hweeks
+            .iter()
+            .map(|w| (x_of(*w), y_of(agg_decl(*w))))
+            .collect();
         if last_w < today_week {
             pts.push((x_of(today_week), y_of(agg_decl(last_w))));
         }
@@ -1603,27 +1719,17 @@ fn trend_page_shapes(
         shapes.extend(dots(&pts, 0.85, BLACK));
     }
 
-    // --- Legenda colori dev (in basso, sopra il footer) -----------------------
-    let mut lx = X_LABEL;
-    let mut ly = TREND_PLOT_BOT - 10.0;
-    let legend: Vec<(&str, (f32, f32, f32))> = devs
-        .iter()
-        .map(|(_, _, c, n)| (n.as_str(), *c))
-        .chain(std::iter::once(("Progetto", BLACK)))
-        .collect();
-    for (label, color) in legend {
-        let entry_w = 6.0 + 1.5 + text_w_mm(label, 7.0) + 5.0;
-        if lx + entry_w > CHART_X1 {
-            lx = X_LABEL;
-            ly -= 4.2;
-        }
-        shapes.extend(line(lx, ly, lx + 6.0, ly, 1.4, color));
-        shapes.extend(text_left(lx + 7.5, ly - 1.1, label, 7.0, false, BLACK));
-        lx += entry_w;
-    }
+    // Il nome del dev è ora scritto alla fine della sua linea (vedi sopra): niente
+    // legenda colori, perché con colori simili non si distingueva l'associazione.
 
     // --- Footer (banda grigia + data, come gli altri export) ------------------
-    shapes.extend(rect_fill(X_LABEL, FOOTER_BOT, CHART_X1, FOOTER_TOP, GRAY_FOOTER));
+    shapes.extend(rect_fill(
+        X_LABEL,
+        FOOTER_BOT,
+        CHART_X1,
+        FOOTER_TOP,
+        GRAY_FOOTER,
+    ));
     shapes.extend(text_center(
         (X_LABEL + CHART_X1) / 2.0,
         (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
@@ -1655,8 +1761,14 @@ pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
     let mut pages = Vec::new();
     for &id in projects {
         let name = project_name(app, id);
-        if let Some(shapes) = trend_page_shapes(app, id, &name, &dev_info, today, today_week, &created) {
-            pages.push(PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)));
+        if let Some(shapes) =
+            trend_page_shapes(app, id, &name, &dev_info, today, today_week, &created)
+        {
+            pages.push(PdfPage::new(
+                Mm(PAGE_W),
+                Mm(PAGE_H),
+                render_pdf(&fonts, &shapes),
+            ));
         }
     }
     if pages.is_empty() {
@@ -1819,7 +1931,8 @@ mod tests {
         // Dev SENZA effort ma con % dichiarata: non deve mostrare percentuali.
         let dev_empty = app.devs.add("Backend");
         app.projects.add_dev(pid, dev_empty);
-        app.projects.set_dev_declared_pct(pid, dev_empty, WeekId(0), 33);
+        app.projects
+            .set_dev_declared_pct(pid, dev_empty, WeekId(0), 33);
 
         // Flag off (default): niente percentuali.
         set_show_pct(false);
@@ -1839,20 +1952,34 @@ mod tests {
         // Progetto che contiene "oggi" nell'asse, così il marker Today è disegnato.
         let base = local_to_days(&chrono::Local::now().date_naive());
         let mut app = App::new();
-        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId((base - 28) as usize)));
-        app.projects.set_project_end_week(pid, Some(WeekId((base + 28) as usize)));
+        let pid = app
+            .projects
+            .add("Prog", Some("ABC"), Some(WeekId((base - 28) as usize)));
+        app.projects
+            .set_project_end_week(pid, Some(WeekId((base + 28) as usize)));
         let dev = app.devs.add("Frontend");
         app.projects.add_dev(pid, dev);
         app.projects.add_dev_effort(pid, dev, Effort(100)); // pianificato
-        app.projects
-            .add_effort(pid, dev, WeekId((base - 7) as usize), WorkerId(0), Effort(50));
+        app.projects.add_effort(
+            pid,
+            dev,
+            WeekId((base - 7) as usize),
+            WorkerId(0),
+            Effort(50),
+        );
         app.projects.set_dev_declared_pct(pid, dev, WeekId(0), 70);
         // presunta = usato 50 / pianificato 100 = 50%; attuale (dichiarata) = 70%.
 
         set_show_pct(false);
         let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
-        assert!(svg.contains("Today"), "oggi è nell'asse: Today deve comparire");
-        assert!(!svg.contains("(50%/70%)"), "senza flag niente % sotto Today");
+        assert!(
+            svg.contains("Today"),
+            "oggi è nell'asse: Today deve comparire"
+        );
+        assert!(
+            !svg.contains("(50%/70%)"),
+            "senza flag niente % sotto Today"
+        );
 
         set_show_pct(true);
         let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
@@ -1873,9 +2000,12 @@ mod tests {
         let b = app.devs.add("Backend");
         app.projects.add_dev_effort(pid, a, Effort(100));
         app.projects.add_dev_effort(pid, b, Effort(50));
-        app.projects.add_effort(pid, a, WeekId(20007), WorkerId(0), Effort(30));
-        app.projects.add_effort(pid, a, WeekId(20014), WorkerId(0), Effort(20));
-        app.projects.add_effort(pid, b, WeekId(20007), WorkerId(0), Effort(25));
+        app.projects
+            .add_effort(pid, a, WeekId(20007), WorkerId(0), Effort(30));
+        app.projects
+            .add_effort(pid, a, WeekId(20014), WorkerId(0), Effort(20));
+        app.projects
+            .add_effort(pid, b, WeekId(20007), WorkerId(0), Effort(25));
         app.projects.set_dev_declared_pct(pid, a, WeekId(20007), 20);
         app.projects.set_dev_declared_pct(pid, a, WeekId(20014), 45);
         app.projects.set_dev_declared_pct(pid, b, WeekId(20007), 30);
