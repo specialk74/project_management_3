@@ -847,11 +847,12 @@ pub(crate) fn draw_dev_cells(
                     let max_h = wid
                         .map(|id| app.workers.get_effective_max_hours(id, *w as usize) as i32)
                         .unwrap_or(DEFAULT_MAX_HOURS as i32);
-                    // worker "ghost" → sempre rossi (max effort di fatto 0), anche
-                    // se nascosti nel footer; worker nascosti → grigi; oltre il max
+                    // worker "ghost" → sempre porpora (max effort di fatto 0),
+                    // anche se nascosti nel footer, così si distinguono dai
+                    // sovra-allocati (rossi); worker nascosti → grigi; oltre il max
                     // → rossi; altrimenti colore testo normale.
                     let color = if is_ghost {
-                        g(Color32::RED)
+                        g(GHOST_PURPLE)
                     } else if hidden {
                         Color32::from_gray(0x80)
                     } else if sovra > max_h {
@@ -1440,7 +1441,7 @@ pub(crate) fn draw_left_devs(
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
         // Se il dev contiene un worker "ghost" (con effort), il suo nome lampeggia
-        // fra il colore normale e il rosso (~0.5s per fase) come segnale d'allarme.
+        // fra il colore normale e il porpora (~0.5s per fase) come segnale d'allarme.
         let has_ghost = app
             .projects
             .get_single_dev(proj, *dev)
@@ -1450,7 +1451,7 @@ pub(crate) fn draw_left_devs(
                 .request_repaint_after(std::time::Duration::from_millis(120));
             let t = ui.ctx().input(|i| i.time);
             if t.rem_euclid(1.0) < 0.5 {
-                g(Color32::RED)
+                g(GHOST_PURPLE)
             } else {
                 tcol
             }

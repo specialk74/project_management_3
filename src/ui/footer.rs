@@ -456,9 +456,16 @@ pub(crate) fn draw_right_footer(
                 .sum();
             let global_max = app.workers.get_max_hours(*wid) as i32 * ws.len() as i32;
 
-            let shown = state.effort_filter_mode == 0
-                || (state.effort_filter_mode == 1 && value == 0 && eff_max != 0)
-                || (state.effort_filter_mode == 2 && value >= 40);
+            let is_ghost = app.workers.is_ghost(*wid);
+            // Per i ghost non valgono i filtri "Nulli" / ">=40": in quelle
+            // modalità la loro cella non mostra nulla (compaiono solo con "Tutti").
+            let shown = if is_ghost {
+                state.effort_filter_mode == 0
+            } else {
+                state.effort_filter_mode == 0
+                    || (state.effort_filter_mode == 1 && value == 0 && eff_max != 0)
+                    || (state.effort_filter_mode == 2 && value >= 40)
+            };
             if !shown {
                 continue;
             }
@@ -485,10 +492,9 @@ pub(crate) fn draw_right_footer(
             }
 
             // Worker "ghost": max effort di fatto 0 → qualunque effort (>0) è
-            // un'anomalia, sempre in rosso.
-            let is_ghost = app.workers.is_ghost(*wid);
+            // un'anomalia, in porpora per distinguerlo dai sovra-allocati (rossi).
             let color = if is_ghost && value > 0 {
-                g(Color32::RED)
+                g(GHOST_PURPLE)
             } else if value > eff_max {
                 g(Color32::RED)
             } else if eff_max == 0 {

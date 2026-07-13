@@ -29,6 +29,10 @@ pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // Colors.green
 pub const START_BG: Color32 = Color32::from_rgb(70, 130, 180); // steelblue
 pub const CANARY: Color32 = Color32::from_rgb(0xff, 0xf0, 0x66); // giallo canarino (colonna confine anno)
+/// Porpora usato **solo nella GUI** per i worker "ghost", così da distinguerli
+/// dai worker sovra-allocati (che restano rossi). Negli export PDF/SVG i ghost
+/// restano rossi.
+pub const GHOST_PURPLE: Color32 = Color32::from_rgb(0x9C, 0x27, 0xB0);
 pub const CAT_BLUE: Color32 = Color32::from_rgb(0x7a, 0xb0, 0xd4);
 pub const SEL_BG: Color32 = Color32::from_rgba_premultiplied(70, 130, 180, 90); // steelblue alpha
 pub const FOCUS_BORDER: Color32 = Color32::from_rgb(0xff, 0x45, 0x00); // orangered

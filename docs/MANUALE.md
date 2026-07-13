@@ -310,9 +310,10 @@ Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,
 sua nota; incollando testo esterno si incolla solo il testo.
 
 ### Colori del testo nelle celle
-- Worker **ghost**: **sempre rosso** (ha di fatto massimo ore 0 → qualsiasi
-  inserimento è un'anomalia); ha la precedenza su tutti gli altri colori. Vedi
-  **Worker "ghost"** più sotto.
+- Worker **ghost**: **sempre porpora** (ha di fatto massimo ore 0 → qualsiasi
+  inserimento è un'anomalia); ha la precedenza su tutti gli altri colori. Il
+  porpora lo distingue dal rosso dei sovra-allocati. Vedi **Worker "ghost"** più
+  sotto.
 - Worker **nascosto nel footer**: grigio.
 - Worker **in sovra-saturazione** (oltre il massimo ore della settimana): rosso.
 - Altrimenti: colore testo standard (adattato al tema chiaro/scuro).
@@ -321,9 +322,11 @@ sua nota; incollando testo esterno si incolla solo il testo.
 Un worker può essere marcato come **ghost**. Serve a segnalare un'assegnazione
 anomala: quando un worker ghost viene inserito nell'effort di un dev,
 
-1. il **nome del dev lampeggia** (alterna colore normale/rosso);
-2. la **cella è sempre rossa**, indipendentemente dal massimo ore (il suo massimo
-   è di fatto 0); anche il suo **effort nel footer** è sempre rosso;
+1. il **nome del dev lampeggia** (alterna colore normale/porpora);
+2. la **cella è sempre porpora** nella GUI, indipendentemente dal massimo ore (il
+   suo massimo è di fatto 0); anche il suo **effort nel footer** è sempre porpora.
+   Il porpora distingue il ghost dai worker sovra-allocati (rossi). **Negli export
+   PDF/SVG il ghost resta rosso** (punti 3–4);
 3. nel **PDF/SVG dei progetti** il rettangolo della barra è **rosso** nelle
    settimane in cui è stato inserito, anche se in mezzo alla barra del colore del
    dev, e il **nome del dev** (etichetta della riga) è scritto in **rosso**;
@@ -434,6 +437,11 @@ Interazioni:
 ### Filtro effort del footer
 Sopra la sezione worker, tre pulsanti: **Tutti** / **Nulli** / **≥40**, per
 mostrare rispettivamente tutti i valori, solo quelli a zero, o solo quelli ≥ 40.
+
+Per i worker **ghost** questi filtri non valgono: con **Nulli** o **≥40** la loro
+cella non mostra nulla (i ghost compaiono nel footer solo con **Tutti**). Il colore
+delle celle **ghost nella griglia** resta comunque sempre porpora, anche quando il
+ghost non è visualizzato nel footer.
 
 ---
 

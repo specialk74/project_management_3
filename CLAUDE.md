@@ -169,11 +169,14 @@ category/worker-max/etc.).
   **Filtri ▸ Ghost worker…** (all workers) or right-click the footer worker name
   (`Action::SetWorkerGhost`). Detection helpers on `SingleDev`:
   `has_worker_matching(pred)` / `weeks_with_worker(pred)` (effort>0 only). Effects
-  when a ghost has effort in a dev: (1) the dev **name blinks** normal↔red in
+  when a ghost has effort in a dev: (1) the dev **name blinks** normal↔purple in
   `draw_left_devs` (time-based, requests repaint); (2) the grid cell and the
-  footer week cell are **always red** (highest priority, beats hidden/saturation);
-  (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks`; (4) the trend PDF
-  draws the incoming presunta segment + dot **red and thicker** for a ghost week.
+  footer week cell are **always purple** (highest priority, beats hidden/saturation).
+  The GUI uses `GHOST_PURPLE` (in `ui_style.rs`, wrapped in `g(...)`) to distinguish
+  ghosts from over-allocated workers (which stay red); **exports keep ghosts red**:
+  (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks` + red dev-name label;
+  (4) the trend PDF draws the incoming presunta segment + dot **red and thicker** for
+  a ghost week.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
