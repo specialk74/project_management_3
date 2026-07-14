@@ -28,6 +28,7 @@ riutilizzato in un futuro "Help" interno all'applicazione.
 17. [Salvataggio e modifiche esterne](#17-salvataggio-e-modifiche-esterne)
 18. [Scorciatoie da tastiera](#18-scorciatoie-da-tastiera)
 19. [Codici colore e indicatori](#19-codici-colore-e-indicatori)
+20. [Confronto e importazione tra file](#20-confronto-e-importazione-tra-file)
 
 ---
 
@@ -140,6 +141,9 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 ### File
 - **Salva** — salva il file `.ron` corrente (scorciatoia `Cmd/Ctrl+S`).
 - **Apri…** — apre un file `.ron` (selettore nativo).
+- **Confronta/Importa progetto…** — confronta i progetti del file aperto con quelli
+  di un altro file `.ron` (una copia su cui hai sperimentato) e importa i dev o i
+  progetti scelti (vedi §20).
 - **Esporta…** — esporta il PDF Gantt (vedi §16; il comportamento cambia se è
   visibile un solo progetto).
 - **Andamento…** — esporta un PDF con l'**andamento nel tempo** delle percentuali
@@ -744,6 +748,54 @@ produce pagina.
 - **Testo grigio** in cella: worker nascosto nel footer.
 - **Sfondo rosso** su residuo/valore: sotto zero o oltre il massimo.
 - **Riga cumulativa** dal verde al rosso: avanzamento verso il pianificato.
+
+---
+
+## 20. Confronto e importazione tra file
+
+Serve quando lavori sul file `.ron` "ufficiale" (quello aperto nel programma) ma
+hai fatto delle prove su una **copia parallela**: puoi confrontare lo **stesso
+progetto** nei due file e **importare** nel file ufficiale ciò che ti interessa.
+
+Si apre da **File ▸ Confronta/Importa progetto…**, che chiede il file `.ron`
+parallelo. Mentre la finestra di confronto è aperta l'**autosave è sospeso**: le
+modifiche (gli import) restano volontarie e vengono salvate solo dopo aver chiuso la
+finestra (o con `Cmd/Ctrl+S`).
+
+> Il file parallelo va inteso come una **copia** dell'ufficiale: gli identificatori
+> interni (progetti, dev, worker) devono coincidere. I progetti vengono accoppiati
+> per **tripletta**.
+
+### Scelta dei progetti
+
+La prima schermata elenca **solo i progetti diversi** tra i due file (quelli
+identici non compaiono). Spunta uno o più progetti e premi **Confronta »**. Con
+**« Torna alla selezione** torni all'elenco; con **Chiudi** esci (e riparte
+l'autosave).
+
+### La vista di confronto
+
+Due pannelli affiancati come **due griglie originali**: a **sinistra il file
+ufficiale**, a **destra il parallelo**. Ogni cella mostra `Worker|effort` e le date
+di settimana (formato `aa-mm-gg`) sono in cima. I due pannelli **scorrono
+sincronizzati** in orizzontale e in verticale: usa la **rotella** (con **Shift** per
+scorrere nel tempo), il **trascinamento** dello sfondo, o le **barre di
+scorrimento**.
+
+Vengono mostrati **solo i dev diversi**. Per ogni dev, a destra del nome, compaiono
+l'**effort stimato** e la **% dichiarata** dei due lati, che diventano **rossi** se
+differiscono. Anche le **celle effort** diventano rosse dove i valori non
+coincidono.
+
+### Importare nel file ufficiale
+
+- **←** accanto al dev: **importa quel dev** dal parallelo nel file ufficiale.
+- **«** sull'intestazione del progetto: **importa l'intero progetto**.
+
+Non esiste la direzione opposta (verso il parallelo): il file parallelo **non viene
+mai modificato né salvato** su disco. Dopo un import il dev (o il progetto) diventa
+identico e **sparisce dalla vista**, perché vengono mostrate solo le differenze. Le
+modifiche importate finiscono nel file ufficiale al successivo salvataggio.
 
 ---
 

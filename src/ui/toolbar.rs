@@ -38,6 +38,16 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions
                 actions.push(Action::Open);
                 ui.close_menu();
             }
+            if ui
+                .button("Confronta/Importa progetto…")
+                .on_hover_text(
+                    "Confronta i progetti con un altro file .ron e importa i dev scelti",
+                )
+                .clicked()
+            {
+                actions.push(Action::OpenCompare);
+                ui.close_menu();
+            }
             ui.separator();
             if ui.button("Esporta…").clicked() {
                 actions.push(Action::ExportPdf);

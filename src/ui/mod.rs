@@ -28,6 +28,8 @@ mod dialogs;
 mod footer;
 mod toolbar;
 mod grid;
+mod compare;
+pub(crate) use compare::*;
 pub(crate) use saturation::*;
 pub(crate) use export::*;
 pub(crate) use help::*;
@@ -373,6 +375,41 @@ pub struct UiState {
     // includere le percentuali (presunta/dichiarata) nel PDF/SVG esportato;
     // scelta chiesta nelle dialog di export, ricordata tra un export e l'altro.
     export_progress_pct: bool,
+    // finestra "Confronta/Importa progetto…": presente quando un file parallelo è
+    // stato caricato per il confronto. Mentre è aperta l'autosave è sospeso.
+    compare: Option<CompareState>,
+}
+
+// ── Stato della finestra di confronto tra due file .ron ─────────────────────
+
+/// Una coppia di progetti "stesso progetto" nei due file, individuata per
+/// tripletta. Gli id coincidono (il file parallelo è una copia), ma li teniamo
+/// entrambi per chiarezza.
+pub(crate) struct ComparePair {
+    pub tripletta: String,
+    pub off: ProjectId, // id nel file ufficiale (self.app)
+    pub par: ProjectId, // id nel file parallelo (other_app)
+    /// Incluso nella vista di confronto impilata.
+    pub selected: bool,
+}
+
+/// Fase della finestra: prima si scelgono i progetti, poi si confrontano.
+#[derive(PartialEq, Eq)]
+pub(crate) enum CompareStage {
+    Select,
+    View,
+}
+
+/// Stato completo del confronto: il file parallelo caricato in memoria, le coppie
+/// di progetti in comune e lo scroll condiviso tra i due pannelli.
+pub(crate) struct CompareState {
+    pub other_app: App,
+    pub other_path: String,
+    pub pairs: Vec<ComparePair>,
+    pub stage: CompareStage,
+    // scroll condiviso tra pannello sinistro (ufficiale) e destro (parallelo)
+    pub scroll_x: f32,
+    pub scroll_y: f32,
 }
 
 // Scelta dell'utente nella finestra di conferma uscita.
@@ -387,6 +424,24 @@ enum ExitChoice {
 pub(crate) enum Action {
     Save,
     Open,
+    /// Apre la finestra di confronto: chiede un file .ron parallelo e carica lo
+    /// stato in `UiState.compare`.
+    OpenCompare,
+    /// Copia un dev da un lato all'altro nella finestra di confronto.
+    /// `to_official = true` → parallelo→ufficiale (import reale su `self.app`);
+    /// `false` → ufficiale→parallelo (solo in memoria su `other_app`).
+    CompareCopyDev {
+        off: ProjectId,
+        par: ProjectId,
+        dev: DevId,
+        to_official: bool,
+    },
+    /// Copia un intero progetto da un lato all'altro nella finestra di confronto.
+    CompareCopyProject {
+        off: ProjectId,
+        par: ProjectId,
+        to_official: bool,
+    },
     NewProject,
     AddWorker(String),
     AddDev(String),
@@ -821,6 +876,7 @@ impl eframe::App for PjmApp {
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
+            compare_window(ui.ctx(), app, state, &mut actions);
         }
 
         for a in actions {
@@ -959,6 +1015,12 @@ impl PjmApp {
     fn maybe_autosave(&mut self, ctx: &egui::Context) {
         const AUTOSAVE_SECS: f64 = 120.0;
         if self.ui.pending_reload.is_some() {
+            return;
+        }
+        // Durante il confronto tra due file l'autosave è sospeso: le modifiche
+        // (import di un dev) restano volontarie e vengono salvate solo dopo aver
+        // chiuso la finestra di confronto.
+        if self.ui.compare.is_some() {
             return;
         }
         let now = ctx.input(|i| i.time);
@@ -1210,6 +1272,73 @@ impl PjmApp {
                             self.ui.load_error = Some(format!("Impossibile aprire «{path}»:\n{e}"));
                         }
                     }
+                }
+            }
+            Action::OpenCompare => {
+                if let Some(path_buf) = rfd::FileDialog::new()
+                    .add_filter("RON files", &["ron"])
+                    .pick_file()
+                {
+                    let path = path_buf.to_string_lossy().to_string();
+                    match App::load(&path) {
+                        Ok(mut loaded) => {
+                            loaded.compute_sovra();
+                            let pairs = common_project_pairs(&self.app, &loaded);
+                            if pairs.is_empty() {
+                                self.ui.load_error = Some(format!(
+                                    "Nessun progetto diverso: i progetti in comune (per \
+                                     tripletta) col file «{path}» sono identici (oppure non \
+                                     ce ne sono in comune)."
+                                ));
+                            } else {
+                                self.ui.compare = Some(CompareState {
+                                    other_app: loaded,
+                                    other_path: path,
+                                    pairs,
+                                    stage: CompareStage::Select,
+                                    scroll_x: 0.0,
+                                    scroll_y: 0.0,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            self.ui.load_error =
+                                Some(format!("Impossibile aprire «{path}» per il confronto:\n{e}"));
+                        }
+                    }
+                }
+            }
+            Action::CompareCopyDev { off, par, dev, to_official } => {
+                let Some(cmp) = self.ui.compare.as_mut() else {
+                    return;
+                };
+                if to_official {
+                    // parallelo → ufficiale (import reale): copia il SingleDev dal
+                    // progetto parallelo a quello ufficiale.
+                    let src = cmp.other_app.projects.get_single_dev(par, dev).cloned();
+                    copy_dev_into(&mut self.app, off, dev, src);
+                    self.mark_changed();
+                } else {
+                    // ufficiale → parallelo (solo in memoria).
+                    let src = self.app.projects.get_single_dev(off, dev).cloned();
+                    copy_dev_into(&mut cmp.other_app, par, dev, src);
+                    cmp.other_app.compute_sovra();
+                }
+            }
+            Action::CompareCopyProject { off, par, to_official } => {
+                let Some(cmp) = self.ui.compare.as_mut() else {
+                    return;
+                };
+                if to_official {
+                    // parallelo → ufficiale (import reale dell'intero progetto).
+                    let src = cmp.other_app.clone();
+                    copy_project_into(&mut self.app, off, &src, par);
+                    self.mark_changed();
+                } else {
+                    // ufficiale → parallelo (solo in memoria).
+                    let src = self.app.clone();
+                    copy_project_into(&mut cmp.other_app, par, &src, off);
+                    cmp.other_app.compute_sovra();
                 }
             }
             Action::NewProject => {
@@ -2020,16 +2149,16 @@ mod tests {
         let sections = manual_sections(&manual);
         // Esattamente una sezione "## Indice", sostituita in-app dalla colonna.
         assert_eq!(sections.iter().filter(|s| is_index_section(s)).count(), 1);
-        // I capitoli navigabili nell'indice laterale sono i 19 numerati.
+        // I capitoli navigabili nell'indice laterale sono i 20 numerati.
         let chapters: Vec<&str> = sections.iter().filter_map(|s| chapter_title(s)).collect();
         assert_eq!(
             chapters.len(),
-            19,
-            "attesi 19 capitoli, trovati {}",
+            20,
+            "attesi 20 capitoli, trovati {}",
             chapters.len()
         );
         assert!(chapters[0].starts_with("1. "), "primo: {}", chapters[0]);
-        assert!(chapters[18].starts_with("19. "), "ultimo: {}", chapters[18]);
+        assert!(chapters[19].starts_with("20. "), "ultimo: {}", chapters[19]);
         // "Indice" non deve comparire tra i capitoli navigabili.
         assert!(!chapters.iter().any(|c| *c == "Indice"));
     }
