@@ -178,6 +178,7 @@ const NAME_W: f32 = 140.0; // colonna nome dev dentro ciascun pannello
 const GUTTER_W: f32 = 66.0; // colonna centrale con le frecce
 const PROJ_H: f32 = 28.0; // intestazione progetto
 const ROW_H: f32 = 20.0; // riga worker (sotto-riga del blocco dev)
+const MS_H: f32 = 36.0; // riga milestone (alta il doppio: nome su due righe)
 const HEADER_H: f32 = 20.0; // banda intestazione (date settimane)
 const SB: f32 = 12.0; // spessore scrollbar
 
@@ -304,6 +305,16 @@ fn decl_of(app: &App, proj: ProjectId, dev: DevId) -> u8 {
         .unwrap_or(0)
 }
 
+/// Milestone collocate in una data settimana per un progetto (ordinate per id,
+/// così i due lati confrontano insiemi stabili).
+fn ms_at(app: &App, proj: ProjectId, day: i32) -> Vec<MilestoneId> {
+    let mut v = app
+        .projects
+        .project_milestones_at_week(proj, WeekId(day as usize));
+    v.sort_by_key(|m| m.0);
+    v
+}
+
 /// Etichetta italiana di un campo dell'intestazione che differisce.
 fn header_label(f: crate::project_diff::HeaderField) -> &'static str {
     use crate::project_diff::HeaderField as H;
@@ -324,6 +335,10 @@ enum RowKind {
     /// Intestazione di progetto. `header` = campi dell'intestazione che
     /// differiscono (mostrati in rosso; vuoto se differiscono solo i dev).
     Proj { off: ProjectId, par: ProjectId, trip: String, header: Vec<crate::project_diff::HeaderField> },
+    /// Riga milestone del progetto: per ogni settimana una cella colorata col
+    /// colore della milestone (nome dentro) su entrambi i lati; le settimane in
+    /// cui l'insieme di milestone differisce sono bordate di rosso.
+    Milestones { off: ProjectId, par: ProjectId },
     /// Blocco di un dev: nome a sinistra/destra, frecce al centro, e una
     /// sotto-riga per ogni worker (`workers`) con celle "Nome|effort" per settimana.
     /// `off_planned`/`par_planned` = effort stimato del dev nei due file (rosso in
@@ -397,6 +412,14 @@ fn compare_view_stage(
                 }
             }
         }
+        // Le settimane delle milestone (in entrambe le versioni) entrano
+        // nell'asse anche se nessun dev vi ha effort, così la riga milestone ha
+        // sempre una colonna in cui disegnarle.
+        for (appref, pid) in [(app, *off), (&cmp.other_app, *par)] {
+            for (_m, w) in appref.projects.list_project_milestones(pid) {
+                days.insert(w.0 as i32);
+            }
+        }
     }
     // Nota: `weeks` può essere vuoto se i progetti selezionati differiscono solo
     // nell'intestazione (nessun dev diverso): in tal caso non c'è griglia da
@@ -416,6 +439,13 @@ fn compare_view_stage(
         };
         rows.push(LRow { y, h: PROJ_H, kind: RowKind::Proj { off: *off, par: *par, trip: trip.clone(), header } });
         y += PROJ_H;
+        // Riga milestone: presente se una qualsiasi delle due versioni ne ha.
+        let has_ms = !app.projects.list_project_milestones(*off).is_empty()
+            || !cmp.other_app.projects.list_project_milestones(*par).is_empty();
+        if has_ms {
+            rows.push(LRow { y, h: MS_H, kind: RowKind::Milestones { off: *off, par: *par } });
+            y += MS_H;
+        }
         for dd in devdiffs {
             let changed = dd.status != crate::project_diff::DiffStatus::Identical;
             // Mostra solo i dev diversi: quelli identici non compaiono.
@@ -586,6 +616,69 @@ fn compare_view_stage(
                 if lr.clicked() {
                     actions.push(Action::CompareCopyProject { off: *off, par: *par, to_official: true });
                 }
+            }
+            RowKind::Milestones { off, par } => {
+                // Etichetta di riga in entrambe le colonne nome.
+                lname.text(egui::pos2(left_x + 4.0, screen_y + MS_H / 2.0), Align2::LEFT_CENTER, "Milestone", smallf.clone(), text_dim());
+                rname.text(egui::pos2(right_x + 4.0, screen_y + MS_H / 2.0), Align2::LEFT_CENTER, "Milestone", smallf.clone(), text_dim());
+                for (i, w) in weeks.iter().enumerate() {
+                    let cx_l = l_week_x + i as f32 * CW - sx;
+                    if cx_l + CW < l_week_x || cx_l > l_week_x + week_area_w {
+                        continue;
+                    }
+                    let cx_r = r_week_x + i as f32 * CW - sx;
+                    let off_ms = ms_at(app, *off, *w);
+                    let par_ms = ms_at(&cmp.other_app, *par, *w);
+                    if off_ms.is_empty() && par_ms.is_empty() {
+                        continue;
+                    }
+                    let diff = off_ms != par_ms;
+                    // Cella milestone per un lato: tinta col colore della prima
+                    // milestone e nomi al centro, su **due righe** (con «…» se
+                    // troppo lunghi) così non sconfinano nelle settimane vicine.
+                    // Il testo è nero o bianco a contrasto col colore milestone.
+                    let draw_side = |painter: &egui::Painter, cx: f32, ids: &[MilestoneId]| {
+                        if ids.is_empty() {
+                            return;
+                        }
+                        let cell = Rect::from_min_size(egui::pos2(cx, screen_y), egui::vec2(CW, MS_H));
+                        let fill = ids
+                            .first()
+                            .and_then(|m| app.milestones.get_color(*m))
+                            .map(from_hex)
+                            .unwrap_or_else(|| strip_bg(false));
+                        painter.rect_filled(cell, 0.0, fill);
+                        let names: Vec<String> = ids
+                            .iter()
+                            .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
+                            .collect();
+                        let txt = contrast_text(fill);
+                        let mut job = egui::text::LayoutJob::default();
+                        job.wrap = egui::text::TextWrapping {
+                            max_width: CW - 6.0,
+                            max_rows: 2,
+                            break_anywhere: true,
+                            overflow_character: Some('…'),
+                        };
+                        job.halign = egui::Align::Center;
+                        job.append(
+                            &names.join(", "),
+                            0.0,
+                            egui::TextFormat { font_id: cellf.clone(), color: txt, ..Default::default() },
+                        );
+                        let galley = painter.layout_job(job);
+                        let pos = egui::pos2(cell.center().x, cell.center().y - galley.size().y / 2.0);
+                        painter.galley(pos, galley, txt);
+                    };
+                    draw_side(&lcell, cx_l, &off_ms);
+                    draw_side(&rcell, cx_r, &par_ms);
+                    if diff {
+                        let sk = egui::StrokeKind::Inside;
+                        lcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_l, screen_y), egui::vec2(CW, MS_H)), 0.0, Stroke::new(1.0, red), sk);
+                        rcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_r, screen_y), egui::vec2(CW, MS_H)), 0.0, Stroke::new(1.0, red), sk);
+                    }
+                }
+                p.hline(r.left()..=(r.left() + inner_w), screen_y + MS_H, Stroke::new(1.0, Color32::from_gray(70)));
             }
             RowKind::DevBlock { off, par, dev, name, workers, off_planned, par_planned, off_decl, par_decl } => {
                 let block_h = row.h;

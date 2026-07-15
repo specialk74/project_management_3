@@ -193,6 +193,20 @@ pub fn g(c: Color32) -> Color32 {
     Color32::from_rgba_premultiplied(lum, lum, lum, a)
 }
 
+/// Colore di testo (nero o bianco) leggibile sopra `background`, scelto in base
+/// alla luminanza percepita del colore di sfondo — così resta leggibile in
+/// qualunque tema e con qualunque colore (es. celle milestone tinte).
+#[inline]
+pub fn contrast_text(background: Color32) -> Color32 {
+    let [r, gr, b, _] = background.to_array();
+    let lum = 0.299 * r as f32 + 0.587 * gr as f32 + 0.114 * b as f32;
+    if lum > 140.0 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    }
+}
+
 #[inline]
 pub fn from_hex(rgb: u32) -> Color32 {
     g(Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8))
