@@ -466,6 +466,49 @@ pub(crate) fn closed_filter_window(
 
 // ── Filtro worker (Ctrl+F / Workers ▼) ──────────────────────────────────────
 
+/// Per ogni nome worker: (numero di progetti APERTI, numero di progetti CHIUSI)
+/// distinti in cui il worker ha effort > 0. Con `current_week_only` (modalità
+/// Ctrl+G) conta solo la presenza nella **settimana corrente**; altrimenti (Ctrl+F)
+/// su **tutte** le settimane. Ignora filtri e vista. Chiave per nome (come il
+/// filtro worker).
+fn worker_project_counts(app: &App, current_week_only: bool) -> HashMap<String, (u32, u32)> {
+    let cur = current_week_id();
+    let mut counts: HashMap<String, (u32, u32)> = HashMap::new();
+    for (proj, _) in app.projects.list() {
+        let closed = app.projects.is_closed(proj);
+        // worker distinti presenti (effort > 0) in questo progetto
+        let mut seen: HashSet<WorkerId> = HashSet::new();
+        for dev in app.projects.list_devs(proj) {
+            if let Some(sd) = app.projects.get_single_dev(proj, dev) {
+                let weeks = if current_week_only {
+                    vec![cur]
+                } else {
+                    sd.get_weeks()
+                };
+                for wk in weeks {
+                    if let Some(sew) = sd.get_all(wk) {
+                        for (wid, se) in sew.worker_id.iter() {
+                            if *wid != WORKER_ID_ZERO && se.get_effort().0 > 0 {
+                                seen.insert(*wid);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for wid in seen {
+            let name = app.workers.get_name_by_id(wid).to_string();
+            let e = counts.entry(name).or_default();
+            if closed {
+                e.1 += 1;
+            } else {
+                e.0 += 1;
+            }
+        }
+    }
+    counts
+}
+
 pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     if !state.show_worker_filter {
         return;
@@ -479,8 +522,18 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
         .filter(|(id, _)| app.workers.is_shown_in_find(*id))
         .map(|(_, n)| n)
         .collect();
+    // Conteggio progetti per worker (aperti/chiusi), mostrato accanto al nome.
+    // In modalità Ctrl+G conta solo i progetti con presenza nella settimana corrente.
+    let counts = worker_project_counts(app, state.worker_filter_current_week);
     let mut open = true;
     let mut filter = state.worker_filter.clone();
+    // Titolo diverso in modalità "settimana corrente" (Ctrl+G) così si distingue
+    // dal filtro su tutte le settimane (Ctrl+F).
+    let title = if state.worker_filter_current_week {
+        "Workers (settimana corrente)"
+    } else {
+        "Workers"
+    };
 
     let just_opened = state.worker_filter_just_opened;
     state.worker_filter_just_opened = false;
@@ -494,13 +547,14 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
         filter = if currently_all { Some(HashSet::new()) } else { None };
     }
 
-    let resp = egui::Window::new("Workers")
+    let resp = egui::Window::new(title)
+        .id(egui::Id::new("worker_filter_window")) // id stabile: il titolo cambia con la modalità
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(140.0, 40.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            let min_w = title_width(ui, "Workers");
+            let min_w = title_width(ui, title);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.set_min_width(min_w);
                 let currently_all = match &filter {
@@ -515,7 +569,11 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
                         None => true,
                         Some(s) => s.contains(name),
                     };
-                    if ui.checkbox(&mut sel, name).changed() {
+                    // Etichetta = nome + conteggio progetti aperti/chiusi. Il nome
+                    // resta l'identificatore del filtro (solo l'etichetta cambia).
+                    let (op, cl) = counts.get(name).copied().unwrap_or((0, 0));
+                    let label = format!("{name}    {op}/Aperti - {cl}/Chiuso");
+                    if ui.checkbox(&mut sel, label).changed() {
                         let set = filter.get_or_insert_with(|| all.iter().cloned().collect());
                         if sel {
                             set.insert(name.clone());
@@ -1185,5 +1243,52 @@ pub(crate) fn hours_popup_window(
                 }
             });
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_project_counts_splits_open_and_closed() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let dev = app.devs.add("Frontend");
+        let cur = current_week_id();
+        let other = WeekId(20000); // settimana lontana (non corrente)
+
+        // P1 aperto: Alice nella settimana corrente, Bob in un'altra settimana.
+        let p1 = app.projects.add("P1", Some("AAA"), Some(cur));
+        app.projects.add_dev(p1, dev);
+        app.projects.add_effort(p1, dev, cur, alice, Effort(8));
+        app.projects.add_effort(p1, dev, other, bob, Effort(8));
+
+        // P2 chiuso: Alice nella settimana corrente.
+        let p2 = app.projects.add("P2", Some("BBB"), Some(cur));
+        app.projects.add_dev(p2, dev);
+        app.projects.add_effort(p2, dev, cur, alice, Effort(8));
+        app.projects.set_closed(p2, true);
+
+        // P3 aperto: Alice con effort 0 nella settimana corrente → non conta.
+        let p3 = app.projects.add("P3", Some("CCC"), Some(cur));
+        app.projects.add_dev(p3, dev);
+        app.projects.add_effort(p3, dev, cur, alice, Effort(0));
+
+        // P4 aperto: Bob nella settimana corrente.
+        let p4 = app.projects.add("P4", Some("DDD"), Some(cur));
+        app.projects.add_dev(p4, dev);
+        app.projects.add_effort(p4, dev, cur, bob, Effort(8));
+
+        // Ctrl+F: tutte le settimane. Bob è in P1 (altra settimana) + P4 = 2 aperti.
+        let all = worker_project_counts(&app, false);
+        assert_eq!(all.get("Alice").copied(), Some((1, 1)));
+        assert_eq!(all.get("Bob").copied(), Some((2, 0)));
+
+        // Ctrl+G: solo settimana corrente. Bob non è in P1 questa settimana → solo P4.
+        let cw = worker_project_counts(&app, true);
+        assert_eq!(cw.get("Alice").copied(), Some((1, 1)));
+        assert_eq!(cw.get("Bob").copied(), Some((1, 0)));
+    }
 }
 

@@ -137,13 +137,32 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions
                 state.project_filter_just_opened = state.show_project_filter;
                 ui.close_menu();
             }
-            // La spunta segnala che un filtro worker è attivo.
+            // La spunta segnala che un filtro worker è attivo (nella rispettiva
+            // modalità). Ctrl+F = tutte le settimane; Ctrl+G = solo i progetti in
+            // cui un worker selezionato lavora nella settimana corrente.
+            let filter_on = state.worker_filter.is_some();
             if ui
-                .selectable_label(state.worker_filter.is_some(), "Workers…  (⌘/Ctrl+F)")
+                .selectable_label(
+                    filter_on && !state.worker_filter_current_week,
+                    "Workers…  (⌘/Ctrl+F)",
+                )
                 .clicked()
             {
                 state.show_worker_filter = !state.show_worker_filter;
                 state.worker_filter_just_opened = state.show_worker_filter;
+                state.worker_filter_current_week = false;
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(
+                    filter_on && state.worker_filter_current_week,
+                    "Workers (settimana corrente)…  (⌘/Ctrl+G)",
+                )
+                .clicked()
+            {
+                state.show_worker_filter = !state.show_worker_filter;
+                state.worker_filter_just_opened = state.show_worker_filter;
+                state.worker_filter_current_week = true;
                 ui.close_menu();
             }
             if ui.button("Milestone…").clicked() {

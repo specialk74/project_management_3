@@ -174,6 +174,11 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
   ("Select All" per agire su tutti).
 - **Workers…** — filtro per worker (vedi §14). La voce mostra una spunta quando un
   filtro è attivo. Scorciatoia `Cmd/Ctrl+F`.
+- **Workers (settimana corrente)…** — stessa finestra e stessa selezione del filtro
+  worker, ma mostra **solo i progetti in cui un worker selezionato sta lavorando nella
+  settimana corrente** (ha effort in questa settimana). Dentro ai progetti mostrati la
+  visualizzazione resta identica al filtro Workers normale (tutte le settimane).
+  Scorciatoia `Cmd/Ctrl+G`; premere `Cmd/Ctrl+F` torna al filtro su tutte le settimane.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
 - **Closed…** — finestra per marcare/smarcare i progetti come **chiusi**. Un
@@ -482,6 +487,29 @@ Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
 (impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — al
 momento impostabile modificando il file `.ron` — non appare in questa lista.
 
+Accanto a ogni nome è indicato **in quanti progetti si trova** il worker (dove ha
+effort assegnato), suddiviso in aperti e chiusi nel formato **`N/Aperti - M/Chiuso`**.
+Il conteggio **segue la modalità**: con `Cmd/Ctrl+F` considera **tutte le settimane**
+(progetti aperti/chiusi in assoluto); con `Cmd/Ctrl+G` (settimana corrente) conta solo
+i progetti aperti/chiusi in cui il worker è presente **nella settimana corrente**.
+
+### Filtro worker sulla settimana corrente (Filtri ▸ Workers (settimana corrente)…, `Cmd/Ctrl+G`)
+Variante del filtro worker che risponde alla domanda **«a quali progetti sta
+lavorando questo worker in questa settimana?»**. Usa la **stessa finestra e la stessa
+selezione** del filtro Workers normale, ma cambia il criterio con cui i progetti
+compaiono:
+- un progetto è mostrato **solo se** almeno un worker selezionato ha **effort nella
+  settimana corrente** (la settimana di oggi);
+- **dentro** i progetti mostrati la visualizzazione è identica al filtro normale
+  (righe dei worker selezionati su **tutte** le settimane): Ctrl+G decide solo *quali*
+  progetti compaiono, non nasconde nulla all'interno.
+
+Il titolo della finestra diventa **«Workers (settimana corrente)»** per ricordare la
+modalità attiva. Premere `Cmd/Ctrl+G` a finestra già aperta fa il **toggle di "Select
+All"**; premere `Cmd/Ctrl+F` riporta al filtro su **tutte le settimane** (e viceversa
+`Cmd/Ctrl+G` riattiva la modalità settimana corrente). `Shift+Cmd/Ctrl+G` deseleziona
+tutti i worker.
+
 ### Ghost worker (Filtri ▸ Ghost worker…)
 Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
 dal filtro Ctrl+F) con una spunta **Ghost** ciascuno. È il modo sempre raggiungibile
@@ -710,8 +738,10 @@ produce pagina.
 | Scorciatoia | Azione |
 |---|---|
 | `Cmd/Ctrl + S` | Salva il file |
-| `Cmd/Ctrl + F` | Apri il filtro worker |
+| `Cmd/Ctrl + F` | Apri il filtro worker (tutte le settimane) |
 | `Shift + Cmd/Ctrl + F` | Deseleziona tutti i worker nel filtro |
+| `Cmd/Ctrl + G` | Filtro worker sulla **settimana corrente** (solo progetti con il worker attivo questa settimana) |
+| `Shift + Cmd/Ctrl + G` | Deseleziona tutti i worker nel filtro (settimana corrente) |
 | `Cmd/Ctrl + P` | Vai a progetto (ricerca e salto rapido) |
 | `Invio` / `Tab` | Conferma la modifica della cella |
 | `Esc` | Annulla la modifica della cella |

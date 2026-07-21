@@ -280,6 +280,11 @@ pub struct UiState {
     move_dialog_was_open: bool,
     // filtro worker: None = nessun filtro (tutti); Some(set) = mostra solo questi nomi
     worker_filter: Option<HashSet<String>>,
+    // Modalità "settimana corrente" del filtro worker (Ctrl+G): con filtro attivo
+    // un progetto compare solo se un worker selezionato ha effort nella settimana
+    // corrente. Dentro il progetto la resa resta come Ctrl+F (tutte le settimane).
+    // Ctrl+F la disattiva, Ctrl+G la riattiva. Non persistita.
+    worker_filter_current_week: bool,
     show_worker_filter: bool,
     show_project_filter: bool,
     show_closed_filter: bool,
@@ -783,11 +788,12 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_p, shift, key_1, key_2, key_3) = ui.ctx().input(|i| {
+            let (key_s, key_f, key_g, key_p, shift, key_1, key_2, key_3) = ui.ctx().input(|i| {
                 let cmd = i.modifiers.command || i.modifiers.ctrl;
                 (
                     cmd && i.key_pressed(egui::Key::S),
                     cmd && i.key_pressed(egui::Key::F),
+                    cmd && i.key_pressed(egui::Key::G),
                     cmd && i.key_pressed(egui::Key::P),
                     i.modifiers.shift,
                     cmd && i.key_pressed(egui::Key::Num1),
@@ -809,15 +815,36 @@ impl eframe::App for PjmApp {
             if key_3 {
                 state.project_view = ProjectViewMode::All;
             }
+            // Ctrl+F: filtro worker su TUTTE le settimane; Ctrl+G: stessa finestra
+            // e selezione, ma modalità "settimana corrente". Premere una delle due
+            // a pannello aperto nell'altra modalità commuta solo la modalità; nella
+            // stessa modalità fa il toggle del "Select All".
             if key_f {
                 if shift {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
-                } else if state.show_worker_filter {
-                    // pannello già aperto → toggle del "Select All"
+                    state.worker_filter_current_week = false;
+                } else if state.show_worker_filter && !state.worker_filter_current_week {
                     state.worker_filter_toggle_all = true;
+                } else if state.show_worker_filter {
+                    state.worker_filter_current_week = false; // commuta a "tutte le settimane"
                 } else {
                     state.show_worker_filter = true;
                     state.worker_filter_just_opened = true;
+                    state.worker_filter_current_week = false;
+                }
+            }
+            if key_g {
+                if shift {
+                    state.worker_filter = Some(HashSet::new()); // deseleziona tutti
+                    state.worker_filter_current_week = true;
+                } else if state.show_worker_filter && state.worker_filter_current_week {
+                    state.worker_filter_toggle_all = true;
+                } else if state.show_worker_filter {
+                    state.worker_filter_current_week = true; // commuta a "settimana corrente"
+                } else {
+                    state.show_worker_filter = true;
+                    state.worker_filter_just_opened = true;
+                    state.worker_filter_current_week = true;
                 }
             }
             if key_p {

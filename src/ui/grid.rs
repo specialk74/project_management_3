@@ -12,7 +12,15 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
     if let Some(target) = state.jump_to_project.take() {
         let compact = state.compact_mode;
         let merged = !compact && state.zoom_level > 0;
-        let layout = project_layout(ui, app, &filter, state.project_view, compact, merged);
+        let layout = project_layout(
+            ui,
+            app,
+            &filter,
+            state.worker_filter_current_week,
+            state.project_view,
+            compact,
+            merged,
+        );
         let mut y = DEV_BORDER;
         let mut found = false;
         for p in &layout {
@@ -92,6 +100,7 @@ pub(crate) fn project_layout(
     ui: &egui::Ui,
     app: &App,
     filter: &Filter,
+    current_week_only: bool,
     view: ProjectViewMode,
     compact: bool,
     merged: bool,
@@ -106,6 +115,16 @@ pub(crate) fn project_layout(
         // sono sempre `enable = false` (vedi `project_in_body`).
         if !project_in_body(app, view, proj_id) {
             continue;
+        }
+        // Modalità "settimana corrente" (Ctrl+G): col filtro worker attivo mostra
+        // solo i progetti in cui un worker selezionato ha effort nella settimana
+        // corrente. Dentro, la resa resta identica a Ctrl+F (nessun'altra modifica).
+        if current_week_only {
+            if let Some(set) = filter.as_ref() {
+                if !project_worker_in_current_week(app, proj_id, set) {
+                    continue;
+                }
+            }
         }
         let devs: Vec<(DevId, usize)> = app
             .projects
@@ -138,6 +157,24 @@ pub(crate) fn project_layout(
         });
     }
     out
+}
+
+/// True se il progetto ha almeno un dev in cui un worker con nome in `set` sta
+/// lavorando (effort > 0) nella settimana corrente. Usato dal filtro Ctrl+G.
+fn project_worker_in_current_week(app: &App, proj: ProjectId, set: &HashSet<String>) -> bool {
+    let wk = current_week_id();
+    app.projects.list_devs(proj).into_iter().any(|dev| {
+        app.projects
+            .get_single_dev(proj, dev)
+            .and_then(|sd| sd.get_all(wk))
+            .is_some_and(|sew| {
+                sew.worker_id.iter().any(|(wid, se)| {
+                    *wid != WORKER_ID_ZERO
+                        && se.get_effort().0 > 0
+                        && set.contains(app.workers.get_name_by_id(*wid))
+                })
+            })
+    })
 }
 
 pub(crate) fn total_content_h(layout: &[ProjLayout]) -> f32 {
@@ -263,7 +300,15 @@ pub(crate) fn grid(
     let cw = col_w(compact);
     let cols = columns_vec(app, level);
     let content_w = cols_width(&cols, cw);
-    let layout = project_layout(ui, app, filter, state.project_view, compact, merged);
+    let layout = project_layout(
+        ui,
+        app,
+        filter,
+        state.worker_filter_current_week,
+        state.project_view,
+        compact,
+        merged,
+    );
     let total_h = total_content_h(&layout);
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
@@ -1072,7 +1117,15 @@ pub(crate) fn left_column(
     let compact = state.compact_mode;
     // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
     let merged = !compact && state.zoom_level > 0;
-    let layout = project_layout(ui, app, filter, state.project_view, compact, merged);
+    let layout = project_layout(
+        ui,
+        app,
+        filter,
+        state.worker_filter_current_week,
+        state.project_view,
+        compact,
+        merged,
+    );
     let total_h = total_content_h(&layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
@@ -1704,6 +1757,48 @@ pub(crate) fn draw_left_devs(
         ui.painter().rect_filled(bot_b, 0.0, color);
 
         y += block_h;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Filtro Ctrl+G: un progetto matcha solo se un worker selezionato ha effort
+    // nella settimana corrente.
+    #[test]
+    fn current_week_filter_matches_only_current_week_worker() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let dev = app.devs.add("Frontend");
+        let wk = current_week_id();
+        let other = WeekId(wk.0 + 7); // settimana successiva (WEEK_STEP)
+
+        // P1: Alice lavora nella settimana corrente.
+        let p1 = app.projects.add("P1", Some("AAA"), Some(wk));
+        app.projects.add_dev(p1, dev);
+        app.projects.add_effort(p1, dev, wk, alice, Effort(8));
+
+        // P2: Bob lavora solo in un'altra settimana.
+        let p2 = app.projects.add("P2", Some("BBB"), Some(wk));
+        app.projects.add_dev(p2, dev);
+        app.projects.add_effort(p2, dev, other, bob, Effort(8));
+
+        let both: HashSet<String> =
+            ["Alice".to_string(), "Bob".to_string()].into_iter().collect();
+        assert!(project_worker_in_current_week(&app, p1, &both));
+        assert!(!project_worker_in_current_week(&app, p2, &both));
+
+        // Con solo Bob selezionato, P1 (Alice nella settimana corrente) non matcha.
+        let only_bob: HashSet<String> = ["Bob".to_string()].into_iter().collect();
+        assert!(!project_worker_in_current_week(&app, p1, &only_bob));
+
+        // Effort 0 nella settimana corrente non conta come "sta lavorando".
+        let p3 = app.projects.add("P3", Some("CCC"), Some(wk));
+        app.projects.add_dev(p3, dev);
+        app.projects.add_effort(p3, dev, wk, alice, Effort(0));
+        assert!(!project_worker_in_current_week(&app, p3, &both));
     }
 }
 
