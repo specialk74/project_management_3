@@ -881,22 +881,28 @@ fn page_shapes(
     }
 
     // Quota del pennant: tratto verticale corto ancorato alla data + tratto
-    // inclinato che sale tanto più quanto più l'etichetta è spostata di lato
-    // (ventaglio aperto verso l'ALTO, così sfrutta lo spazio bianco sopra) +
-    // tratto verticale corto finale su cui si aggancia la bandierina. Un tetto
-    // evita che le etichette invadano il titolo del progetto.
+    // inclinato + tratto verticale corto finale su cui si aggancia la bandierina.
+    // Le bandierine sono disposte a PARABOLA con la CONCA VERSO IL BASSO (arco a
+    // duomo): la centrale è la più alta, quelle ai lati le più basse. La salita
+    // del tratto inclinato segue 1 − t², con t da −1 a +1 lungo le bandierine
+    // ordinate per data. Un tetto evita che le etichette invadano il titolo.
+    // (Per tornare al ventaglio con la conca verso l'alto basta rimettere la
+    // salita ∝ |lx − anchor|.)
     const FLAG_BASE_V: f32 = 5.0; // tratto verticale in basso (ancoraggio data)
     const FLAG_TOP_V: f32 = 6.0; // tratto verticale in alto (aggancio pennant)
-    const FLAG_MIN_LEAN_V: f32 = 14.0; // salita minima del tratto inclinato
-    const FLAG_LEAN_K: f32 = 0.9; // salita ∝ spostamento orizzontale
+    const FLAG_ARCH_MIN: f32 = 10.0; // salita del tratto inclinato ai lati
+    const FLAG_ARCH_H: f32 = 25.0; // salita aggiuntiva al centro dell'arco
     const FLAG_TOP_MAX: f32 = 176.0; // quota massima del pennant
     let pole_top_y: Vec<f32> = (0..n)
         .map(|i| {
-            (AXIS_TOP
-                + FLAG_BASE_V
-                + FLAG_TOP_V
-                + FLAG_MIN_LEAN_V.max(FLAG_LEAN_K * (lx[i] - anchor[i]).abs()))
-            .min(FLAG_TOP_MAX)
+            // t ∈ [-1, 1] lungo le bandierine; 1 − t² = 1 al centro, 0 ai bordi.
+            let t = if n > 1 {
+                i as f32 / (n as f32 - 1.0) * 2.0 - 1.0
+            } else {
+                0.0
+            };
+            (AXIS_TOP + FLAG_BASE_V + FLAG_TOP_V + FLAG_ARCH_MIN + FLAG_ARCH_H * (1.0 - t * t))
+                .min(FLAG_TOP_MAX)
         })
         .collect();
 
