@@ -67,8 +67,10 @@ const CHART_X1: f32 = 279.0;
 const AXIS_TOP: f32 = 130.0;
 const AXIS_BOT: f32 = 122.0;
 
-// Zona righe dev (tra l'asse e il footer).
-const ROWS_TOP: f32 = 119.0;
+// Zona righe dev (tra l'asse e il footer). Abbassata rispetto all'asse per
+// lasciare una fascia [ROWS_TOP, AXIS_BOT] in cui sta l'etichetta "Today"
+// (triangolo + testo) senza mai coprire le barre dei dev.
+const ROWS_TOP: f32 = 108.0;
 const ROWS_BOT: f32 = 26.0;
 
 // Footer (banda grigia + data creazione).
@@ -764,108 +766,169 @@ fn page_shapes(
     }
     if today_in_axis {
         let xt = x_of(today);
-        // Linea rossa verticale attraverso le righe.
+        // Linea rossa verticale attraverso le righe, fino al bordo inferiore
+        // dell'asse (dove si aggancia il triangolo "Today").
         shapes.extend(line(xt, ROWS_BOT, xt, AXIS_BOT, 0.7, RED));
-        // Triangolo + etichetta "Today" sopra l'asse.
+        // Triangolo "Today" SOTTO l'asse, con la punta rivolta verso l'ALTO
+        // (verso la barra dei mesi).
         shapes.extend(poly_fill(
             &[
-                (xt - 2.0, AXIS_TOP + 4.0),
-                (xt + 2.0, AXIS_TOP + 4.0),
-                (xt, AXIS_TOP),
+                (xt - 2.5, AXIS_BOT - 4.0),
+                (xt + 2.5, AXIS_BOT - 4.0),
+                (xt, AXIS_BOT),
             ],
             RED,
         ));
-        // "Today" in grassetto; sotto, solo col toggle attivo, l'avanzamento del
-        // progetto "(presunta%/attuale%)" con lo stesso font della data delle
-        // bandierine (7.0).
+        // Etichetta "Today" (grassetto) sotto la barra dei mesi, allineata a
+        // SINISTRA appena a destra della riga rossa verticale (così la linea non
+        // ci passa in mezzo); sotto, solo col toggle attivo, l'avanzamento
+        // "(presunta%/attuale%)" al font 7.0. Sta nella fascia tra l'asse e le
+        // righe dev, così non copre le barre.
+        let lx = xt + 2.0;
         match (show_pct(), presumed_pct, progress_pct) {
             (true, Some(pres), Some(act)) => {
-                shapes.extend(text_center(xt, AXIS_TOP + 8.5, "Today", 8.0, true, BLACK));
-                shapes.extend(text_center(
-                    xt,
-                    AXIS_TOP + 5.0,
+                shapes.extend(text_left(lx, AXIS_BOT - 8.5, "Today", 8.0, true, BLACK));
+                shapes.extend(text_left(
+                    lx,
+                    AXIS_BOT - 12.0,
                     &format!("({pres}%/{act}%)"),
                     7.0,
                     false,
                     BLACK,
                 ));
             }
-            _ => shapes.extend(text_center(xt, AXIS_TOP + 5.0, "Today", 8.0, true, BLACK)),
+            _ => shapes.extend(text_left(lx, AXIS_BOT - 8.5, "Today", 8.0, true, BLACK)),
         }
     }
 
     // --- Milestone come bandierine -----------------------------------------
     // Righe dell'etichetta (dal basso: data, poi nome una parola per riga).
+    // Font di 1pt più piccolo del passato: scritte più compatte e strette, così
+    // le bandierine vicine si sovrappongono meno (anche in orizzontale).
+    const FLAG_LINE_H: f32 = 3.2; // interlinea tra le righe dell'etichetta
     let flag_lines = |f: &Flag| -> Vec<(String, f32, bool)> {
-        let mut v = vec![(f.date.clone(), 7.0, false)];
+        let mut v = vec![(f.date.clone(), 6.0, false)];
         for w in f.title.split_whitespace().rev() {
-            v.push((w.to_string(), 8.0, true));
+            v.push((w.to_string(), 7.0, true));
         }
         v
     };
 
     flags.sort_by_key(|f| f.day);
 
-    // Posizionamento anti-collisione: ogni etichetta viene alzata quel tanto che
-    // basta a non sovrapporsi (né in orizzontale né in verticale) a quelle già
-    // posizionate. Le bandierine isolate restano basse; quelle con etichette
-    // vicine si alzano quanto serve, in base all'altezza reale di ciascuna.
-    let base = AXIS_TOP + 6.0;
-    let mut placed: Vec<(f32, f32, f32, f32)> = Vec::new(); // (left, right, bottom, top)
-    let mut pole_tops = Vec::with_capacity(flags.len());
+    // Posizionamento "a ventaglio": tutte le bandierine vanno verso l'ALTO, ma
+    // invece di allungarne l'asta per evitare le collisioni si SPARPAGLIANO le
+    // etichette in orizzontale. La base di ogni asta resta ancorata alla data
+    // vera sull'asse (breve tratto verticale) e poi l'asta si inclina fino al
+    // centro dell'etichetta, spostato quel tanto che basta perché le etichette
+    // vicine non si sovrappongano.
+    let n = flags.len();
+    let mut anchor = Vec::with_capacity(n); // x sull'asse (data vera)
+    let mut half_w = Vec::with_capacity(n); // semilarghezza etichetta
     for f in &flags {
-        let x = x_of(f.day);
+        anchor.push(x_of(f.day));
         let lines = flag_lines(f);
-        let half_w = lines
-            .iter()
-            .map(|(t, s, _)| text_w_mm(t, *s))
-            .fold(0.0f32, f32::max)
-            / 2.0
-            + 1.5;
-        let block = lines.len() as f32 * 3.6 + 2.0;
-        let (bl, br) = (x - half_w, x + half_w);
-        let mut pole = base;
-        loop {
-            let top = pole + block;
-            let mut hit = f32::MIN;
-            for &(pl, pr, pb, pt) in &placed {
-                if bl < pr && pl < br && pole < pt && pb < top {
-                    hit = hit.max(pt);
-                }
-            }
-            if hit == f32::MIN {
-                break;
-            }
-            pole = hit + 1.5; // sopra la scritta che collide
-        }
-        placed.push((bl, br, pole, pole + block));
-        pole_tops.push(pole);
+        half_w.push(
+            lines
+                .iter()
+                .map(|(t, s, _)| text_w_mm(t, *s))
+                .fold(0.0f32, f32::max)
+                / 2.0
+                + 1.5,
+        );
     }
 
-    // Prima passata: le aste, in secondo piano, così non coprono le etichette
-    // delle bandierine vicine.
-    for (i, f) in flags.iter().enumerate() {
-        let x = x_of(f.day);
-        shapes.extend(line(x, AXIS_TOP, x, pole_tops[i], 1.0, f.color));
+    // Centri delle etichette lx[i]: il più vicino possibile all'anchor ma con una
+    // distanza minima tra centri consecutivi (somma delle semilarghezze + margine)
+    // così non si sovrappongono. È una regressione isotona risolta con "pool
+    // adjacent violators": produce uno sparpagliamento centrato, senza incroci tra
+    // le aste (l'ordine per data è preservato).
+    const FLAG_GAP: f32 = 1.5;
+    let mut lx = anchor.clone();
+    if n >= 2 {
+        let sep: Vec<f32> = (0..n - 1)
+            .map(|i| half_w[i] + half_w[i + 1] + FLAG_GAP)
+            .collect();
+        // Prefissi delle separazioni: S[i] = Σ sep[0..i].
+        let mut s_pref = vec![0.0f32; n];
+        for i in 1..n {
+            s_pref[i] = s_pref[i - 1] + sep[i - 1];
+        }
+        // PAVA su t[i] = anchor[i] - S[i] a pesi unitari → sequenza non decrescente.
+        let mut blocks: Vec<(f32, usize)> = Vec::with_capacity(n); // (somma, conteggio)
+        for i in 0..n {
+            blocks.push((anchor[i] - s_pref[i], 1));
+            while blocks.len() >= 2 {
+                let (sum2, cnt2) = blocks[blocks.len() - 1];
+                let (sum1, cnt1) = blocks[blocks.len() - 2];
+                if sum1 / cnt1 as f32 > sum2 / cnt2 as f32 {
+                    blocks.truncate(blocks.len() - 2);
+                    blocks.push((sum1 + sum2, cnt1 + cnt2));
+                } else {
+                    break;
+                }
+            }
+        }
+        // Riespande i blocchi: lx[i] = media del blocco + S[i].
+        let mut i = 0usize;
+        for &(sum, cnt) in &blocks {
+            let mean = sum / cnt as f32;
+            for _ in 0..cnt {
+                lx[i] = mean + s_pref[i];
+                i += 1;
+            }
+        }
     }
-    // Seconda passata: pennant ed etichette, in primo piano.
+
+    // Quota del pennant: tratto verticale corto ancorato alla data + tratto
+    // inclinato che sale tanto più quanto più l'etichetta è spostata di lato
+    // (ventaglio aperto verso l'ALTO, così sfrutta lo spazio bianco sopra) +
+    // tratto verticale corto finale su cui si aggancia la bandierina. Un tetto
+    // evita che le etichette invadano il titolo del progetto.
+    const FLAG_BASE_V: f32 = 5.0; // tratto verticale in basso (ancoraggio data)
+    const FLAG_TOP_V: f32 = 6.0; // tratto verticale in alto (aggancio pennant)
+    const FLAG_MIN_LEAN_V: f32 = 14.0; // salita minima del tratto inclinato
+    const FLAG_LEAN_K: f32 = 0.9; // salita ∝ spostamento orizzontale
+    const FLAG_TOP_MAX: f32 = 176.0; // quota massima del pennant
+    let pole_top_y: Vec<f32> = (0..n)
+        .map(|i| {
+            (AXIS_TOP
+                + FLAG_BASE_V
+                + FLAG_TOP_V
+                + FLAG_MIN_LEAN_V.max(FLAG_LEAN_K * (lx[i] - anchor[i]).abs()))
+            .min(FLAG_TOP_MAX)
+        })
+        .collect();
+
+    // Prima passata: le aste (verticale in basso → inclinata → verticale in alto),
+    // in secondo piano così non coprono le etichette delle bandierine vicine.
     for (i, f) in flags.iter().enumerate() {
-        let x = x_of(f.day);
-        let pole_top = pole_tops[i];
-        // Pennant: triangolo a destra dell'asta.
+        let a = anchor[i];
+        let knee_bot = AXIS_TOP + FLAG_BASE_V;
+        let knee_top = pole_top_y[i] - FLAG_TOP_V;
+        shapes.extend(line(a, AXIS_TOP, a, knee_bot, 1.0, f.color));
+        shapes.extend(line(a, knee_bot, lx[i], knee_top, 1.0, f.color));
+        shapes.extend(line(lx[i], knee_top, lx[i], pole_top_y[i], 1.0, f.color));
+    }
+    // Seconda passata: pennant ed etichette, in primo piano, al centro spostato.
+    for (i, f) in flags.iter().enumerate() {
+        let cx = lx[i];
+        let pole_top = pole_top_y[i];
+        // Pennant: triangolo a destra dell'asta, punta verso l'asse.
         shapes.extend(poly_fill(
             &[
-                (x, pole_top),
-                (x + 7.0, pole_top - 2.0),
-                (x, pole_top - 4.0),
+                (cx, pole_top),
+                (cx + 7.0, pole_top - 2.0),
+                (cx, pole_top - 4.0),
             ],
             f.color,
         ));
-        // Etichetta sopra la bandierina, centrata sull'asta.
+        // Etichetta sopra la bandierina, centrata sul centro spostato; la data
+        // resta la riga più vicina al pennant.
         for (li, (txt, size, bold)) in flag_lines(f).iter().enumerate() {
-            let ly = pole_top + 2.0 + li as f32 * 3.6;
+            let ly = pole_top + 2.0 + li as f32 * FLAG_LINE_H;
             let col = if *bold { BLACK } else { TEXT_GRAY };
-            shapes.extend(text_center(x, ly, txt, *size, *bold, col));
+            shapes.extend(text_center(cx, ly, txt, *size, *bold, col));
         }
     }
 
