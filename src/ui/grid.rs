@@ -879,6 +879,27 @@ pub(crate) fn draw_dev_cells(
                 }
                 if !text.is_empty() {
                     let wname = text.split('|').next().unwrap_or("").trim();
+                    // Worker "esaltato" (l'utente corrente, se ha scelto di
+                    // evidenziarsi all'avvio): lo sfondo della cella lampeggia
+                    // (~0.5s per fase). Dipinto sotto al testo, non ne cambia il
+                    // colore, così il porpora ghost / il rosso sovra restano leggibili.
+                    if state.identity_highlight {
+                        if let Some(me) = state.current_user.as_deref() {
+                            if !me.is_empty() && wname.eq_ignore_ascii_case(me) {
+                                ui.ctx().request_repaint_after(
+                                    std::time::Duration::from_millis(120),
+                                );
+                                let t = ui.ctx().input(|i| i.time);
+                                if t.rem_euclid(1.0) < 0.5 {
+                                    ui.painter().rect_filled(
+                                        cell,
+                                        0.0,
+                                        g(HIGHLIGHT_WORKER_BG).gamma_multiply(0.55),
+                                    );
+                                }
+                            }
+                        }
+                    }
                     let wid = app.workers.get_id_by_name(wname);
                     let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
                     let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));

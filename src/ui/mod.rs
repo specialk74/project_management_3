@@ -383,6 +383,18 @@ pub struct UiState {
     // finestra "Confronta/Importa progetto…": presente quando un file parallelo è
     // stato caricato per il confronto. Mentre è aperta l'autosave è sospeso.
     compare: Option<CompareState>,
+    // ── Identità utente (chiesta a ogni avvio, tenuta solo in memoria) ──
+    // true finché l'utente non ha risposto alla dialog "Chi sei?" iniziale: mentre
+    // è true la UI principale è sostituita da quella dialog modale.
+    identity_needed: bool,
+    // nome del worker con cui l'utente si è identificato: usato come autore nel
+    // file di log e (se `identity_highlight`) come worker da esaltare in griglia.
+    current_user: Option<String>,
+    // testo in editing nella dialog "Chi sei?" (line-edit + selezione dalla lista).
+    identity_input: String,
+    // preferenza "esalta le mie celle": se true le celle del worker `current_user`
+    // lampeggiano in griglia. Non persistita.
+    identity_highlight: bool,
 }
 
 // ── Stato della finestra di confronto tra due file .ron ─────────────────────
@@ -681,6 +693,8 @@ impl PjmApp {
                 scroll_x: pending_scroll_x.unwrap_or(0.0),
                 pending_scroll_x,
                 load_error,
+                // A ogni avvio si chiede "Chi sei?" (identità tenuta solo in memoria).
+                identity_needed: true,
                 ..Default::default()
             },
         }
@@ -759,6 +773,70 @@ fn notice_now(msg: &str) -> String {
     format!("🔄 {msg} ({})", chrono::Local::now().format("%H:%M"))
 }
 
+/// Dialog modale mostrata **all'avvio** (finché `UiState.identity_needed`): chiede
+/// con quale worker sta lavorando l'utente. Si può selezionare un nome dall'elenco
+/// esistente o scriverne uno nuovo (che viene aggiunto ai worker via
+/// `Action::AddWorker`, così al riavvio basterà selezionarlo). La scelta è tenuta
+/// solo in memoria (ri-chiesta a ogni avvio) e serve poi per il file di log
+/// (autore) e per il blink delle celle (se «esalta» è spuntato).
+pub(crate) fn identity_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    egui::Window::new("Chi sei?")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label("Seleziona il tuo nome dall'elenco o scrivilo qui sotto:");
+            ui.add_space(4.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut state.identity_input)
+                    .hint_text("Il tuo nome")
+                    .desired_width(260.0),
+            );
+            ui.add_space(6.0);
+
+            let mut workers = app.workers.list();
+            workers.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+            if !workers.is_empty() {
+                egui::ScrollArea::vertical()
+                    .max_height(180.0)
+                    .show(ui, |ui| {
+                        for (_id, name) in &workers {
+                            let selected = state.identity_input.trim() == name.as_str();
+                            if ui.selectable_label(selected, name).clicked() {
+                                state.identity_input = name.clone();
+                            }
+                        }
+                    });
+                ui.add_space(6.0);
+            }
+
+            ui.checkbox(
+                &mut state.identity_highlight,
+                "Esalta le mie celle negli effort (lampeggiano)",
+            );
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(4.0);
+
+            let name = state.identity_input.trim().to_string();
+            ui.add_enabled_ui(!name.is_empty(), |ui| {
+                if ui.button("Conferma").clicked() {
+                    // Nome non ancora presente → crealo (comparirà al prossimo avvio).
+                    if app.workers.get_id_by_name(&name).is_none() {
+                        actions.push(Action::AddWorker(name.clone()));
+                    }
+                    state.current_user = Some(name);
+                    state.identity_needed = false;
+                }
+            });
+        });
+}
+
 impl eframe::App for PjmApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let mut actions: Vec<Action> = Vec::new();
@@ -801,7 +879,7 @@ impl eframe::App for PjmApp {
                     cmd && i.key_pressed(egui::Key::Num3),
                 )
             });
-            if key_s {
+            if key_s && !state.identity_needed {
                 actions.push(Action::Save);
             }
             // Modalità progetti (non persistita): Ctrl+1 solo aperti, Ctrl+2 solo
@@ -857,6 +935,19 @@ impl eframe::App for PjmApp {
                 }
             }
 
+            if state.identity_needed {
+                // All'avvio, prima della UI principale, chiedi con quale worker sta
+                // lavorando l'utente. L'identità è tenuta solo in memoria (ri-chiesta
+                // a ogni riavvio) e serve dopo per il file di log e per il blink.
+                // Non si costruiscono gli altri pannelli finché la dialog è aperta,
+                // ma si arriva comunque al `for a in actions` (l'eventuale AddWorker
+                // del nome digitato dev'essere applicato).
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE.fill(bg()))
+                    .show_inside(ui, |_ui| {});
+                identity_window(ui.ctx(), app, state, &mut actions);
+            } else {
+
             egui::TopBottomPanel::top("toolbar")
                 .show_inside(ui, |ui| toolbar(ui, app, state, &mut actions));
 
@@ -904,9 +995,17 @@ impl eframe::App for PjmApp {
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
             compare_window(ui.ctx(), app, state, &mut actions);
+            } // fine else (UI principale, mostrata solo quando l'identità è nota)
         }
 
         for a in actions {
+            // Registra sul file di log solo le azioni che *modificano/aggiungono
+            // valori* (le viste, i filtri e gli export restituiscono None). La
+            // descrizione è calcolata prima di applicare, così i nomi (progetto/
+            // dev/worker) si risolvono sullo stato ancora coerente.
+            if let Some(desc) = self.log_description(&a) {
+                self.append_log(&desc);
+            }
             self.apply(a);
         }
 
@@ -1026,6 +1125,243 @@ impl PjmApp {
     fn save_to_disk(&self) {
         self.app.save(&self.ui.current_file);
         crate::git_autosync::commit_and_push(&self.ui.current_file);
+    }
+
+    /// Percorso del file di log: accanto al `.ron`, stessa radice con estensione
+    /// `.log` (es. `workers.ron` → `workers.log`). È append-only e non viene mai
+    /// resettato; non è committato in git (l'autosync tocca solo il `.ron`).
+    fn log_path(&self) -> std::path::PathBuf {
+        std::path::Path::new(&self.ui.current_file).with_extension("log")
+    }
+
+    /// Appende una riga al file di log nel formato
+    /// `[AAAA-MM-GG hh:mm:ss] autore: descrizione`. Best-effort: un errore di I/O
+    /// finisce su stderr e non blocca l'app.
+    fn append_log(&self, desc: &str) {
+        use std::io::Write;
+        let author = self.ui.current_user.as_deref().unwrap_or("sconosciuto");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let line = format!("[{ts}] {author}: {desc}\n");
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.log_path())
+        {
+            Ok(mut f) => {
+                if let Err(e) = f.write_all(line.as_bytes()) {
+                    eprintln!("Log: scrittura fallita: {e}");
+                }
+            }
+            Err(e) => eprintln!("Log: apertura fallita: {e}"),
+        }
+    }
+
+    /// Descrizione leggibile di un'azione per il file di log, oppure `None` se
+    /// l'azione **non modifica/aggiunge valori** (viste, filtri, export, salvataggio,
+    /// apertura). Non si loggano il filtro di visibilità progetti
+    /// (`SetProjectEnabled`) né il toggle di visualizzazione effort
+    /// (`SetDevHideEffort`): sono scelte di sola vista, non modifiche ai dati.
+    fn log_description(&self, a: &Action) -> Option<String> {
+        let app = &self.app;
+        // Nel log basta la tripletta per identificare il progetto (traccia
+        // sintetica); se manca, si ripiega sull'id.
+        let proj_lbl = |id: ProjectId| -> String {
+            let t = app.projects.get_tripletta(id);
+            if t.trim().is_empty() {
+                format!("#{}", id.0)
+            } else {
+                t.trim().to_string()
+            }
+        };
+        let dev_lbl = |id: DevId| -> String {
+            app.devs
+                .list()
+                .into_iter()
+                .find(|(d, _)| *d == id)
+                .map(|(_, n)| n)
+                .unwrap_or_else(|| format!("#{}", id.0))
+        };
+        let wrk_lbl = |id: WorkerId| -> String {
+            let n = app.workers.get_name_by_id(id);
+            if n.is_empty() {
+                format!("#{}", id.0)
+            } else {
+                n.to_string()
+            }
+        };
+        let week_lbl = |day: usize| -> String {
+            days_to_local(day as i32).format("%y-%m-%d").to_string()
+        };
+
+        match a {
+            // ── Non loggate: viste / filtri / export / I-O di file ──
+            Action::Save
+            | Action::Open
+            | Action::OpenCompare
+            | Action::ExportPdf
+            | Action::ExportTrend
+            | Action::ExportPdfSelected { .. }
+            | Action::ExportPdfProject { .. }
+            | Action::ExportSvgProject { .. }
+            | Action::GenerateMinuta { .. }
+            | Action::SetProjectEnabled { .. }
+            | Action::SetDevHideEffort { .. } => None,
+
+            // Il confronto logga solo quando importa realmente nel file ufficiale.
+            Action::CompareCopyDev {
+                off, dev, to_official, ..
+            } => to_official.then(|| {
+                format!(
+                    "Import dev '{}' nel progetto «{}» (da confronto)",
+                    dev_lbl(*dev),
+                    proj_lbl(*off)
+                )
+            }),
+            Action::CompareCopyProject { off, to_official, .. } => to_official
+                .then(|| format!("Import progetto «{}» (da confronto)", proj_lbl(*off))),
+
+            Action::NewProject => Some("Nuovo progetto".to_string()),
+            Action::AddWorker(name) => Some(format!("Aggiunto worker '{name}'")),
+            Action::AddDev(name) => Some(format!("Aggiunto dev '{name}'")),
+            Action::AddCategory(name) => Some(format!("Aggiunta categoria '{name}'")),
+            Action::SetProjectName { proj, name } => {
+                Some(format!("Progetto «{}»: nome → '{name}'", proj_lbl(*proj)))
+            }
+            Action::SetDevEffort { proj, dev, effort } => Some(format!(
+                "Progetto «{}», dev {}: effort pianificato → {effort}",
+                proj_lbl(*proj),
+                dev_lbl(*dev)
+            )),
+            Action::SetDevDeclaredPct { proj, dev, pct } => Some(format!(
+                "Progetto «{}», dev {}: % dichiarata → {pct}",
+                proj_lbl(*proj),
+                dev_lbl(*dev)
+            )),
+            Action::AddRow { proj, dev } => Some(format!(
+                "Progetto «{}», dev {}: aggiunta riga worker",
+                proj_lbl(*proj),
+                dev_lbl(*dev)
+            )),
+            Action::CommitCell {
+                proj, dev, week, rows, ..
+            } => {
+                let content: Vec<&str> =
+                    rows.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+                let val = if content.is_empty() {
+                    "(vuota)".to_string()
+                } else {
+                    content.join(", ")
+                };
+                Some(format!(
+                    "Progetto «{}», dev {}, sett. {}: cella → {val}",
+                    proj_lbl(*proj),
+                    dev_lbl(*dev),
+                    week_lbl(week.0)
+                ))
+            }
+            Action::SetNote {
+                proj, dev, week, worker, note,
+            } => Some(format!(
+                "Progetto «{}», dev {}, sett. {}, worker '{worker}': nota → '{note}'",
+                proj_lbl(*proj),
+                dev_lbl(*dev),
+                week_lbl(week.0)
+            )),
+            Action::SetDevNote { proj, dev, note } => Some(format!(
+                "Progetto «{}», dev {}: nota dev → '{note}'",
+                proj_lbl(*proj),
+                dev_lbl(*dev)
+            )),
+            Action::SetProjectTripletta { proj, text } => {
+                Some(format!("Progetto «{}»: tripletta → '{text}'", proj_lbl(*proj)))
+            }
+            Action::SetProjectNotes { proj, notes } => Some(format!(
+                "Progetto «{}»: aggiornate note ({} settimane)",
+                proj_lbl(*proj),
+                notes.len()
+            )),
+            Action::SetProjectStartWeek { proj, date } => {
+                Some(format!("Progetto «{}»: inizio → '{date}'", proj_lbl(*proj)))
+            }
+            Action::SetProjectEndWeek { proj, date } => {
+                Some(format!("Progetto «{}»: fine → '{date}'", proj_lbl(*proj)))
+            }
+            Action::SetProjectCategory { proj, cat } => Some(format!(
+                "Progetto «{}»: categoria → {}",
+                proj_lbl(*proj),
+                cat.map_or_else(|| "nessuna".to_string(), |c| format!("#{}", c.0))
+            )),
+            Action::DelRow { proj, dev } => Some(format!(
+                "Progetto «{}», dev {}: rimossa riga worker",
+                proj_lbl(*proj),
+                dev_lbl(*dev)
+            )),
+            Action::AddDevToProject { proj, dev, add } => Some(format!(
+                "Progetto «{}»: dev {} {}",
+                proj_lbl(*proj),
+                dev_lbl(*dev),
+                if *add { "aggiunto" } else { "rimosso" }
+            )),
+            Action::SetProjectClosed { proj, closed } => Some(format!(
+                "Progetto «{}»: {}",
+                proj_lbl(*proj),
+                if *closed { "chiuso" } else { "riaperto" }
+            )),
+            Action::SetWorkerMaxHours { worker, hours } => {
+                Some(format!("Worker '{}': max ore → {hours}", wrk_lbl(*worker)))
+            }
+            Action::SetWorkerGhost { worker, ghost } => Some(format!(
+                "Worker '{}': ghost → {ghost}",
+                wrk_lbl(*worker)
+            )),
+            Action::SetWorkerWeekOverride { worker, week, hours } => Some(format!(
+                "Worker '{}', sett. {}: override ore → {hours}",
+                wrk_lbl(*worker),
+                week_lbl(*week)
+            )),
+            Action::SetWorkerWeekNote { worker, week, note } => Some(format!(
+                "Worker '{}', sett. {}: nota → '{note}'",
+                wrk_lbl(*worker),
+                week_lbl(*week)
+            )),
+            Action::SetWorkerWeekStatus { worker, week, status } => Some(format!(
+                "Worker '{}', sett. {}: stato → {status:?}",
+                wrk_lbl(*worker),
+                week_lbl(*week)
+            )),
+            Action::SetBulkWeekLimit { week, hours } => Some(format!(
+                "Limite ore sett. {} → {hours} (tutti i worker)",
+                week_lbl(*week)
+            )),
+            Action::MoveProjectUp { proj } => {
+                Some(format!("Progetto «{}»: spostato su", proj_lbl(*proj)))
+            }
+            Action::MoveProjectDown { proj } => {
+                Some(format!("Progetto «{}»: spostato giù", proj_lbl(*proj)))
+            }
+            Action::CreateMilestone(name) => Some(format!("Creata milestone '{name}'")),
+            Action::SetMilestoneColor { milestone, color } => Some(format!(
+                "Milestone #{}: colore → #{color:06X}",
+                milestone.0
+            )),
+            Action::DeleteMilestone { milestone } => {
+                Some(format!("Eliminata milestone #{}", milestone.0))
+            }
+            Action::AddProjectMilestone { proj, milestone, week } => Some(format!(
+                "Progetto «{}»: milestone #{} @ sett. {}",
+                proj_lbl(*proj),
+                milestone.0,
+                week_lbl(week.0)
+            )),
+            Action::RemoveProjectMilestone { proj, milestone } => Some(format!(
+                "Progetto «{}»: rimossa milestone #{}",
+                proj_lbl(*proj),
+                milestone.0
+            )),
+            Action::MoveEffort { proj, .. } => {
+                Some(format!("Progetto «{}»: spostato effort", proj_lbl(*proj)))
+            }
+        }
     }
 
     /// Aggiorna lo snapshot "base" e l'mtime dopo che lo stato è tornato

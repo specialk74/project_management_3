@@ -33,6 +33,9 @@ pub const CANARY: Color32 = Color32::from_rgb(0xff, 0xf0, 0x66); // giallo canar
 /// dai worker sovra-allocati (che restano rossi). Negli export PDF/SVG i ghost
 /// restano rossi.
 pub const GHOST_PURPLE: Color32 = Color32::from_rgb(0x9C, 0x27, 0xB0);
+/// Sfondo lampeggiante delle celle del worker "esaltato" (l'utente corrente, se
+/// ha scelto di evidenziarsi all'avvio). Ciano acceso, distinto da ghost/rosso.
+pub const HIGHLIGHT_WORKER_BG: Color32 = Color32::from_rgb(0x00, 0xC8, 0xC8);
 pub const CAT_BLUE: Color32 = Color32::from_rgb(0x7a, 0xb0, 0xd4);
 pub const SEL_BG: Color32 = Color32::from_rgba_premultiplied(70, 130, 180, 90); // steelblue alpha
 pub const FOCUS_BORDER: Color32 = Color32::from_rgb(0xff, 0x45, 0x00); // orangered
