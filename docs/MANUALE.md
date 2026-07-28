@@ -171,17 +171,20 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
 - **Milestone** — crea una nuova milestone (poi assegnabile ai progetti).
 
 ### Filtri
-- **Progetti…** — finestra con l'elenco dei progetti (non chiusi) e una spunta per
-  ciascuno: attiva/disattiva la **visibilità** del progetto nella griglia
-  ("Select All" per agire su tutti).
-- **Workers…** — filtro per worker (vedi §14). La voce mostra una spunta quando un
+Le prime quattro voci aprono **la stessa dialog «Filtri»** (tre colonne: Workers,
+Progetti, Dev — vedi §14): cambia solo la colonna che riceve il focus.
+- **Progetti…** — colonna Progetti: elenco dei progetti (non chiusi) con una spunta
+  per ciascuno che attiva/disattiva la **visibilità** nella griglia, ricerca e salto
+  rapido ("Select All" per agire su tutti). Scorciatoia `Cmd/Ctrl+P`.
+- **Workers…** — colonna Workers (vedi §14). La voce mostra una spunta quando un
   filtro è attivo. Scorciatoia `Cmd/Ctrl+F`.
-- **Workers (settimana corrente)…** — stessa finestra e stessa selezione del filtro
+- **Workers (settimana corrente)…** — stessa colonna e stessa selezione del filtro
   worker, ma mostra **solo i progetti in cui un worker selezionato sta lavorando nella
   settimana corrente** (ha effort in questa settimana). Dentro ai progetti mostrati la
-  visualizzazione resta identica al filtro Workers normale (tutte le settimane).
+  visualizzazione resta identica al filtro Workers normale (tutte le settimane). La
+  modalità corrisponde alla spunta **«Solo settimana corrente»** in cima alla colonna.
   Scorciatoia `Cmd/Ctrl+G`; premere `Cmd/Ctrl+F` torna al filtro su tutte le settimane.
-- **Dev…** — filtro per dev (vedi §14): restano solo i progetti che hanno un dev
+- **Dev…** — colonna Dev (vedi §14): restano solo i progetti che hanno un dev
   selezionato e, dentro il progetto, solo quel dev. Scorciatoia `Cmd/Ctrl+D`.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
@@ -460,8 +463,21 @@ ghost non è visualizzato nel footer.
 
 ## 14. Filtri
 
-### Progetti — visibilità + salto rapido (Filtri ▸ Progetti…, `Cmd/Ctrl+P`)
-Un'unica finestra con:
+Workers, Progetti e Dev vivono in **un'unica dialog «Filtri»** a tre colonne
+affiancate. La aprono indifferentemente `Cmd/Ctrl+F` (Workers), `Cmd/Ctrl+G`
+(Workers sulla settimana corrente), `Cmd/Ctrl+P` (Progetti) e `Cmd/Ctrl+D` (Dev),
+oppure le voci corrispondenti del menù **Filtri**: cambia solo la colonna che
+riceve il **focus** sul proprio campo di ricerca. Ogni colonna ha **ricerca**,
+**«Select All»** ed elenco con spunte, e i tre filtri restano indipendenti (si
+combinano tra loro). `Esc` o un click fuori chiudono la dialog.
+
+Premendo di nuovo la **stessa** scorciatoia a dialog aperta si fa il **toggle di
+"Select All"** della sua colonna (quindi la seconda pressione deseleziona tutto);
+il toggle agisce sugli elementi **attualmente elencati**, cioè rispetta la ricerca.
+`Shift+Cmd/Ctrl+F` / `+G` / `+D` deselezionano tutto senza aprire la dialog.
+
+### Progetti — visibilità + salto rapido (colonna «Progetti», `Cmd/Ctrl+P`)
+La colonna contiene:
 - una **casella di ricerca** in cima (auto-focus): digita e l'elenco si filtra in
   tempo reale (la ricerca combacia con tripletta o nome);
 - per ogni progetto una **spunta di visibilità** (disabilitarlo lo nasconde dalla
@@ -469,22 +485,21 @@ Un'unica finestra con:
 - in elenco si mostra **solo la tripletta** (o il nome se la tripletta è assente).
 
 Fai **click sulla tripletta**, o premi **Invio** per il primo risultato, e la
-griglia scorre fino a quel progetto. "Select All" agisce sui progetti elencati.
-`Esc` chiude. Premere di nuovo `Cmd/Ctrl+P` a **finestra già aperta** fa il
-**toggle di "Select All"** (come cliccarlo).
+griglia scorre fino a quel progetto (la dialog si chiude e la ricerca si azzera).
+"Select All" agisce sui progetti elencati.
 
 > Suggerimento: se resta **un solo progetto visibile**, l'esportazione PDF passa
 > alla modalità "singolo progetto" (vedi §16).
 
-### Filtro worker (Filtri ▸ Workers…, `Cmd/Ctrl+F`)
+### Filtro worker (colonna «Workers», `Cmd/Ctrl+F`)
 Permette di mostrare solo alcuni worker. Con un filtro attivo:
 - vengono mostrate **solo le righe dei worker selezionati**;
 - i progetti senza worker corrispondenti spariscono;
 - nella colonna sinistra, per ogni progetto **resta visibile solo la tripletta**
   (categoria, nome, inizio/fine spariscono) così da non occupare spazio.
 
-Scorciatoie: `Cmd/Ctrl+F` apre il filtro; premuto a **finestra già aperta** fa il
-**toggle di "Select All"** (come cliccarlo); `Shift+Cmd/Ctrl+F` **deseleziona
+Scorciatoie: `Cmd/Ctrl+F` apre la dialog sulla colonna Workers; premuto a **dialog
+già aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+F` **deseleziona
 tutti** i worker.
 
 Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
@@ -497,7 +512,7 @@ Il conteggio **segue la modalità**: con `Cmd/Ctrl+F` considera **tutte le setti
 (progetti aperti/chiusi in assoluto); con `Cmd/Ctrl+G` (settimana corrente) conta solo
 i progetti aperti/chiusi in cui il worker è presente **nella settimana corrente**.
 
-### Filtro worker sulla settimana corrente (Filtri ▸ Workers (settimana corrente)…, `Cmd/Ctrl+G`)
+### Filtro worker sulla settimana corrente (`Cmd/Ctrl+G`)
 Variante del filtro worker che risponde alla domanda **«a quali progetti sta
 lavorando questo worker in questa settimana?»**. Usa la **stessa finestra e la stessa
 selezione** del filtro Workers normale, ma cambia il criterio con cui i progetti
@@ -508,15 +523,14 @@ compaiono:
   (righe dei worker selezionati su **tutte** le settimane): Ctrl+G decide solo *quali*
   progetti compaiono, non nasconde nulla all'interno.
 
-Il titolo della finestra diventa **«Workers (settimana corrente)»** per ricordare la
-modalità attiva. Premere `Cmd/Ctrl+G` a finestra già aperta fa il **toggle di "Select
-All"**; premere `Cmd/Ctrl+F` riporta al filtro su **tutte le settimane** (e viceversa
-`Cmd/Ctrl+G` riattiva la modalità settimana corrente). `Shift+Cmd/Ctrl+G` deseleziona
-tutti i worker.
+La modalità è mostrata (e commutabile) dalla spunta **«Solo settimana corrente»** in
+cima alla colonna Workers. Premere `Cmd/Ctrl+G` a dialog aperta **in questa modalità**
+fa il **toggle di "Select All"**; premerlo mentre è attiva l'altra modalità si limita a
+commutarla (e viceversa con `Cmd/Ctrl+F`). `Shift+Cmd/Ctrl+G` deseleziona tutti i worker.
 
-### Filtro dev (Filtri ▸ Dev…, `Cmd/Ctrl+D`)
-Risponde alla domanda **«su quali progetti si lavora per questo dev?»**. La finestra
-elenca **tutti i dev definiti** con una spunta ciascuno (più "Select All"):
+### Filtro dev (colonna «Dev», `Cmd/Ctrl+D`)
+Risponde alla domanda **«su quali progetti si lavora per questo dev?»**. La colonna
+elenca **tutti i dev definiti** con una spunta ciascuno (più ricerca e "Select All"):
 - restano visibili **solo i progetti** in cui almeno un dev selezionato ha
   **effort > 0** (in una qualsiasi settimana); un dev aggiunto al progetto ma senza
   effort non lo fa comparire;
@@ -529,9 +543,10 @@ Il filtro dev si **combina in AND** con il filtro worker (`Cmd/Ctrl+F` / `Cmd/Ct
 con entrambi attivi restano i progetti che soddisfano tutti e due i criteri, le righe
 dei dev selezionati e, dentro le celle, solo i worker selezionati.
 
-Scorciatoie: `Cmd/Ctrl+D` apre il filtro; premuto a **finestra già aperta** fa il
-**toggle di "Select All"**; `Shift+Cmd/Ctrl+D` **deseleziona tutti** i dev. Con tutti i
-dev selezionati il filtro è considerato spento. La selezione **non** è salvata sul file.
+Scorciatoie: `Cmd/Ctrl+D` apre la dialog sulla colonna Dev; premuto a **dialog già
+aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+D` **deseleziona tutti** i
+dev. Con tutti i dev selezionati il filtro è considerato spento. La selezione **non** è
+salvata sul file.
 
 ### Ghost worker (Filtri ▸ Ghost worker…)
 Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
@@ -761,13 +776,13 @@ produce pagina.
 | Scorciatoia | Azione |
 |---|---|
 | `Cmd/Ctrl + S` | Salva il file |
-| `Cmd/Ctrl + F` | Apri il filtro worker (tutte le settimane) |
+| `Cmd/Ctrl + F` | Apri la dialog «Filtri» sulla colonna Workers (tutte le settimane) |
 | `Shift + Cmd/Ctrl + F` | Deseleziona tutti i worker nel filtro |
-| `Cmd/Ctrl + G` | Filtro worker sulla **settimana corrente** (solo progetti con il worker attivo questa settimana) |
+| `Cmd/Ctrl + G` | Come sopra ma sulla **settimana corrente** (solo progetti con il worker attivo questa settimana) |
 | `Shift + Cmd/Ctrl + G` | Deseleziona tutti i worker nel filtro (settimana corrente) |
-| `Cmd/Ctrl + D` | Apri il filtro dev (solo i progetti col dev selezionato, e solo quel dev) |
+| `Cmd/Ctrl + D` | Apri la dialog «Filtri» sulla colonna Dev (solo i progetti col dev selezionato, e solo quel dev) |
 | `Shift + Cmd/Ctrl + D` | Deseleziona tutti i dev nel filtro |
-| `Cmd/Ctrl + P` | Vai a progetto (ricerca e salto rapido) |
+| `Cmd/Ctrl + P` | Apri la dialog «Filtri» sulla colonna Progetti (ricerca, visibilità e salto rapido) |
 | `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |
 | `Invio` / `Tab` | Conferma la modifica della cella |
 | `Esc` | Annulla la modifica della cella |

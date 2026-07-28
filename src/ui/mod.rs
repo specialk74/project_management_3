@@ -24,6 +24,7 @@ pub(crate) use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, Worker
 mod compare;
 mod dialogs;
 mod export;
+mod filters;
 mod footer;
 mod grid;
 mod help;
@@ -32,6 +33,7 @@ mod toolbar;
 pub(crate) use compare::*;
 pub(crate) use dialogs::*;
 pub(crate) use export::*;
+pub(crate) use filters::*;
 pub(crate) use footer::*;
 pub(crate) use grid::*;
 pub(crate) use help::*;
@@ -188,6 +190,39 @@ pub(crate) enum ProjectViewMode {
     All,
 }
 
+/// Colonna della dialog unica dei filtri: decide quale campo di ricerca riceve
+/// il focus quando la finestra compare (Ctrl+F/G → Workers, Ctrl+P → Progetti,
+/// Ctrl+D → Dev).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FilterPane {
+    Workers,
+    Projects,
+    Devs,
+}
+
+/// Voce di menù «Filtri ▸ …»: apre la dialog unica (o la chiude se era già
+/// aperta sulla stessa colonna) portando il focus su `pane`.
+pub(crate) fn toggle_filters(state: &mut UiState, pane: FilterPane) {
+    if state.show_filters && state.filters_focus == Some(pane) {
+        state.show_filters = false;
+    } else {
+        open_filters(state, pane);
+    }
+}
+
+/// Apre la dialog unica dei filtri con il focus sulla colonna `pane`.
+fn open_filters(state: &mut UiState, pane: FilterPane) {
+    state.show_filters = true;
+    state.filters_just_opened = true;
+    focus_pane(state, pane);
+}
+
+/// Chiede il focus per il campo di ricerca della colonna `pane`.
+fn focus_pane(state: &mut UiState, pane: FilterPane) {
+    state.filters_focus = Some(pane);
+    state.filters_focus_dirty = true;
+}
+
 /// True se il progetto va mostrato nel corpo centrale in base alla modalità
 /// Vista corrente.
 ///
@@ -265,8 +300,11 @@ pub struct UiState {
     pending_scroll_x: Option<f32>,
     // scroll verticale da applicare alla griglia (salto rapido a un progetto)
     pending_scroll_y: Option<f32>,
-    // ricerca nel popup "Progetti" (unifica filtro visibilità + salto rapido, ⌘/Ctrl+P)
+    // ricerche delle tre colonne della dialog "Filtri" (⌘/Ctrl+F, +P, +D).
+    // Quella dei progetti unifica filtro visibilità + salto rapido.
     project_search: String,
+    worker_search: String,
+    dev_search: String,
     // progetto verso cui scrollare al prossimo frame (risolto in `body`)
     jump_to_project: Option<ProjectId>,
     editing: Option<Editing>,
@@ -284,24 +322,26 @@ pub struct UiState {
     // corrente. Dentro il progetto la resa resta come Ctrl+F (tutte le settimane).
     // Ctrl+F la disattiva, Ctrl+G la riattiva. Non persistita.
     worker_filter_current_week: bool,
-    show_worker_filter: bool,
     // filtro dev (Ctrl+D): None = nessun filtro; Some(set) = mostra solo i
     // progetti in cui almeno un dev selezionato ha effort > 0, e dentro il
     // progetto solo quei dev. Si combina in AND con il filtro worker. Non persistito.
     dev_filter: Option<HashSet<DevId>>,
-    show_dev_filter: bool,
-    show_project_filter: bool,
+    // dialog unica dei filtri (Workers + Progetti + Dev): aperta da Ctrl+F/G/P/D.
+    show_filters: bool,
+    // ultima colonna richiesta (scorciatoia/menù): `filters_focus_dirty` chiede di
+    // dare il focus al suo campo di ricerca al prossimo frame, poi si azzera.
+    filters_focus: Option<FilterPane>,
+    filters_focus_dirty: bool,
     show_closed_filter: bool,
     // conferma di uscita con modifiche non salvate
     show_exit_confirm: bool,
     allow_close: bool,
     // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
-    worker_filter_just_opened: bool,
-    dev_filter_just_opened: bool,
-    project_filter_just_opened: bool,
+    filters_just_opened: bool,
     closed_filter_just_opened: bool,
-    // richiesta (da Ctrl+F / Ctrl+P a pannello già aperto) di fare il toggle del
-    // "Select All"; consumata dalla rispettiva finestra nello stesso frame.
+    // richiesta (da Ctrl+F / Ctrl+G / Ctrl+P / Ctrl+D a dialog già aperta) di fare
+    // il toggle del "Select All" della rispettiva colonna; consumata dalla dialog
+    // "Filtri" nello stesso frame.
     worker_filter_toggle_all: bool,
     dev_filter_toggle_all: bool,
     project_filter_toggle_all: bool,
@@ -823,58 +863,58 @@ impl eframe::App for PjmApp {
             if key_3 {
                 state.project_view = ProjectViewMode::All;
             }
-            // Ctrl+F: filtro worker su TUTTE le settimane; Ctrl+G: stessa finestra
-            // e selezione, ma modalità "settimana corrente". Premere una delle due
-            // a pannello aperto nell'altra modalità commuta solo la modalità; nella
-            // stessa modalità fa il toggle del "Select All".
+            // Ctrl+F / Ctrl+G / Ctrl+P / Ctrl+D aprono tutti la **stessa** dialog
+            // "Filtri" (Workers + Progetti + Dev), portando il focus sulla ricerca
+            // della propria colonna. A dialog già aperta la stessa scorciatoia fa
+            // il toggle del "Select All" di quella colonna (Shift = deseleziona
+            // tutti). Fa eccezione la coppia F/G, che condivide la colonna Workers:
+            // premere l'altra commuta solo la modalità "settimana corrente".
             if key_f {
                 if shift {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
                     state.worker_filter_current_week = false;
-                } else if state.show_worker_filter && !state.worker_filter_current_week {
+                } else if state.show_filters && !state.worker_filter_current_week {
                     state.worker_filter_toggle_all = true;
-                } else if state.show_worker_filter {
+                } else if state.show_filters {
                     state.worker_filter_current_week = false; // commuta a "tutte le settimane"
                 } else {
-                    state.show_worker_filter = true;
-                    state.worker_filter_just_opened = true;
                     state.worker_filter_current_week = false;
+                    open_filters(state, FilterPane::Workers);
                 }
+                focus_pane(state, FilterPane::Workers);
             }
             if key_g {
                 if shift {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
                     state.worker_filter_current_week = true;
-                } else if state.show_worker_filter && state.worker_filter_current_week {
+                } else if state.show_filters && state.worker_filter_current_week {
                     state.worker_filter_toggle_all = true;
-                } else if state.show_worker_filter {
+                } else if state.show_filters {
                     state.worker_filter_current_week = true; // commuta a "settimana corrente"
                 } else {
-                    state.show_worker_filter = true;
-                    state.worker_filter_just_opened = true;
                     state.worker_filter_current_week = true;
+                    open_filters(state, FilterPane::Workers);
                 }
+                focus_pane(state, FilterPane::Workers);
             }
-            // Ctrl+D: filtro dev. Stessa meccanica di Ctrl+F: a pannello aperto
-            // fa il toggle del "Select All"; Shift deseleziona tutti i dev.
             if key_d {
                 if shift {
                     state.dev_filter = Some(HashSet::new()); // deseleziona tutti
-                } else if state.show_dev_filter {
+                } else if state.show_filters {
                     state.dev_filter_toggle_all = true;
                 } else {
-                    state.show_dev_filter = true;
-                    state.dev_filter_just_opened = true;
+                    open_filters(state, FilterPane::Devs);
                 }
+                focus_pane(state, FilterPane::Devs);
             }
             if key_p {
-                if state.show_project_filter {
-                    // pannello già aperto → toggle del "Select All"
+                if state.show_filters {
+                    // dialog già aperta → toggle del "Select All" dei progetti
                     state.project_filter_toggle_all = true;
                 } else {
-                    state.show_project_filter = true;
-                    state.project_filter_just_opened = true;
+                    open_filters(state, FilterPane::Projects);
                 }
+                focus_pane(state, FilterPane::Projects);
             }
             // Ctrl+T: riporta la griglia sulla settimana di oggi, centrandola
             // (stesso criterio dello scroll iniziale). Rispetta zoom e vista
@@ -937,9 +977,7 @@ impl eframe::App for PjmApp {
             minuta_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
-            worker_filter_window(ui.ctx(), app, state);
-            dev_filter_window(ui.ctx(), app, state);
-            project_filter_window(ui.ctx(), app, state, &mut actions);
+            filters_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             ghost_manager_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);

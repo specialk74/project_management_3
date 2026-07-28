@@ -137,14 +137,12 @@ pub(crate) fn toolbar(
 
         // ── Filtri ───────────────────────────────────────────────────────────
         ui.menu_button("Filtri", |ui| {
+            // Le tre voci aprono la STESSA dialog unica ("Filtri"): cambia solo
+            // la colonna che riceve il focus. La spunta segnala il filtro attivo.
             if ui.button("Progetti…  (⌘/Ctrl+P)").clicked() {
-                state.show_project_filter = !state.show_project_filter;
-                state.project_filter_just_opened = state.show_project_filter;
+                toggle_filters(state, FilterPane::Projects);
                 ui.close_menu();
             }
-            // La spunta segnala che un filtro worker è attivo (nella rispettiva
-            // modalità). Ctrl+F = tutte le settimane; Ctrl+G = solo i progetti in
-            // cui un worker selezionato lavora nella settimana corrente.
             let filter_on = state.worker_filter.is_some();
             if ui
                 .selectable_label(
@@ -153,9 +151,8 @@ pub(crate) fn toolbar(
                 )
                 .clicked()
             {
-                state.show_worker_filter = !state.show_worker_filter;
-                state.worker_filter_just_opened = state.show_worker_filter;
                 state.worker_filter_current_week = false;
+                toggle_filters(state, FilterPane::Workers);
                 ui.close_menu();
             }
             if ui
@@ -165,18 +162,15 @@ pub(crate) fn toolbar(
                 )
                 .clicked()
             {
-                state.show_worker_filter = !state.show_worker_filter;
-                state.worker_filter_just_opened = state.show_worker_filter;
                 state.worker_filter_current_week = true;
+                toggle_filters(state, FilterPane::Workers);
                 ui.close_menu();
             }
-            // Filtro dev: spunta attiva quando la selezione non è "tutti".
             if ui
                 .selectable_label(state.dev_filter.is_some(), "Dev…  (⌘/Ctrl+D)")
                 .clicked()
             {
-                state.show_dev_filter = !state.show_dev_filter;
-                state.dev_filter_just_opened = state.show_dev_filter;
+                toggle_filters(state, FilterPane::Devs);
                 ui.close_menu();
             }
             if ui.button("Milestone…").clicked() {

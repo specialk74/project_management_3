@@ -56,7 +56,8 @@ references; the UI lives entirely in the `src/ui/` module.
     (`footer`/`draw_left_footer`/`draw_right_footer`…), `dialogs.rs` (all the modeless
     `*_window` fns + `move`/`popup` helpers), `export.rs` (PDF/SVG/minuta dialogs +
     `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
-    `saturation.rs` (worker-saturation dashboard).
+    `saturation.rs` (worker-saturation dashboard), `filters.rs` (dialog unica dei
+    filtri Workers/Progetti/Dev).
   - **Module mechanics** (mechanical split, verified by the compiler): only free **functions**
     moved to submodules; every shared **type/enum/const stays in `mod.rs`**. Submodules do
     `use super::*` (so they see the core's items and, since the top-of-file crate imports were
@@ -149,13 +150,39 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Esci.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
-- **Filtri**: Progetti… (`Cmd/Ctrl+P`, unifica visibilità enable/disable + ricerca/salto per tripletta), Workers… (`Cmd/Ctrl+F` — elenca solo i worker con `Worker.show_in_find` true, default true; la visibilità nel footer non conta; accanto a ogni nome il conteggio progetti `N/Aperti - M/Chiuso` via `worker_project_counts(app, current_week_only)` = progetti distinti con effort>0 del worker, split per `is_closed`, ignora vista/filtri; `current_week_only` segue `worker_filter_current_week` così in Ctrl+G conta solo la presenza nella settimana corrente), Workers (settimana corrente)… (`Cmd/Ctrl+G` — **stessa finestra e selezione** di Ctrl+F ma con `UiState.worker_filter_current_week` attivo: mostra solo i progetti in cui un worker selezionato ha **effort > 0 nella settimana corrente** (`current_week_id()`); dentro il progetto la resa resta identica a Ctrl+F, tutte le settimane. Ctrl+F disattiva la modalità, Ctrl+G la riattiva. Il gate è un unico predicato `project_worker_in_current_week` applicato in `project_layout`, unica sorgente di grid+left_column. Non persistito), **Dev…** (`Cmd/Ctrl+D` — `UiState.dev_filter: Option<HashSet<DevId>>`,
-  finestra `dev_filter_window` con checkbox su tutti i dev + Select All; mostra solo i
-  progetti in cui un dev selezionato ha **effort > 0** e, dentro il progetto, **solo
-  quei dev**. Predicato unico `dev_shown(app, proj, dev, &dev_filter)` applicato in
-  `project_layout`; si combina in **AND** col filtro worker e, come quello, comprime
-  l'header progetto alla sola tripletta (`filter_active`). Ctrl+D a pannello aperto fa
-  toggle di Select All, Shift+Ctrl+D deseleziona tutti. Non persistito), Milestone… (manager), Ghost worker… (`ghost_manager_window`: elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost), Closed…
+- **Filtri**: le prime quattro voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
+  Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`) aprono **un'unica
+  dialog** `filters_window` (`src/ui/filters.rs`, `UiState.show_filters`) a **tre
+  colonne** — Workers | Progetti | Dev — ognuna con campo di ricerca, Select All ed
+  elenco con checkbox. La scorciatoia/voce di menù decide solo quale colonna riceve il
+  focus (`UiState.filters_focus: Option<FilterPane>` + `filters_focus_dirty` one-shot;
+  helper `open_filters`/`focus_pane`/`toggle_filters`). Ripremuta a dialog aperta, la
+  stessa scorciatoia fa il **toggle di Select All** della sua colonna
+  (`*_filter_toggle_all`), applicato agli elementi **attualmente elencati** (rispetta la
+  ricerca); `Shift+…` deseleziona tutto senza aprire. Dettagli per colonna:
+  - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
+    visibilità nel footer non conta); accanto a ogni nome il conteggio progetti
+    `N/Aperti - M/Chiuso` via `worker_project_counts(app, current_week_only)` = progetti
+    distinti con effort>0 del worker, split per `is_closed`, ignora vista/filtri.
+    La spunta **«Solo settimana corrente»** è `UiState.worker_filter_current_week`
+    (Ctrl+G): mostra solo i progetti in cui un worker selezionato ha **effort > 0 nella
+    settimana corrente** (`current_week_id()`); dentro il progetto la resa resta identica
+    a Ctrl+F (tutte le settimane). Ctrl+F disattiva la modalità, Ctrl+G la riattiva; con
+    la dialog aperta nella *altra* modalità la scorciatoia commuta soltanto, nella stessa
+    fa il toggle di Select All. Il gate è il predicato `project_worker_in_current_week`
+    applicato in `project_layout`, unica sorgente di grid+left_column. Non persistito.
+  - **Progetti** — visibilità enable/disable + ricerca/salto per tripletta (click sulla
+    tripletta o Invio → `jump_to_project`, chiude la dialog e azzera la ricerca).
+  - **Dev** — `UiState.dev_filter: Option<HashSet<DevId>>`: mostra solo i progetti in cui
+    un dev selezionato ha **effort > 0** e, dentro il progetto, **solo quei dev**.
+    Predicato unico `dev_shown(app, proj, dev, &dev_filter)` applicato in
+    `project_layout`; si combina in **AND** col filtro worker e, come quello, comprime
+    l'header progetto alla sola tripletta (`filter_active`). Non persistito.
+
+  Restano finestre a sé: Milestone… (manager), Ghost worker… (`ghost_manager_window`:
+  elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da
+  hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost),
+  Closed…
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
@@ -164,7 +191,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 Each modeless window is a `fn xxx_window(ctx, …)` guarded by a `UiState` field and
 called from the windows block in `ui()`. Examples: `dev_manage_window`
 (`state.dev_manage`), `pdf_export_window` (`state.pdf_export`), `help_window`
-(`state.show_help`), `project_filter_window`, `milestone_manager_window`,
+(`state.show_help`), `filters_window` (dialog unica dei filtri), `milestone_manager_window`,
 `move_dialog_window`, `popup_window` (single `Popup` enum for tripletta/start/end/
 category/worker-max/etc.).
 
