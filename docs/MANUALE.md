@@ -476,6 +476,14 @@ Premendo di nuovo la **stessa** scorciatoia a dialog aperta si fa il **toggle di
 il toggle agisce sugli elementi **attualmente elencati**, cioè rispetta la ricerca.
 `Shift+Cmd/Ctrl+F` / `+G` / `+D` deselezionano tutto senza aprire la dialog.
 
+**`Cmd/Ctrl+J` azzera tutti i filtri**: worker e dev tornano *tutti selezionati*,
+tutti i progetti aperti tornano visibili, la modalità «Solo settimana corrente» si
+spegne e le tre ricerche si svuotano — cioè si torna a vedere tutto. Non è un
+toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona nulla** e
+ripristina semplicemente lo stesso stato. Non tocca i progetti **chiusi** (restano
+nascosti finché non li riapri da «Filtri ▸ Closed…») né la modalità **Vista ▸
+Progetti** (`Cmd/Ctrl+1/2/3`).
+
 ### Progetti — visibilità + salto rapido (colonna «Progetti», `Cmd/Ctrl+P`)
 La colonna contiene:
 - una **casella di ricerca** in cima (auto-focus): digita e l'elenco si filtra in
@@ -783,6 +791,7 @@ produce pagina.
 | `Cmd/Ctrl + D` | Apri la dialog «Filtri» sulla colonna Dev (solo i progetti col dev selezionato, e solo quel dev) |
 | `Shift + Cmd/Ctrl + D` | Deseleziona tutti i dev nel filtro |
 | `Cmd/Ctrl + P` | Apri la dialog «Filtri» sulla colonna Progetti (ricerca, visibilità e salto rapido) |
+| `Cmd/Ctrl + J` | **Azzera tutti i filtri**: torna a vedere tutto (ripetibile, non deseleziona mai) |
 | `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |
 | `Invio` / `Tab` | Conferma la modifica della cella |
 | `Esc` | Annulla la modifica della cella |

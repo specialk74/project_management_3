@@ -159,7 +159,11 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   helper `open_filters`/`focus_pane`/`toggle_filters`). Ripremuta a dialog aperta, la
   stessa scorciatoia fa il **toggle di Select All** della sua colonna
   (`*_filter_toggle_all`), applicato agli elementi **attualmente elencati** (rispetta la
-  ricerca); `Shift+…` deseleziona tutto senza aprire. Dettagli per colonna:
+  ricerca); `Shift+…` deseleziona tutto senza aprire. **`Cmd/Ctrl+J`** →
+  `reset_all_filters(app, state, actions)`: rimette `worker_filter`/`dev_filter` a
+  `None`, spegne `worker_filter_current_week`, svuota le tre ricerche e riabilita tutti
+  i progetti **non chiusi** (`Action::SetProjectEnabled`, che non marca il file come
+  modificato). È **idempotente**: ripremuto non deseleziona nulla. Dettagli per colonna:
   - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
     visibilità nel footer non conta); accanto a ogni nome il conteggio progetti
     `N/Aperti - M/Chiuso` via `worker_project_counts(app, current_week_only)` = progetti

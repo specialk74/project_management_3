@@ -210,6 +210,32 @@ pub(crate) fn toggle_filters(state: &mut UiState, pane: FilterPane) {
     }
 }
 
+/// Azzera **tutti** i filtri della dialog «Filtri» (Ctrl+J): worker e dev
+/// tornano "tutti selezionati", tutti i progetti aperti tornano visibili, la
+/// modalità "solo settimana corrente" si spegne e le ricerche si svuotano.
+/// Non è un toggle: ripetuto, riporta sempre a "si vede tutto".
+pub(crate) fn reset_all_filters(app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    state.worker_filter = None;
+    state.dev_filter = None;
+    state.worker_filter_current_week = false;
+    state.worker_search.clear();
+    state.project_search.clear();
+    state.dev_search.clear();
+    // Eventuali toggle richiesti nello stesso frame non devono ri-deselezionare.
+    state.worker_filter_toggle_all = false;
+    state.dev_filter_toggle_all = false;
+    state.project_filter_toggle_all = false;
+    // Visibilità progetti: i chiusi restano fuori (chiudere forza `enable = false`).
+    for (proj, _) in app.projects.list() {
+        if !app.projects.is_closed(proj) {
+            actions.push(Action::SetProjectEnabled {
+                proj,
+                enabled: true,
+            });
+        }
+    }
+}
+
 /// Apre la dialog unica dei filtri con il focus sulla colonna `pane`.
 fn open_filters(state: &mut UiState, pane: FilterPane) {
     state.show_filters = true;
@@ -833,7 +859,7 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_g, key_d, key_p, key_t, shift, key_1, key_2, key_3) =
+            let (key_s, key_f, key_g, key_d, key_p, key_t, key_j, shift, key_1, key_2, key_3) =
                 ui.ctx().input(|i| {
                     let cmd = i.modifiers.command || i.modifiers.ctrl;
                     (
@@ -843,6 +869,7 @@ impl eframe::App for PjmApp {
                         cmd && i.key_pressed(egui::Key::D),
                         cmd && i.key_pressed(egui::Key::P),
                         cmd && i.key_pressed(egui::Key::T),
+                        cmd && i.key_pressed(egui::Key::J),
                         i.modifiers.shift,
                         cmd && i.key_pressed(egui::Key::Num1),
                         cmd && i.key_pressed(egui::Key::Num2),
@@ -915,6 +942,11 @@ impl eframe::App for PjmApp {
                     open_filters(state, FilterPane::Projects);
                 }
                 focus_pane(state, FilterPane::Projects);
+            }
+            // Ctrl+J: azzera tutti i filtri (tutto selezionato). Non è un toggle —
+            // ripremuto, anche a dialog aperta, riporta sempre allo stesso stato.
+            if key_j {
+                reset_all_filters(app, state, &mut actions);
             }
             // Ctrl+T: riporta la griglia sulla settimana di oggi, centrandola
             // (stesso criterio dello scroll iniziale). Rispetta zoom e vista
