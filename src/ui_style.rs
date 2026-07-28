@@ -209,7 +209,11 @@ pub fn contrast_text(background: Color32) -> Color32 {
 
 #[inline]
 pub fn from_hex(rgb: u32) -> Color32 {
-    g(Color32::from_rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8))
+    g(Color32::from_rgb(
+        ((rgb >> 16) & 0xFF) as u8,
+        ((rgb >> 8) & 0xFF) as u8,
+        (rgb & 0xFF) as u8,
+    ))
 }
 
 /// Colore del cumulativo per dev (replica `my-function` in global.slint).

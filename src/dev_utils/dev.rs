@@ -60,5 +60,4 @@ impl Dev {
     pub fn font_color(&self) -> usize {
         self.font_color.unwrap_or(0xFFFFFF)
     }
-
 }

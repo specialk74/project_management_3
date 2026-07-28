@@ -5,7 +5,11 @@ use super::*;
 /// Disegna una mini-anteprima (foglio bianco stile Gantt) di come vengono rese
 /// le barre di un dev nel formato `fmt`, sugli stessi dati campione. Serve nel
 /// selettore del formato di export per far scegliere l'utente a colpo d'occhio.
-pub(crate) fn draw_bar_format_preview(ui: &egui::Ui, rect: Rect, fmt: crate::pdf_export::BarFormat) {
+pub(crate) fn draw_bar_format_preview(
+    ui: &egui::Ui,
+    rect: Rect,
+    fmt: crate::pdf_export::BarFormat,
+) {
     use crate::pdf_export::BarFormat;
     let p = ui.painter();
     // Foglio bianco col bordo (indipendente dal tema, come il PDF stampato).
@@ -385,7 +389,12 @@ pub(crate) fn pdf_multi_export_window(
 /// Dialog "Minuta" (File ▸ Minuta…): seleziona i progetti non chiusi e sceglie
 /// se includere solo le note della settimana corrente o tutte; alla conferma
 /// lancia `Action::GenerateMinuta`.
-pub(crate) fn minuta_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+pub(crate) fn minuta_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     let Some(m) = state.minuta.as_mut() else {
         return;
     };
@@ -514,4 +523,3 @@ pub(crate) fn build_minuta(
 }
 
 // ── Aiuto / Manuale ─────────────────────────────────────────────────────────
-

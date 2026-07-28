@@ -318,4 +318,3 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
 }
 
 // ── Corpo: colonna sinistra + griglia con scroll sincronizzato ──────────────
-

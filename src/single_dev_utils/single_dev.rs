@@ -395,8 +395,14 @@ mod tests {
         assert_eq!(
             sd.declared_history(),
             &[
-                DeclaredPoint { week: WeekId(700), pct: 55 },
-                DeclaredPoint { week: WeekId(707), pct: 70 },
+                DeclaredPoint {
+                    week: WeekId(700),
+                    pct: 55
+                },
+                DeclaredPoint {
+                    week: WeekId(707),
+                    pct: 70
+                },
             ]
         );
     }

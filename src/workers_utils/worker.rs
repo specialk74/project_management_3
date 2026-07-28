@@ -144,7 +144,11 @@ impl Worker {
     }
 
     pub fn set_max_hours(&mut self, hours: u32) {
-        self.max_weekly_hours = if hours == DEFAULT_MAX_HOURS { None } else { Some(hours) };
+        self.max_weekly_hours = if hours == DEFAULT_MAX_HOURS {
+            None
+        } else {
+            Some(hours)
+        };
     }
 
     /// Returns effective max hours for the given week (override → global → default).
@@ -254,7 +258,10 @@ mod tests {
         let w = Worker::new("Alice");
         assert!(!w.is_ghost());
         let ron = ron::ser::to_string_pretty(&w, ron::ser::PrettyConfig::default()).unwrap();
-        assert!(!ron.contains("ghost"), "col default (false) non va salvato: {ron}");
+        assert!(
+            !ron.contains("ghost"),
+            "col default (false) non va salvato: {ron}"
+        );
     }
 
     #[test]

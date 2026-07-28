@@ -183,6 +183,10 @@ category/worker-max/etc.).
   (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks` + red dev-name label;
   (4) the trend PDF draws the incoming presunta segment + dot **red and thicker** for
   a ghost week.
+- **Vai a oggi** (`Cmd/Ctrl+T`): ricalcola `columns_vec` con lo zoom/compact correnti,
+  trova la colonna che contiene `current_week_id()` e imposta `UiState.pending_scroll_x`
+  con `centered_scroll_x(cols, idx, cw, ui.available_width() - LEFT_W)` — lo stesso
+  helper usato per lo scroll iniziale in `PjmApp::new`.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).

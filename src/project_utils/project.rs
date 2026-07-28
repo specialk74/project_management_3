@@ -241,7 +241,11 @@ impl Project {
     }
 
     pub fn set_tripletta(&mut self, tripletta: &str) {
-        self.tripletta = if tripletta.is_empty() { None } else { Some(tripletta.to_string()) };
+        self.tripletta = if tripletta.is_empty() {
+            None
+        } else {
+            Some(tripletta.to_string())
+        };
     }
 
     pub fn get_notes(&self) -> &HashMap<WeekId, String> {
@@ -566,13 +570,19 @@ mod tests {
     fn enable_not_serialized_and_defaults_true() {
         let p = Project::new("demo");
         let s = ron::ser::to_string(&p).unwrap();
-        assert!(!s.contains("enable"), "enable non deve essere serializzato: {s}");
+        assert!(
+            !s.contains("enable"),
+            "enable non deve essere serializzato: {s}"
+        );
 
         // File "vecchio" che contiene ancora enable:(false): il campo (skip) va
         // ignorato e il valore ripristinato al default (abilitato).
         let old = s.replacen('(', "(enable:(false),", 1);
         let back: Project = ron::from_str(&old).expect("il vecchio formato deve caricarsi");
-        assert!(back.get_enable().0, "enable deve tornare al default (abilitato)");
+        assert!(
+            back.get_enable().0,
+            "enable deve tornare al default (abilitato)"
+        );
     }
 
     // Helper: progetto con un dev e effort nelle settimane indicate.
@@ -608,22 +618,38 @@ mod tests {
             .collect();
         assert_eq!(block, vec![W0, W1, W2]);
         // settimana senza effort → nessun blocco
-        assert!(p.dev_contiguous_block(dev, WeekId(W0 + 5 * WEEK_STEP)).is_empty());
+        assert!(
+            p.dev_contiguous_block(dev, WeekId(W0 + 5 * WEEK_STEP))
+                .is_empty()
+        );
     }
 
     #[test]
     fn move_block_right_no_boundary() {
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         // +3 settimane
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[], OverflowResolution::None);
-        assert_eq!(effort_weeks(&p, dev), vec![W3, W3 + WEEK_STEP, W3 + 2 * WEEK_STEP]);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            3,
+            &[],
+            OverflowResolution::None,
+        );
+        assert_eq!(
+            effort_weeks(&p, dev),
+            vec![W3, W3 + WEEK_STEP, W3 + 2 * WEEK_STEP]
+        );
     }
 
     #[test]
     fn move_right_truncate_beyond_end() {
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         p.set_end_week(Some(WeekId(W3))); // fine a 721
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[], OverflowResolution::Truncate);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            3,
+            &[],
+            OverflowResolution::Truncate,
+        );
         assert_eq!(effort_weeks(&p, dev), vec![W3]); // le due oltre la fine perse
         assert_eq!(p.get_end_week(), Some(WeekId(W3))); // confine invariato
     }
@@ -633,15 +659,28 @@ mod tests {
         // La fine si sposta di n settimane (721 + 3*7 = 742), non "fino a contenere".
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         p.set_end_week(Some(WeekId(W3)));
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[], OverflowResolution::MoveBoundary);
-        assert_eq!(effort_weeks(&p, dev), vec![W3, W3 + WEEK_STEP, W3 + 2 * WEEK_STEP]);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            3,
+            &[],
+            OverflowResolution::MoveBoundary,
+        );
+        assert_eq!(
+            effort_weeks(&p, dev),
+            vec![W3, W3 + WEEK_STEP, W3 + 2 * WEEK_STEP]
+        );
         assert_eq!(p.get_end_week(), Some(WeekId(W3 + 3 * WEEK_STEP)));
     }
 
     #[test]
     fn move_left_below_zero_is_dropped() {
         let (mut p, dev) = proj_with_weeks(&[WEEK_STEP, 2 * WEEK_STEP]);
-        p.move_effort(&[(dev, vec![WeekId(WEEK_STEP), WeekId(2 * WEEK_STEP)])], -3, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(WEEK_STEP), WeekId(2 * WEEK_STEP)])],
+            -3,
+            &[],
+            OverflowResolution::None,
+        );
         assert!(effort_weeks(&p, dev).is_empty());
     }
 
@@ -650,8 +689,16 @@ mod tests {
         // L'inizio si sposta di n settimane.
         let (mut p, dev) = proj_with_weeks(&[W1, W2]);
         p.set_start_week(Some(WeekId(W0)));
-        p.move_effort(&[(dev, vec![WeekId(W1), WeekId(W2)])], -3, &[], OverflowResolution::MoveBoundary);
-        assert_eq!(effort_weeks(&p, dev), vec![W1 - 3 * WEEK_STEP, W2 - 3 * WEEK_STEP]);
+        p.move_effort(
+            &[(dev, vec![WeekId(W1), WeekId(W2)])],
+            -3,
+            &[],
+            OverflowResolution::MoveBoundary,
+        );
+        assert_eq!(
+            effort_weeks(&p, dev),
+            vec![W1 - 3 * WEEK_STEP, W2 - 3 * WEEK_STEP]
+        );
         assert_eq!(p.get_start_week(), Some(WeekId(W0 - 3 * WEEK_STEP)));
     }
 
@@ -672,7 +719,12 @@ mod tests {
         // si contrae all'ultima settimana ancora occupata.
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         p.set_end_week(Some(WeekId(W2)));
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], -1, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            -1,
+            &[],
+            OverflowResolution::None,
+        );
         // effort ora [W0-7, W1-7, W2-7]; ultima = W2-7 = W1
         assert_eq!(p.get_end_week(), Some(WeekId(W1)));
     }
@@ -684,7 +736,12 @@ mod tests {
         p.add_dev(dev_b);
         p.add_effort(dev_b, WeekId(W2), WorkerId(1), Effort(8)); // altro dev sulla fine
         p.set_end_week(Some(WeekId(W2)));
-        p.move_effort(&[(dev_a, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], -1, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev_a, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            -1,
+            &[],
+            OverflowResolution::None,
+        );
         assert_eq!(p.get_end_week(), Some(WeekId(W2))); // resta: dev_b è ancora sulla fine
     }
 
@@ -692,7 +749,12 @@ mod tests {
     fn right_move_contracts_start_to_first_effort() {
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         p.set_start_week(Some(WeekId(W0)));
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 1, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            1,
+            &[],
+            OverflowResolution::None,
+        );
         // effort ora [W1, W2, W3]; prima = W1
         assert_eq!(p.get_start_week(), Some(WeekId(W1)));
     }
@@ -701,7 +763,12 @@ mod tests {
     fn right_move_no_contract_if_effort_not_at_start() {
         let (mut p, dev) = proj_with_weeks(&[W1, W2]);
         p.set_start_week(Some(WeekId(W0))); // inizio prima del primo effort
-        p.move_effort(&[(dev, vec![WeekId(W1), WeekId(W2)])], 1, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(W1), WeekId(W2)])],
+            1,
+            &[],
+            OverflowResolution::None,
+        );
         assert_eq!(p.get_start_week(), Some(WeekId(W0))); // invariato: nessun effort era sull'inizio
     }
 
@@ -710,7 +777,12 @@ mod tests {
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         let m = MilestoneId(1);
         p.add_milestone(m, WeekId(W1));
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[m], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            3,
+            &[m],
+            OverflowResolution::None,
+        );
         assert_eq!(p.list_milestones(), vec![(m, WeekId(W1 + 3 * WEEK_STEP))]);
     }
 
@@ -719,7 +791,12 @@ mod tests {
         let (mut p, dev) = proj_with_weeks(&[W0, W1, W2]);
         let m = MilestoneId(1);
         p.add_milestone(m, WeekId(W1));
-        p.move_effort(&[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])], 3, &[], OverflowResolution::None);
+        p.move_effort(
+            &[(dev, vec![WeekId(W0), WeekId(W1), WeekId(W2)])],
+            3,
+            &[],
+            OverflowResolution::None,
+        );
         assert_eq!(p.list_milestones(), vec![(m, WeekId(W1))]);
     }
 

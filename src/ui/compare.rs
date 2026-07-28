@@ -64,12 +64,7 @@ pub(crate) fn copy_project_into(dst: &mut App, dst_pid: ProjectId, src: &App, sr
 
 /// Inserisce (o rimuove) un `SingleDev` per `dev` nel progetto `proj` di `app`.
 /// `src = Some` copia/sovrascrive; `src = None` rimuove il dev dal progetto.
-pub(crate) fn copy_dev_into(
-    app: &mut App,
-    proj: ProjectId,
-    dev: DevId,
-    src: Option<SingleDev>,
-) {
+pub(crate) fn copy_dev_into(app: &mut App, proj: ProjectId, dev: DevId, src: Option<SingleDev>) {
     let Some(mut p) = app.projects.get(proj).cloned() else {
         return;
     };
@@ -234,7 +229,11 @@ fn scrollbar(
     id: egui::Id,
 ) -> f32 {
     ui.painter().rect_filled(track, 2.0, Color32::from_gray(60));
-    let track_len = if vertical { track.height() } else { track.width() };
+    let track_len = if vertical {
+        track.height()
+    } else {
+        track.width()
+    };
     if content <= view || track_len <= 1.0 {
         return 0.0;
     }
@@ -261,7 +260,11 @@ fn scrollbar(
     };
     ui.painter().rect_filled(thumb_rect, 2.0, col);
     if r.dragged() {
-        let d = if vertical { r.drag_delta().y } else { r.drag_delta().x };
+        let d = if vertical {
+            r.drag_delta().y
+        } else {
+            r.drag_delta().x
+        };
         off = (off + d / (track_len - thumb).max(1.0) * max_off).clamp(0.0, max_off);
     }
     off
@@ -270,7 +273,12 @@ fn scrollbar(
 /// Tronca `raw` (formato "Nome|effort") perché stia in `max_w`, accorciando il
 /// nome e mantenendo il suffisso "|effort" (come `paint_person_cell`).
 fn fit_cell(ui: &egui::Ui, raw: &str, font: &egui::FontId, max_w: f32) -> String {
-    let m = |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE).size().x;
+    let m = |s: &str| {
+        ui.painter()
+            .layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE)
+            .size()
+            .x
+    };
     if m(raw) <= max_w {
         return raw.to_string();
     }
@@ -334,7 +342,12 @@ fn header_label(f: crate::project_diff::HeaderField) -> &'static str {
 enum RowKind {
     /// Intestazione di progetto. `header` = campi dell'intestazione che
     /// differiscono (mostrati in rosso; vuoto se differiscono solo i dev).
-    Proj { off: ProjectId, par: ProjectId, trip: String, header: Vec<crate::project_diff::HeaderField> },
+    Proj {
+        off: ProjectId,
+        par: ProjectId,
+        trip: String,
+        header: Vec<crate::project_diff::HeaderField>,
+    },
     /// Riga milestone del progetto: per ogni settimana una cella colorata col
     /// colore della milestone (nome dentro) su entrambi i lati; le settimane in
     /// cui l'insieme di milestone differisce sono bordate di rosso.
@@ -437,13 +450,33 @@ fn compare_view_stage(
             }
             _ => (Vec::new(), Vec::new()),
         };
-        rows.push(LRow { y, h: PROJ_H, kind: RowKind::Proj { off: *off, par: *par, trip: trip.clone(), header } });
+        rows.push(LRow {
+            y,
+            h: PROJ_H,
+            kind: RowKind::Proj {
+                off: *off,
+                par: *par,
+                trip: trip.clone(),
+                header,
+            },
+        });
         y += PROJ_H;
         // Riga milestone: presente se una qualsiasi delle due versioni ne ha.
         let has_ms = !app.projects.list_project_milestones(*off).is_empty()
-            || !cmp.other_app.projects.list_project_milestones(*par).is_empty();
+            || !cmp
+                .other_app
+                .projects
+                .list_project_milestones(*par)
+                .is_empty();
         if has_ms {
-            rows.push(LRow { y, h: MS_H, kind: RowKind::Milestones { off: *off, par: *par } });
+            rows.push(LRow {
+                y,
+                h: MS_H,
+                kind: RowKind::Milestones {
+                    off: *off,
+                    par: *par,
+                },
+            });
             y += MS_H;
         }
         for dd in devdiffs {
@@ -534,10 +567,32 @@ fn compare_view_stage(
     sy = sy.clamp(0.0, max_y);
 
     // Scrollbar (aggiornano sx/sy prima di disegnare le righe).
-    let vtrack = Rect::from_min_max(egui::pos2(r.right() - SB, rows_top), egui::pos2(r.right(), r.top() + inner_h));
-    let htrack = Rect::from_min_max(egui::pos2(r.left(), r.bottom() - SB), egui::pos2(r.left() + inner_w, r.bottom()));
-    sy = scrollbar(ui, vtrack, true, content_h, viewport_h, sy, ui.id().with("cmp_vsb"));
-    sx = scrollbar(ui, htrack, false, content_w, week_area_w, sx, ui.id().with("cmp_hsb"));
+    let vtrack = Rect::from_min_max(
+        egui::pos2(r.right() - SB, rows_top),
+        egui::pos2(r.right(), r.top() + inner_h),
+    );
+    let htrack = Rect::from_min_max(
+        egui::pos2(r.left(), r.bottom() - SB),
+        egui::pos2(r.left() + inner_w, r.bottom()),
+    );
+    sy = scrollbar(
+        ui,
+        vtrack,
+        true,
+        content_h,
+        viewport_h,
+        sy,
+        ui.id().with("cmp_vsb"),
+    );
+    sx = scrollbar(
+        ui,
+        htrack,
+        false,
+        content_w,
+        week_area_w,
+        sx,
+        ui.id().with("cmp_hsb"),
+    );
 
     // Fonts e colori (più grandi per leggibilità; celle monospaziate come griglia).
     let capf = egui::FontId::proportional(15.0);
@@ -551,10 +606,25 @@ fn compare_view_stage(
     p.rect_filled(r, 0.0, bg());
 
     // Intestazione: didascalie pannelli + date settimane (scorrono in orizzontale).
-    p.text(egui::pos2(left_x + 4.0, r.top() + 2.0), Align2::LEFT_TOP, "Ufficiale", capf.clone(), text());
-    p.text(egui::pos2(right_x + 4.0, r.top() + 2.0), Align2::LEFT_TOP, "Parallelo", capf.clone(), text());
+    p.text(
+        egui::pos2(left_x + 4.0, r.top() + 2.0),
+        Align2::LEFT_TOP,
+        "Ufficiale",
+        capf.clone(),
+        text(),
+    );
+    p.text(
+        egui::pos2(right_x + 4.0, r.top() + 2.0),
+        Align2::LEFT_TOP,
+        "Parallelo",
+        capf.clone(),
+        text(),
+    );
     for wx in [l_week_x, r_week_x] {
-        let hp = ui.painter_at(Rect::from_min_max(egui::pos2(wx, r.top()), egui::pos2(wx + week_area_w, rows_top)));
+        let hp = ui.painter_at(Rect::from_min_max(
+            egui::pos2(wx, r.top()),
+            egui::pos2(wx + week_area_w, rows_top),
+        ));
         for (i, w) in weeks.iter().enumerate() {
             let cx = wx + i as f32 * CW - sx;
             if cx + CW < wx || cx > wx + week_area_w {
@@ -562,15 +632,33 @@ fn compare_view_stage(
             }
             // Etichetta identica alla griglia originale: primo giorno settimana %y-%m-%d.
             let lbl = days_to_local(*w).format("%y-%m-%d").to_string();
-            hp.text(egui::pos2(cx + CW / 2.0, r.top() + HEADER_H / 2.0), Align2::CENTER_CENTER, lbl, smallf.clone(), text_dim());
+            hp.text(
+                egui::pos2(cx + CW / 2.0, r.top() + HEADER_H / 2.0),
+                Align2::CENTER_CENTER,
+                lbl,
+                smallf.clone(),
+                text_dim(),
+            );
         }
     }
 
     // Painter clippati per nomi (per pannello) e celle (area settimane).
-    let lname = ui.painter_at(Rect::from_min_max(egui::pos2(left_x, rows_top), egui::pos2(left_x + NAME_W, r.top() + inner_h)));
-    let rname = ui.painter_at(Rect::from_min_max(egui::pos2(right_x, rows_top), egui::pos2(right_x + NAME_W, r.top() + inner_h)));
-    let lcell = ui.painter_at(Rect::from_min_max(egui::pos2(l_week_x, rows_top), egui::pos2(l_week_x + week_area_w, r.top() + inner_h)));
-    let rcell = ui.painter_at(Rect::from_min_max(egui::pos2(r_week_x, rows_top), egui::pos2(r_week_x + week_area_w, r.top() + inner_h)));
+    let lname = ui.painter_at(Rect::from_min_max(
+        egui::pos2(left_x, rows_top),
+        egui::pos2(left_x + NAME_W, r.top() + inner_h),
+    ));
+    let rname = ui.painter_at(Rect::from_min_max(
+        egui::pos2(right_x, rows_top),
+        egui::pos2(right_x + NAME_W, r.top() + inner_h),
+    ));
+    let lcell = ui.painter_at(Rect::from_min_max(
+        egui::pos2(l_week_x, rows_top),
+        egui::pos2(l_week_x + week_area_w, r.top() + inner_h),
+    ));
+    let rcell = ui.painter_at(Rect::from_min_max(
+        egui::pos2(r_week_x, rows_top),
+        egui::pos2(r_week_x + week_area_w, r.top() + inner_h),
+    ));
 
     // Separatori verticali.
     for x in [l_week_x, gutter_x, right_x, r_week_x] {
@@ -584,11 +672,31 @@ fn compare_view_stage(
             continue;
         }
         match &row.kind {
-            RowKind::Proj { off, par, trip, header } => {
-                let band = Rect::from_min_max(egui::pos2(r.left(), screen_y), egui::pos2(r.left() + inner_w, screen_y + PROJ_H));
+            RowKind::Proj {
+                off,
+                par,
+                trip,
+                header,
+            } => {
+                let band = Rect::from_min_max(
+                    egui::pos2(r.left(), screen_y),
+                    egui::pos2(r.left() + inner_w, screen_y + PROJ_H),
+                );
                 p.rect_filled(band, 0.0, strip_bg(false));
-                lname.text(egui::pos2(left_x + 4.0, screen_y + PROJ_H / 2.0), Align2::LEFT_CENTER, trip, capf.clone(), text());
-                rname.text(egui::pos2(right_x + 4.0, screen_y + PROJ_H / 2.0), Align2::LEFT_CENTER, trip, capf.clone(), text());
+                lname.text(
+                    egui::pos2(left_x + 4.0, screen_y + PROJ_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    trip,
+                    capf.clone(),
+                    text(),
+                );
+                rname.text(
+                    egui::pos2(right_x + 4.0, screen_y + PROJ_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    trip,
+                    capf.clone(),
+                    text(),
+                );
                 // Campi dell'intestazione che differiscono (in rosso), nell'area
                 // settimane della riga di progetto.
                 if !header.is_empty() {
@@ -606,21 +714,50 @@ fn compare_view_stage(
                 // non viene mai salvato.
                 let cy = screen_y + PROJ_H / 2.0;
                 let bh = (PROJ_H - 6.0).min(18.0);
-                let lb = Rect::from_center_size(egui::pos2(gutter_x + GUTTER_W / 2.0, cy), egui::vec2((GUTTER_W - 14.0).min(42.0), bh));
+                let lb = Rect::from_center_size(
+                    egui::pos2(gutter_x + GUTTER_W / 2.0, cy),
+                    egui::vec2((GUTTER_W - 14.0).min(42.0), bh),
+                );
                 let lr = ui
                     .interact(lb, ui.id().with(("cmp_pl", off.0)), Sense::click())
                     .on_hover_text("Importa l'intero progetto nel file ufficiale");
-                let fill = if lr.hovered() { Color32::from_gray(120) } else { Color32::from_gray(70) };
+                let fill = if lr.hovered() {
+                    Color32::from_gray(120)
+                } else {
+                    Color32::from_gray(70)
+                };
                 p.rect_filled(lb, 3.0, fill);
-                p.text(lb.center(), Align2::CENTER_CENTER, "«", capf.clone(), Color32::WHITE);
+                p.text(
+                    lb.center(),
+                    Align2::CENTER_CENTER,
+                    "«",
+                    capf.clone(),
+                    Color32::WHITE,
+                );
                 if lr.clicked() {
-                    actions.push(Action::CompareCopyProject { off: *off, par: *par, to_official: true });
+                    actions.push(Action::CompareCopyProject {
+                        off: *off,
+                        par: *par,
+                        to_official: true,
+                    });
                 }
             }
             RowKind::Milestones { off, par } => {
                 // Etichetta di riga in entrambe le colonne nome.
-                lname.text(egui::pos2(left_x + 4.0, screen_y + MS_H / 2.0), Align2::LEFT_CENTER, "Milestone", smallf.clone(), text_dim());
-                rname.text(egui::pos2(right_x + 4.0, screen_y + MS_H / 2.0), Align2::LEFT_CENTER, "Milestone", smallf.clone(), text_dim());
+                lname.text(
+                    egui::pos2(left_x + 4.0, screen_y + MS_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    "Milestone",
+                    smallf.clone(),
+                    text_dim(),
+                );
+                rname.text(
+                    egui::pos2(right_x + 4.0, screen_y + MS_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    "Milestone",
+                    smallf.clone(),
+                    text_dim(),
+                );
                 for (i, w) in weeks.iter().enumerate() {
                     let cx_l = l_week_x + i as f32 * CW - sx;
                     if cx_l + CW < l_week_x || cx_l > l_week_x + week_area_w {
@@ -641,7 +778,8 @@ fn compare_view_stage(
                         if ids.is_empty() {
                             return;
                         }
-                        let cell = Rect::from_min_size(egui::pos2(cx, screen_y), egui::vec2(CW, MS_H));
+                        let cell =
+                            Rect::from_min_size(egui::pos2(cx, screen_y), egui::vec2(CW, MS_H));
                         let fill = ids
                             .first()
                             .and_then(|m| app.milestones.get_color(*m))
@@ -664,40 +802,113 @@ fn compare_view_stage(
                         job.append(
                             &names.join(", "),
                             0.0,
-                            egui::TextFormat { font_id: cellf.clone(), color: txt, ..Default::default() },
+                            egui::TextFormat {
+                                font_id: cellf.clone(),
+                                color: txt,
+                                ..Default::default()
+                            },
                         );
                         let galley = painter.layout_job(job);
-                        let pos = egui::pos2(cell.center().x, cell.center().y - galley.size().y / 2.0);
+                        let pos =
+                            egui::pos2(cell.center().x, cell.center().y - galley.size().y / 2.0);
                         painter.galley(pos, galley, txt);
                     };
                     draw_side(&lcell, cx_l, &off_ms);
                     draw_side(&rcell, cx_r, &par_ms);
                     if diff {
                         let sk = egui::StrokeKind::Inside;
-                        lcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_l, screen_y), egui::vec2(CW, MS_H)), 0.0, Stroke::new(1.0, red), sk);
-                        rcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_r, screen_y), egui::vec2(CW, MS_H)), 0.0, Stroke::new(1.0, red), sk);
+                        lcell.rect_stroke(
+                            Rect::from_min_size(egui::pos2(cx_l, screen_y), egui::vec2(CW, MS_H)),
+                            0.0,
+                            Stroke::new(1.0, red),
+                            sk,
+                        );
+                        rcell.rect_stroke(
+                            Rect::from_min_size(egui::pos2(cx_r, screen_y), egui::vec2(CW, MS_H)),
+                            0.0,
+                            Stroke::new(1.0, red),
+                            sk,
+                        );
                     }
                 }
-                p.hline(r.left()..=(r.left() + inner_w), screen_y + MS_H, Stroke::new(1.0, Color32::from_gray(70)));
+                p.hline(
+                    r.left()..=(r.left() + inner_w),
+                    screen_y + MS_H,
+                    Stroke::new(1.0, Color32::from_gray(70)),
+                );
             }
-            RowKind::DevBlock { off, par, dev, name, workers, off_planned, par_planned, off_decl, par_decl } => {
+            RowKind::DevBlock {
+                off,
+                par,
+                dev,
+                name,
+                workers,
+                off_planned,
+                par_planned,
+                off_decl,
+                par_decl,
+            } => {
                 let block_h = row.h;
                 // Nome dev in colore normale: sono mostrati solo i dev diversi,
                 // quindi il rosso sul nome sarebbe ridondante.
                 let col = text();
-                lname.text(egui::pos2(left_x + 4.0, screen_y + ROW_H / 2.0), Align2::LEFT_CENTER, name, namef.clone(), col);
-                rname.text(egui::pos2(right_x + 4.0, screen_y + ROW_H / 2.0), Align2::LEFT_CENTER, name, namef.clone(), col);
+                lname.text(
+                    egui::pos2(left_x + 4.0, screen_y + ROW_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    name,
+                    namef.clone(),
+                    col,
+                );
+                rname.text(
+                    egui::pos2(right_x + 4.0, screen_y + ROW_H / 2.0),
+                    Align2::LEFT_CENTER,
+                    name,
+                    namef.clone(),
+                    col,
+                );
 
                 // A destra nella colonna nome: effort stimato + % dichiarata,
                 // ciascuno rosso se differisce tra i due file. La % è al margine
                 // destro, l'effort stimato subito a sinistra.
                 let ty = screen_y + ROW_H / 2.0;
-                let pcol = if off_planned != par_planned { red } else { text_dim() };
-                let dcol = if off_decl != par_decl { red } else { text_dim() };
-                let ld = lname.text(egui::pos2(left_x + NAME_W - 4.0, ty), Align2::RIGHT_CENTER, format!("{off_decl}%"), namef.clone(), dcol);
-                lname.text(egui::pos2(ld.left() - 6.0, ty), Align2::RIGHT_CENTER, off_planned.to_string(), namef.clone(), pcol);
-                let rd = rname.text(egui::pos2(right_x + NAME_W - 4.0, ty), Align2::RIGHT_CENTER, format!("{par_decl}%"), namef.clone(), dcol);
-                rname.text(egui::pos2(rd.left() - 6.0, ty), Align2::RIGHT_CENTER, par_planned.to_string(), namef.clone(), pcol);
+                let pcol = if off_planned != par_planned {
+                    red
+                } else {
+                    text_dim()
+                };
+                let dcol = if off_decl != par_decl {
+                    red
+                } else {
+                    text_dim()
+                };
+                let ld = lname.text(
+                    egui::pos2(left_x + NAME_W - 4.0, ty),
+                    Align2::RIGHT_CENTER,
+                    format!("{off_decl}%"),
+                    namef.clone(),
+                    dcol,
+                );
+                lname.text(
+                    egui::pos2(ld.left() - 6.0, ty),
+                    Align2::RIGHT_CENTER,
+                    off_planned.to_string(),
+                    namef.clone(),
+                    pcol,
+                );
+                let rd = rname.text(
+                    egui::pos2(right_x + NAME_W - 4.0, ty),
+                    Align2::RIGHT_CENTER,
+                    format!("{par_decl}%"),
+                    namef.clone(),
+                    dcol,
+                );
+                rname.text(
+                    egui::pos2(rd.left() - 6.0, ty),
+                    Align2::RIGHT_CENTER,
+                    par_planned.to_string(),
+                    namef.clone(),
+                    pcol,
+                );
 
                 // Freccia per importare il dev nel file ufficiale (parallelo→
                 // ufficiale). Non c'è la direzione opposta: il file parallelo non
@@ -705,15 +916,33 @@ fn compare_view_stage(
                 // sparisce dalla vista (si mostrano solo i dev diversi).
                 {
                     let cy = screen_y + block_h / 2.0;
-                    let lb = Rect::from_center_size(egui::pos2(gutter_x + GUTTER_W / 2.0, cy), egui::vec2((GUTTER_W - 14.0).min(42.0), 18.0));
+                    let lb = Rect::from_center_size(
+                        egui::pos2(gutter_x + GUTTER_W / 2.0, cy),
+                        egui::vec2((GUTTER_W - 14.0).min(42.0), 18.0),
+                    );
                     let lr = ui
                         .interact(lb, ui.id().with(("cmp_l", off.0, dev.0)), Sense::click())
                         .on_hover_text("Importa questo dev nel file ufficiale");
-                    let fill = if lr.hovered() { Color32::from_gray(120) } else { Color32::from_gray(90) };
+                    let fill = if lr.hovered() {
+                        Color32::from_gray(120)
+                    } else {
+                        Color32::from_gray(90)
+                    };
                     p.rect_filled(lb, 3.0, fill);
-                    p.text(lb.center(), Align2::CENTER_CENTER, "←", namef.clone(), Color32::WHITE);
+                    p.text(
+                        lb.center(),
+                        Align2::CENTER_CENTER,
+                        "←",
+                        namef.clone(),
+                        Color32::WHITE,
+                    );
                     if lr.clicked() {
-                        actions.push(Action::CompareCopyDev { off: *off, par: *par, dev: *dev, to_official: true });
+                        actions.push(Action::CompareCopyDev {
+                            off: *off,
+                            par: *par,
+                            dev: *dev,
+                            to_official: true,
+                        });
                     }
                 }
 
@@ -734,22 +963,48 @@ fn compare_view_stage(
                         let cc = if diff { red } else { text() };
                         if off_e > 0 {
                             let s = fit_cell(ui, &format!("{wname}|{off_e}"), &cellf, CW - 6.0);
-                            lcell.text(egui::pos2(cx_l + CW / 2.0, sub_y + ROW_H / 2.0), Align2::CENTER_CENTER, s, cellf.clone(), cc);
+                            lcell.text(
+                                egui::pos2(cx_l + CW / 2.0, sub_y + ROW_H / 2.0),
+                                Align2::CENTER_CENTER,
+                                s,
+                                cellf.clone(),
+                                cc,
+                            );
                         }
                         if par_e > 0 {
                             let s = fit_cell(ui, &format!("{wname}|{par_e}"), &cellf, CW - 6.0);
-                            rcell.text(egui::pos2(cx_r + CW / 2.0, sub_y + ROW_H / 2.0), Align2::CENTER_CENTER, s, cellf.clone(), cc);
+                            rcell.text(
+                                egui::pos2(cx_r + CW / 2.0, sub_y + ROW_H / 2.0),
+                                Align2::CENTER_CENTER,
+                                s,
+                                cellf.clone(),
+                                cc,
+                            );
                         }
                         if diff {
                             let sk = egui::StrokeKind::Inside;
-                            lcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_l, sub_y), egui::vec2(CW, ROW_H)), 0.0, Stroke::new(1.0, red), sk);
-                            rcell.rect_stroke(Rect::from_min_size(egui::pos2(cx_r, sub_y), egui::vec2(CW, ROW_H)), 0.0, Stroke::new(1.0, red), sk);
+                            lcell.rect_stroke(
+                                Rect::from_min_size(egui::pos2(cx_l, sub_y), egui::vec2(CW, ROW_H)),
+                                0.0,
+                                Stroke::new(1.0, red),
+                                sk,
+                            );
+                            rcell.rect_stroke(
+                                Rect::from_min_size(egui::pos2(cx_r, sub_y), egui::vec2(CW, ROW_H)),
+                                0.0,
+                                Stroke::new(1.0, red),
+                                sk,
+                            );
                         }
                     }
                 }
 
                 // Riga separatrice sotto il blocco dev.
-                p.hline(r.left()..=(r.left() + inner_w), screen_y + block_h, Stroke::new(1.0, Color32::from_gray(70)));
+                p.hline(
+                    r.left()..=(r.left() + inner_w),
+                    screen_y + block_h,
+                    Stroke::new(1.0, Color32::from_gray(70)),
+                );
             }
         }
     }
@@ -784,19 +1039,24 @@ mod tests {
         let d = off.devs.add("Dev");
         let pid = off.projects.add("P", Some("ABC"), Some(WeekId(100)));
         off.projects.add_dev(pid, d);
-        off.projects.add_effort(pid, d, WeekId(100), WorkerId(0), Effort(8));
+        off.projects
+            .add_effort(pid, d, WeekId(100), WorkerId(0), Effort(8));
 
         // File parallelo (id coincidenti): stesso dev con effort diverso.
         let mut par = App::new();
         let d2 = par.devs.add("Dev");
         let pid2 = par.projects.add("P", Some("ABC"), Some(WeekId(100)));
         par.projects.add_dev(pid2, d2);
-        par.projects.add_effort(pid2, d2, WeekId(100), WorkerId(0), Effort(20));
+        par.projects
+            .add_effort(pid2, d2, WeekId(100), WorkerId(0), Effort(20));
 
         let src = par.projects.get_single_dev(pid2, d2).cloned();
         copy_dev_into(&mut off, pid, d, src);
         assert_eq!(
-            off.projects.get_single_dev(pid, d).unwrap().get_effort_by_week(WeekId(100)),
+            off.projects
+                .get_single_dev(pid, d)
+                .unwrap()
+                .get_effort_by_week(WeekId(100)),
             Effort(20),
         );
     }
@@ -807,7 +1067,8 @@ mod tests {
         let d = off.devs.add("Dev");
         let pid = off.projects.add("P", Some("ABC"), Some(WeekId(100)));
         off.projects.add_dev(pid, d);
-        off.projects.add_effort(pid, d, WeekId(100), WorkerId(0), Effort(8));
+        off.projects
+            .add_effort(pid, d, WeekId(100), WorkerId(0), Effort(8));
 
         copy_dev_into(&mut off, pid, d, None);
         assert!(off.projects.get_single_dev(pid, d).is_none());

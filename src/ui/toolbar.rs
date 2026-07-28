@@ -26,7 +26,12 @@ pub(crate) fn add_field(
     });
 }
 
-pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+pub(crate) fn toolbar(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     egui::menu::bar(ui, |ui| {
         // ── File ─────────────────────────────────────────────────────────────
         ui.menu_button("File", |ui| {
@@ -439,4 +444,3 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
 }
 
 // ── Cruscotto saturazione worker (Vista ▸ Saturazione worker…) ──────────────
-

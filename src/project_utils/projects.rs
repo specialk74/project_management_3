@@ -108,14 +108,24 @@ impl Projects {
         }
     }
 
-    pub fn add(&mut self, info: &str, tripletta: Option<&str>, start_week: Option<WeekId>) -> ProjectId {
+    pub fn add(
+        &mut self,
+        info: &str,
+        tripletta: Option<&str>,
+        start_week: Option<WeekId>,
+    ) -> ProjectId {
         let id = self.last_id;
         let mut project = Project::new_with_start(info, start_week);
         if let Some(t) = tripletta {
             project.set_tripletta(t);
         }
         // In fondo all'ordinamento corrente.
-        let next_order = self.projects.values().map(|p| p.get_order()).max().map_or(0, |m| m + 1);
+        let next_order = self
+            .projects
+            .values()
+            .map(|p| p.get_order())
+            .max()
+            .map_or(0, |m| m + 1);
         project.set_order(next_order);
         self.projects.insert(id, project);
         self.last_id.0 += 1;
@@ -189,7 +199,10 @@ impl Projects {
     }
 
     pub fn list_project_milestones(&self, id: ProjectId) -> Vec<(MilestoneId, WeekId)> {
-        self.projects.get(&id).map(|p| p.list_milestones()).unwrap_or_default()
+        self.projects
+            .get(&id)
+            .map(|p| p.list_milestones())
+            .unwrap_or_default()
     }
 
     pub fn project_milestones_at_week(&self, id: ProjectId, week: WeekId) -> Vec<MilestoneId> {
@@ -201,7 +214,10 @@ impl Projects {
 
     /// Dev del progetto con almeno una settimana di effort.
     pub fn devs_with_effort(&self, id: ProjectId) -> Vec<DevId> {
-        self.projects.get(&id).map(|p| p.devs_with_effort()).unwrap_or_default()
+        self.projects
+            .get(&id)
+            .map(|p| p.devs_with_effort())
+            .unwrap_or_default()
     }
 
     /// Blocco contiguo di settimane con effort di un dev, attorno a `week`.
@@ -336,8 +352,14 @@ impl Projects {
 
     /// Numeri che compongono le percentuali di avanzamento (per il tooltip):
     /// `(usato_fino_a_today, pianificato, Σ pianificato·dichiarata)`.
-    pub fn project_progress_breakdown(&self, id: ProjectId, today: WeekId) -> Option<(u64, u64, u64)> {
-        self.projects.get(&id).and_then(|p| p.progress_breakdown(today))
+    pub fn project_progress_breakdown(
+        &self,
+        id: ProjectId,
+        today: WeekId,
+    ) -> Option<(u64, u64, u64)> {
+        self.projects
+            .get(&id)
+            .and_then(|p| p.progress_breakdown(today))
     }
 
     pub fn set_project_info(&mut self, project_id: ProjectId, info: &str) {
@@ -443,7 +465,6 @@ impl Projects {
             p.set_category(category);
         }
     }
-
 }
 
 #[cfg(test)]
@@ -504,4 +525,3 @@ mod tests {
         assert_eq!(names(&ps), vec!["B", "A", "C", "D"]);
     }
 }
-

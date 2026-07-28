@@ -21,23 +21,22 @@ pub(crate) use crate::single_effort_utils::sinlge_effort::Effort;
 pub(crate) use crate::ui_style::*;
 pub(crate) use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
-mod saturation;
-mod export;
-mod help;
-mod dialogs;
-mod footer;
-mod toolbar;
-mod grid;
 mod compare;
+mod dialogs;
+mod export;
+mod footer;
+mod grid;
+mod help;
+mod saturation;
+mod toolbar;
 pub(crate) use compare::*;
-pub(crate) use saturation::*;
-pub(crate) use export::*;
-pub(crate) use help::*;
 pub(crate) use dialogs::*;
+pub(crate) use export::*;
 pub(crate) use footer::*;
-pub(crate) use toolbar::*;
 pub(crate) use grid::*;
-
+pub(crate) use help::*;
+pub(crate) use saturation::*;
+pub(crate) use toolbar::*;
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
 
@@ -664,8 +663,7 @@ impl PjmApp {
             Some(idx) if idx > 0 => {
                 const INITIAL_WINDOW_WIDTH: f32 = 1024.0;
                 let visible_width = INITIAL_WINDOW_WIDTH - LEFT_W;
-                let col_center = col_x_offset(&cols, idx, COL_W) + COL_W / 2.0;
-                Some((col_center - visible_width / 2.0).max(0.0))
+                Some(centered_scroll_x(&cols, idx, COL_W, visible_width))
             }
             _ => None,
         };
@@ -795,7 +793,7 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_g, key_d, key_p, shift, key_1, key_2, key_3) =
+            let (key_s, key_f, key_g, key_d, key_p, key_t, shift, key_1, key_2, key_3) =
                 ui.ctx().input(|i| {
                     let cmd = i.modifiers.command || i.modifiers.ctrl;
                     (
@@ -804,6 +802,7 @@ impl eframe::App for PjmApp {
                         cmd && i.key_pressed(egui::Key::G),
                         cmd && i.key_pressed(egui::Key::D),
                         cmd && i.key_pressed(egui::Key::P),
+                        cmd && i.key_pressed(egui::Key::T),
                         i.modifiers.shift,
                         cmd && i.key_pressed(egui::Key::Num1),
                         cmd && i.key_pressed(egui::Key::Num2),
@@ -875,6 +874,27 @@ impl eframe::App for PjmApp {
                 } else {
                     state.show_project_filter = true;
                     state.project_filter_just_opened = true;
+                }
+            }
+            // Ctrl+T: riporta la griglia sulla settimana di oggi, centrandola
+            // (stesso criterio dello scroll iniziale). Rispetta zoom e vista
+            // compatta, così la colonna trovata è quella davvero disegnata.
+            if key_t {
+                let level = if state.compact_mode {
+                    0
+                } else {
+                    state.zoom_level
+                };
+                let cols = columns_vec(app, level);
+                let wk = current_week_id().0 as i32;
+                if let Some(idx) = cols.iter().position(|c| c.contains_week(wk)) {
+                    let visible_w = (ui.available_width() - LEFT_W).max(1.0);
+                    state.pending_scroll_x = Some(centered_scroll_x(
+                        &cols,
+                        idx,
+                        col_w(state.compact_mode),
+                        visible_w,
+                    ));
                 }
             }
 
@@ -1351,13 +1371,19 @@ impl PjmApp {
                             }
                         }
                         Err(e) => {
-                            self.ui.load_error =
-                                Some(format!("Impossibile aprire «{path}» per il confronto:\n{e}"));
+                            self.ui.load_error = Some(format!(
+                                "Impossibile aprire «{path}» per il confronto:\n{e}"
+                            ));
                         }
                     }
                 }
             }
-            Action::CompareCopyDev { off, par, dev, to_official } => {
+            Action::CompareCopyDev {
+                off,
+                par,
+                dev,
+                to_official,
+            } => {
                 let Some(cmp) = self.ui.compare.as_mut() else {
                     return;
                 };
@@ -1374,7 +1400,11 @@ impl PjmApp {
                     cmp.other_app.compute_sovra();
                 }
             }
-            Action::CompareCopyProject { off, par, to_official } => {
+            Action::CompareCopyProject {
+                off,
+                par,
+                to_official,
+            } => {
                 let Some(cmp) = self.ui.compare.as_mut() else {
                     return;
                 };
@@ -1943,6 +1973,13 @@ fn dev_year_total(
                 .unwrap_or(0)
         })
         .sum()
+}
+
+/// Offset X che **centra** la colonna `idx` in una vista larga `visible_width`
+/// (mai negativo). Usato dallo scroll iniziale e dal salto a oggi (Ctrl+T).
+pub(crate) fn centered_scroll_x(cols: &[Col], idx: usize, cw: f32, visible_width: f32) -> f32 {
+    let col_center = col_x_offset(cols, idx, cw) + cw / 2.0;
+    (col_center - visible_width / 2.0).max(0.0)
 }
 
 type Filter = Option<HashSet<String>>;

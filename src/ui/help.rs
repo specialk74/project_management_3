@@ -156,4 +156,3 @@ pub(crate) fn manual_sections(md: &str) -> Vec<&str> {
     out.push(&md[last..]);
     out
 }
-

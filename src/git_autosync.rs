@@ -180,7 +180,10 @@ mod tests {
         git_ok(&work, &["config", "user.email", "test@example.com"]);
         git_ok(&work, &["config", "user.name", "Test"]);
         git_ok(&work, &["config", "commit.gpgsign", "false"]);
-        git_ok(&work, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        git_ok(
+            &work,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
 
         // Commit iniziale + upstream, così un semplice `git push` funziona.
         std::fs::write(work.join("workers.ron"), b"(v1)").unwrap();
@@ -199,7 +202,10 @@ mod tests {
             .args(["show", "main:workers.ron"])
             .output()
             .unwrap();
-        assert!(show.status.success(), "il remoto deve avere il file dopo il push");
+        assert!(
+            show.status.success(),
+            "il remoto deve avere il file dopo il push"
+        );
         assert_eq!(String::from_utf8_lossy(&show.stdout), "(v2-changed)");
 
         let _ = std::fs::remove_dir_all(&base);
@@ -236,7 +242,10 @@ mod tests {
         git_ok(&work, &["config", "user.email", "test@example.com"]);
         git_ok(&work, &["config", "user.name", "Test"]);
         git_ok(&work, &["config", "commit.gpgsign", "false"]);
-        git_ok(&work, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        git_ok(
+            &work,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
 
         // Commit iniziale SENZA il .ron, poi upstream.
         std::fs::write(work.join("README.md"), b"hello").unwrap();
@@ -282,7 +291,10 @@ mod tests {
         std::fs::write(base.join("workers.ron"), b"(x)").unwrap();
         // Cartella NON git: non deve far nulla, né creare un repo, né dare panico.
         run(&base, OsStr::new("workers.ron"));
-        assert!(!base.join(".git").exists(), "non deve inizializzare un repo");
+        assert!(
+            !base.join(".git").exists(),
+            "non deve inizializzare un repo"
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 

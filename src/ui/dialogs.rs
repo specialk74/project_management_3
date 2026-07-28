@@ -2,7 +2,11 @@
 
 use super::*;
 
-pub(crate) fn note_editor_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Vec<Action>) {
+pub(crate) fn note_editor_window(
+    ctx: &egui::Context,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     if state.note_editor.is_none() {
         return;
     }
@@ -145,7 +149,11 @@ pub(crate) fn dev_manage_window(
     }
 }
 
-pub(crate) fn confirm_del_dev_window(ctx: &egui::Context, state: &mut UiState, actions: &mut Vec<Action>) {
+pub(crate) fn confirm_del_dev_window(
+    ctx: &egui::Context,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     let Some((proj, dev)) = state.confirm_del_dev else {
         return;
     };
@@ -544,7 +552,11 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
             None => !all.is_empty(),
             Some(s) => !all.is_empty() && all.iter().all(|n| s.contains(n)),
         };
-        filter = if currently_all { Some(HashSet::new()) } else { None };
+        filter = if currently_all {
+            Some(HashSet::new())
+        } else {
+            None
+        };
     }
 
     let resp = egui::Window::new(title)
@@ -623,7 +635,11 @@ pub(crate) fn dev_filter_window(ctx: &egui::Context, app: &App, state: &mut UiSt
             None => !all.is_empty(),
             Some(s) => !all.is_empty() && all.iter().all(|(id, _)| s.contains(id)),
         };
-        filter = if currently_all { Some(HashSet::new()) } else { None };
+        filter = if currently_all {
+            Some(HashSet::new())
+        } else {
+            None
+        };
     }
 
     let resp = egui::Window::new(title)
@@ -755,7 +771,11 @@ pub(crate) fn moves_span(moves: &[(DevId, Vec<WeekId>)]) -> Option<(usize, usize
 
 /// Costruisce il passo "Params": numero settimane vuoto e milestone del
 /// progetto, pre-selezionando quelle che cadono nell'intervallo spostato.
-pub(crate) fn make_move_params(app: &App, proj: ProjectId, moves: Vec<(DevId, Vec<WeekId>)>) -> MoveDialog {
+pub(crate) fn make_move_params(
+    app: &App,
+    proj: ProjectId,
+    moves: Vec<(DevId, Vec<WeekId>)>,
+) -> MoveDialog {
     let span = moves_span(&moves);
     let milestones = app
         .projects
@@ -993,7 +1013,12 @@ pub(crate) fn move_dialog_window(
 
 // ── Popup di modifica (tripletta / inizio / fine / categoria) ───────────────
 
-pub(crate) fn popup_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+pub(crate) fn popup_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
     if state.popup.is_none() {
         return;
     }
@@ -1366,4 +1391,3 @@ mod tests {
         assert_eq!(cw.get("Bob").copied(), Some((1, 0)));
     }
 }
-

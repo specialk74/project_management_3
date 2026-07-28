@@ -133,6 +133,8 @@ Dall'alto verso il basso:
 verticale; header, griglia e footer scorrono insieme in orizzontale.
 
 La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna.
+All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
+`Cmd/Ctrl+T` la riporta lì, centrandola nella parte visibile.
 
 ---
 
@@ -766,6 +768,7 @@ produce pagina.
 | `Cmd/Ctrl + D` | Apri il filtro dev (solo i progetti col dev selezionato, e solo quel dev) |
 | `Shift + Cmd/Ctrl + D` | Deseleziona tutti i dev nel filtro |
 | `Cmd/Ctrl + P` | Vai a progetto (ricerca e salto rapido) |
+| `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |
 | `Invio` / `Tab` | Conferma la modifica della cella |
 | `Esc` | Annulla la modifica della cella |
 | `Cmd/Ctrl + C / X / V` | Copia / Taglia / Incolla nella cella in modifica |

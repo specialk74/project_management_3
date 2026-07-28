@@ -94,7 +94,9 @@ impl Workers {
     }
 
     pub fn get_week_status(&self, id: WorkerId, week: usize) -> Option<WeekStatus> {
-        self.worker_id.get(&id).and_then(|w| w.get_week_status(week))
+        self.worker_id
+            .get(&id)
+            .and_then(|w| w.get_week_status(week))
     }
 
     pub fn set_week_status(&mut self, id: WorkerId, week: usize, status: Option<WeekStatus>) {
@@ -102,7 +104,6 @@ impl Workers {
             w.set_week_status(week, status);
         }
     }
-
 
     pub fn is_hidden_in_footer(&self, id: WorkerId) -> bool {
         self.worker_id
@@ -113,7 +114,9 @@ impl Workers {
     /// True se il worker va mostrato nel filtro (Ctrl+F). Default `true` (anche
     /// per un id sconosciuto).
     pub fn is_shown_in_find(&self, id: WorkerId) -> bool {
-        self.worker_id.get(&id).map_or(true, |w| w.is_shown_in_find())
+        self.worker_id
+            .get(&id)
+            .map_or(true, |w| w.is_shown_in_find())
     }
 
     /// True se il worker è di tipo "ghost". Default `false` (anche per un id

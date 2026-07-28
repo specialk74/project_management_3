@@ -4,7 +4,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Default, Debug)]
+#[derive(
+    Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Default, Debug,
+)]
 pub struct Effort(pub usize);
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -24,7 +26,11 @@ impl SingleEffort {
     }
 
     pub fn set_note(&mut self, note: &str) {
-        self.note = if note.is_empty() { None } else { Some(note.to_string()) };
+        self.note = if note.is_empty() {
+            None
+        } else {
+            Some(note.to_string())
+        };
     }
 
     pub fn get_note(&self) -> String {

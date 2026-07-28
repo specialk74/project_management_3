@@ -612,4 +612,3 @@ pub(crate) fn draw_corner_triangle_left(ui: &egui::Ui, cell: Rect) {
 }
 
 // ── Griglia (colonna destra) ────────────────────────────────────────────────
-

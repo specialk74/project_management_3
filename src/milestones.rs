@@ -65,7 +65,11 @@ impl Milestones {
     /// ancora usati; se sono tutti occupati, ne genera uno pseudo-casuale.
     fn pick_color(&self) -> u32 {
         let used = self.used_colors();
-        let free: Vec<u32> = PALETTE.iter().copied().filter(|c| !used.contains(c)).collect();
+        let free: Vec<u32> = PALETTE
+            .iter()
+            .copied()
+            .filter(|c| !used.contains(c))
+            .collect();
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -82,7 +86,13 @@ impl Milestones {
     pub fn add(&mut self, name: &str) -> MilestoneId {
         let color = self.pick_color();
         let id = self.last_id;
-        self.milestones.insert(id, Milestone { name: name.to_string(), color });
+        self.milestones.insert(
+            id,
+            Milestone {
+                name: name.to_string(),
+                color,
+            },
+        );
         self.last_id.0 += 1;
         id
     }

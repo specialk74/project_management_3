@@ -18,7 +18,9 @@ use app::{App, SAVE_PATH};
 use ui::PjmApp;
 
 fn main() -> eframe::Result<()> {
-    let file_path = std::env::args().nth(1).unwrap_or_else(|| SAVE_PATH.to_string());
+    let file_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| SAVE_PATH.to_string());
     // Se il file esiste ma non si carica, avvisa l'utente (evita di ripartire in
     // silenzio da vuoto e sovrascrivere per sbaglio un file esistente).
     let (mut app, startup_error) = match App::load(&file_path) {

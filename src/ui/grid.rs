@@ -1421,26 +1421,28 @@ pub(crate) fn draw_project_info(
     // presunta è l'effort usato fino a oggi sul pianificato, l'attuale la media
     // delle % dichiarate pesata sul pianificato. Valore e numeri del tooltip
     // vengono dalla stessa breakdown. "—" se non c'è alcun pianificato.
-    let (prog_txt, prog_tip) =
-        match app.projects.project_progress_breakdown(proj, current_week_id()) {
-            Some((used, planned, wdecl)) => {
-                let pres = (used * 100 + planned / 2) / planned; // presunta
-                let act = (wdecl + planned / 2) / planned; // attuale (≤100)
-                let done = (wdecl + 50) / 100; // ore "dichiarate completate" (≈)
-                (
-                    format!("Avanz.: {pres}%/{act}%"),
-                    format!(
-                        "Presunta {pres}% = usato {used}h / pianificato {planned}h\n\
+    let (prog_txt, prog_tip) = match app
+        .projects
+        .project_progress_breakdown(proj, current_week_id())
+    {
+        Some((used, planned, wdecl)) => {
+            let pres = (used * 100 + planned / 2) / planned; // presunta
+            let act = (wdecl + planned / 2) / planned; // attuale (≤100)
+            let done = (wdecl + 50) / 100; // ore "dichiarate completate" (≈)
+            (
+                format!("Avanz.: {pres}%/{act}%"),
+                format!(
+                    "Presunta {pres}% = usato {used}h / pianificato {planned}h\n\
                          Attuale {act}% = dichiarate ≈{done}h / pianificato {planned}h\n\
                          (pesate sull'effort pianificato di ogni dev)"
-                    ),
-                )
-            }
-            None => (
-                "Avanz.: —".to_string(),
-                "Nessun effort pianificato: avanzamento non calcolabile".to_string(),
-            ),
-        };
+                ),
+            )
+        }
+        None => (
+            "Avanz.: —".to_string(),
+            "Nessun effort pianificato: avanzamento non calcolabile".to_string(),
+        ),
+    };
     let pr = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
     ui.painter().text(
         pr.center(),
@@ -1453,7 +1455,12 @@ pub(crate) fn draw_project_info(
         .on_hover_text(prog_tip);
 }
 
-pub(crate) fn draw_left_dev_strip(ui: &mut egui::Ui, rect: Rect, proj: ProjectId, state: &mut UiState) {
+pub(crate) fn draw_left_dev_strip(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    proj: ProjectId,
+    state: &mut UiState,
+) {
     let x = rect.left() + LEFT_INFO_W;
     let strip = Rect::from_min_size(
         egui::pos2(x, rect.top()),
@@ -1509,10 +1516,9 @@ pub(crate) fn draw_left_devs(
         let tcol = dev_text_color(app, *dev);
         // Se il dev contiene un worker "ghost" (con effort), il suo nome lampeggia
         // fra il colore normale e il porpora (~0.5s per fase) come segnale d'allarme.
-        let has_ghost = app
-            .projects
-            .get_single_dev(proj, *dev)
-            .map_or(false, |sd| sd.has_worker_matching(|id| app.workers.is_ghost(id)));
+        let has_ghost = app.projects.get_single_dev(proj, *dev).map_or(false, |sd| {
+            sd.has_worker_matching(|id| app.workers.is_ghost(id))
+        });
         let name_col = if has_ghost {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(120));
@@ -1799,8 +1805,9 @@ mod tests {
         app.projects.add_dev(p2, dev);
         app.projects.add_effort(p2, dev, other, bob, Effort(8));
 
-        let both: HashSet<String> =
-            ["Alice".to_string(), "Bob".to_string()].into_iter().collect();
+        let both: HashSet<String> = ["Alice".to_string(), "Bob".to_string()]
+            .into_iter()
+            .collect();
         assert!(project_worker_in_current_week(&app, p1, &both));
         assert!(!project_worker_in_current_week(&app, p2, &both));
 
@@ -1848,4 +1855,3 @@ mod tests {
         assert!(dev_shown(&app, p1, back, &None));
     }
 }
-

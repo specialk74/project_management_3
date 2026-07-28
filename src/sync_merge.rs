@@ -58,7 +58,10 @@ fn merge_one_project(
     let h_mine = !mine.header_eq(base);
     let h_theirs = !theirs.header_eq(base);
     let header_src = if h_mine && h_theirs && !mine.header_eq(theirs) {
-        conflicts.push(format!("Progetto «{}» — dati generali", project_label(mine)));
+        conflicts.push(format!(
+            "Progetto «{}» — dati generali",
+            project_label(mine)
+        ));
         mine
     } else if h_theirs {
         theirs
@@ -124,7 +127,11 @@ fn decide_project(
         _ => {
             // Aggiunta/rimozione dello stesso progetto da entrambi: conflitto,
             // tengo la mia versione (che può essere una rimozione).
-            let label = mine.or(theirs).or(base).map(project_label).unwrap_or_default();
+            let label = mine
+                .or(theirs)
+                .or(base)
+                .map(project_label)
+                .unwrap_or_default();
             conflicts.push(format!("Progetto «{label}» (aggiunto/rimosso da entrambi)"));
             mine.cloned()
         }
@@ -146,7 +153,13 @@ fn merge_projects(
     ids.extend(mine.ids());
     ids.extend(theirs.ids());
     for id in ids {
-        match decide_project(base.get(id), mine.get(id), theirs.get(id), dev_name, conflicts) {
+        match decide_project(
+            base.get(id),
+            mine.get(id),
+            theirs.get(id),
+            dev_name,
+            conflicts,
+        ) {
             Some(p) => result.set_project(id, p),
             None => result.del(id),
         }
@@ -173,7 +186,13 @@ pub fn merge(
 ) -> MergeOutcome {
     let mut conflicts = Vec::new();
 
-    theirs.projects = merge_projects(&base.projects, &mine.projects, &theirs.projects, dev_name, &mut conflicts);
+    theirs.projects = merge_projects(
+        &base.projects,
+        &mine.projects,
+        &theirs.projects,
+        dev_name,
+        &mut conflicts,
+    );
 
     // Globali: se li ho modificati io li tengo, altrimenti resto su quelli del
     // collega (già presenti in `theirs`).
@@ -189,7 +208,10 @@ pub fn merge(
     theirs.projects.reset_enable_from_closed();
     theirs.compute_sovra();
 
-    MergeOutcome { app: theirs, conflicts }
+    MergeOutcome {
+        app: theirs,
+        conflicts,
+    }
 }
 
 #[cfg(test)]
@@ -206,13 +228,17 @@ mod tests {
     /// App base con un progetto e due dev con effort.
     fn base_app() -> (App, ProjectId, DevId, DevId) {
         let mut app = App::new();
-        let pid = app.projects.add("Progetto", Some("ABC"), Some(WeekId(20000)));
+        let pid = app
+            .projects
+            .add("Progetto", Some("ABC"), Some(WeekId(20000)));
         let d1 = app.devs.add("Frontend");
         let d2 = app.devs.add("Backend");
         app.projects.add_dev(pid, d1);
         app.projects.add_dev(pid, d2);
-        app.projects.add_effort(pid, d1, WeekId(20000), WorkerId(0), Effort(8));
-        app.projects.add_effort(pid, d2, WeekId(20000), WorkerId(0), Effort(8));
+        app.projects
+            .add_effort(pid, d1, WeekId(20000), WorkerId(0), Effort(8));
+        app.projects
+            .add_effort(pid, d2, WeekId(20000), WorkerId(0), Effort(8));
         (app, pid, d1, d2)
     }
 
@@ -231,11 +257,18 @@ mod tests {
         let mut mine = base.clone();
         let mut theirs = base.clone();
         // io cambio d1, il collega cambia d2
-        mine.projects.add_effort(pid, d1, WeekId(20001), WorkerId(0), Effort(5));
-        theirs.projects.add_effort(pid, d2, WeekId(20001), WorkerId(0), Effort(7));
+        mine.projects
+            .add_effort(pid, d1, WeekId(20001), WorkerId(0), Effort(5));
+        theirs
+            .projects
+            .add_effort(pid, d2, WeekId(20001), WorkerId(0), Effort(7));
 
         let out = merge(&base, &mine, theirs, &no_names);
-        assert!(out.conflicts.is_empty(), "conflitti inattesi: {:?}", out.conflicts);
+        assert!(
+            out.conflicts.is_empty(),
+            "conflitti inattesi: {:?}",
+            out.conflicts
+        );
         // il merge contiene entrambe le modifiche
         let sd1 = out.app.projects.get_single_dev(pid, d1).unwrap();
         let sd2 = out.app.projects.get_single_dev(pid, d2).unwrap();
@@ -248,8 +281,11 @@ mod tests {
         let (base, pid, d1, _) = base_app();
         let mut mine = base.clone();
         let mut theirs = base.clone();
-        mine.projects.add_effort(pid, d1, WeekId(20002), WorkerId(0), Effort(3));
-        theirs.projects.add_effort(pid, d1, WeekId(20002), WorkerId(0), Effort(9));
+        mine.projects
+            .add_effort(pid, d1, WeekId(20002), WorkerId(0), Effort(3));
+        theirs
+            .projects
+            .add_effort(pid, d1, WeekId(20002), WorkerId(0), Effort(9));
 
         let out = merge(&base, &mine, theirs, &no_names);
         assert_eq!(out.conflicts.len(), 1, "atteso un conflitto sul dev");
@@ -264,15 +300,26 @@ mod tests {
         let mut mine = base.clone();
         let mut theirs = base.clone();
         // io modifico il progetto esistente
-        mine.projects.add_effort(pid, d1, WeekId(20003), WorkerId(0), Effort(4));
+        mine.projects
+            .add_effort(pid, d1, WeekId(20003), WorkerId(0), Effort(4));
         // il collega aggiunge un progetto nuovo (id diverso)
-        let pid2 = theirs.projects.add("Nuovo", Some("XYZ"), Some(WeekId(20010)));
+        let pid2 = theirs
+            .projects
+            .add("Nuovo", Some("XYZ"), Some(WeekId(20010)));
 
         let out = merge(&base, &mine, theirs, &no_names);
-        assert!(out.conflicts.is_empty(), "conflitti inattesi: {:?}", out.conflicts);
+        assert!(
+            out.conflicts.is_empty(),
+            "conflitti inattesi: {:?}",
+            out.conflicts
+        );
         // sono presenti sia la mia modifica sia il progetto del collega
         assert_eq!(
-            out.app.projects.get_single_dev(pid, d1).unwrap().get_effort_by_week(WeekId(20003)),
+            out.app
+                .projects
+                .get_single_dev(pid, d1)
+                .unwrap()
+                .get_effort_by_week(WeekId(20003)),
             Effort(4)
         );
         assert!(out.app.projects.get(pid2).is_some());
@@ -283,12 +330,18 @@ mod tests {
         let (base, pid, d1, _) = base_app();
         let mine = base.clone();
         let mut theirs = base.clone();
-        theirs.projects.add_effort(pid, d1, WeekId(20004), WorkerId(0), Effort(6));
+        theirs
+            .projects
+            .add_effort(pid, d1, WeekId(20004), WorkerId(0), Effort(6));
 
         let out = merge(&base, &mine, theirs, &no_names);
         assert!(out.conflicts.is_empty());
         assert_eq!(
-            out.app.projects.get_single_dev(pid, d1).unwrap().get_effort_by_week(WeekId(20004)),
+            out.app
+                .projects
+                .get_single_dev(pid, d1)
+                .unwrap()
+                .get_effort_by_week(WeekId(20004)),
             Effort(6)
         );
     }
