@@ -165,6 +165,15 @@ pub(crate) fn toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions
                 state.worker_filter_current_week = true;
                 ui.close_menu();
             }
+            // Filtro dev: spunta attiva quando la selezione non è "tutti".
+            if ui
+                .selectable_label(state.dev_filter.is_some(), "Dev…  (⌘/Ctrl+D)")
+                .clicked()
+            {
+                state.show_dev_filter = !state.show_dev_filter;
+                state.dev_filter_just_opened = state.show_dev_filter;
+                ui.close_menu();
+            }
             if ui.button("Milestone…").clicked() {
                 state.show_milestone_manager = !state.show_milestone_manager;
                 state.milestone_manager_just_opened = state.show_milestone_manager;

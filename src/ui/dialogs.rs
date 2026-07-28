@@ -601,6 +601,81 @@ pub(crate) fn worker_filter_window(ctx: &egui::Context, app: &App, state: &mut U
     }
 }
 
+/// Filtro per Dev (Filtri ▸ Dev… / Ctrl+D). Elenca tutti i dev definiti con una
+/// spunta: restano visibili solo i progetti in cui almeno un dev selezionato ha
+/// effort > 0, e dentro il progetto solo quei dev. Si combina in AND col filtro
+/// worker (Ctrl+F/Ctrl+G). Selezione non persistita.
+pub(crate) fn dev_filter_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    if !state.show_dev_filter {
+        return;
+    }
+    let all: Vec<(DevId, String)> = app.devs.list();
+    let mut open = true;
+    let mut filter = state.dev_filter.clone();
+    let title = "Dev";
+
+    let just_opened = state.dev_filter_just_opened;
+    state.dev_filter_just_opened = false;
+
+    // Ctrl+D a pannello aperto → toggle del "Select All" (come cliccarlo).
+    if std::mem::take(&mut state.dev_filter_toggle_all) {
+        let currently_all = match &filter {
+            None => !all.is_empty(),
+            Some(s) => !all.is_empty() && all.iter().all(|(id, _)| s.contains(id)),
+        };
+        filter = if currently_all { Some(HashSet::new()) } else { None };
+    }
+
+    let resp = egui::Window::new(title)
+        .id(egui::Id::new("dev_filter_window"))
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(180.0, 60.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            let min_w = title_width(ui, title);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_min_width(min_w);
+                let currently_all = match &filter {
+                    None => !all.is_empty(),
+                    Some(s) => !all.is_empty() && all.iter().all(|(id, _)| s.contains(id)),
+                };
+                if let Some(v) = select_all_checkbox(ui, currently_all) {
+                    filter = if v { None } else { Some(HashSet::new()) };
+                }
+                for (id, name) in &all {
+                    let mut sel = match &filter {
+                        None => true,
+                        Some(s) => s.contains(id),
+                    };
+                    if ui.checkbox(&mut sel, name).changed() {
+                        let set =
+                            filter.get_or_insert_with(|| all.iter().map(|(i, _)| *i).collect());
+                        if sel {
+                            set.insert(*id);
+                        } else {
+                            set.remove(id);
+                        }
+                    }
+                }
+            });
+        });
+
+    // se tutti selezionati → nessun filtro
+    if let Some(set) = &filter {
+        if set.len() == all.len() && all.iter().all(|(id, _)| set.contains(id)) {
+            filter = None;
+        }
+    }
+    state.dev_filter = filter;
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
+        state.show_dev_filter = false;
+    }
+}
+
 // ── Gestione "ghost" (Filtri ▸ Ghost worker…) ───────────────────────────────
 
 /// Elenca **tutti** i worker (escluso solo il worker "zero"), a prescindere da

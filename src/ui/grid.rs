@@ -4,8 +4,9 @@ use super::*;
 
 pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     let top_down = egui::Layout::top_down(egui::Align::Min);
-    // Il filtro è clonato una volta per frame per evitare conflitti di borrow.
+    // I filtri sono clonati una volta per frame per evitare conflitti di borrow.
     let filter = state.worker_filter.clone();
+    let dev_filter = state.dev_filter.clone();
 
     // Salto rapido a un progetto: risolvo qui (prima delle aree di scroll) la
     // posizione Y del progetto scelto, usando lo stesso layout della griglia.
@@ -17,6 +18,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             app,
             &filter,
             state.worker_filter_current_week,
+            &dev_filter,
             state.project_view,
             compact,
             merged,
@@ -48,7 +50,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
                 .enable_scrolling(false)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.with_layout(top_down, |ui| left_column(ui, app, state, actions, &filter));
+                    ui.with_layout(top_down, |ui| {
+                        left_column(ui, app, state, actions, &filter, &dev_filter)
+                    });
                 });
         });
 
@@ -67,7 +71,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
                 sa = sa.scroll_offset(Vec2::new(x, y));
             }
             let out = sa.show(ui, |ui| {
-                ui.with_layout(top_down, |ui| grid(ui, app, state, actions, &filter));
+                ui.with_layout(top_down, |ui| {
+                    grid(ui, app, state, actions, &filter, &dev_filter)
+                });
             });
             state.scroll_x = out.state.offset.x;
             state.scroll_y = out.state.offset.y;
@@ -101,6 +107,7 @@ pub(crate) fn project_layout(
     app: &App,
     filter: &Filter,
     current_week_only: bool,
+    dev_filter: &DevFilter,
     view: ProjectViewMode,
     compact: bool,
     merged: bool,
@@ -126,24 +133,27 @@ pub(crate) fn project_layout(
                 }
             }
         }
+        // Filtro dev (Ctrl+D): tiene solo i dev selezionati con effort > 0; si
+        // combina in AND col filtro worker (che agisce sulle righe/celle).
         let devs: Vec<(DevId, usize)> = app
             .projects
             .list_devs(proj_id)
             .into_iter()
+            .filter(|d| dev_shown(app, proj_id, *d, dev_filter))
             .filter_map(|d| filtered_dev_max_rows(app, proj_id, d, filter).map(|m| (d, m)))
             .collect();
-        // con filtro attivo, nascondi i progetti senza dev corrispondenti
-        if filter.is_some() && devs.is_empty() {
+        // con un filtro attivo, nascondi i progetti senza dev corrispondenti
+        if (filter.is_some() || dev_filter.is_some()) && devs.is_empty() {
             continue;
         }
         let sum_devs: f32 = devs
             .iter()
             .map(|(_, m)| dev_block_height(*m, compact, merged))
             .sum();
-        // Con filtro worker attivo l'info mostra solo la tripletta (1 riga):
-        // così non aggiunge spessore oltre alle righe dev filtrate.
+        // Con un filtro (worker o dev) attivo l'info mostra solo la tripletta (1
+        // riga): così non aggiunge spessore oltre alle righe dev filtrate.
         // Senza filtro riserva lo spazio reale del nome (può crescere su più righe).
-        let info_h = if filter.is_some() {
+        let info_h = if filter.is_some() || dev_filter.is_some() {
             ROW_H
         } else {
             extra_rows * ROW_H + name_block_height(ui, &name)
@@ -292,6 +302,7 @@ pub(crate) fn grid(
     state: &mut UiState,
     actions: &mut Vec<Action>,
     filter: &Filter,
+    dev_filter: &DevFilter,
 ) {
     let compact = state.compact_mode;
     // zoom attivo solo in vista normale; le colonne mergiate sono sola lettura.
@@ -305,6 +316,7 @@ pub(crate) fn grid(
         app,
         filter,
         state.worker_filter_current_week,
+        dev_filter,
         state.project_view,
         compact,
         merged,
@@ -1113,6 +1125,7 @@ pub(crate) fn left_column(
     state: &mut UiState,
     actions: &mut Vec<Action>,
     filter: &Filter,
+    dev_filter: &DevFilter,
 ) {
     let compact = state.compact_mode;
     // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
@@ -1122,6 +1135,7 @@ pub(crate) fn left_column(
         app,
         filter,
         state.worker_filter_current_week,
+        dev_filter,
         state.project_view,
         compact,
         merged,
@@ -1149,7 +1163,7 @@ pub(crate) fn left_column(
             p.proj,
             &p.name,
             compact,
-            filter.is_some(),
+            filter.is_some() || dev_filter.is_some(),
         );
         draw_left_dev_strip(ui, proj_rect, p.proj, state);
         draw_left_devs(
@@ -1799,6 +1813,39 @@ mod tests {
         app.projects.add_dev(p3, dev);
         app.projects.add_effort(p3, dev, wk, alice, Effort(0));
         assert!(!project_worker_in_current_week(&app, p3, &both));
+    }
+
+    // Filtro Ctrl+D: è mostrato solo il dev selezionato, e solo se ha effort > 0
+    // nel progetto (il dev aggiunto ma vuoto non fa comparire il progetto).
+    #[test]
+    fn dev_filter_shows_only_selected_devs_with_effort() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let front = app.devs.add("Frontend");
+        let back = app.devs.add("Backend");
+        let wk = current_week_id();
+
+        // P1: Frontend con effort, Backend aggiunto ma vuoto.
+        let p1 = app.projects.add("P1", Some("AAA"), Some(wk));
+        app.projects.add_dev(p1, front);
+        app.projects.add_dev(p1, back);
+        app.projects.add_effort(p1, front, wk, alice, Effort(8));
+
+        let only_front: DevFilter = Some([front].into_iter().collect());
+        assert!(dev_shown(&app, p1, front, &only_front));
+        assert!(!dev_shown(&app, p1, back, &only_front)); // non selezionato
+
+        // Backend selezionato ma senza effort → nascosto (e P1 sparirebbe).
+        let only_back: DevFilter = Some([back].into_iter().collect());
+        assert!(!dev_shown(&app, p1, back, &only_back));
+        assert!(!dev_shown(&app, p1, front, &only_back));
+
+        // Effort 0 non basta.
+        app.projects.add_effort(p1, back, wk, alice, Effort(0));
+        assert!(!dev_shown(&app, p1, back, &only_back));
+
+        // Senza filtro nulla è nascosto.
+        assert!(dev_shown(&app, p1, back, &None));
     }
 }
 

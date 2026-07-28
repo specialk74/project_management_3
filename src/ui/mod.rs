@@ -286,6 +286,11 @@ pub struct UiState {
     // Ctrl+F la disattiva, Ctrl+G la riattiva. Non persistita.
     worker_filter_current_week: bool,
     show_worker_filter: bool,
+    // filtro dev (Ctrl+D): None = nessun filtro; Some(set) = mostra solo i
+    // progetti in cui almeno un dev selezionato ha effort > 0, e dentro il
+    // progetto solo quei dev. Si combina in AND con il filtro worker. Non persistito.
+    dev_filter: Option<HashSet<DevId>>,
+    show_dev_filter: bool,
     show_project_filter: bool,
     show_closed_filter: bool,
     // conferma di uscita con modifiche non salvate
@@ -293,11 +298,13 @@ pub struct UiState {
     allow_close: bool,
     // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
     worker_filter_just_opened: bool,
+    dev_filter_just_opened: bool,
     project_filter_just_opened: bool,
     closed_filter_just_opened: bool,
     // richiesta (da Ctrl+F / Ctrl+P a pannello già aperto) di fare il toggle del
     // "Select All"; consumata dalla rispettiva finestra nello stesso frame.
     worker_filter_toggle_all: bool,
+    dev_filter_toggle_all: bool,
     project_filter_toggle_all: bool,
     // true finché la finestra popup/nota è già stata mostrata almeno un frame:
     // serve a dare il focus al campo di testo solo alla prima comparsa.
@@ -788,19 +795,21 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_g, key_p, shift, key_1, key_2, key_3) = ui.ctx().input(|i| {
-                let cmd = i.modifiers.command || i.modifiers.ctrl;
-                (
-                    cmd && i.key_pressed(egui::Key::S),
-                    cmd && i.key_pressed(egui::Key::F),
-                    cmd && i.key_pressed(egui::Key::G),
-                    cmd && i.key_pressed(egui::Key::P),
-                    i.modifiers.shift,
-                    cmd && i.key_pressed(egui::Key::Num1),
-                    cmd && i.key_pressed(egui::Key::Num2),
-                    cmd && i.key_pressed(egui::Key::Num3),
-                )
-            });
+            let (key_s, key_f, key_g, key_d, key_p, shift, key_1, key_2, key_3) =
+                ui.ctx().input(|i| {
+                    let cmd = i.modifiers.command || i.modifiers.ctrl;
+                    (
+                        cmd && i.key_pressed(egui::Key::S),
+                        cmd && i.key_pressed(egui::Key::F),
+                        cmd && i.key_pressed(egui::Key::G),
+                        cmd && i.key_pressed(egui::Key::D),
+                        cmd && i.key_pressed(egui::Key::P),
+                        i.modifiers.shift,
+                        cmd && i.key_pressed(egui::Key::Num1),
+                        cmd && i.key_pressed(egui::Key::Num2),
+                        cmd && i.key_pressed(egui::Key::Num3),
+                    )
+                });
             if key_s {
                 actions.push(Action::Save);
             }
@@ -845,6 +854,18 @@ impl eframe::App for PjmApp {
                     state.show_worker_filter = true;
                     state.worker_filter_just_opened = true;
                     state.worker_filter_current_week = true;
+                }
+            }
+            // Ctrl+D: filtro dev. Stessa meccanica di Ctrl+F: a pannello aperto
+            // fa il toggle del "Select All"; Shift deseleziona tutti i dev.
+            if key_d {
+                if shift {
+                    state.dev_filter = Some(HashSet::new()); // deseleziona tutti
+                } else if state.show_dev_filter {
+                    state.dev_filter_toggle_all = true;
+                } else {
+                    state.show_dev_filter = true;
+                    state.dev_filter_just_opened = true;
                 }
             }
             if key_p {
@@ -897,6 +918,7 @@ impl eframe::App for PjmApp {
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             worker_filter_window(ui.ctx(), app, state);
+            dev_filter_window(ui.ctx(), app, state);
             project_filter_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             ghost_manager_window(ui.ctx(), app, state, &mut actions);
@@ -1924,6 +1946,27 @@ fn dev_year_total(
 }
 
 type Filter = Option<HashSet<String>>;
+
+/// Filtro dev (Ctrl+D): `None` = nessun filtro, `Some(set)` = solo questi dev.
+/// I dev sono identificati per `DevId` (il nome è solo l'etichetta a video).
+pub(crate) type DevFilter = Option<HashSet<DevId>>;
+
+/// Predicato unico del filtro dev, usato da `project_layout` (unica sorgente di
+/// griglia + colonna sinistra): il dev è mostrato se è selezionato **e** ha
+/// almeno una settimana con effort > 0 in questo progetto. Senza filtro attivo
+/// non nasconde nulla.
+pub(crate) fn dev_shown(app: &App, proj: ProjectId, dev: DevId, filter: &DevFilter) -> bool {
+    match filter {
+        None => true,
+        Some(set) => {
+            set.contains(&dev)
+                && app
+                    .projects
+                    .get_single_dev(proj, dev)
+                    .is_some_and(|sd| !sd.effort_weeks().is_empty())
+        }
+    }
+}
 
 fn worker_shown(filter: &Filter, name: &str) -> bool {
     match filter {
