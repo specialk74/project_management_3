@@ -77,7 +77,7 @@ App (workers.ron)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
-├── milestones: Milestones           — name + color, shared across projects
+├── milestones: Milestones           — name + color + kind, shared across projects
 ├── sovra     : HashMap<(WeekId, WorkerId), Effort>  — per-week per-worker allocation
 └── projects  : Projects
     └── Project (tripletta, name, start, end, category, enable, closed, milestones)
@@ -257,7 +257,31 @@ category/worker-max/etc.).
   discarded (history starts empty). `declared_history()` exposes the series for the
   planned dev/project progress **trend PDF** (to be built next).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
-  milestone qui** and **Sposta** (blocco / devs).
+  milestone qui** and **Sposta** (blocco / devs). Several **different** milestones
+  can share a week (`Project.milestones` is keyed by `MilestoneId`, so it's the
+  *same* milestone that can't repeat within a project); the grid paints the week
+  column as **N equal vertical bands**, one per milestone, ordered by id
+  (`paint_milestone_bands` in `grid.rs`, `MS_BAND_MIN_W` = 4 px minimum band —
+  beyond that only the first ones are drawn, the hover tooltip still lists all).
+- **Milestone kind** (`MilestoneKind { Goal, Trigger }`, `#[serde(default)]` =
+  `Goal`, so old RON files load as goals): a milestone is not only an arrival
+  flag, it can be the **trigger of an event**. The kind belongs to the
+  **milestone** (next to name/color), not to the placement, so it holds in every
+  project. Picked at creation (**Aggiungi ▸ Milestone**, `UiState.new_milestone_kind`
+  → `Action::CreateMilestone(name, kind)`) and changeable anytime in
+  `milestone_manager_window` (`Action::SetMilestoneKind`). Two widgets, same items
+  (`milestone_kind_items`): `milestone_kind_combo` (a `ComboBox`) **only inside
+  windows**, and `milestone_kind_submenu` (a `SubMenuButton` «Tipo: … ⏵») **inside
+  toolbar menus** — a `ComboBox` there breaks, because its dropdown lives in its
+  own layer and the menu (`CloseOnClickOutside`) reads the click as "outside" and
+  closes before the item is even selected (egui 0.34; guarded by the test
+  `milestone_kind_submenu_keeps_the_add_menu_open`). On screen the kind only shows
+  as an **icon before the name** in the grid's «Aggiungi milestone qui» menu
+  (`MilestoneKind::icon()` — `⚑` / `⚡`, glyphs already covered by egui's bundled
+  fonts, checked by `milestone_kind_icons_are_renderable`); the week column itself
+  is unchanged. In **PDF/SVG** `pole_tip` draws the usual triangular pennant for
+  `Goal` and a **mini lightning bolt** (6-point polygon) for `Trigger`, same color,
+  same pole/label/arch layout.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
 - **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`Closed`/

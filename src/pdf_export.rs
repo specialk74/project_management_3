@@ -606,6 +606,49 @@ struct Flag {
     title: String,
     date: String,
     color: (f32, f32, f32),
+    /// Milestone di tipo *trigger* (evento): in cima all'asta, al posto del
+    /// pennant triangolare, si disegna un mini fulmine.
+    trigger: bool,
+}
+
+/// Punta dell'asta di una milestone, disegnata in cima al palo con l'angolo in
+/// basso a sinistra in `(x, y)`: pennant triangolare per i traguardi, mini
+/// fulmine per i trigger di evento. Entrambi occupano la stessa fascia (a
+/// destra dell'asta, `PENNANT_H` mm di altezza) così la disposizione ad arco e
+/// le etichette non cambiano.
+const PENNANT_W: f32 = 7.0;
+const PENNANT_H: f32 = 4.0;
+
+fn pole_tip(x: f32, y: f32, trigger: bool, color: (f32, f32, f32)) -> Vec<Shape> {
+    if !trigger {
+        // Traguardo: triangolo con la punta verso l'asse (comportamento storico).
+        return poly_fill(
+            &[
+                (x, y),
+                (x + PENNANT_W, y - PENNANT_H / 2.0),
+                (x, y - PENNANT_H),
+            ],
+            color,
+        );
+    }
+    // Trigger: fulmine a zig-zag, poligono semplice in coordinate normalizzate
+    // (0,0) = angolo in basso a sinistra, (1,1) = in alto a destra della fascia.
+    const BOLT: [(f32, f32); 6] = [
+        (0.60, 1.00), // punta in alto
+        (0.10, 0.42),
+        (0.42, 0.42),
+        (0.28, 0.00), // punta in basso
+        (0.90, 0.58),
+        (0.55, 0.58),
+    ];
+    // Un filo più alto del pennant: il fulmine è stretto e va letto a colpo d'occhio.
+    let w = PENNANT_W * 0.8;
+    let h = PENNANT_H * 1.3;
+    let pts: Vec<(f32, f32)> = BOLT
+        .iter()
+        .map(|(ux, uy)| (x + ux * w, y - h + uy * h))
+        .collect();
+    poly_fill(&pts, color)
 }
 
 /// Riferimento (denominatore) per l'altezza delle barre `Proportional`: il
@@ -920,15 +963,9 @@ fn page_shapes(
     for (i, f) in flags.iter().enumerate() {
         let cx = lx[i];
         let pole_top = pole_top_y[i];
-        // Pennant: triangolo a destra dell'asta, punta verso l'asse.
-        shapes.extend(poly_fill(
-            &[
-                (cx, pole_top),
-                (cx + 7.0, pole_top - 2.0),
-                (cx, pole_top - 4.0),
-            ],
-            f.color,
-        ));
+        // Punta dell'asta a destra del palo: pennant per i traguardi, mini
+        // fulmine per le milestone trigger.
+        shapes.extend(pole_tip(cx, pole_top, f.trigger, f.color));
         // Etichetta sopra la bandierina, centrata sul centro spostato; la data
         // resta la riga più vicina al pennant.
         for (li, (txt, size, bold)) in flag_lines(f).iter().enumerate() {
@@ -1257,6 +1294,7 @@ fn project_shapes(
             title: mname,
             date: short_date(week.0 as i32),
             color: mcol,
+            trigger: app.milestones.is_trigger(mid),
         });
     }
 
@@ -1925,6 +1963,7 @@ pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::milestones::MilestoneKind;
     use crate::single_dev_utils::single_dev::WeekId;
     use crate::single_effort_utils::sinlge_effort::Effort;
     use crate::workers_utils::worker::WorkerId;
@@ -2056,6 +2095,53 @@ mod tests {
         // Senza inizio/fine → None.
         let p2 = app.projects.add("NoFine", Some("ZZZ"), Some(WeekId(20000)));
         assert!(build_svg_project(&app, p2, &[], BarFormat::Continuous).is_none());
+    }
+
+    /// Numero di vertici di ogni `<polygon>` presente nell'SVG.
+    fn polygon_vertex_counts(svg: &str) -> Vec<usize> {
+        svg.split("<polygon")
+            .skip(1)
+            .filter_map(|p| p.split_once("points=\""))
+            .filter_map(|(_, rest)| rest.split_once('"'))
+            .map(|(pts, _)| pts.split_whitespace().count())
+            .collect()
+    }
+
+    #[test]
+    fn trigger_milestone_is_drawn_as_a_bolt_instead_of_a_pennant() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        let mid = app.milestones.add("Consegna");
+        app.projects.add_project_milestone(pid, mid, WeekId(20035));
+
+        // Conta i poligoni per numero di vertici: il pennant del traguardo ne ha
+        // 3, il fulmine 6. (Nel grafico ci sono altri triangoli — il marker
+        // "Today" — quindi si confrontano i conteggi, non la sola presenza.)
+        let tri = |svg: &str| polygon_vertex_counts(svg).iter().filter(|n| **n == 3).count();
+        let bolt = |svg: &str| polygon_vertex_counts(svg).iter().filter(|n| **n == 6).count();
+
+        // Traguardo: un pennant triangolare, nessun fulmine.
+        let goal_svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert_eq!(bolt(&goal_svg), 0, "senza trigger niente fulmine");
+
+        // Stessa milestone marcata come trigger: il triangolo lascia il posto
+        // al fulmine, uno per uno.
+        app.milestones.set_kind(mid, MilestoneKind::Trigger);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert_eq!(bolt(&svg), 1, "il trigger disegna un fulmine a 6 vertici");
+        assert_eq!(
+            tri(&svg),
+            tri(&goal_svg) - 1,
+            "col trigger sparisce esattamente un pennant triangolare"
+        );
+
+        // L'asta e l'etichetta restano: cambia solo la punta.
+        assert!(svg.contains("Consegna"), "il nome resta sotto l'asta");
     }
 
     #[test]
@@ -2239,3 +2325,5 @@ mod tests {
         }
     }
 }
+
+

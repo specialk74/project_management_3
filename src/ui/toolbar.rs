@@ -126,12 +126,18 @@ pub(crate) fn toolbar(
                     &mut state.new_category,
                     |name| actions.push(Action::AddCategory(name)),
                 );
+                // Milestone: prima si sceglie il tipo (traguardo / trigger di
+                // evento), poi il nome. La scelta resta per l'inserimento
+                // successivo, comodo per creare più trigger di fila. Qui serve
+                // il sottomenù e non la combo: vedi `milestone_kind_combo`.
+                milestone_kind_submenu(ui, &mut state.new_milestone_kind);
+                let kind = state.new_milestone_kind;
                 add_field(
                     ui,
                     "Milestone",
                     "Nome milestone…",
                     &mut state.new_milestone,
-                    |name| actions.push(Action::CreateMilestone(name)),
+                    |name| actions.push(Action::CreateMilestone(name, kind)),
                 );
             });
 

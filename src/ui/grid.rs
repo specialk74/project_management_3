@@ -612,7 +612,10 @@ pub(crate) fn draw_dev_cells(
                     for (id, name, color) in &all {
                         let here = ms_here.contains(id);
                         let mark = if here { "● " } else { "" };
-                        let label = egui::RichText::new(format!("{mark}{name}"))
+                        // Icona del tipo prima del nome: bandierina o fulmine,
+                        // gli stessi simboli che finiscono nell'export.
+                        let icon = app.milestones.get_kind(*id).icon();
+                        let label = egui::RichText::new(format!("{mark}{icon} {name}"))
                             .color(u32_to_color(*color));
                         if ui.button(label).clicked() {
                             actions.push(Action::AddProjectMilestone {
@@ -627,7 +630,8 @@ pub(crate) fn draw_dev_cells(
                         ui.separator();
                         for m in &ms_here {
                             if let Some(name) = app.milestones.get_name(*m) {
-                                if ui.button(format!("Rimuovi: {name}")).clicked() {
+                                let icon = app.milestones.get_kind(*m).icon();
+                                if ui.button(format!("Rimuovi: {icon} {name}")).clicked() {
                                     actions.push(Action::RemoveProjectMilestone {
                                         proj,
                                         milestone: *m,

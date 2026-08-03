@@ -259,6 +259,16 @@ pub(crate) fn milestone_manager_window(
                                     {
                                         actions.push(Action::DeleteMilestone { milestone: *id });
                                     }
+                                    // Tipo modificabile anche dopo l'inserimento:
+                                    // il tipo è della milestone, quindi il cambio
+                                    // vale in tutti i progetti in cui è collocata.
+                                    let mut kind = app.milestones.get_kind(*id);
+                                    if milestone_kind_combo(ui, "", id.0, &mut kind) {
+                                        actions.push(Action::SetMilestoneKind {
+                                            milestone: *id,
+                                            kind,
+                                        });
+                                    }
                                 },
                             );
                         });

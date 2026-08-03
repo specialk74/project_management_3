@@ -390,17 +390,34 @@ milestone), sottomenù **Sposta**:
 
 ## 11. Milestone
 
-Le milestone sono traguardi con **nome** e **colore**, condivisi tra i progetti.
+Le milestone hanno **nome**, **colore** e **tipo**, e sono condivise tra i progetti.
 
-- **Creare**: Aggiungi ▸ Milestone (nome). Il colore si imposta dal gestore.
-- **Gestire**: Filtri ▸ Milestone… — elenco con selettore colore per ciascuna e
-  cestino per eliminarle (l'eliminazione le toglie anche da tutti i progetti).
+Il **tipo** distingue due usi:
+
+- **Traguardo** — il punto di arrivo classico; nell'export è una **bandierina**.
+- **Trigger** — la milestone segna un **evento che scatta** in quella settimana;
+  nell'export la bandierina è sostituita da un **mini fulmine** dello stesso
+  colore (asta ed etichetta restano identiche).
+
+Il tipo è una proprietà della **milestone**, non della singola collocazione:
+cambiarlo vale per tutti i progetti in cui quella milestone è collocata.
+
+- **Creare**: Aggiungi ▸ Milestone — prima si sceglie il **tipo** dalla voce
+  «Tipo: …» (si apre passandoci sopra col mouse), poi si scrive il nome. La
+  scelta del tipo resta per l'inserimento successivo, comodo per creare più
+  trigger di fila. Il colore si imposta dal gestore.
+- **Gestire**: Filtri ▸ Milestone… — elenco con selettore colore, **tendina del
+  tipo** (modificabile in qualsiasi momento, anche dopo l'inserimento) e cestino
+  per eliminarle (l'eliminazione le toglie anche da tutti i progetti).
 - **Assegnare a una settimana**: tasto destro sulla riga alta di una colonna-dev
-  → **Aggiungi milestone qui** → scegli la milestone. Dallo stesso menù puoi
-  **rimuoverle**. Nella stessa settimana puoi mettere **più milestone diverse**
+  → **Aggiungi milestone qui** → scegli la milestone. Nell'elenco ogni nome è
+  preceduto dall'icona del tipo — **⚑** traguardo, **⚡** trigger — nel colore
+  della milestone, così si vede subito quale si sta mettendo. Dallo stesso menù
+  puoi **rimuoverle**. Nella stessa settimana puoi mettere **più milestone diverse**
   (quelle già presenti sono marcate con «●»); la stessa milestone invece compare
   una sola volta per progetto — riassegnarla a un'altra settimana la sposta.
-- **Visualizzazione**: la colonna della settimana con milestone assume il colore
+- **Visualizzazione**: nella griglia il tipo non cambia nulla (il fulmine compare
+  solo negli export). La colonna della settimana con milestone assume il colore
   della milestone. Con **più milestone nella stessa settimana** la colonna è
   divisa in **bande verticali di uguale larghezza**, una per milestone, in
   ordine di creazione. Passando il mouse compaiono i nomi (tutti, anche se in
@@ -661,8 +678,8 @@ ore resta quello reale.
 ## 16. Esportazione PDF
 
 Ogni progetto idoneo diventa una **pagina** in stile Gantt con: titolo (tripletta)
-e descrizione, asse dei mesi, milestone come bandierine, marker "Today", e una
-riga per dev.
+e descrizione, asse dei mesi, milestone come bandierine (**fulmine** per quelle di
+tipo trigger), marker "Today", e una riga per dev.
 
 Un progetto è **idoneo** se è abilitato, non chiuso e ha **sia inizio sia fine**.
 

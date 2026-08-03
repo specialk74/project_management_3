@@ -14,7 +14,7 @@ pub(crate) use crate::date_utils::dates::{
     days_to_local, local_to_days, parse_date_str, primo_giorno_settimana_corrente,
 };
 pub(crate) use crate::dev_utils::dev::DevId;
-pub(crate) use crate::milestones::MilestoneId;
+pub(crate) use crate::milestones::{MilestoneId, MilestoneKind};
 pub(crate) use crate::project_utils::project::{Enable, OverflowResolution, ProjectId};
 pub(crate) use crate::single_dev_utils::single_dev::WeekId;
 pub(crate) use crate::single_effort_utils::sinlge_effort::Effort;
@@ -437,7 +437,9 @@ pub struct UiState {
     new_dev: String,
     new_category: String,
     new_milestone: String,
-    // finestra di gestione milestone (elenco, colore, elimina)
+    // tipo scelto per la PROSSIMA milestone creata dal menù Aggiungi
+    new_milestone_kind: MilestoneKind,
+    // finestra di gestione milestone (elenco, colore, tipo, elimina)
     show_milestone_manager: bool,
     milestone_manager_just_opened: bool,
     // finestra di gestione "ghost": elenca TUTTI i worker (anche nascosti nel
@@ -653,10 +655,14 @@ pub(crate) enum Action {
         only_current: bool,
         only_with_notes: bool,
     },
-    CreateMilestone(String),
+    CreateMilestone(String, MilestoneKind),
     SetMilestoneColor {
         milestone: MilestoneId,
         color: u32,
+    },
+    SetMilestoneKind {
+        milestone: MilestoneId,
+        kind: MilestoneKind,
     },
     DeleteMilestone {
         milestone: MilestoneId,
@@ -1764,12 +1770,16 @@ impl PjmApp {
                 let md = build_minuta(&self.app, &projects, only_current, only_with_notes);
                 save_md_dialog(md, &dated_file_name("minuta", "md"));
             }
-            Action::CreateMilestone(name) => {
-                self.app.milestones.add(&name);
+            Action::CreateMilestone(name, kind) => {
+                self.app.milestones.add_with_kind(&name, kind);
                 self.mark_changed();
             }
             Action::SetMilestoneColor { milestone, color } => {
                 self.app.milestones.set_color(milestone, color);
+                self.mark_changed();
+            }
+            Action::SetMilestoneKind { milestone, kind } => {
+                self.app.milestones.set_kind(milestone, kind);
                 self.mark_changed();
             }
             Action::DeleteMilestone { milestone } => {
@@ -2177,6 +2187,79 @@ fn select_all_checkbox(ui: &mut egui::Ui, currently_all: bool) -> Option<bool> {
     ui.checkbox(&mut all, "Select All").changed().then_some(all)
 }
 
+/// Voci del selettore del tipo milestone (traguardo / trigger di evento),
+/// condivise dalla combo e dal sottomenù. Ritorna `true` se il tipo cambia.
+fn milestone_kind_items(ui: &mut egui::Ui, kind: &mut MilestoneKind) -> bool {
+    let mut changed = false;
+    for k in [MilestoneKind::Goal, MilestoneKind::Trigger] {
+        if ui
+            .selectable_label(*kind == k, k.label())
+            .on_hover_text(match k {
+                MilestoneKind::Goal => "Traguardo: bandierina nell'export",
+                MilestoneKind::Trigger => "Trigger di evento: fulmine nell'export",
+            })
+            .clicked()
+            && *kind != k
+        {
+            *kind = k;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Selettore del tipo milestone **a tendina**, per le finestre (gestore
+/// «Filtri ▸ Milestone…»). Ritorna `true` quando l'utente cambia il tipo.
+///
+/// `id_salt` distingue le istanze: nel gestore c'è una combo per riga, quindi
+/// l'id deve dipendere dalla milestone o le tendine si aprirebbero tutte insieme.
+///
+/// **Non usarlo dentro un menù della toolbar**: la tendina della combo vive in
+/// un layer suo, il menù la considera un click "fuori" e si chiude prima ancora
+/// che la voce venga selezionata (verificato su egui 0.34). Dentro un menù si
+/// usa `milestone_kind_submenu`.
+pub(crate) fn milestone_kind_combo(
+    ui: &mut egui::Ui,
+    label: &str,
+    id_salt: impl std::hash::Hash,
+    kind: &mut MilestoneKind,
+) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        if !label.is_empty() {
+            ui.label(label);
+        }
+        egui::ComboBox::from_id_salt(("milestone_kind", id_salt))
+            .selected_text(kind.label())
+            .width(MILESTONE_KIND_COMBO_W)
+            .show_ui(ui, |ui| {
+                changed = milestone_kind_items(ui, kind);
+            });
+    });
+    changed
+}
+
+/// Stesso selettore per i **menù** della toolbar: un sottomenù «Tipo: … ⏵»
+/// (un controllo solo, come la combo) che al contrario della combo è gestito da
+/// egui come parte del menù, quindi scegliere una voce **non chiude la tendina**
+/// e si può proseguire scrivendo il nome.
+pub(crate) fn milestone_kind_submenu(ui: &mut egui::Ui, kind: &mut MilestoneKind) -> bool {
+    let mut changed = false;
+    egui::containers::menu::SubMenuButton::new(format!("Tipo: {}", kind.label()))
+        .config(
+            egui::containers::menu::MenuConfig::new()
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+        )
+        .ui(ui, |ui| {
+            changed = milestone_kind_items(ui, kind);
+        });
+    changed
+}
+
+/// Larghezza della combo del tipo milestone: tiene "Traguardo"/"Trigger" senza
+/// che la tendina cambi larghezza tra le due voci.
+const MILESTONE_KIND_COMBO_W: f32 = 78.0;
+
 /// "Select All" + elenco scrollabile di progetti con checkbox, condiviso dai
 /// dialog che selezionano un sottoinsieme di progetti. `entries` sono coppie
 /// `(progetto, selezionato)` mutate in place.
@@ -2377,6 +2460,131 @@ mod tests {
         );
     }
 
+    /// Centro del testo `needle` disegnato nel frame, cercato tra le shape in
+    /// uscita: evita di indovinare le coordinate dei widget nei test di input.
+    fn text_pos(out: &egui::FullOutput, needle: &str) -> Option<egui::Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(t) if t.galley.job.text == needle => {
+                Some(egui::Rect::from_min_size(t.pos, t.galley.size()).center())
+            }
+            _ => None,
+        })
+    }
+
+    /// Accoda gli eventi di un click "realistico" su `pos`: hover in un frame,
+    /// pressione nel successivo, rilascio in quello dopo. Un click compresso in
+    /// un frame solo non riproduce il comportamento di menù e tendine.
+    fn queue_click(pending: &mut Vec<Vec<egui::Event>>, pos: egui::Pos2) {
+        let btn = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        pending.push(vec![egui::Event::PointerMoved(pos)]);
+        pending.push(vec![btn(true)]);
+        pending.push(vec![btn(false)]);
+    }
+
+    /// Il selettore del tipo milestone nel menù «Aggiungi» **non deve chiudere
+    /// il menù**: si sceglie il tipo e si continua a scrivere il nome nello
+    /// stesso menù. Vale con il sottomenù «Tipo: … ⏵»; con una `ComboBox` no —
+    /// la sua tendina sta in un altro layer, il menù la legge come click "fuori"
+    /// e si chiude prima ancora che la voce venga selezionata (egui 0.34).
+    #[test]
+    fn milestone_kind_submenu_keeps_the_add_menu_open() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(900.0, 600.0),
+        ));
+
+        let menu_btn = Cell::new(egui::Rect::NOTHING);
+        let sub_btn = Cell::new(egui::Rect::NOTHING);
+        let menu_open = Cell::new(false);
+        let mut kind = MilestoneKind::Goal;
+        let mut pending: Vec<Vec<egui::Event>> = Vec::new();
+
+        for step in 0..20 {
+            let mut inp = input.clone();
+            if !pending.is_empty() {
+                inp.events = pending.remove(0);
+            }
+            menu_open.set(false);
+            let out = ctx.run(inp, |ctx| {
+                egui::TopBottomPanel::top("t").show(ctx, |ui| {
+                    egui::MenuBar::new().ui(ui, |ui| {
+                        // Stessa configurazione del menù «Aggiungi» in toolbar.rs.
+                        let (btn, _) = egui::containers::menu::MenuButton::new("Aggiungi")
+                            .config(egui::containers::menu::MenuConfig::new().close_behavior(
+                                egui::PopupCloseBehavior::CloseOnClickOutside,
+                            ))
+                            .ui(ui, |ui| {
+                                menu_open.set(true);
+                                milestone_kind_submenu(ui, &mut kind);
+                                sub_btn.set(ui.min_rect());
+                            });
+                        menu_btn.set(btn.rect);
+                    });
+                });
+            });
+
+            // Posizione della voce "Trigger": si cerca il testo disegnato, così
+            // il test non dipende da coordinate indovinate a mano.
+            let trigger_item = text_pos(&out, "Trigger");
+
+            match step {
+                0 => queue_click(&mut pending, menu_btn.get().center()),
+                // hover sul sottomenù (si apre al passaggio del mouse)
+                5 => {
+                    let p = sub_btn.get().center();
+                    pending.push(vec![egui::Event::PointerMoved(p)]);
+                    pending.push(vec![egui::Event::PointerMoved(p)]);
+                }
+                9 => {
+                    let p = trigger_item.expect("il sottomenù aperto disegna la voce «Trigger»");
+                    queue_click(&mut pending, p);
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            kind,
+            MilestoneKind::Trigger,
+            "la voce del sottomenù deve cambiare il tipo"
+        );
+        assert!(
+            menu_open.get(),
+            "dopo la scelta il menù «Aggiungi» deve restare aperto per digitare il nome"
+        );
+    }
+
+    /// Le icone del tipo milestone (bandierina / fulmine) devono essere davvero
+    /// disegnabili con i font caricati dall'app: `has_glyph` è false quando il
+    /// carattere finirebbe come tofu. Guardia contro un cambio di font.
+    #[test]
+    fn milestone_kind_icons_are_renderable() {
+        let ctx = egui::Context::default();
+        install_symbol_fallback(&ctx);
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let font = egui::FontId::proportional(14.0);
+        for kind in [MilestoneKind::Goal, MilestoneKind::Trigger] {
+            assert!(
+                ctx.fonts_mut(|f| f.has_glyphs(&font, kind.icon())),
+                "l'icona di {} ({}) non è disegnabile coi font caricati",
+                kind.label(),
+                kind.icon()
+            );
+        }
+        assert_ne!(
+            MilestoneKind::Goal.icon(),
+            MilestoneKind::Trigger.icon(),
+            "traguardo e trigger devono avere icone diverse"
+        );
+    }
+
     #[test]
     fn milestone_bands_fit_column_width() {
         // Colonna normale: ci stanno tutte le milestone presenti.
@@ -2409,3 +2617,8 @@ mod tests {
         assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
     }
 }
+
+
+
+
+

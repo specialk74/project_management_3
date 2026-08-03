@@ -29,11 +29,52 @@ const PALETTE: [u32; 16] = [
     0xD81B60, // rosa
 ];
 
+/// Tipo di milestone. Una milestone non è solo un traguardo: può essere il
+/// **trigger** di un evento. Il tipo è una proprietà della milestone stessa
+/// (come nome e colore), quindi vale in tutti i progetti in cui è collocata.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MilestoneKind {
+    /// Traguardo: nell'export è la classica bandierina (pennant).
+    #[default]
+    Goal,
+    /// Trigger di evento: nell'export la bandierina è sostituita da un fulmine.
+    Trigger,
+}
+
+impl MilestoneKind {
+    /// Etichetta mostrata nella GUI (menù di creazione, gestore milestone).
+    pub fn label(self) -> &'static str {
+        match self {
+            MilestoneKind::Goal => "Traguardo",
+            MilestoneKind::Trigger => "Trigger",
+        }
+    }
+
+    /// Icona del tipo, da anteporre al nome negli elenchi della GUI: bandierina
+    /// per il traguardo, fulmine per il trigger — gli stessi simboli disegnati
+    /// in cima all'asta nell'export. Sono glifi dei font già caricati da egui
+    /// (fallback compreso, vedi `install_symbol_fallback`), niente immagini.
+    pub fn icon(self) -> &'static str {
+        match self {
+            MilestoneKind::Goal => "⚑",
+            MilestoneKind::Trigger => "⚡",
+        }
+    }
+
+    pub fn is_trigger(self) -> bool {
+        matches!(self, MilestoneKind::Trigger)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Milestone {
     pub name: String,
     /// Colore associato, formato 0xRRGGBB.
     pub color: u32,
+    /// Traguardo (default) o trigger di evento. `serde(default)` per i file
+    /// scritti prima dell'introduzione del tipo: si rileggono come traguardi.
+    #[serde(default)]
+    pub kind: MilestoneKind,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
@@ -82,8 +123,14 @@ impl Milestones {
         }
     }
 
-    /// Crea una nuova milestone con un colore distinto assegnato in automatico.
+    /// Crea una nuova milestone (traguardo) con un colore distinto assegnato in
+    /// automatico.
     pub fn add(&mut self, name: &str) -> MilestoneId {
+        self.add_with_kind(name, MilestoneKind::default())
+    }
+
+    /// Come `add` ma scegliendo il tipo (traguardo / trigger).
+    pub fn add_with_kind(&mut self, name: &str, kind: MilestoneKind) -> MilestoneId {
         let color = self.pick_color();
         let id = self.last_id;
         self.milestones.insert(
@@ -91,6 +138,7 @@ impl Milestones {
             Milestone {
                 name: name.to_string(),
                 color,
+                kind,
             },
         );
         self.last_id.0 += 1;
@@ -111,6 +159,24 @@ impl Milestones {
 
     pub fn get_color(&self, id: MilestoneId) -> Option<u32> {
         self.milestones.get(&id).map(|m| m.color)
+    }
+
+    /// Tipo della milestone (traguardo se l'id non esiste più).
+    pub fn get_kind(&self, id: MilestoneId) -> MilestoneKind {
+        self.milestones
+            .get(&id)
+            .map(|m| m.kind)
+            .unwrap_or_default()
+    }
+
+    pub fn is_trigger(&self, id: MilestoneId) -> bool {
+        self.get_kind(id).is_trigger()
+    }
+
+    pub fn set_kind(&mut self, id: MilestoneId, kind: MilestoneKind) {
+        if let Some(m) = self.milestones.get_mut(&id) {
+            m.kind = kind;
+        }
     }
 
     pub fn set_color(&mut self, id: MilestoneId, color: u32) {
@@ -166,6 +232,30 @@ mod tests {
         let a = ms.add("Alpha");
         ms.set_color(a, 0x123456);
         assert_eq!(ms.get_color(a), Some(0x123456));
+    }
+
+    #[test]
+    fn new_milestone_is_a_goal_and_kind_can_change() {
+        let mut ms = Milestones::new();
+        let a = ms.add("Alpha");
+        assert_eq!(ms.get_kind(a), MilestoneKind::Goal);
+        assert!(!ms.is_trigger(a));
+        ms.set_kind(a, MilestoneKind::Trigger);
+        assert!(ms.is_trigger(a));
+    }
+
+    #[test]
+    fn add_with_kind_keeps_the_requested_kind() {
+        let mut ms = Milestones::new();
+        let t = ms.add_with_kind("Consegna", MilestoneKind::Trigger);
+        assert!(ms.is_trigger(t));
+    }
+
+    #[test]
+    fn old_files_without_kind_load_as_goal() {
+        // I .ron scritti prima del tipo non hanno il campo `kind`.
+        let m: Milestone = ron::from_str(r#"(name: "Vecchia", color: 123)"#).unwrap();
+        assert_eq!(m.kind, MilestoneKind::Goal);
     }
 
     #[test]
