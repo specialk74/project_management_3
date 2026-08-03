@@ -2376,4 +2376,36 @@ mod tests {
             "All: aperto visibile + chiuso"
         );
     }
+
+    #[test]
+    fn milestone_bands_fit_column_width() {
+        // Colonna normale: ci stanno tutte le milestone presenti.
+        assert_eq!(milestone_bands_shown(COL_W, 1), 1);
+        assert_eq!(milestone_bands_shown(COL_W, 3), 3);
+        // Non se ne inventano più di quelle collocate nella settimana.
+        assert_eq!(milestone_bands_shown(COL_W, 0), 0);
+        // Vista compatta (25 px): al massimo 6 bande da 4 px.
+        assert_eq!(milestone_bands_shown(COMPACT_W, 4), 4);
+        assert_eq!(milestone_bands_shown(COMPACT_W, 10), 6);
+        // Colonna più stretta della banda minima: almeno una banda, sempre.
+        assert_eq!(milestone_bands_shown(3.0, 5), 1);
+    }
+
+    #[test]
+    fn multiple_milestones_can_share_a_week() {
+        // Il modello dati ammette più milestone nella stessa settimana: la
+        // chiave è la milestone, non la settimana.
+        let mut app = App::new();
+        let pid = app.projects.add("P", Some("AAA"), None);
+        let a = app.milestones.add("Alpha");
+        let b = app.milestones.add("Beta");
+        let w = WeekId(20000);
+        app.projects.add_project_milestone(pid, a, w);
+        app.projects.add_project_milestone(pid, b, w);
+
+        // Ordinate per id → l'ordine delle bande è stabile tra un frame e l'altro.
+        assert_eq!(app.projects.project_milestones_at_week(pid, w), vec![a, b]);
+        // …e ciascuna ha il suo colore, quindi le bande sono distinguibili.
+        assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
+    }
 }

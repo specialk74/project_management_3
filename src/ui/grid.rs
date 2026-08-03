@@ -236,6 +236,59 @@ pub(crate) fn paint_hstrip_range(ui: &egui::Ui, x0: f32, x1: f32, y: f32, color:
     );
 }
 
+/// Larghezza minima (px) di una banda milestone: sotto questa soglia le bande
+/// diventano illeggibili, quindi se ne disegnano solo quante ce ne stanno.
+pub(crate) const MS_BAND_MIN_W: f32 = 4.0;
+
+/// Quante milestone della settimana entrano in una colonna larga `w` mantenendo
+/// bande leggibili: almeno una, mai più di quelle presenti.
+pub(crate) fn milestone_bands_shown(w: f32, n: usize) -> usize {
+    let max = (w / MS_BAND_MIN_W).floor().max(1.0) as usize;
+    n.min(max)
+}
+
+/// Dipinge lo sfondo della colonna con le milestone collocate in quella
+/// settimana: una **banda verticale per milestone**, di uguale larghezza e in
+/// ordine di id (con una sola milestone equivale a tingere l'intera colonna,
+/// il comportamento storico). Se le milestone sono troppe perché le bande
+/// restino leggibili (`MS_BAND_MIN_W`), se ne disegnano solo le prime: il
+/// tooltip della riga in alto elenca comunque tutti i nomi.
+pub(crate) fn paint_milestone_bands(
+    ui: &egui::Ui,
+    app: &App,
+    col_rect: Rect,
+    ms: &[MilestoneId],
+) {
+    let colors: Vec<Color32> = ms
+        .iter()
+        .filter_map(|m| app.milestones.get_color(*m))
+        .map(from_hex)
+        .collect();
+    if colors.is_empty() {
+        return;
+    }
+    let n = milestone_bands_shown(col_rect.width(), colors.len());
+    let bw = col_rect.width() / n as f32;
+    for (i, c) in colors.iter().take(n).enumerate() {
+        let x0 = col_rect.left() + i as f32 * bw;
+        // L'ultima banda arriva esattamente al bordo destro: evita la fessura
+        // di un pixel lasciata dagli arrotondamenti.
+        let x1 = if i + 1 == n {
+            col_rect.right()
+        } else {
+            x0 + bw
+        };
+        ui.painter().rect_filled(
+            Rect::from_min_max(
+                egui::pos2(x0, col_rect.top()),
+                egui::pos2(x1, col_rect.bottom()),
+            ),
+            0.0,
+            *c,
+        );
+    }
+}
+
 /// Intervallo X `[x0, x1)` delle colonne-settimana "attive" del progetto, cioè
 /// comprese tra inizio e fine (estremi inclusi). `proj_start`/`deadline` a -1
 /// significano "nessun limite" su quel lato. Se nessuna settimana visibile è
@@ -518,11 +571,7 @@ pub(crate) fn draw_dev_cells(
             }
             v
         };
-        if let Some(first) = ms_here.first() {
-            if let Some(color) = app.milestones.get_color(*first) {
-                ui.painter().rect_filled(col_rect, 0.0, from_hex(color));
-            }
-        }
+        paint_milestone_bands(ui, app, col_rect, &ms_here);
         if merged {
             // Colonna mergiata: milestone solo informative (tooltip), niente menù.
             if !ms_here.is_empty() {

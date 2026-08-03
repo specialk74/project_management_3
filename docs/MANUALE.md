@@ -397,9 +397,14 @@ Le milestone sono traguardi con **nome** e **colore**, condivisi tra i progetti.
   cestino per eliminarle (l'eliminazione le toglie anche da tutti i progetti).
 - **Assegnare a una settimana**: tasto destro sulla riga alta di una colonna-dev
   → **Aggiungi milestone qui** → scegli la milestone. Dallo stesso menù puoi
-  **rimuoverle**.
+  **rimuoverle**. Nella stessa settimana puoi mettere **più milestone diverse**
+  (quelle già presenti sono marcate con «●»); la stessa milestone invece compare
+  una sola volta per progetto — riassegnarla a un'altra settimana la sposta.
 - **Visualizzazione**: la colonna della settimana con milestone assume il colore
-  della milestone; passando il mouse compaiono i nomi.
+  della milestone. Con **più milestone nella stessa settimana** la colonna è
+  divisa in **bande verticali di uguale larghezza**, una per milestone, in
+  ordine di creazione. Passando il mouse compaiono i nomi (tutti, anche se in
+  vista compatta le bande disegnate sono meno).
 
 ---
 
@@ -822,7 +827,8 @@ produce pagina.
 - **Azzurro (colonna)**: settimana di inizio progetto.
 - **Verde (colonna)**: settimana di fine/deadline progetto.
 - **Colonna gialla stretta**: confine di fine anno ("Effort residuo").
-- **Tinta colonna con colore milestone**: settimana con milestone.
+- **Tinta colonna con colore milestone**: settimana con milestone; più bande
+  verticali = più milestone nella stessa settimana.
 - **Triangolo giallo**: presenza di una nota (cella, dev o worker/settimana).
 - **Triangolo azzurro (alto-sx) / rosso (basso-sx)** nel footer: ferie / malattia.
 - **Testo grigio** in cella: worker nascosto nel footer.
