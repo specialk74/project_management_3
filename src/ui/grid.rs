@@ -253,12 +253,7 @@ pub(crate) fn milestone_bands_shown(w: f32, n: usize) -> usize {
 /// il comportamento storico). Se le milestone sono troppe perché le bande
 /// restino leggibili (`MS_BAND_MIN_W`), se ne disegnano solo le prime: il
 /// tooltip della riga in alto elenca comunque tutti i nomi.
-pub(crate) fn paint_milestone_bands(
-    ui: &egui::Ui,
-    app: &App,
-    col_rect: Rect,
-    ms: &[MilestoneId],
-) {
+pub(crate) fn paint_milestone_bands(ui: &egui::Ui, app: &App, col_rect: Rect, ms: &[MilestoneId]) {
     let colors: Vec<Color32> = ms
         .iter()
         .filter_map(|m| app.milestones.get_color(*m))
@@ -743,11 +738,7 @@ pub(crate) fn draw_dev_cells(
                 .unwrap_or(false);
             if (has_workers || is_deadline) && !hide_effort {
                 let remaining = planned - running;
-                let txt = if running != remaining {
-                    format!("{} | {}", running, remaining)
-                } else {
-                    format!("{}", remaining)
-                };
+                let txt = format!("{} | {}", running, remaining);
                 let color = if is_deadline {
                     text()
                 } else {
