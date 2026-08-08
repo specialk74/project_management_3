@@ -16,7 +16,7 @@ pub(crate) use crate::date_utils::dates::{
 pub(crate) use crate::dev_utils::dev::DevId;
 pub(crate) use crate::milestones::{MilestoneId, MilestoneKind};
 pub(crate) use crate::project_utils::project::{Enable, OverflowResolution, ProjectId};
-pub(crate) use crate::single_dev_utils::single_dev::WeekId;
+pub(crate) use crate::single_dev_utils::single_dev::{WEEK_STEP, WeekId};
 pub(crate) use crate::single_effort_utils::sinlge_effort::Effort;
 pub(crate) use crate::ui_style::*;
 pub(crate) use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
@@ -152,6 +152,23 @@ pub(crate) enum MoveDialog {
         /// true = sfora la fine (delta>0); false = sfora l'inizio (delta<0).
         end_side: bool,
     },
+}
+
+/// Inserimento multiplo di effort, aperto col tasto destro su una cella
+/// **vuota** della griglia: si scelgono più worker, l'effort settimanale e per
+/// quante settimane, e il sistema li scrive in blocco a partire dalla settimana
+/// cliccata (inclusa) andando in avanti, sovrascrivendo eventuali valori già
+/// presenti per quel worker.
+pub(crate) struct BulkFill {
+    pub proj: ProjectId,
+    pub dev: DevId,
+    /// Settimana della cella cliccata (giorno, non indice): prima da riempire.
+    pub week: i32,
+    /// Ricerca sull'elenco worker (come nella dialog dei filtri).
+    pub search: String,
+    pub selected: HashSet<WorkerId>,
+    pub effort_text: String,
+    pub weeks_text: String,
 }
 
 /// Conflitto in sospeso: il file su disco è cambiato mentre c'erano modifiche
@@ -336,6 +353,9 @@ pub struct UiState {
     editing: Option<Editing>,
     note_editor: Option<NoteEditing>,
     popup: Option<Popup>,
+    // inserimento multiplo (tasto destro su cella vuota): worker + ore + settimane
+    bulk_fill: Option<BulkFill>,
+    bulk_fill_was_open: bool,
     dev_manage: Option<ProjectId>,
     confirm_del_dev: Option<(ProjectId, DevId)>,
     // flusso "Sposta" (blocco / devs) aperto dal menù contestuale milestone
@@ -549,6 +569,17 @@ pub(crate) enum Action {
         week: WeekId,
         rows: Vec<String>,
         notes: Vec<String>,
+    },
+    /// Inserimento multiplo: assegna `effort` a ciascun worker di `workers` in
+    /// `weeks` settimane consecutive a partire da `start` (inclusa), andando in
+    /// avanti. Sovrascrive il valore eventualmente già presente.
+    BulkFillEffort {
+        proj: ProjectId,
+        dev: DevId,
+        start: WeekId,
+        workers: Vec<WorkerId>,
+        effort: Effort,
+        weeks: usize,
     },
     SetNote {
         proj: ProjectId,
@@ -1009,6 +1040,7 @@ impl eframe::App for PjmApp {
 
             note_editor_window(ui.ctx(), state, &mut actions);
             popup_window(ui.ctx(), app, state, &mut actions);
+            bulk_fill_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
             pdf_multi_export_window(ui.ctx(), app, state, &mut actions);
@@ -1575,6 +1607,18 @@ impl PjmApp {
                     }
                 }
                 self.mark_changed();
+            }
+            Action::BulkFillEffort {
+                proj,
+                dev,
+                start,
+                workers,
+                effort,
+                weeks,
+            } => {
+                if bulk_fill_effort(&mut self.app, proj, dev, start, &workers, effort, weeks) {
+                    self.mark_changed();
+                }
             }
             Action::SetNote {
                 proj,
@@ -2326,6 +2370,36 @@ fn dev_text_color(app: &App, dev: DevId) -> Color32 {
         .unwrap_or(text())
 }
 
+/// Scrive `effort` per ognuno dei `workers` in `weeks` settimane consecutive a
+/// partire da `start` (inclusa), andando in avanti. Sovrascrive il valore già
+/// presente per quel worker e si ferma alla fine della griglia (`end_week`).
+/// Ritorna `true` se ha scritto qualcosa.
+fn bulk_fill_effort(
+    app: &mut App,
+    proj: ProjectId,
+    dev: DevId,
+    start: WeekId,
+    workers: &[WorkerId],
+    effort: Effort,
+    weeks: usize,
+) -> bool {
+    if workers.is_empty() || weeks == 0 {
+        return false;
+    }
+    let mut written = false;
+    for i in 0..weeks {
+        let w = WeekId(start.0 + i * WEEK_STEP);
+        if w > app.end_week {
+            break;
+        }
+        for wid in workers {
+            app.projects.add_effort(proj, dev, w, *wid, effort);
+            written = true;
+        }
+    }
+    written
+}
+
 fn dev_name(app: &App, dev: DevId) -> String {
     app.devs
         .list()
@@ -2393,6 +2467,119 @@ mod tests {
         // Con zero progetti la lista è comunque disegnata (Select All + area),
         // quindi non nulla ma piccola.
         assert!(h_empty > 0.0 && h_empty <= h_one + 40.0, "vuota: {h_empty}");
+    }
+
+    /// L'inserimento multiplo (tasto destro su cella vuota) scrive a tutti i
+    /// worker scelti per N settimane consecutive, sovrascrive quello che c'era
+    /// e non esce dalla griglia.
+    #[test]
+    fn bulk_fill_writes_all_workers_for_n_weeks() {
+        let mut app = App::new();
+        let w1 = app.workers.add("Alice");
+        let w2 = app.workers.add("Bob");
+        let dev = app.devs.add("Frontend");
+        let proj = app.projects.add("Progetto", Some("A-B-C"), None);
+
+        let start = app.start_week;
+        // Valore preesistente che deve essere sovrascritto.
+        app.projects.add_effort(proj, dev, start, w1, Effort(3));
+
+        assert!(bulk_fill_effort(
+            &mut app,
+            proj,
+            dev,
+            start,
+            &[w1, w2],
+            Effort(8),
+            3
+        ));
+
+        for i in 0..3 {
+            let w = WeekId(start.0 + i * WEEK_STEP);
+            let sew = app.projects.get_single_dev(proj, dev).unwrap().get_all(w);
+            let sew = sew.unwrap_or_else(|| panic!("settimana {i} non scritta"));
+            for wid in [w1, w2] {
+                assert_eq!(sew.worker_id.get(&wid).unwrap().get_effort(), Effort(8));
+            }
+        }
+        // La quarta settimana resta intatta.
+        assert!(
+            app.projects
+                .get_single_dev(proj, dev)
+                .unwrap()
+                .get_all(WeekId(start.0 + 3 * WEEK_STEP))
+                .is_none()
+        );
+
+        // Oltre la fine della griglia non scrive nulla.
+        let after_end = WeekId(app.end_week.0 + WEEK_STEP);
+        assert!(!bulk_fill_effort(
+            &mut app,
+            proj,
+            dev,
+            after_end,
+            &[w1],
+            Effort(8),
+            5
+        ));
+        // Selezione vuota o zero settimane: nessuna scrittura.
+        assert!(!bulk_fill_effort(
+            &mut app,
+            proj,
+            dev,
+            start,
+            &[],
+            Effort(8),
+            3
+        ));
+        assert!(!bulk_fill_effort(
+            &mut app,
+            proj,
+            dev,
+            start,
+            &[w1],
+            Effort(8),
+            0
+        ));
+    }
+
+    /// La dialog dell'inserimento multiplo si disegna (due frame, come le altre
+    /// prove di UI) senza panic e resta aperta finché non si conferma/annulla.
+    #[test]
+    fn bulk_fill_window_renders() {
+        let mut app = App::new();
+        app.workers.add("Alice");
+        let dev = app.devs.add("Frontend");
+        let proj = app.projects.add("Progetto", Some("A-B-C"), None);
+
+        let mut state = UiState::default();
+        state.bulk_fill = Some(BulkFill {
+            proj,
+            dev,
+            week: app.start_week.0 as i32,
+            search: String::new(),
+            selected: HashSet::new(),
+            effort_text: "8".to_string(),
+            weeks_text: "3".to_string(),
+        });
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(1000.0, 800.0),
+        ));
+        for _ in 0..2 {
+            let mut actions: Vec<Action> = Vec::new();
+            let _ = ctx.run(input.clone(), |ctx| {
+                bulk_fill_window(ctx, &app, &mut state, &mut actions);
+            });
+            assert!(
+                actions.is_empty(),
+                "nessuna azione senza click su Inserisci"
+            );
+        }
+        assert!(state.bulk_fill.is_some(), "la dialog deve restare aperta");
     }
 
     #[test]
@@ -2517,9 +2704,10 @@ mod tests {
                     egui::MenuBar::new().ui(ui, |ui| {
                         // Stessa configurazione del menù «Aggiungi» in toolbar.rs.
                         let (btn, _) = egui::containers::menu::MenuButton::new("Aggiungi")
-                            .config(egui::containers::menu::MenuConfig::new().close_behavior(
-                                egui::PopupCloseBehavior::CloseOnClickOutside,
-                            ))
+                            .config(
+                                egui::containers::menu::MenuConfig::new()
+                                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+                            )
                             .ui(ui, |ui| {
                                 menu_open.set(true);
                                 milestone_kind_submenu(ui, &mut kind);
@@ -2617,8 +2805,3 @@ mod tests {
         assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
     }
 }
-
-
-
-
-

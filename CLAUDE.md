@@ -58,6 +58,15 @@ references; the UI lives entirely in the `src/ui/` module.
     `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
     `saturation.rs` (worker-saturation dashboard), `filters.rs` (dialog unica dei
     filtri Workers/Progetti/Dev).
+  - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
+    a column lives in a **private** helper of `grid.rs` (not re-exported) —
+    `draw_year_end_cell`, `milestones_in_group` + `draw_milestone_strip` (the milestone /
+    «Sposta» context menu, tooltip-only when `merged`), `draw_compact_bar`,
+    `draw_cumulative_row`, `draw_merged_cell`, and the two branches of a worker cell,
+    `draw_cell_editor` (keyboard, autocomplete, copy/paste, caret) and `draw_cell_static`
+    (colors, click → editing, right-click → note / bulk fill). The cell helpers take a
+    `CellCtx { proj, dev, week, row }` instead of four loose parameters. All the rects are
+    derived from the column's `col_rect`, so the geometry stays in one place.
   - **Module mechanics** (mechanical split, verified by the compiler): only free **functions**
     moved to submodules; every shared **type/enum/const stays in `mod.rs`**. Submodules do
     `use super::*` (so they see the core's items and, since the top-of-file crate imports were
@@ -221,6 +230,15 @@ category/worker-max/etc.).
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
+- **Bulk fill** (`UiState.bulk_fill: Option<BulkFill>` + `bulk_fill_window` in
+  `dialogs.rs`): right-click an **empty** grid cell → dialog with the `show_in_find`
+  workers (search + Select All), «Ore a settimana» and «Per quante settimane». OK →
+  `Action::BulkFillEffort` → `bulk_fill_effort(app, proj, dev, start, workers, effort,
+  weeks)` (free fn in `mod.rs`, unit-tested): writes the effort to every selected
+  worker for N consecutive weeks starting at the clicked week (**inclusive**, going
+  forward), **overwriting** any existing value for that worker (`add_effort` keeps the
+  note), and stops at `app.end_week` — the dialog shows the effective week count. Only
+  on non-merged columns (merged/zoom cells `continue` before the slot loop).
 - **Notes** (yellow triangle indicator): right-click a non-empty cell → effort note;
   right-click a dev name → **Nota Dev…**; right-click a footer worker cell → **Note**.
 - **Project progress %** — two figures, both planned-effort-weighted and both `None`

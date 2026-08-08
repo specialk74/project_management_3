@@ -509,20 +509,7 @@ pub(crate) fn draw_dev_cells(
         if let Col::YearEnd(year_ending) = c {
             let col_rect =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
-            ui.painter().rect_filled(col_rect, 0.0, g(CANARY));
-            // ore mancanti del dev (solo se il progetto è a cavallo del confine)
-            if let Some(missing) = dev_missing_at_year_end(app, proj, dev, *year_ending) {
-                if !hide_effort {
-                    // In basso, per non collidere col totale progetto in cima alla colonna.
-                    ui.painter().text(
-                        col_rect.center_bottom() - Vec2::new(0.0, 2.0),
-                        Align2::CENTER_BOTTOM,
-                        missing.to_string(),
-                        cell_font(),
-                        Color32::BLACK, // su sfondo canarino: sempre nero
-                    );
-                }
-            }
+            draw_year_end_cell(ui, app, col_rect, proj, dev, *year_ending, hide_effort);
             continue;
         }
         let ws = match c {
@@ -551,132 +538,11 @@ pub(crate) fn draw_dev_cells(
 
         // ── Milestone: tinta colonna col colore della milestone + tooltip;
         //    tasto destro sulla riga in alto per aggiungere/rimuovere. ──
-        // Unione delle milestone di tutte le settimane del gruppo.
-        let ms_here: Vec<_> = {
-            let mut v = Vec::new();
-            for wk in ws.iter() {
-                for m in app
-                    .projects
-                    .project_milestones_at_week(proj, WeekId(*wk as usize))
-                {
-                    if !v.contains(&m) {
-                        v.push(m);
-                    }
-                }
-            }
-            v
-        };
+        let ms_here = milestones_in_group(app, proj, ws);
         paint_milestone_bands(ui, app, col_rect, &ms_here);
-        if merged {
-            // Colonna mergiata: milestone solo informative (tooltip), niente menù.
-            if !ms_here.is_empty() {
-                let top = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
-                let names: Vec<String> = ms_here
-                    .iter()
-                    .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
-                    .collect();
-                ui.interact(
-                    top,
-                    egui::Id::new(("msrow_m", proj.0, dev.0, *w)),
-                    Sense::hover(),
-                )
-                .on_hover_text(names.join(", "));
-            }
-        } else {
-            let top = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
-            let mut resp = ui.interact(
-                top,
-                egui::Id::new(("msrow", proj.0, dev.0, *w)),
-                Sense::click(),
-            );
-            if !ms_here.is_empty() {
-                let names: Vec<String> = ms_here
-                    .iter()
-                    .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
-                    .collect();
-                resp = resp.on_hover_text(names.join(", "));
-            }
-            let week_id = WeekId(*w as usize);
-            resp.context_menu(|ui| {
-                // ── Sottomenù: Aggiungi milestone qui (+ rimozione) ──
-                ui.menu_button("Aggiungi milestone qui", |ui| {
-                    let all = app.milestones.list();
-                    if all.is_empty() {
-                        ui.label("(nessuna — creane dalla toolbar)");
-                    }
-                    for (id, name, color) in &all {
-                        let here = ms_here.contains(id);
-                        let mark = if here { "● " } else { "" };
-                        // Icona del tipo prima del nome: bandierina o fulmine,
-                        // gli stessi simboli che finiscono nell'export.
-                        let icon = app.milestones.get_kind(*id).icon();
-                        let label = egui::RichText::new(format!("{mark}{icon} {name}"))
-                            .color(u32_to_color(*color));
-                        if ui.button(label).clicked() {
-                            actions.push(Action::AddProjectMilestone {
-                                proj,
-                                milestone: *id,
-                                week: week_id,
-                            });
-                            ui.close();
-                        }
-                    }
-                    if !ms_here.is_empty() {
-                        ui.separator();
-                        for m in &ms_here {
-                            if let Some(name) = app.milestones.get_name(*m) {
-                                let icon = app.milestones.get_kind(*m).icon();
-                                if ui.button(format!("Rimuovi: {icon} {name}")).clicked() {
-                                    actions.push(Action::RemoveProjectMilestone {
-                                        proj,
-                                        milestone: *m,
-                                    });
-                                    ui.close();
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // ── Sottomenù: Sposta effort ──
-                ui.menu_button("Sposta", |ui| {
-                    // Sposta blocco → blocco contiguo del dev attorno alla settimana.
-                    let block = app.projects.dev_contiguous_block(proj, dev, week_id);
-                    if ui
-                        .add_enabled(!block.is_empty(), egui::Button::new("Sposta blocco"))
-                        .clicked()
-                    {
-                        state.move_dialog = Some(make_move_params(app, proj, vec![(dev, block)]));
-                        state.move_dialog_was_open = false;
-                        ui.close();
-                    }
-                    // Sposta devs → elenco dei dev del progetto con effort.
-                    let with_effort = app.projects.devs_with_effort(proj);
-                    if ui
-                        .add_enabled(!with_effort.is_empty(), egui::Button::new("Sposta devs"))
-                        .clicked()
-                    {
-                        let names: HashMap<DevId, String> = app.devs.list().into_iter().collect();
-                        let candidates: Vec<(DevId, String)> = with_effort
-                            .iter()
-                            .map(|d| (*d, names.get(d).cloned().unwrap_or_default()))
-                            .collect();
-                        // Pre-seleziona il dev da cui è stato aperto il menù.
-                        let mut selected = HashSet::new();
-                        if with_effort.contains(&dev) {
-                            selected.insert(dev);
-                        }
-                        state.move_dialog = Some(MoveDialog::SelectDevs {
-                            proj,
-                            candidates,
-                            selected,
-                        });
-                        state.move_dialog_was_open = false;
-                        ui.close();
-                    }
-                });
-            });
-        }
+        draw_milestone_strip(
+            ui, app, state, actions, proj, dev, *w, &ms_here, col_rect, merged,
+        );
 
         // Effort del gruppo = somma delle settimane mergiate (una sola al livello 0).
         let week_total = app
@@ -691,31 +557,9 @@ pub(crate) fn draw_dev_cells(
 
         // ── Vista compatta: una barra (altezza ∝ effort) per settimana attiva ──
         if compact {
-            if !before_start && !after_deadline {
-                let in_activity = act_start >= 0 && *w >= act_start && *w <= act_end;
-                if in_activity {
-                    let ratio = (week_total as f32 / 40.0).min(1.0);
-                    let bar_h = if week_total == 0 {
-                        1.0
-                    } else {
-                        (ROW_H * ratio).max(1.0)
-                    };
-                    let bar = Rect::from_min_size(
-                        egui::pos2(x, rect.bottom() - bar_h),
-                        Vec2::new(cw, bar_h),
-                    );
-                    ui.painter().rect_filled(bar, 0.0, dcolor);
-                    // tooltip con data + effort della settimana
-                    let date = primo_giorno_settimana_corrente(&days_to_local(*w))
-                        .format("%y-%m-%d")
-                        .to_string();
-                    ui.interact(
-                        col_rect,
-                        egui::Id::new(("cbar", proj.0, dev.0, *w)),
-                        Sense::hover(),
-                    )
-                    .on_hover_text(format!("{}  ·  {}h", date, week_total));
-                }
+            let in_activity = act_start >= 0 && *w >= act_start && *w <= act_end;
+            if !before_start && !after_deadline && in_activity {
+                draw_compact_bar(ui, col_rect, proj, dev, *w, week_total, dcolor);
             }
             continue;
         }
@@ -724,34 +568,19 @@ pub(crate) fn draw_dev_cells(
 
         // riga cumulativo (sola lettura)
         if !before_start && !after_deadline {
-            let cum_rect = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(cw, ROW_H));
-            let has_workers = app
-                .projects
-                .get_single_dev(proj, dev)
-                .map(|sd| {
-                    ws.iter().any(|wk| {
-                        sd.get_all(WeekId(*wk as usize))
-                            .map(|s| s.worker_id.keys().any(|k| *k != WORKER_ID_ZERO))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-            if (has_workers || is_deadline) && !hide_effort {
-                let remaining = planned - running;
-                let txt = format!("{} | {}", running, remaining);
-                let color = if is_deadline {
-                    text()
-                } else {
-                    cumulative_color(week_total, planned)
-                };
-                ui.painter().text(
-                    cum_rect.center(),
-                    Align2::CENTER_CENTER,
-                    txt,
-                    cell_font(),
-                    color,
-                );
-            }
+            draw_cumulative_row(
+                ui,
+                app,
+                col_rect,
+                proj,
+                dev,
+                ws,
+                planned,
+                running,
+                week_total,
+                is_deadline,
+                hide_effort,
+            );
         }
 
         // righe persona (editabili)
@@ -763,15 +592,7 @@ pub(crate) fn draw_dev_cells(
         //    niente nomi worker. Occupa la riga sotto il cumulativo. ──
         if merged {
             if !hide_effort && (week_total > 0 || is_deadline) {
-                let cell =
-                    Rect::from_min_size(egui::pos2(x, rect.top() + ROW_H), Vec2::new(cw, ROW_H));
-                ui.painter().text(
-                    cell.center(),
-                    Align2::CENTER_CENTER,
-                    week_total.to_string(),
-                    cell_font(),
-                    text(),
-                );
+                draw_merged_cell(ui, col_rect, week_total);
             }
             continue;
         }
@@ -780,6 +601,12 @@ pub(crate) fn draw_dev_cells(
         for (row, (text, note)) in slots.iter().enumerate() {
             let y = rect.top() + (row as f32 + 1.0) * ROW_H;
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(cw, ROW_H));
+            let cx = CellCtx {
+                proj,
+                dev,
+                week: *w,
+                row,
+            };
 
             let is_editing = state
                 .editing
@@ -788,217 +615,544 @@ pub(crate) fn draw_dev_cells(
                 .unwrap_or(false);
 
             if is_editing {
-                let mut ed = state.editing.take().unwrap();
-                let id = egui::Id::new(("celledit", proj.0, dev.0, *w, row));
-                let resp = ui.interact(cell, id, Sense::click());
-                if ed.just_opened {
-                    resp.request_focus();
-                    ed.just_opened = false;
-                }
-                let has_focus = resp.has_focus();
-
-                let mut commit = false;
-                let mut cancel = false;
-                if has_focus {
-                    ed.had_focus = true;
-                    let events = ui.input(|i| i.events.clone());
-                    for ev in events {
-                        match ev {
-                            egui::Event::Text(t) => {
-                                for ch in t.chars() {
-                                    if ch != '\n' && ch != '\t' {
-                                        ed.typed.push(ch);
-                                    }
-                                }
-                                recompute_completion(app, &mut ed.typed, &mut ed.buf);
-                            }
-                            egui::Event::Key {
-                                key: egui::Key::Backspace,
-                                pressed: true,
-                                ..
-                            } => {
-                                // Cancellazione letterale: niente re-completamento, altrimenti
-                                // un nome completo verrebbe ri-completato e non si potrebbe svuotare.
-                                ed.typed.pop();
-                                ed.buf = ed.typed.clone();
-                            }
-                            egui::Event::Key {
-                                key: egui::Key::Delete,
-                                pressed: true,
-                                ..
-                            } => {
-                                ed.typed.clear();
-                                ed.buf.clear();
-                            }
-                            egui::Event::Key {
-                                key: egui::Key::Enter,
-                                pressed: true,
-                                ..
-                            }
-                            | egui::Event::Key {
-                                key: egui::Key::Tab,
-                                pressed: true,
-                                ..
-                            } => {
-                                commit = true;
-                            }
-                            egui::Event::Key {
-                                key: egui::Key::Escape,
-                                pressed: true,
-                                ..
-                            } => {
-                                cancel = true;
-                            }
-                            // Copia / Taglia / Incolla: eventi semantici di egui,
-                            // portabili (Cmd su macOS, Ctrl su Windows/Linux). Si scrive
-                            // anche nella clipboard di SISTEMA: senza, su Windows egui non
-                            // genera mai `Event::Paste` (lo emette solo se la clipboard di
-                            // sistema non è vuota — vedi egui-winit), e l'incolla non parte.
-                            // La nota della cella resta nella clipboard interna.
-                            egui::Event::Copy => {
-                                state.copied_text = ed.buf.clone();
-                                state.copied_note = note.clone();
-                                ui.ctx().copy_text(ed.buf.clone());
-                            }
-                            egui::Event::Cut => {
-                                state.copied_text = ed.buf.clone();
-                                state.copied_note = note.clone();
-                                ui.ctx().copy_text(ed.buf.clone());
-                                ed.buf.clear();
-                                ed.typed.clear();
-                            }
-                            egui::Event::Paste(text) => {
-                                // Se l'incolla viene dalla nostra copia (stesso testo),
-                                // ripristina anche la nota; altrimenti incolla il testo
-                                // esterno senza nota.
-                                let note = if text == state.copied_text {
-                                    state.copied_note.clone()
-                                } else {
-                                    String::new()
-                                };
-                                ed.buf = text.clone();
-                                ed.typed = text;
-                                ed.paste_note = Some(note);
-                            }
-                            _ => {}
-                        }
-                    }
-                } else if ed.had_focus {
-                    commit = true; // focus perso → conferma
-                }
-
-                // disegno cella in editing + caret
-                ui.painter().rect_filled(cell, 0.0, g(SEL_BG));
-                ui.painter().rect_stroke(
-                    cell,
-                    0.0,
-                    Stroke::new(1.0, g(FOCUS_BORDER)),
-                    egui::StrokeKind::Inside,
-                );
-                let trect = ui.painter().text(
-                    egui::pos2(cell.left() + 3.0, cell.center().y),
-                    Align2::LEFT_CENTER,
-                    &ed.buf,
-                    person_font(),
-                    crate::ui_style::text(),
-                );
-                let caret_x = (trect.right() + 1.0).min(cell.right() - 1.0);
-                ui.painter().vline(
-                    caret_x,
-                    (cell.top() + 2.0)..=(cell.bottom() - 2.0),
-                    Stroke::new(1.0, crate::ui_style::text()),
-                );
-
-                if cancel {
-                    // scarta
-                } else if commit {
-                    actions.push(commit_editing(app, &ed));
-                } else {
-                    state.editing = Some(ed);
-                }
+                draw_cell_editor(ui, app, state, actions, &cx, cell, note);
             } else {
-                let resp = ui.interact(
-                    cell,
-                    egui::Id::new(("cell", proj.0, dev.0, *w, row)),
-                    Sense::click(),
-                );
-                let hovered = resp.hovered();
-                let clicked = resp.clicked();
-                let secondary = resp.secondary_clicked();
+                draw_cell_static(ui, app, state, actions, &cx, cell, text, note);
+            }
+        }
+    }
+}
 
-                if hovered {
-                    ui.painter()
-                        .rect_filled(cell, 0.0, g(SEL_BG).gamma_multiply(0.4));
-                }
-                if !note.is_empty() {
-                    draw_note_triangle(ui, cell);
-                }
-                if !text.is_empty() {
-                    let wname = text.split('|').next().unwrap_or("").trim();
-                    let wid = app.workers.get_id_by_name(wname);
-                    let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
-                    let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));
-                    let sovra = wid
-                        .map(|id| {
-                            app.sovra
-                                .get(&(WeekId(*w as usize), id))
-                                .map_or(0, |e| e.0 as i32)
-                        })
-                        .unwrap_or(0);
-                    let max_h = wid
-                        .map(|id| app.workers.get_effective_max_hours(id, *w as usize) as i32)
-                        .unwrap_or(DEFAULT_MAX_HOURS as i32);
-                    // worker "ghost" → sempre porpora (max effort di fatto 0),
-                    // anche se nascosti nel footer, così si distinguono dai
-                    // sovra-allocati (rossi); worker nascosti → grigi; oltre il max
-                    // → rossi; altrimenti colore testo normale.
-                    let color = if is_ghost {
-                        g(GHOST_PURPLE)
-                    } else if hidden {
-                        Color32::from_gray(0x80)
-                    } else if sovra > max_h {
-                        g(Color32::RED)
-                    } else {
-                        crate::ui_style::text()
-                    };
-                    paint_person_cell(ui, cell, text, color);
-                }
-                if !note.is_empty() {
-                    resp.on_hover_text(note.clone());
-                }
+/// Coordinate della cella worker su cui agiscono editing, click e tasto destro.
+struct CellCtx {
+    proj: ProjectId,
+    dev: DevId,
+    /// Settimana (numero di giorno, non indice).
+    week: i32,
+    /// Riga worker dentro il blocco del dev.
+    row: usize,
+}
 
-                if clicked {
-                    if let Some(old) = state.editing.take() {
-                        actions.push(commit_editing(app, &old));
-                    }
-                    let orig_worker = text.split('|').next().unwrap_or("").trim().to_string();
-                    state.editing = Some(Editing {
+/// Colonna di confine d'anno: sfondo canarino e ore mancanti del dev (solo se
+/// il progetto è a cavallo del confine). Sola lettura.
+fn draw_year_end_cell(
+    ui: &egui::Ui,
+    app: &App,
+    col_rect: Rect,
+    proj: ProjectId,
+    dev: DevId,
+    year_ending: i32,
+    hide_effort: bool,
+) {
+    ui.painter().rect_filled(col_rect, 0.0, g(CANARY));
+    if let Some(missing) = dev_missing_at_year_end(app, proj, dev, year_ending) {
+        if !hide_effort {
+            // In basso, per non collidere col totale progetto in cima alla colonna.
+            ui.painter().text(
+                col_rect.center_bottom() - Vec2::new(0.0, 2.0),
+                Align2::CENTER_BOTTOM,
+                missing.to_string(),
+                cell_font(),
+                Color32::BLACK, // su sfondo canarino: sempre nero
+            );
+        }
+    }
+}
+
+/// Unione (senza ripetizioni) delle milestone di tutte le settimane del gruppo
+/// mergiato — una sola settimana al livello di zoom 0.
+fn milestones_in_group(app: &App, proj: ProjectId, ws: &[i32]) -> Vec<MilestoneId> {
+    let mut v = Vec::new();
+    for wk in ws.iter() {
+        for m in app
+            .projects
+            .project_milestones_at_week(proj, WeekId(*wk as usize))
+        {
+            if !v.contains(&m) {
+                v.push(m);
+            }
+        }
+    }
+    v
+}
+
+/// Fascia alta della colonna-dev: tooltip con le milestone della settimana e,
+/// sulle colonne **non** mergiate, il menù col tasto destro (aggiungi/rimuovi
+/// milestone, Sposta blocco/devs). Sulle colonne mergiate resta informativa.
+#[allow(clippy::too_many_arguments)]
+fn draw_milestone_strip(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    proj: ProjectId,
+    dev: DevId,
+    w: i32,
+    ms_here: &[MilestoneId],
+    col_rect: Rect,
+    merged: bool,
+) {
+    let top = Rect::from_min_size(col_rect.min, Vec2::new(col_rect.width(), ROW_H));
+    let names = || -> String {
+        ms_here
+            .iter()
+            .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    if merged {
+        // Colonna mergiata: milestone solo informative (tooltip), niente menù.
+        if !ms_here.is_empty() {
+            ui.interact(
+                top,
+                egui::Id::new(("msrow_m", proj.0, dev.0, w)),
+                Sense::hover(),
+            )
+            .on_hover_text(names());
+        }
+        return;
+    }
+
+    let mut resp = ui.interact(
+        top,
+        egui::Id::new(("msrow", proj.0, dev.0, w)),
+        Sense::click(),
+    );
+    if !ms_here.is_empty() {
+        resp = resp.on_hover_text(names());
+    }
+    let week_id = WeekId(w as usize);
+    resp.context_menu(|ui| {
+        // ── Sottomenù: Aggiungi milestone qui (+ rimozione) ──
+        ui.menu_button("Aggiungi milestone qui", |ui| {
+            let all = app.milestones.list();
+            if all.is_empty() {
+                ui.label("(nessuna — creane dalla toolbar)");
+            }
+            for (id, name, color) in &all {
+                let here = ms_here.contains(id);
+                let mark = if here { "● " } else { "" };
+                // Icona del tipo prima del nome: bandierina o fulmine,
+                // gli stessi simboli che finiscono nell'export.
+                let icon = app.milestones.get_kind(*id).icon();
+                let label =
+                    egui::RichText::new(format!("{mark}{icon} {name}")).color(u32_to_color(*color));
+                if ui.button(label).clicked() {
+                    actions.push(Action::AddProjectMilestone {
                         proj,
-                        dev,
-                        week: *w,
-                        row,
-                        buf: text.clone(),
-                        typed: text.clone(),
-                        just_opened: true,
-                        had_focus: false,
-                        paste_note: None,
-                        orig_worker,
-                        orig_note: note.clone(),
+                        milestone: *id,
+                        week: week_id,
                     });
-                }
-                if secondary && !text.is_empty() {
-                    let wname = text.split('|').next().unwrap_or("").trim().to_string();
-                    state.note_editor = Some(NoteEditing {
-                        target: NoteTarget::Effort {
-                            proj,
-                            dev,
-                            week: *w,
-                            worker: wname,
-                        },
-                        text: note.clone(),
-                    });
+                    ui.close();
                 }
             }
+            if !ms_here.is_empty() {
+                ui.separator();
+                for m in ms_here {
+                    if let Some(name) = app.milestones.get_name(*m) {
+                        let icon = app.milestones.get_kind(*m).icon();
+                        if ui.button(format!("Rimuovi: {icon} {name}")).clicked() {
+                            actions.push(Action::RemoveProjectMilestone {
+                                proj,
+                                milestone: *m,
+                            });
+                            ui.close();
+                        }
+                    }
+                }
+            }
+        });
+
+        // ── Sottomenù: Sposta effort ──
+        ui.menu_button("Sposta", |ui| {
+            // Sposta blocco → blocco contiguo del dev attorno alla settimana.
+            let block = app.projects.dev_contiguous_block(proj, dev, week_id);
+            if ui
+                .add_enabled(!block.is_empty(), egui::Button::new("Sposta blocco"))
+                .clicked()
+            {
+                state.move_dialog = Some(make_move_params(app, proj, vec![(dev, block)]));
+                state.move_dialog_was_open = false;
+                ui.close();
+            }
+            // Sposta devs → elenco dei dev del progetto con effort.
+            let with_effort = app.projects.devs_with_effort(proj);
+            if ui
+                .add_enabled(!with_effort.is_empty(), egui::Button::new("Sposta devs"))
+                .clicked()
+            {
+                let names: HashMap<DevId, String> = app.devs.list().into_iter().collect();
+                let candidates: Vec<(DevId, String)> = with_effort
+                    .iter()
+                    .map(|d| (*d, names.get(d).cloned().unwrap_or_default()))
+                    .collect();
+                // Pre-seleziona il dev da cui è stato aperto il menù.
+                let mut selected = HashSet::new();
+                if with_effort.contains(&dev) {
+                    selected.insert(dev);
+                }
+                state.move_dialog = Some(MoveDialog::SelectDevs {
+                    proj,
+                    candidates,
+                    selected,
+                });
+                state.move_dialog_was_open = false;
+                ui.close();
+            }
+        });
+    });
+}
+
+/// Vista compatta: barra in fondo alla colonna con altezza ∝ effort della
+/// settimana (tetto a 40h), più tooltip con data e ore.
+fn draw_compact_bar(
+    ui: &mut egui::Ui,
+    col_rect: Rect,
+    proj: ProjectId,
+    dev: DevId,
+    w: i32,
+    week_total: i32,
+    dcolor: Color32,
+) {
+    let ratio = (week_total as f32 / 40.0).min(1.0);
+    let bar_h = if week_total == 0 {
+        1.0
+    } else {
+        (ROW_H * ratio).max(1.0)
+    };
+    let bar = Rect::from_min_size(
+        egui::pos2(col_rect.left(), col_rect.bottom() - bar_h),
+        Vec2::new(col_rect.width(), bar_h),
+    );
+    ui.painter().rect_filled(bar, 0.0, dcolor);
+    // tooltip con data + effort della settimana
+    let date = primo_giorno_settimana_corrente(&days_to_local(w))
+        .format("%y-%m-%d")
+        .to_string();
+    ui.interact(
+        col_rect,
+        egui::Id::new(("cbar", proj.0, dev.0, w)),
+        Sense::hover(),
+    )
+    .on_hover_text(format!("{}  ·  {}h", date, week_total));
+}
+
+/// Riga cumulativa (sola lettura) in cima al blocco del dev: `svolto | residuo`,
+/// col colore che vira dal verde al rosso avvicinandosi al pianificato.
+#[allow(clippy::too_many_arguments)]
+fn draw_cumulative_row(
+    ui: &egui::Ui,
+    app: &App,
+    col_rect: Rect,
+    proj: ProjectId,
+    dev: DevId,
+    ws: &[i32],
+    planned: i32,
+    running: i32,
+    week_total: i32,
+    is_deadline: bool,
+    hide_effort: bool,
+) {
+    let cum_rect = Rect::from_min_size(col_rect.min, Vec2::new(col_rect.width(), ROW_H));
+    let has_workers = app
+        .projects
+        .get_single_dev(proj, dev)
+        .map(|sd| {
+            ws.iter().any(|wk| {
+                sd.get_all(WeekId(*wk as usize))
+                    .map(|s| s.worker_id.keys().any(|k| *k != WORKER_ID_ZERO))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    if (has_workers || is_deadline) && !hide_effort {
+        let remaining = planned - running;
+        let txt = format!("{} | {}", running, remaining);
+        let color = if is_deadline {
+            text()
+        } else {
+            cumulative_color(week_total, planned)
+        };
+        ui.painter().text(
+            cum_rect.center(),
+            Align2::CENTER_CENTER,
+            txt,
+            cell_font(),
+            color,
+        );
+    }
+}
+
+/// Colonna mergiata (zoom): una sola cella con la somma delle settimane, sola
+/// lettura e senza nomi worker, subito sotto la riga cumulativa.
+fn draw_merged_cell(ui: &egui::Ui, col_rect: Rect, week_total: i32) {
+    let cell = Rect::from_min_size(
+        col_rect.min + Vec2::new(0.0, ROW_H),
+        Vec2::new(col_rect.width(), ROW_H),
+    );
+    ui.painter().text(
+        cell.center(),
+        Align2::CENTER_CENTER,
+        week_total.to_string(),
+        cell_font(),
+        text(),
+    );
+}
+
+/// Cella worker **in modifica**: tastiera (autocompletamento, Invio/Tab, Esc),
+/// copia/taglia/incolla e disegno di sfondo, testo e caret. Alla conferma spinge
+/// l'`Action`, altrimenti rimette l'editing nello stato.
+fn draw_cell_editor(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    cx: &CellCtx,
+    cell: Rect,
+    note: &str,
+) {
+    let mut ed = state.editing.take().unwrap();
+    let id = egui::Id::new(("celledit", cx.proj.0, cx.dev.0, cx.week, cx.row));
+    let resp = ui.interact(cell, id, Sense::click());
+    if ed.just_opened {
+        resp.request_focus();
+        ed.just_opened = false;
+    }
+    let has_focus = resp.has_focus();
+
+    let mut commit = false;
+    let mut cancel = false;
+    if has_focus {
+        ed.had_focus = true;
+        let events = ui.input(|i| i.events.clone());
+        for ev in events {
+            match ev {
+                egui::Event::Text(t) => {
+                    for ch in t.chars() {
+                        if ch != '\n' && ch != '\t' {
+                            ed.typed.push(ch);
+                        }
+                    }
+                    recompute_completion(app, &mut ed.typed, &mut ed.buf);
+                }
+                egui::Event::Key {
+                    key: egui::Key::Backspace,
+                    pressed: true,
+                    ..
+                } => {
+                    // Cancellazione letterale: niente re-completamento, altrimenti
+                    // un nome completo verrebbe ri-completato e non si potrebbe svuotare.
+                    ed.typed.pop();
+                    ed.buf = ed.typed.clone();
+                }
+                egui::Event::Key {
+                    key: egui::Key::Delete,
+                    pressed: true,
+                    ..
+                } => {
+                    ed.typed.clear();
+                    ed.buf.clear();
+                }
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    pressed: true,
+                    ..
+                }
+                | egui::Event::Key {
+                    key: egui::Key::Tab,
+                    pressed: true,
+                    ..
+                } => {
+                    commit = true;
+                }
+                egui::Event::Key {
+                    key: egui::Key::Escape,
+                    pressed: true,
+                    ..
+                } => {
+                    cancel = true;
+                }
+                // Copia / Taglia / Incolla: eventi semantici di egui,
+                // portabili (Cmd su macOS, Ctrl su Windows/Linux). Si scrive
+                // anche nella clipboard di SISTEMA: senza, su Windows egui non
+                // genera mai `Event::Paste` (lo emette solo se la clipboard di
+                // sistema non è vuota — vedi egui-winit), e l'incolla non parte.
+                // La nota della cella resta nella clipboard interna.
+                egui::Event::Copy => {
+                    state.copied_text = ed.buf.clone();
+                    state.copied_note = note.to_string();
+                    ui.ctx().copy_text(ed.buf.clone());
+                }
+                egui::Event::Cut => {
+                    state.copied_text = ed.buf.clone();
+                    state.copied_note = note.to_string();
+                    ui.ctx().copy_text(ed.buf.clone());
+                    ed.buf.clear();
+                    ed.typed.clear();
+                }
+                egui::Event::Paste(text) => {
+                    // Se l'incolla viene dalla nostra copia (stesso testo),
+                    // ripristina anche la nota; altrimenti incolla il testo
+                    // esterno senza nota.
+                    let note = if text == state.copied_text {
+                        state.copied_note.clone()
+                    } else {
+                        String::new()
+                    };
+                    ed.buf = text.clone();
+                    ed.typed = text;
+                    ed.paste_note = Some(note);
+                }
+                _ => {}
+            }
+        }
+    } else if ed.had_focus {
+        commit = true; // focus perso → conferma
+    }
+
+    // disegno cella in editing + caret
+    ui.painter().rect_filled(cell, 0.0, g(SEL_BG));
+    ui.painter().rect_stroke(
+        cell,
+        0.0,
+        Stroke::new(1.0, g(FOCUS_BORDER)),
+        egui::StrokeKind::Inside,
+    );
+    let trect = ui.painter().text(
+        egui::pos2(cell.left() + 3.0, cell.center().y),
+        Align2::LEFT_CENTER,
+        &ed.buf,
+        person_font(),
+        crate::ui_style::text(),
+    );
+    let caret_x = (trect.right() + 1.0).min(cell.right() - 1.0);
+    ui.painter().vline(
+        caret_x,
+        (cell.top() + 2.0)..=(cell.bottom() - 2.0),
+        Stroke::new(1.0, crate::ui_style::text()),
+    );
+
+    if cancel {
+        // scarta
+    } else if commit {
+        actions.push(commit_editing(app, &ed));
+    } else {
+        state.editing = Some(ed);
+    }
+}
+
+/// Cella worker **a riposo** (non in modifica): hover, triangolo della nota,
+/// colore del testo (ghost/nascosto/sovra-allocato), click sinistro che apre
+/// l'editing e tasto destro che apre la nota (cella piena) o l'inserimento
+/// multiplo (cella vuota).
+#[allow(clippy::too_many_arguments)]
+fn draw_cell_static(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    cx: &CellCtx,
+    cell: Rect,
+    text: &str,
+    note: &str,
+) {
+    let resp = ui.interact(
+        cell,
+        egui::Id::new(("cell", cx.proj.0, cx.dev.0, cx.week, cx.row)),
+        Sense::click(),
+    );
+    let hovered = resp.hovered();
+    let clicked = resp.clicked();
+    let secondary = resp.secondary_clicked();
+
+    if hovered {
+        ui.painter()
+            .rect_filled(cell, 0.0, g(SEL_BG).gamma_multiply(0.4));
+    }
+    if !note.is_empty() {
+        draw_note_triangle(ui, cell);
+    }
+    if !text.is_empty() {
+        let wname = text.split('|').next().unwrap_or("").trim();
+        let wid = app.workers.get_id_by_name(wname);
+        let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
+        let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));
+        let sovra = wid
+            .map(|id| {
+                app.sovra
+                    .get(&(WeekId(cx.week as usize), id))
+                    .map_or(0, |e| e.0 as i32)
+            })
+            .unwrap_or(0);
+        let max_h = wid
+            .map(|id| app.workers.get_effective_max_hours(id, cx.week as usize) as i32)
+            .unwrap_or(DEFAULT_MAX_HOURS as i32);
+        // worker "ghost" → sempre porpora (max effort di fatto 0),
+        // anche se nascosti nel footer, così si distinguono dai
+        // sovra-allocati (rossi); worker nascosti → grigi; oltre il max
+        // → rossi; altrimenti colore testo normale.
+        let color = if is_ghost {
+            g(GHOST_PURPLE)
+        } else if hidden {
+            Color32::from_gray(0x80)
+        } else if sovra > max_h {
+            g(Color32::RED)
+        } else {
+            crate::ui_style::text()
+        };
+        paint_person_cell(ui, cell, text, color);
+    }
+    if !note.is_empty() {
+        resp.on_hover_text(note.to_string());
+    }
+
+    if clicked {
+        if let Some(old) = state.editing.take() {
+            actions.push(commit_editing(app, &old));
+        }
+        let orig_worker = text.split('|').next().unwrap_or("").trim().to_string();
+        state.editing = Some(Editing {
+            proj: cx.proj,
+            dev: cx.dev,
+            week: cx.week,
+            row: cx.row,
+            buf: text.to_string(),
+            typed: text.to_string(),
+            just_opened: true,
+            had_focus: false,
+            paste_note: None,
+            orig_worker,
+            orig_note: note.to_string(),
+        });
+    }
+    if secondary {
+        if text.is_empty() {
+            // Cella vuota → inserimento multiplo (worker + ore + settimane).
+            if let Some(old) = state.editing.take() {
+                actions.push(commit_editing(app, &old));
+            }
+            state.bulk_fill = Some(BulkFill {
+                proj: cx.proj,
+                dev: cx.dev,
+                week: cx.week,
+                search: String::new(),
+                selected: HashSet::new(),
+                effort_text: String::new(),
+                weeks_text: "1".to_string(),
+            });
+            state.bulk_fill_was_open = false;
+        } else {
+            let wname = text.split('|').next().unwrap_or("").trim().to_string();
+            state.note_editor = Some(NoteEditing {
+                target: NoteTarget::Effort {
+                    proj: cx.proj,
+                    dev: cx.dev,
+                    week: cx.week,
+                    worker: wname,
+                },
+                text: note.to_string(),
+            });
         }
     }
 }

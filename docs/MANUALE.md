@@ -320,6 +320,33 @@ Ogni cella worker ha il formato **`NomeWorker|ore`** (es. `rossi|8`).
 
 Le celle prima dell'inizio o dopo la fine del progetto non sono editabili.
 
+### Inserimento multiplo (più worker, più settimane)
+**Tasto destro su una cella vuota** apre la finestra **Inserimento multiplo**, il
+modo rapido per riempire un blocco di effort senza scrivere cella per cella:
+
+- **elenco worker con spunta** (gli stessi worker della dialog dei filtri, cioè
+  quelli con *Mostra nella ricerca* attivo), con **campo di ricerca** e
+  **Select All** (il Select All agisce sui worker attualmente elencati, quindi
+  rispetta la ricerca);
+- **Ore a settimana**: le ore assegnate a **ciascun** worker in **ciascuna**
+  settimana (non un totale da distribuire);
+- **Per quante settimane**: il numero di settimane consecutive da riempire, a
+  partire dalla settimana della cella cliccata (**inclusa**) e andando **in
+  avanti**.
+
+Sotto ai campi c'è il riepilogo dell'operazione (`N worker × H h × S settimane`
+con la prima e l'ultima settimana). Il pulsante **Inserisci** è attivo solo se
+c'è almeno un worker selezionato e i valori sono validi; **Invio** nei campi
+numerici equivale a Inserisci, **Annulla**/**Esc** chiude senza scrivere.
+
+Note importanti:
+- se un worker selezionato ha **già** un effort in una delle settimane toccate,
+  il valore viene **sovrascritto** (la sua eventuale nota resta);
+- le settimane oltre la **fine della griglia** vengono scartate: la finestra
+  segnala quante settimane sono effettivamente disponibili;
+- il tasto destro su una cella **non vuota** continua a fare quello di sempre,
+  cioè aprire la **nota** della cella (vedi capitolo 9).
+
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,
 `Cmd/Ctrl+V`. Incollando una cella copiata dal programma si porta con sé anche la
@@ -365,7 +392,8 @@ Ci sono tre tipi di nota, tutte segnalate da un **triangolo giallo** nell'angolo
 dell'elemento:
 
 - **Nota di cella (effort)**: **tasto destro** su una cella non vuota → editor
-  della nota per quel worker/settimana.
+  della nota per quel worker/settimana. (Sulle celle **vuote** il tasto destro
+  apre invece l'**inserimento multiplo**, capitolo 8.)
 - **Nota del dev**: tasto destro sul nome del dev → **Nota Dev…**.
 - **Nota worker/settimana** (nel footer): tasto destro sulla cella del worker →
   **Note**.

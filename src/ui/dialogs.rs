@@ -81,6 +81,200 @@ pub(crate) fn note_editor_window(
     }
 }
 
+// ── Inserimento multiplo (tasto destro su cella vuota) ──────────────────────
+
+/// Dialog dell'inserimento multiplo: elenco worker con spunta (gli stessi del
+/// filtro, cioè `show_in_find`), ore settimanali e numero di settimane. Con OK
+/// scrive l'effort a tutti i worker selezionati per N settimane consecutive a
+/// partire dalla settimana della cella cliccata (inclusa), **sovrascrivendo**
+/// eventuali valori già presenti. Le settimane oltre la fine della griglia
+/// (`app.end_week`) vengono scartate: il conteggio effettivo è mostrato nella
+/// dialog.
+pub(crate) fn bulk_fill_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if state.bulk_fill.is_none() {
+        return;
+    }
+    let just_opened = !state.bulk_fill_was_open;
+    state.bulk_fill_was_open = true;
+
+    let bf = state.bulk_fill.as_mut().unwrap();
+    let dev_label = dev_name(app, bf.dev);
+    let start_label = primo_giorno_settimana_corrente(&days_to_local(bf.week))
+        .format("%y-%m-%d")
+        .to_string();
+
+    // Worker elencabili (come la dialog dei filtri) filtrati dalla ricerca.
+    let q = bf.search.trim().to_lowercase();
+    let listed: Vec<(WorkerId, String)> = app
+        .workers
+        .list()
+        .into_iter()
+        .filter(|(id, _)| app.workers.is_shown_in_find(*id))
+        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .collect();
+
+    // Valori inseriti: effort (ore/settimana) e numero di settimane.
+    let effort = bf.effort_text.trim().parse::<usize>().ok();
+    let weeks = bf
+        .weeks_text
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|n| *n > 0);
+    // Settimane realmente scrivibili (la griglia finisce a `end_week`).
+    let available =
+        ((app.end_week.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
+    let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
+
+    let mut open = true;
+    let mut confirm = false;
+    let mut cancel = false;
+
+    egui::Window::new("Inserimento multiplo")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(format!("{} — dalla settimana {}", dev_label, start_label))
+                    .color(text_dim()),
+            );
+            ui.separator();
+
+            // ── Worker ──
+            let sf = ui.add(
+                egui::TextEdit::singleline(&mut bf.search)
+                    .hint_text("Cerca worker…")
+                    .desired_width(240.0),
+            );
+            if just_opened {
+                sf.request_focus();
+            }
+            let currently_all =
+                !listed.is_empty() && listed.iter().all(|(id, _)| bf.selected.contains(id));
+            if let Some(all) = select_all_checkbox(ui, currently_all) {
+                for (id, _) in &listed {
+                    if all {
+                        bf.selected.insert(*id);
+                    } else {
+                        bf.selected.remove(id);
+                    }
+                }
+            }
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(240.0);
+                    if listed.is_empty() {
+                        ui.label("(nessun worker)");
+                    }
+                    for (id, name) in &listed {
+                        let mut sel = bf.selected.contains(id);
+                        if ui.checkbox(&mut sel, name).changed() {
+                            if sel {
+                                bf.selected.insert(*id);
+                            } else {
+                                bf.selected.remove(id);
+                            }
+                        }
+                    }
+                });
+
+            ui.separator();
+
+            // ── Ore e settimane ──
+            let mut submit = false;
+            ui.horizontal(|ui| {
+                ui.label("Ore a settimana:");
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut bf.effort_text)
+                        .desired_width(50.0)
+                        .hint_text("es. 8"),
+                );
+                submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Per quante settimane:");
+                let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
+                submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            });
+
+            // Riepilogo / avvisi.
+            if effort.is_none() && !bf.effort_text.trim().is_empty() {
+                ui.colored_label(Color32::RED, "Ore non valide (numero intero).");
+            }
+            if weeks.is_none() && !bf.weeks_text.trim().is_empty() {
+                ui.colored_label(Color32::RED, "Settimane non valide (almeno 1).");
+            }
+            if let (Some(e), Some(n)) = (effort, weeks) {
+                let last = bf.week + (effective.saturating_sub(1) * WEEK_STEP) as i32;
+                let last_label = primo_giorno_settimana_corrente(&days_to_local(last))
+                    .format("%y-%m-%d")
+                    .to_string();
+                ui.label(format!(
+                    "{} worker × {} h × {} settimane ({} → {})",
+                    bf.selected.len(),
+                    e,
+                    effective,
+                    start_label,
+                    last_label
+                ));
+                if effective < n {
+                    ui.colored_label(
+                        Color32::RED,
+                        format!(
+                            "Solo {} settimane disponibili fino alla fine della griglia.",
+                            effective
+                        ),
+                    );
+                }
+            }
+
+            let valid = !bf.selected.is_empty() && effort.is_some() && effective > 0;
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(valid, egui::Button::new("Inserisci"))
+                    .clicked()
+                {
+                    confirm = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+            if submit && valid {
+                confirm = true;
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                cancel = true;
+            }
+        });
+
+    if confirm {
+        let mut workers: Vec<WorkerId> = bf.selected.iter().copied().collect();
+        workers.sort_by_key(|w| w.0);
+        actions.push(Action::BulkFillEffort {
+            proj: bf.proj,
+            dev: bf.dev,
+            start: WeekId(bf.week as usize),
+            workers,
+            effort: Effort(effort.unwrap_or(0)),
+            weeks: effective,
+        });
+    }
+    if confirm || cancel || !open {
+        state.bulk_fill = None;
+        state.bulk_fill_was_open = false;
+    }
+}
+
 // ── Gestione dev del progetto (+Dev / −Dev) ─────────────────────────────────
 
 pub(crate) fn dev_manage_window(
