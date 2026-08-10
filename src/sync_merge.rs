@@ -345,4 +345,225 @@ mod tests {
             Effort(6)
         );
     }
+
+    // ── Intestazione del progetto (dati generali) ───────────────────────────
+
+    /// Se i "dati generali" cambiano da entrambe le parti in modo diverso è un
+    /// conflitto e vince la mia versione: il collega non deve poter sovrascrivere
+    /// in silenzio la tripletta o le date che sto modificando.
+    #[test]
+    fn header_changed_by_both_is_conflict_and_keeps_mine() {
+        let (base, pid, ..) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects.set_tripletta(pid, "MIA");
+        theirs.projects.set_tripletta(pid, "SUA");
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert_eq!(out.conflicts.len(), 1);
+        assert!(
+            out.conflicts[0].contains("dati generali"),
+            "il messaggio deve dire che il conflitto è sull'intestazione: {:?}",
+            out.conflicts[0]
+        );
+        assert_eq!(out.app.projects.get_tripletta(pid), "MIA");
+    }
+
+    /// Stessa modifica identica su entrambi i lati: nessun conflitto (non c'è
+    /// nulla da scegliere).
+    #[test]
+    fn identical_header_change_on_both_sides_is_not_a_conflict() {
+        let (base, pid, ..) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects.set_tripletta(pid, "UGUALE");
+        theirs.projects.set_tripletta(pid, "UGUALE");
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.conflicts.is_empty(), "{:?}", out.conflicts);
+        assert_eq!(out.app.projects.get_tripletta(pid), "UGUALE");
+    }
+
+    /// Il collega cambia l'intestazione, io un dev dello stesso progetto:
+    /// si tengono **entrambe** le modifiche, senza conflitto.
+    #[test]
+    fn colleague_header_and_my_dev_both_survive() {
+        let (base, pid, d1, _) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects
+            .add_effort(pid, d1, WeekId(20005), WorkerId(0), Effort(4));
+        theirs
+            .projects
+            .set_project_end_week(pid, Some(WeekId(30000)));
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.conflicts.is_empty(), "{:?}", out.conflicts);
+        assert_eq!(
+            out.app.projects.get_project_end_week(pid),
+            Some(WeekId(30000)),
+            "l'intestazione del collega deve essere applicata"
+        );
+        assert_eq!(
+            out.app
+                .projects
+                .get_single_dev(pid, d1)
+                .unwrap()
+                .get_effort_by_week(WeekId(20005)),
+            Effort(4),
+            "la mia modifica al dev non deve andare persa"
+        );
+    }
+
+    // ── Aggiunta / rimozione di progetti ────────────────────────────────────
+
+    /// Progetto cancellato solo dal collega: la cancellazione si propaga.
+    #[test]
+    fn project_deleted_only_by_colleague_is_removed() {
+        let (base, pid, ..) = base_app();
+        let mine = base.clone();
+        let mut theirs = base.clone();
+        theirs.projects.del(pid);
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.conflicts.is_empty(), "{:?}", out.conflicts);
+        assert!(out.app.projects.get(pid).is_none());
+    }
+
+    /// Io cancello il progetto, il collega lo modifica: conflitto, e vince la mia
+    /// versione — cioè la cancellazione.
+    #[test]
+    fn delete_vs_change_is_conflict_and_my_delete_wins() {
+        let (base, pid, d1, _) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects.del(pid);
+        theirs
+            .projects
+            .add_effort(pid, d1, WeekId(20006), WorkerId(0), Effort(9));
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert_eq!(out.conflicts.len(), 1);
+        assert!(
+            out.conflicts[0].contains("aggiunto/rimosso"),
+            "messaggio inatteso: {:?}",
+            out.conflicts[0]
+        );
+        assert!(
+            out.app.projects.get(pid).is_none(),
+            "vince la mia versione, che è la rimozione"
+        );
+    }
+
+    // ── Dev aggiunti / rimossi dentro lo stesso progetto ────────────────────
+
+    /// Il collega aggiunge un dev nuovo a un progetto che sto modificando io:
+    /// il dev nuovo arriva, il mio lavoro resta.
+    #[test]
+    fn dev_added_by_colleague_survives_my_change() {
+        let (base, pid, d1, _) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects
+            .add_effort(pid, d1, WeekId(20007), WorkerId(0), Effort(2));
+        let d3 = theirs.devs.add("QA");
+        theirs.projects.add_dev(pid, d3);
+        theirs
+            .projects
+            .add_effort(pid, d3, WeekId(20007), WorkerId(0), Effort(5));
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.conflicts.is_empty(), "{:?}", out.conflicts);
+        assert_eq!(
+            out.app
+                .projects
+                .get_single_dev(pid, d1)
+                .unwrap()
+                .get_effort_by_week(WeekId(20007)),
+            Effort(2)
+        );
+        assert!(
+            out.app.projects.get_single_dev(pid, d3).is_some(),
+            "il dev aggiunto dal collega deve esserci"
+        );
+    }
+
+    /// Il nome del dev in conflitto arriva dal risolutore passato dalla UI, e
+    /// l'etichetta del progetto è la tripletta.
+    #[test]
+    fn conflict_message_names_project_and_dev() {
+        let (base, pid, d1, _) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.projects
+            .add_effort(pid, d1, WeekId(20008), WorkerId(0), Effort(1));
+        theirs
+            .projects
+            .add_effort(pid, d1, WeekId(20008), WorkerId(0), Effort(2));
+
+        let names = |d: DevId| {
+            if d == d1 {
+                "Frontend".to_string()
+            } else {
+                "?".to_string()
+            }
+        };
+        let out = merge(&base, &mine, theirs, &names);
+        assert_eq!(out.conflicts.len(), 1);
+        assert!(
+            out.conflicts[0].contains("ABC") && out.conflicts[0].contains("Frontend"),
+            "il messaggio deve identificare progetto e dev: {:?}",
+            out.conflicts[0]
+        );
+    }
+
+    // ── Collezioni globali (worker, dev, milestone, categorie, holidays) ────
+
+    /// Le globali sono gestite in blocco: se le ho toccate io vincono le mie
+    /// **per intero**, quindi un worker aggiunto dal collega si perde. È una
+    /// semplificazione voluta — questo test la fissa perché non cambi per sbaglio.
+    #[test]
+    fn my_globals_win_wholesale_when_i_changed_them() {
+        let (base, ..) = base_app();
+        let mut mine = base.clone();
+        let mut theirs = base.clone();
+        mine.workers.add("Alice");
+        theirs.workers.add("Bob");
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        let names: Vec<String> = out.app.workers.list().into_iter().map(|(_, n)| n).collect();
+        assert!(names.iter().any(|n| n == "Alice"));
+        assert!(
+            !names.iter().any(|n| n == "Bob"),
+            "comportamento noto: le globali si prendono in blocco, non si fondono"
+        );
+    }
+
+    /// Se io non ho toccato le globali, arrivano quelle del collega.
+    #[test]
+    fn colleague_globals_are_taken_when_i_changed_none() {
+        let (base, ..) = base_app();
+        let mine = base.clone();
+        let mut theirs = base.clone();
+        theirs.workers.add("Bob");
+        let cat = theirs.categories.add("Manutenzione");
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.app.workers.list().into_iter().any(|(_, n)| n == "Bob"));
+        assert_eq!(out.app.categories.get_name(cat), Some("Manutenzione"));
+    }
+
+    /// Dopo il merge lo stato è ricalcolato: i progetti chiusi restano non
+    /// visibili (`enable = false`) come dopo un caricamento normale.
+    #[test]
+    fn merged_state_is_recomputed_closed_projects_stay_disabled() {
+        let (base, pid, ..) = base_app();
+        let mine = base.clone();
+        let mut theirs = base.clone();
+        theirs.projects.set_closed(pid, true);
+
+        let out = merge(&base, &mine, theirs, &no_names);
+        assert!(out.app.projects.is_closed(pid));
+        assert!(!out.app.projects.get_enable(&pid).0);
+    }
 }

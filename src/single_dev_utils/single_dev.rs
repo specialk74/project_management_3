@@ -416,4 +416,153 @@ mod tests {
             ]
         );
     }
+
+    // ── Blocco contiguo di settimane (usato da «Sposta») ────────────────────
+
+    /// Il blocco si ferma ai buchi: una settimana senza effort spezza la serie.
+    #[test]
+    fn contiguous_block_stops_at_gaps() {
+        let mut sd = SingleDev::new();
+        let w = WorkerId(1);
+        for wk in [700, 707, 714, 728, 735] {
+            sd.add(WeekId(wk), w, Effort(8));
+        }
+        // 721 manca → due blocchi distinti.
+        assert_eq!(
+            sd.contiguous_block(WeekId(707)),
+            vec![WeekId(700), WeekId(707), WeekId(714)]
+        );
+        assert_eq!(
+            sd.contiguous_block(WeekId(735)),
+            vec![WeekId(728), WeekId(735)]
+        );
+    }
+
+    /// Una settimana con voce ma effort 0 non fa parte di alcun blocco: qui conta
+    /// il lavoro, non l'assegnazione.
+    #[test]
+    fn contiguous_block_ignores_zero_effort_weeks() {
+        let mut sd = SingleDev::new();
+        let w = WorkerId(1);
+        sd.add(WeekId(700), w, Effort(8));
+        sd.add(WeekId(707), w, Effort(0));
+        sd.add(WeekId(714), w, Effort(8));
+
+        assert_eq!(sd.contiguous_block(WeekId(700)), vec![WeekId(700)]);
+        assert!(
+            sd.contiguous_block(WeekId(707)).is_empty(),
+            "una settimana a zero non è il centro di nessun blocco"
+        );
+    }
+
+    // ── Spostamento delle settimane (Sposta blocco / dev) ───────────────────
+
+    /// Spostamento semplice in avanti: le settimane cambiano chiave, l'effort no.
+    #[test]
+    fn shift_weeks_moves_effort_forward() {
+        let mut sd = SingleDev::new();
+        let w = WorkerId(1);
+        sd.add(WeekId(700), w, Effort(8));
+        sd.add(WeekId(707), w, Effort(4));
+
+        sd.shift_weeks(&[WeekId(700), WeekId(707)], 14, None, None);
+        assert_eq!(sd.get_weeks(), vec![WeekId(714), WeekId(721)]);
+        assert_eq!(sd.get_effort_by_week(WeekId(714)), Effort(8));
+        assert_eq!(sd.get_effort_by_week(WeekId(721)), Effort(4));
+        assert_eq!(sd.get_effort_tot(), Effort(12), "nulla si crea né si perde");
+    }
+
+    /// Chi finisce fuori dai limiti della griglia viene **perso** (comportamento
+    /// voluto: la settimana non esiste nell'asse visibile).
+    #[test]
+    fn shift_weeks_drops_what_falls_outside_the_bounds() {
+        let mut sd = SingleDev::new();
+        let w = WorkerId(1);
+        sd.add(WeekId(700), w, Effort(8));
+        sd.add(WeekId(707), w, Effort(4));
+        sd.add(WeekId(714), w, Effort(2));
+
+        // Limite destro a 714: spostando di +7 l'ultima esce.
+        sd.shift_weeks(
+            &[WeekId(700), WeekId(707), WeekId(714)],
+            7,
+            Some(700),
+            Some(714),
+        );
+        assert_eq!(sd.get_weeks(), vec![WeekId(707), WeekId(714)]);
+        assert_eq!(sd.get_effort_tot(), Effort(12), "persa solo l'ultima");
+
+        // Idem a sinistra: sotto `trunc_start` si perde.
+        sd.shift_weeks(&[WeekId(707)], -7, Some(707), None);
+        assert_eq!(sd.get_weeks(), vec![WeekId(714)]);
+    }
+
+    /// Una settimana non può finire prima dello zero, anche senza limiti.
+    #[test]
+    fn shift_weeks_never_goes_negative() {
+        let mut sd = SingleDev::new();
+        sd.add(WeekId(7), WorkerId(1), Effort(8));
+        sd.shift_weeks(&[WeekId(7)], -14, None, None);
+        assert!(sd.get_weeks().is_empty());
+    }
+
+    /// Se lo spostamento fa collidere due settimane, i worker si **uniscono**
+    /// nella settimana di destinazione invece di sovrascriversi.
+    #[test]
+    fn shift_weeks_merges_workers_on_collision() {
+        let mut sd = SingleDev::new();
+        let a = WorkerId(1);
+        let b = WorkerId(2);
+        sd.add(WeekId(700), a, Effort(8));
+        sd.add(WeekId(707), b, Effort(4));
+
+        // Sposto solo la prima sopra la seconda.
+        sd.shift_weeks(&[WeekId(700)], 7, None, None);
+        assert_eq!(sd.get_weeks(), vec![WeekId(707)]);
+        let week = sd.get_all(WeekId(707)).unwrap();
+        assert_eq!(week.num_workers(), 2, "i due worker devono convivere");
+        assert_eq!(sd.get_effort_by_week(WeekId(707)), Effort(12));
+    }
+
+    // ── Pianificato vs assegnato ───────────────────────────────────────────
+
+    /// `planned_effort` (stima del dev) e `get_effort_tot` (somma delle celle)
+    /// sono grandezze **indipendenti**: la seconda può superare la prima, ed è
+    /// esattamente il caso di sforamento che la % presunta deve mostrare.
+    #[test]
+    fn planned_and_assigned_effort_are_independent() {
+        let mut sd = SingleDev::new();
+        sd.set_effort(Effort(40));
+        sd.add(WeekId(700), WorkerId(1), Effort(30));
+        sd.add(WeekId(707), WorkerId(1), Effort(25));
+
+        assert_eq!(sd.planned_effort(), Effort(40));
+        assert_eq!(sd.get_effort_tot(), Effort(55));
+        assert_eq!(sd.effort_up_to(WeekId(700)), Effort(30));
+    }
+
+    /// `max_num_efforts` è il numero di righe che il dev occupa nella griglia:
+    /// il massimo di worker presenti in una singola settimana.
+    #[test]
+    fn max_num_efforts_is_the_busiest_week() {
+        let mut sd = SingleDev::new();
+        sd.add(WeekId(700), WorkerId(1), Effort(8));
+        sd.add(WeekId(707), WorkerId(1), Effort(8));
+        sd.add(WeekId(707), WorkerId(2), Effort(8));
+        sd.add(WeekId(707), WorkerId(3), Effort(8));
+
+        assert_eq!(sd.max_num_efforts(), 3);
+    }
+
+    /// `effort_span` guarda solo le settimane con effort > 0: è la barra Gantt.
+    #[test]
+    fn effort_span_ignores_empty_weeks() {
+        let mut sd = SingleDev::new();
+        assert_eq!(sd.effort_span(), None);
+        sd.add(WeekId(700), WorkerId(1), Effort(0));
+        assert_eq!(sd.effort_span(), None, "solo voci a zero → nessuna barra");
+        sd.add(WeekId(707), WorkerId(1), Effort(8));
+        sd.add(WeekId(721), WorkerId(1), Effort(8));
+        assert_eq!(sd.effort_span(), Some((WeekId(707), WeekId(721))));
+    }
 }

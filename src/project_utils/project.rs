@@ -837,4 +837,52 @@ mod tests {
         // Nessun pianificato → None.
         assert_eq!(Project::new("v").presumed_progress_pct(WeekId(W2)), None);
     }
+
+    /// Lo sforamento di budget **deve** poter superare il 100%: è il segnale che
+    /// il progetto sta consumando più di quanto pianificato (per questo la
+    /// presunta è `u32` e non `u8`, dove 260 non entrerebbe).
+    #[test]
+    fn presumed_progress_can_exceed_one_hundred_percent() {
+        let mut p = Project::new("sforato");
+        let a = DevId(1);
+        p.add_dev_effort(a, Effort(50));
+        p.add_effort(a, WeekId(W0), WorkerId(1), Effort(80));
+        p.add_effort(a, WeekId(W1), WorkerId(1), Effort(50));
+
+        assert_eq!(p.presumed_progress_pct(WeekId(W1)), Some(260));
+    }
+
+    /// Un dev con pianificato > 0 ma **senza** effort pesa nel denominatore:
+    /// avere del lavoro previsto e non averlo ancora fatto abbassa la presunta.
+    #[test]
+    fn planned_dev_without_effort_still_counts_in_the_denominator() {
+        let mut p = Project::new("t");
+        let (a, b) = (DevId(1), DevId(2));
+        p.add_dev_effort(a, Effort(100));
+        p.add_dev_effort(b, Effort(100)); // pianificato ma mai lavorato
+        p.add_effort(a, WeekId(W0), WorkerId(1), Effort(100));
+
+        assert_eq!(p.presumed_progress_pct(WeekId(W1)), Some(50));
+    }
+
+    /// `progress_breakdown` è la sorgente unica dei numeri mostrati nel tooltip
+    /// della griglia: `(usato, pianificato, Σ pianificato·dichiarata)`, e le due
+    /// percentuali ne sono derivate.
+    #[test]
+    fn progress_breakdown_exposes_the_numbers_behind_both_percentages() {
+        let mut p = Project::new("t");
+        let (a, b) = (DevId(1), DevId(2));
+        p.add_dev_effort(a, Effort(200));
+        p.set_dev_declared_pct(a, WeekId(W0), 60);
+        p.add_dev_effort(b, Effort(40));
+        p.set_dev_declared_pct(b, WeekId(W0), 90);
+        p.add_effort(a, WeekId(W0), WorkerId(1), Effort(120));
+
+        let (used, planned, weighted) = p.progress_breakdown(WeekId(W1)).unwrap();
+        assert_eq!((used, planned), (120, 240));
+        assert_eq!(weighted, 200 * 60 + 40 * 90);
+        // Le due percentuali pubbliche coincidono con questi numeri.
+        assert_eq!(p.presumed_progress_pct(WeekId(W1)), Some(50)); // 120/240
+        assert_eq!(p.progress_pct(), Some(65)); // 15600/240
+    }
 }

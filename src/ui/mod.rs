@@ -2968,6 +2968,292 @@ mod tests {
         assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
     }
 
+    // ── Asse delle colonne (header + griglia + footer condividono questo) ───
+
+    /// Costruisce un'app la cui griglia va da `from` a `to` (date locali), così
+    /// il confine d'anno cade in un punto noto.
+    fn app_spanning(from: (i32, u32, u32), to: (i32, u32, u32)) -> App {
+        let day = |(y, m, d): (i32, u32, u32)| {
+            local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()) as usize
+        };
+        let mut app = App::new();
+        app.start_week = WeekId(day(from));
+        app.end_week = WeekId(day(to));
+        app
+    }
+
+    /// Settimane di una colonna (vuoto per la colonna di confine).
+    fn col_weeks(c: &Col) -> Vec<i32> {
+        match c {
+            Col::Weeks(ws) => ws.clone(),
+            Col::YearEnd(_) => Vec::new(),
+        }
+    }
+
+    /// Senza zoom ogni colonna è **una** settimana, nell'ordine di `weeks_vec`.
+    #[test]
+    fn columns_at_zoom_zero_are_single_weeks() {
+        let app = app_spanning((2026, 1, 5), (2026, 2, 9)); // 6 lunedì
+        let cols = columns_vec(&app, 0);
+        assert_eq!(cols.len(), 6);
+        assert!(cols.iter().all(|c| col_weeks(c).len() == 1));
+        // Le settimane sono consecutive di 7 giorni.
+        let first = col_weeks(&cols[0])[0];
+        let last = col_weeks(&cols[5])[0];
+        assert_eq!(last - first, 5 * WEEK_STEP as i32);
+    }
+
+    /// Lo zoom raggruppa 2 (livello 1) o 4 (livello 2) settimane per colonna.
+    #[test]
+    fn zoom_groups_weeks_per_column() {
+        let app = app_spanning((2026, 1, 5), (2026, 2, 23)); // 8 settimane
+        assert_eq!(columns_vec(&app, 0).len(), 8);
+
+        let z1 = columns_vec(&app, 1);
+        assert_eq!(z1.len(), 4);
+        assert!(z1.iter().all(|c| col_weeks(c).len() == 2));
+
+        let z2 = columns_vec(&app, 2);
+        assert_eq!(z2.len(), 2);
+        assert!(z2.iter().all(|c| col_weeks(c).len() == 4));
+
+        // Qualunque sia lo zoom, nessuna settimana si perde o si duplica.
+        for level in [0, 1, 2] {
+            let all: Vec<i32> = columns_vec(&app, level)
+                .iter()
+                .flat_map(col_weeks)
+                .collect();
+            assert_eq!(all.len(), 8, "livello {level}");
+        }
+    }
+
+    /// A cavallo di fine anno viene inserita la colonna gialla di confine, e
+    /// **nessun gruppo dello zoom attraversa il confine**: dicembre e gennaio
+    /// non finiscono mai nella stessa colonna.
+    #[test]
+    fn year_boundary_splits_groups_and_inserts_a_canary_column() {
+        // Dal 30/11/2026 al 25/01/2027: il confine 2026→2027 cade in mezzo.
+        let app = app_spanning((2026, 11, 30), (2027, 1, 25));
+        let cols = columns_vec(&app, 2); // gruppi da 4
+
+        let boundaries: Vec<&Col> = cols
+            .iter()
+            .filter(|c| matches!(c, Col::YearEnd(_)))
+            .collect();
+        assert_eq!(boundaries.len(), 1, "un solo confine d'anno");
+        assert!(matches!(boundaries[0], Col::YearEnd(2026)));
+
+        // Ogni gruppo sta tutto dentro un anno solo.
+        for c in &cols {
+            let years: HashSet<i32> = col_weeks(c)
+                .iter()
+                .map(|w| days_to_local(*w).year())
+                .collect();
+            assert!(
+                years.len() <= 1,
+                "un gruppo non può attraversare il confine d'anno: {years:?}"
+            );
+        }
+    }
+
+    /// La colonna di confine è più stretta di una settimana, e gli offset sono
+    /// coerenti con la larghezza totale: è ciò che tiene allineati header,
+    /// griglia e footer, che scorrono insieme.
+    #[test]
+    fn column_offsets_are_consistent_with_total_width() {
+        let app = app_spanning((2026, 11, 30), (2027, 1, 25));
+        let cols = columns_vec(&app, 0);
+        let cw = COL_W;
+
+        // L'offset dell'ultima colonna più la sua larghezza = larghezza totale.
+        let last = cols.len() - 1;
+        assert_eq!(
+            col_x_offset(&cols, last, cw) + col_width(&cols[last], cw),
+            cols_width(&cols, cw)
+        );
+        // Il primo offset è zero e gli offset crescono monotonamente.
+        assert_eq!(col_x_offset(&cols, 0, cw), 0.0);
+        for i in 1..cols.len() {
+            assert!(col_x_offset(&cols, i, cw) > col_x_offset(&cols, i - 1, cw));
+        }
+        // La colonna di confine non è larga come una settimana.
+        let boundary = cols.iter().find(|c| matches!(c, Col::YearEnd(_))).unwrap();
+        assert_ne!(col_width(boundary, cw), cw);
+    }
+
+    /// Lo scroll che centra una colonna non va mai a sinistra dell'origine
+    /// (le prime colonne restano semplicemente attaccate al bordo).
+    #[test]
+    fn centered_scroll_never_goes_negative() {
+        let app = app_spanning((2026, 1, 5), (2026, 6, 29)); // ~26 settimane
+        let cols = columns_vec(&app, 0);
+        let visible = 800.0;
+
+        // Prima colonna: vorrebbe un offset negativo → resta a 0.
+        assert_eq!(centered_scroll_x(&cols, 0, COL_W, visible), 0.0);
+        // Colonna lontana: centrata nella vista.
+        let idx = cols.len() - 1;
+        let x = centered_scroll_x(&cols, idx, COL_W, visible);
+        assert_eq!(
+            x,
+            col_x_offset(&cols, idx, COL_W) + COL_W / 2.0 - visible / 2.0
+        );
+        // Una vista larghissima non lascia nulla da scorrere.
+        assert_eq!(centered_scroll_x(&cols, idx, COL_W, 100_000.0), 0.0);
+    }
+
+    // ── Altezze delle righe (colonna sinistra e griglia usano la stessa) ────
+
+    /// L'altezza del blocco di un dev dipende dalla modalità: compatta = 1 riga,
+    /// mergiata = 2 (cumulativo + somma), normale = una riga per worker + il
+    /// cumulativo. Il bordo è contato due volte (sopra e sotto).
+    #[test]
+    fn dev_block_height_per_mode() {
+        // Normale: 3 worker → 3 righe + 1 cumulativo.
+        assert_eq!(dev_inner_h(3, false, false), 4.0 * ROW_H);
+        // Compatta: sempre una riga (la barra), quanti che siano i worker.
+        assert_eq!(dev_inner_h(3, true, false), ROW_H);
+        // Mergiata (zoom): cumulativo + somma.
+        assert_eq!(dev_inner_h(3, false, true), 2.0 * ROW_H);
+        // La compatta vince sulla mergiata.
+        assert_eq!(dev_inner_h(3, true, true), ROW_H);
+        // Il blocco aggiunge il bordo sopra e sotto.
+        assert_eq!(
+            dev_block_height(3, false, false),
+            2.0 * DEV_BORDER + 4.0 * ROW_H
+        );
+    }
+
+    /// `project_layout` è l'unica sorgente di verità delle altezze: quello che
+    /// restituisce deve quadrare con `total_content_h`, altrimenti la colonna
+    /// sinistra e la griglia scorrerebbero disallineate.
+    fn layout_in_headless_ui(
+        app: &App,
+        filter: &Filter,
+        dev_filter: &DevFilter,
+        compact: bool,
+    ) -> Vec<ProjLayout> {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(1200.0, 800.0),
+        ));
+        let out = std::cell::RefCell::new(Vec::new());
+        let _ = ctx.run(input, |ctx| {
+            egui::Window::new("t").show(ctx, |ui| {
+                *out.borrow_mut() = project_layout(
+                    ui,
+                    app,
+                    filter,
+                    false,
+                    dev_filter,
+                    ProjectViewMode::Open,
+                    compact,
+                    false,
+                );
+            });
+        });
+        out.into_inner()
+    }
+
+    /// App di prova: due progetti aperti, il primo con due dev.
+    fn layout_app() -> (App, ProjectId, ProjectId, DevId, DevId) {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let front = app.devs.add("Frontend");
+        let back = app.devs.add("Backend");
+        let wk = app.start_week;
+
+        let p1 = app.projects.add("Primo", Some("AAA"), Some(wk));
+        app.projects.add_dev(p1, front);
+        app.projects.add_dev(p1, back);
+        app.projects.add_effort(p1, front, wk, alice, Effort(8));
+        app.projects.add_effort(p1, front, wk, bob, Effort(4));
+        app.projects.add_effort(p1, back, wk, bob, Effort(8));
+
+        let p2 = app.projects.add("Secondo", Some("BBB"), Some(wk));
+        app.projects.add_dev(p2, front);
+        app.projects.add_effort(p2, front, wk, alice, Effort(8));
+
+        (app, p1, p2, front, back)
+    }
+
+    #[test]
+    fn project_layout_heights_add_up_to_the_scrollable_content() {
+        let (app, ..) = layout_app();
+        let layout = layout_in_headless_ui(&app, &None, &None, false);
+        assert_eq!(layout.len(), 2);
+
+        let expected: f32 = DEV_BORDER + layout.iter().map(|p| p.proj_h + DEV_BORDER).sum::<f32>();
+        assert_eq!(total_content_h(&layout), expected);
+
+        // L'altezza di un progetto copre sempre i suoi blocchi dev.
+        for p in &layout {
+            let devs: f32 = p
+                .devs
+                .iter()
+                .map(|(_, m)| dev_block_height(*m, false, false))
+                .sum();
+            assert!(
+                p.proj_h >= devs,
+                "il progetto deve contenere i suoi dev: {} < {devs}",
+                p.proj_h
+            );
+        }
+    }
+
+    /// Con un filtro attivo l'intestazione del progetto si riduce a una riga
+    /// (solo tripletta), così le righe filtrate non trascinano spazio inutile.
+    #[test]
+    fn active_filter_shrinks_the_project_header() {
+        let (app, ..) = layout_app();
+        let unfiltered = layout_in_headless_ui(&app, &None, &None, false);
+
+        let only_alice: Filter = Some(["Alice".to_string()].into_iter().collect());
+        let filtered = layout_in_headless_ui(&app, &only_alice, &None, false);
+
+        // Alice lavora solo su Frontend: nel primo progetto resta un dev solo.
+        let p1_before = &unfiltered[0];
+        let p1_after = &filtered[0];
+        assert_eq!(p1_before.devs.len(), 2);
+        assert_eq!(p1_after.devs.len(), 1);
+        assert!(
+            p1_after.proj_h < p1_before.proj_h,
+            "l'intestazione compressa deve far calare l'altezza: {} !< {}",
+            p1_after.proj_h,
+            p1_before.proj_h
+        );
+    }
+
+    /// Un progetto senza dev corrispondenti al filtro sparisce del tutto.
+    #[test]
+    fn projects_without_matching_workers_disappear() {
+        let (app, ..) = layout_app();
+        let only_bob: Filter = Some(["Bob".to_string()].into_iter().collect());
+        let layout = layout_in_headless_ui(&app, &only_bob, &None, false);
+        // Bob è solo nel primo progetto → il secondo non compare.
+        assert_eq!(layout.len(), 1);
+        assert_eq!(layout[0].name, "Primo");
+    }
+
+    /// La vista compatta abbassa ogni progetto: un blocco dev è una riga sola.
+    #[test]
+    fn compact_view_is_shorter_than_the_normal_one() {
+        let (app, ..) = layout_app();
+        let normal = layout_in_headless_ui(&app, &None, &None, false);
+        let compact = layout_in_headless_ui(&app, &None, &None, true);
+
+        assert_eq!(normal.len(), compact.len());
+        assert!(
+            total_content_h(&compact) < total_content_h(&normal),
+            "compatta {} !< normale {}",
+            total_content_h(&compact),
+            total_content_h(&normal)
+        );
+    }
+
     // ── Notifiche in-app (toast) ────────────────────────────────────────────
 
     #[test]
