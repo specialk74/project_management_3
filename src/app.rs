@@ -63,19 +63,16 @@ impl App {
         }
     }
 
-    pub fn save(&self, path: &str) {
-        let content = match ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Serializzazione RON fallita: {e}");
-                return;
-            }
-        };
+    /// Salva su `path` (backup a rotazione + scrittura atomica). Ritorna il
+    /// messaggio d'errore da mostrare all'utente se qualcosa va storto: il
+    /// chiamante lo riporta come notifica in-app, invece di perderlo su stderr.
+    pub fn save(&self, path: &str) -> Result<(), String> {
+        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(|e| format!("Serializzazione RON fallita: {e}"))?;
         // Prima di sovrascrivere, conserva la versione attuale come backup.
         Self::rotate_backups(path, BACKUP_COUNT);
-        if let Err(e) = Self::write_atomic(path, content.as_bytes()) {
-            eprintln!("Errore salvataggio '{path}': {e}");
-        }
+        Self::write_atomic(path, content.as_bytes())
+            .map_err(|e| format!("Errore salvataggio '{path}': {e}"))
     }
 
     /// Backup a rotazione: `<path>.bak1` (più recente) … `<path>.bakN` (più
@@ -275,7 +272,7 @@ mod tests {
         let path_str = path.to_string_lossy().to_string();
 
         let app = App::new();
-        app.save(&path_str);
+        app.save(&path_str).expect("il salvataggio deve riuscire");
 
         // Il file finale esiste, è completo e ricaricabile identico.
         let reloaded = App::load(&path_str).expect("il file salvato deve essere leggibile");
@@ -300,7 +297,8 @@ mod tests {
         let _ = fs::remove_file(&p);
 
         let mut app = App::new();
-        app.save(&p); // primo salvataggio: il file non esisteva → nessun backup
+        // primo salvataggio: il file non esisteva → nessun backup
+        app.save(&p).expect("il salvataggio deve riuscire");
         let first = fs::read_to_string(&p).unwrap();
         let bak1 = format!("{p}.bak1");
         assert!(
@@ -309,7 +307,8 @@ mod tests {
         );
 
         app.workers.add("mario");
-        app.save(&p); // ora il file esisteva → bak1 = versione precedente
+        // ora il file esisteva → bak1 = versione precedente
+        app.save(&p).expect("il salvataggio deve riuscire");
         assert!(Path::new(&bak1).exists());
         assert_eq!(fs::read_to_string(&bak1).unwrap(), first);
 

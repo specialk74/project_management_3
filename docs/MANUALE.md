@@ -834,8 +834,29 @@ produce pagina.
 - **Rilevamento modifiche esterne**: se il file `.ron` viene cambiato da un altro
   programma mentre è aperto, l'app lo segnala. Puoi scegliere di **mantenere le
   tue** modifiche o **ricaricare** (scartando le tue). In alcuni casi
-  l'aggiornamento esterno viene applicato automaticamente con notifica in alto a
-  destra (chiudibile con ✕).
+  l'aggiornamento esterno viene applicato automaticamente, con una notifica
+  (vedi sotto).
+
+### Notifiche in-app
+
+In **basso a destra** compaiono le notifiche: l'esito delle operazioni e, cosa più
+importante, gli **errori** che prima restavano invisibili (salvataggio non riuscito,
+export non scritto, `git push` fallito). Ogni notifica ha un'icona per gravità:
+
+| Icona | Significato | Durata |
+|---|---|---|
+| ✔ | Operazione riuscita (file salvato, PDF/SVG/minuta scritti) | pochi secondi |
+| ℹ | Informazione (il file è stato aggiornato o unito da un collega) | ~10 secondi |
+| ⚠ | Niente da fare (es. «Nessun progetto visibile: PDF non creato») | ~15 secondi |
+| ⛔ | **Errore** | **resta finché non la chiudi** con ✕ |
+
+Gli errori non spariscono da soli, proprio per non passare inosservati; le altre si
+possono comunque chiudere subito con la ✕. Un errore che si ripete (per esempio un
+`git push` che fallisce a ogni salvataggio automatico) **non impila copie**: la
+notifica esistente viene solo rinfrescata.
+
+Se il salvataggio **in uscita** fallisce, il programma **non si chiude**: mostra
+l'errore e resta aperto, così le modifiche non vanno perse.
 
 ---
 
@@ -887,6 +908,8 @@ produce pagina.
 - **Triangolo giallo**: presenza di una nota (cella, dev o worker/settimana).
 - **Triangolo azzurro (alto-sx) / rosso (basso-sx)** nel footer: ferie / malattia.
 - **Testo grigio** in cella: worker nascosto nel footer.
+- **Riquadro in basso a destra**: notifica (✔ riuscito, ℹ informazione,
+  ⚠ avviso, ⛔ errore — vedi §17).
 - **Sfondo rosso** su residuo/valore: sotto zero o oltre il massimo.
 - **Riga cumulativa** dal verde al rosso: avanzamento verso il pianificato.
 

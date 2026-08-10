@@ -338,18 +338,6 @@ pub(crate) fn toolbar(
                 .on_hover_text(&state.current_file);
             ui.separator();
             ui.weak(format!("v{}", env!("CARGO_PKG_VERSION")));
-
-            // Notifica di aggiornamento esterno applicato in automatico.
-            if let Some(msg) = state.external_notice.clone() {
-                ui.separator();
-                if ui.small_button("✕").on_hover_text("Nascondi").clicked() {
-                    state.external_notice = None;
-                }
-                ui.colored_label(
-                    g(egui::Color32::from_rgb(90, 200, 250)),
-                    egui::RichText::new(msg).strong(),
-                );
-            }
         });
     });
 }

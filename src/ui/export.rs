@@ -626,20 +626,25 @@ mod tests {
 
         let p1 = app.projects.add("P1", Some("AAA"), Some(cur));
         app.projects.add_dev(p1, front);
-        app.projects
-            .set_notes(p1, HashMap::from([(cur, "Riunione settimanale".to_string())]));
+        app.projects.set_notes(
+            p1,
+            HashMap::from([(cur, "Riunione settimanale".to_string())]),
+        );
         app.projects.add_effort(p1, front, cur, alice, Effort(8));
         app.projects.add_effort(p1, front, cur, bob, Effort(4));
         app.projects.add_effort(p1, front, prev, alice, Effort(8));
-        app.projects.set_note(p1, front, cur, alice, "serve conferma API");
-        app.projects.set_note(p1, front, cur, bob, "blocco su migrazione");
+        app.projects
+            .set_note(p1, front, cur, alice, "serve conferma API");
+        app.projects
+            .set_note(p1, front, cur, bob, "blocco su migrazione");
         app.projects
             .set_note(p1, front, prev, alice, "ambiente di test giù");
 
         let p2 = app.projects.add("P2", Some("BBB"), Some(cur));
         app.projects.add_dev(p2, front);
         app.projects.add_effort(p2, front, cur, bob, Effort(8));
-        app.projects.set_note(p2, front, cur, bob, "solo nota di cella");
+        app.projects
+            .set_note(p2, front, cur, bob, "solo nota di cella");
 
         (app, p1, p2)
     }
@@ -678,7 +683,9 @@ mod tests {
 
         // Con le note worker compare, con il solo elenco (nessun testo di progetto).
         let on = build_minuta(&app, &[p1], false, true, true);
-        assert!(on.contains(&format!("**{prev_label}**\n\n- **Alice** (Frontend): ambiente")));
+        assert!(on.contains(&format!(
+            "**{prev_label}**\n\n- **Alice** (Frontend): ambiente"
+        )));
 
         // «Solo settimana corrente» continua a tagliarla via.
         let cur_only = build_minuta(&app, &[p1], true, true, true);

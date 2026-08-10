@@ -16,10 +16,30 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Evita sync git sovrapposti: ne gira al massimo uno alla volta.
 static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Ultimo errore di sincronizzazione, in attesa di essere mostrato nella UI.
+/// Serve perché `run` gira su un thread di background: non può toccare lo stato
+/// della UI, quindi lascia qui il messaggio e la UI lo preleva con [`take_error`].
+static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+/// Registra un errore: su stderr (come prima) **e** nella casella per la UI.
+fn report(msg: String) {
+    eprintln!("{msg}");
+    if let Ok(mut slot) = LAST_ERROR.lock() {
+        *slot = Some(msg);
+    }
+}
+
+/// Preleva (azzerandolo) l'ultimo errore di sincronizzazione git. La UI la chiama
+/// una volta per frame e trasforma il messaggio in una notifica.
+pub fn take_error() -> Option<String> {
+    LAST_ERROR.lock().ok().and_then(|mut slot| slot.take())
+}
 
 /// Rimette `BUSY` a `false` all'uscita dallo scope (anche in caso di panico).
 struct BusyGuard;
@@ -93,7 +113,7 @@ fn run(dir: &Path, filename: &OsStr) {
 
     // Stage del solo file dati (non tocchiamo altri file, es. i .bak).
     if git().arg("add").arg("--").arg(filename).status().is_err() {
-        eprintln!("git: 'add' non eseguibile");
+        report("git: 'add' non eseguibile".to_string());
         return;
     }
 
@@ -120,8 +140,8 @@ fn run(dir: &Path, filename: &OsStr) {
     // Push best-effort.
     match git().arg("push").status() {
         Ok(s) if s.success() => {}
-        Ok(_) => eprintln!("git: 'push' non riuscito (remoto/credenziali/rete?)"),
-        Err(e) => eprintln!("git: 'push' non eseguibile: {e}"),
+        Ok(_) => report("git: 'push' non riuscito (remoto/credenziali/rete?)".to_string()),
+        Err(e) => report(format!("git: 'push' non eseguibile: {e}")),
     }
 }
 

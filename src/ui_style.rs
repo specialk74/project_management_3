@@ -170,6 +170,49 @@ pub fn zero_yellow() -> Color32 {
     }
 }
 
+// Colori "semantici" delle notifiche in-app (toast), stessa logica: chiari sul
+// tema scuro, scuri sul tema chiaro.
+
+/// Rosso "errore".
+#[inline]
+pub fn error_red() -> Color32 {
+    if is_dark() {
+        Color32::from_rgb(0xff, 0x6b, 0x6b)
+    } else {
+        Color32::from_rgb(0xb0, 0x1c, 0x1c)
+    }
+}
+
+/// Ambra "attenzione".
+#[inline]
+pub fn warn_amber() -> Color32 {
+    if is_dark() {
+        Color32::from_rgb(0xff, 0xc1, 0x07)
+    } else {
+        Color32::from_rgb(0x8a, 0x5a, 0x00)
+    }
+}
+
+/// Azzurro "informazione".
+#[inline]
+pub fn info_blue() -> Color32 {
+    if is_dark() {
+        Color32::from_rgb(0x5a, 0xc8, 0xfa)
+    } else {
+        Color32::from_rgb(0x0b, 0x5f, 0x8a)
+    }
+}
+
+/// Sfondo del riquadro di una notifica.
+#[inline]
+pub fn toast_bg() -> Color32 {
+    if is_dark() {
+        Color32::from_rgb(0x2a, 0x2a, 0x2a)
+    } else {
+        Color32::from_rgb(0xf4, 0xf4, 0xf4)
+    }
+}
+
 /// Marrone "override a zero".
 #[inline]
 pub fn override_brown() -> Color32 {

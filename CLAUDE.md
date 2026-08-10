@@ -57,7 +57,7 @@ references; the UI lives entirely in the `src/ui/` module.
     `*_window` fns + `move`/`popup` helpers), `export.rs` (PDF/SVG/minuta dialogs +
     `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
     `saturation.rs` (worker-saturation dashboard), `filters.rs` (dialog unica dei
-    filtri Workers/Progetti/Dev).
+    filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
     a column lives in a **private** helper of `grid.rs` (not re-exported) —
     `draw_year_end_cell`, `milestones_in_group` + `draw_milestone_strip` (the milestone /
@@ -220,6 +220,35 @@ called from the windows block in `ui()`. Examples: `dev_manage_window`
 (`state.show_help`), `filters_window` (dialog unica dei filtri), `milestone_manager_window`,
 `move_dialog_window`, `popup_window` (single `Popup` enum for tripletta/start/end/
 category/worker-max/etc.).
+
+### Notifiche in-app (toast) — `src/ui/toasts.rs`
+
+L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia gli
+`eprintln!` (invisibili) sia il vecchio `UiState.external_notice` in toolbar.
+
+- Tipi in `mod.rs`: `ToastLevel { Info, Success, Warning, Error }` (con `icon()`,
+  `color()`, `ttl()`) e `Toast { level, text, born: Instant }`; stato
+  `UiState.toasts: Vec<Toast>`, cap `MAX_TOASTS` (5, escono le più vecchie).
+- API: `state.toast_ok / toast_info / toast_warn / toast_error` (e `toast(level, …)`).
+  Un testo **già presente** non crea un duplicato: rinfresca `born` (un `git push`
+  che fallisce a ogni autosave non impila copie).
+- Solo `Error` è **sticky** (`ttl() == None`, si chiude con ✕); gli altri livelli
+  scadono da soli. `toasts_layer(ctx, state)` (ultima chiamata del blocco finestre in
+  `ui()`) fa scadere, disegna in `Align2::RIGHT_BOTTOM` su `Order::Foreground` e
+  chiama `request_repaint_after` sulla scadenza più vicina.
+- Sorgenti collegate: `App::save` ora ritorna `Result<(), String>` e
+  `PjmApp::save_to_disk` ritorna `bool` (**solo un salvataggio riuscito** azzera
+  `changed`/`sync_baseline`; in uscita un errore **annulla la chiusura**);
+  `save_export_dialog` (usata da `save_pdf_dialog`/`save_svg_dialog`/`save_md_dialog`)
+  notifica successo col nome file o errore; gli export senza risultato usano
+  `toast_warn`. Gli errori del **thread git** passano da
+  `git_autosync::report` → `static LAST_ERROR: Mutex<Option<String>>` →
+  `git_autosync::take_error()`, prelevato una volta per frame da
+  `PjmApp::poll_background_errors`.
+- Restano **modali** (non toast) gli errori bloccanti di caricamento:
+  `UiState.load_error` + `load_error_window` (Apri…, Confronta…, validazione schema).
+- Colori in `ui_style.rs`: `error_red()`, `warn_amber()`, `info_blue()`, `toast_bg()`
+  (+ `ok_green()` già esistente), tutti theme-aware e passati per `g(...)`.
 
 ### Key UI mechanics
 
@@ -420,7 +449,11 @@ work tree **and the `.ron` is already tracked** (`git ls-files` non-empty), the 
 runs `git add -- <file>` → `git commit` (only the `.ron`; skips if nothing changed) →
 `git push`. An **untracked** `.ron` is left alone — the program never `git add`s a file
 the user hasn't chosen to track. It is **best-effort**: not a repo / untracked file /
-no remote / offline just logs to stderr and never blocks or breaks the on-disk save.
+no remote / offline never blocks or breaks the on-disk save. A **real failure**
+(`add` non eseguibile, `push` fallito) goes through `report`, which logs to stderr
+**and** parks the message in `static LAST_ERROR: Mutex<Option<String>>`; the UI drains
+it with `take_error()` once per frame (`PjmApp::poll_background_errors`) and turns it
+into an error toast — the thread can't touch `UiState` itself.
 `commit_and_push` runs on a background thread (single-flight via an `AtomicBool`, so
 autosaves can't pile up); `commit_and_push_blocking` runs inline and is used on exit
 so the push finishes before the process ends. `GIT_TERMINAL_PROMPT=0` prevents git

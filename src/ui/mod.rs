@@ -29,6 +29,7 @@ mod footer;
 mod grid;
 mod help;
 mod saturation;
+mod toasts;
 mod toolbar;
 pub(crate) use compare::*;
 pub(crate) use dialogs::*;
@@ -38,6 +39,7 @@ pub(crate) use footer::*;
 pub(crate) use grid::*;
 pub(crate) use help::*;
 pub(crate) use saturation::*;
+pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
@@ -324,6 +326,64 @@ struct MinutaState {
     worker_notes: bool,
 }
 
+// ── Notifiche in-app (toast) ────────────────────────────────────────────────
+
+/// Gravità di una notifica: decide icona, colore e durata.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ToastLevel {
+    /// Informazione (es. il file è cambiato ed è stato ricaricato).
+    Info,
+    /// Operazione riuscita (salvataggio, export scritto).
+    Success,
+    /// Nulla di rotto, ma l'operazione non ha prodotto niente.
+    Warning,
+    /// Errore: resta finché non lo si chiude.
+    Error,
+}
+
+impl ToastLevel {
+    pub(crate) fn icon(self) -> &'static str {
+        match self {
+            ToastLevel::Info => "ℹ",
+            ToastLevel::Success => "✔",
+            ToastLevel::Warning => "⚠",
+            ToastLevel::Error => "⛔",
+        }
+    }
+
+    fn color(self) -> Color32 {
+        match self {
+            ToastLevel::Info => info_blue(),
+            ToastLevel::Success => ok_green(),
+            ToastLevel::Warning => warn_amber(),
+            ToastLevel::Error => error_red(),
+        }
+    }
+
+    /// Da quanto tempo la notifica sparisce da sola; `None` = resta finché non
+    /// la si chiude (gli errori non devono poter passare inosservati).
+    pub(crate) fn ttl(self) -> Option<std::time::Duration> {
+        let secs = match self {
+            ToastLevel::Success => 4,
+            ToastLevel::Info => 10,
+            ToastLevel::Warning => 15,
+            ToastLevel::Error => return None,
+        };
+        Some(std::time::Duration::from_secs(secs))
+    }
+}
+
+/// Una notifica in-app: sostituisce gli `eprintln!` invisibili.
+pub(crate) struct Toast {
+    pub(crate) level: ToastLevel,
+    pub(crate) text: String,
+    /// Quando è stata mostrata (o rinfrescata): base per la scadenza.
+    pub(crate) born: std::time::Instant,
+}
+
+/// Oltre questo numero le notifiche più vecchie vengono scartate.
+const MAX_TOASTS: usize = 5;
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -335,9 +395,9 @@ pub struct UiState {
     file_mtime: Option<std::time::SystemTime>,
     // conflitto in sospeso in attesa di scelta utente.
     pending_reload: Option<PendingReload>,
-    // messaggio (persistente) mostrato in toolbar dopo un aggiornamento esterno
-    // applicato in automatico; resta finché non si salva o non lo si chiude.
-    external_notice: Option<String>,
+    // notifiche in-app (errori, esiti di salvataggio/export, aggiornamenti dal
+    // file condiviso): disegnate in basso a destra da `toasts_layer`.
+    toasts: Vec<Toast>,
     this_week: i32,
     scroll_x: f32,
     scroll_y: f32,
@@ -479,6 +539,48 @@ pub struct UiState {
     // finestra "Confronta/Importa progetto…": presente quando un file parallelo è
     // stato caricato per il confronto. Mentre è aperta l'autosave è sospeso.
     compare: Option<CompareState>,
+}
+
+impl UiState {
+    /// Mostra una notifica in-app. Se lo stesso testo è già in elenco ne rinfresca
+    /// solo l'istante (un errore che si ripete a ogni autosave non impila copie).
+    pub(crate) fn toast(&mut self, level: ToastLevel, text: impl Into<String>) {
+        let text = text.into();
+        if let Some(t) = self.toasts.iter_mut().find(|t| t.text == text) {
+            t.level = level;
+            t.born = std::time::Instant::now();
+            return;
+        }
+        self.toasts.push(Toast {
+            level,
+            text,
+            born: std::time::Instant::now(),
+        });
+        // Tieni solo le più recenti: le vecchie escono dalla cima.
+        while self.toasts.len() > MAX_TOASTS {
+            self.toasts.remove(0);
+        }
+    }
+
+    /// Errore: resta finché non lo si chiude.
+    pub(crate) fn toast_error(&mut self, text: impl Into<String>) {
+        self.toast(ToastLevel::Error, text);
+    }
+
+    /// Operazione riuscita (sparisce da sola in pochi secondi).
+    pub(crate) fn toast_ok(&mut self, text: impl Into<String>) {
+        self.toast(ToastLevel::Success, text);
+    }
+
+    /// Avviso: l'operazione non ha prodotto nulla, ma non è un errore.
+    pub(crate) fn toast_warn(&mut self, text: impl Into<String>) {
+        self.toast(ToastLevel::Warning, text);
+    }
+
+    /// Informazione (es. il file condiviso è cambiato ed è stato ricaricato).
+    pub(crate) fn toast_info(&mut self, text: impl Into<String>) {
+        self.toast(ToastLevel::Info, text);
+    }
 }
 
 // ── Stato della finestra di confronto tra due file .ron ─────────────────────
@@ -818,46 +920,49 @@ fn dated_file_name(stem: &str, ext: &str) -> String {
     format!("{stem}_{date}.{ext}")
 }
 
-/// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
-fn save_pdf_dialog(bytes: Vec<u8>, default_name: &str) {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("PDF", &["pdf"])
+/// Dialog di salvataggio + scrittura del file, con l'esito riportato come
+/// notifica in-app: il nome del file scritto in caso di successo, il messaggio di
+/// errore (persistente) altrimenti. Se l'utente annulla il dialog non fa nulla.
+fn save_export_dialog(
+    state: &mut UiState,
+    kind: &str,
+    ext: &str,
+    default_name: &str,
+    data: impl AsRef<[u8]>,
+) {
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter(kind, &[ext])
         .set_file_name(default_name)
         .save_file()
-    {
-        let p = path.to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&p, bytes) {
-            eprintln!("Errore scrittura PDF '{p}': {e}");
+    else {
+        return;
+    };
+    let p = path.to_string_lossy().to_string();
+    match std::fs::write(&p, data) {
+        Ok(()) => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.clone());
+            state.toast_ok(format!("{kind} salvato: {name}"));
         }
+        Err(e) => state.toast_error(format!("Errore scrittura {kind} '{p}': {e}")),
     }
+}
+
+/// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
+fn save_pdf_dialog(state: &mut UiState, bytes: Vec<u8>, default_name: &str) {
+    save_export_dialog(state, "PDF", "pdf", default_name, bytes);
 }
 
 /// Mostra il dialog di salvataggio SVG e scrive il contenuto nel file scelto.
-fn save_svg_dialog(svg: String, default_name: &str) {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("SVG", &["svg"])
-        .set_file_name(default_name)
-        .save_file()
-    {
-        let p = path.to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&p, svg) {
-            eprintln!("Errore scrittura SVG '{p}': {e}");
-        }
-    }
+fn save_svg_dialog(state: &mut UiState, svg: String, default_name: &str) {
+    save_export_dialog(state, "SVG", "svg", default_name, svg);
 }
 
 /// Mostra il dialog di salvataggio Markdown e scrive il contenuto nel file scelto.
-fn save_md_dialog(md: String, default_name: &str) {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("Markdown", &["md"])
-        .set_file_name(default_name)
-        .save_file()
-    {
-        let p = path.to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&p, md) {
-            eprintln!("Errore scrittura Markdown '{p}': {e}");
-        }
-    }
+fn save_md_dialog(state: &mut UiState, md: String, default_name: &str) {
+    save_export_dialog(state, "Markdown", "md", default_name, md);
 }
 
 /// mtime del file, se leggibile.
@@ -865,9 +970,10 @@ fn file_mtime_of(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
-/// Testo di notifica con orario corrente (per gli aggiornamenti esterni).
+/// Testo di notifica con orario corrente (per gli aggiornamenti esterni):
+/// l'icona la mette il toast, qui serve solo l'ora.
 fn notice_now(msg: &str) -> String {
-    format!("🔄 {msg} ({})", chrono::Local::now().format("%H:%M"))
+    format!("{msg} ({})", chrono::Local::now().format("%H:%M"))
 }
 
 impl eframe::App for PjmApp {
@@ -1057,6 +1163,8 @@ impl eframe::App for PjmApp {
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
             compare_window(ui.ctx(), app, state, &mut actions);
+            // Sopra a tutto: le notifiche in-app.
+            toasts_layer(ui.ctx(), state);
         }
 
         for a in actions {
@@ -1064,6 +1172,7 @@ impl eframe::App for PjmApp {
         }
 
         let ctx = ui.ctx().clone();
+        self.poll_background_errors();
         self.check_external_change(&ctx);
         self.conflict_window(&ctx);
         self.maybe_autosave(&ctx);
@@ -1147,9 +1256,15 @@ impl PjmApp {
 
         match choice {
             Some(ExitChoice::Save) => {
+                // Se il salvataggio fallisce **non** si esce: chiudere qui vorrebbe
+                // dire perdere le modifiche mostrando un errore che nessuno legge.
+                if let Err(e) = self.app.save(&self.ui.current_file) {
+                    self.ui.toast_error(e);
+                    self.ui.show_exit_confirm = false;
+                    return;
+                }
                 // In uscita il push è bloccante: il thread di background verrebbe
                 // ucciso dalla chiusura del processo prima di completare.
-                self.app.save(&self.ui.current_file);
                 crate::git_autosync::commit_and_push_blocking(&self.ui.current_file);
                 self.ui.changed = false;
                 self.ui.show_exit_confirm = false;
@@ -1176,9 +1291,23 @@ impl PjmApp {
 
     /// Salva su disco e, se la cartella del file è un repo git, committa e pusha
     /// il file in background (non blocca la UI). Vedi `git_autosync`.
-    fn save_to_disk(&self) {
-        self.app.save(&self.ui.current_file);
+    /// Un errore di scrittura diventa una notifica in-app (persistente).
+    /// Ritorna `false` se il salvataggio è fallito.
+    fn save_to_disk(&mut self) -> bool {
+        if let Err(e) = self.app.save(&self.ui.current_file) {
+            self.ui.toast_error(e);
+            return false;
+        }
         crate::git_autosync::commit_and_push(&self.ui.current_file);
+        true
+    }
+
+    /// Travasa in notifiche gli errori prodotti dai thread di background (per ora
+    /// solo la sincronizzazione git, che non può toccare lo stato della UI).
+    fn poll_background_errors(&mut self) {
+        if let Some(msg) = crate::git_autosync::take_error() {
+            self.ui.toast_error(msg);
+        }
     }
 
     /// Aggiorna lo snapshot "base" e l'mtime dopo che lo stato è tornato
@@ -1210,11 +1339,14 @@ impl PjmApp {
             return;
         }
         if now - self.ui.last_save_time >= AUTOSAVE_SECS {
-            self.save_to_disk();
-            self.ui.changed = false;
-            self.sync_baseline();
+            // Anche fallendo aggiorniamo il timer: l'errore è già notificato e non
+            // ha senso ritentare a ogni frame.
             self.ui.last_save_time = now;
-            self.ui.external_notice = Some(notice_now("Salvataggio automatico"));
+            if self.save_to_disk() {
+                self.ui.changed = false;
+                self.sync_baseline();
+                self.ui.toast_ok(notice_now("Salvataggio automatico"));
+            }
         }
     }
 
@@ -1281,7 +1413,8 @@ impl PjmApp {
         self.ui.effort_buffers.clear();
         self.ui.declared_buffers.clear();
         self.ui.editing = None;
-        self.ui.external_notice = Some(notice_now("File changed..."));
+        self.ui
+            .toast_info(notice_now("Il file è stato aggiornato da un collega"));
     }
 
     /// Poll periodico dell'mtime del file condiviso: se un collega lo ha
@@ -1343,7 +1476,8 @@ impl PjmApp {
             self.app = merged;
             self.ui.base_ron = theirs.to_ron_string();
             self.ui.file_mtime = Some(disk_mtime);
-            self.ui.external_notice = Some(notice_now("Uniti i cambiamenti di un collega"));
+            self.ui
+                .toast_info(notice_now("Uniti i cambiamenti di un collega"));
         } else {
             self.ui.file_mtime = Some(disk_mtime);
             self.ui.pending_reload = Some(PendingReload {
@@ -1395,7 +1529,7 @@ impl PjmApp {
                     self.app = merged;
                     self.ui.base_ron = p.theirs.to_ron_string();
                     self.ui.changed = true;
-                    self.ui.external_notice = Some(notice_now(
+                    self.ui.toast_info(notice_now(
                         "Modifiche del collega unite (conflitti: tenute le tue)",
                     ));
                 }
@@ -1412,8 +1546,9 @@ impl PjmApp {
                     self.ui.effort_buffers.clear();
                     self.ui.declared_buffers.clear();
                     self.ui.editing = None;
-                    self.ui.external_notice =
-                        Some(notice_now("File Changed (your change discarded)"));
+                    self.ui.toast_info(notice_now(
+                        "Ricaricato dal disco (le tue modifiche sono state scartate)",
+                    ));
                 }
             }
             None => {}
@@ -1423,10 +1558,13 @@ impl PjmApp {
     fn apply(&mut self, a: Action) {
         match a {
             Action::Save => {
-                self.save_to_disk();
-                self.ui.changed = false;
-                self.sync_baseline();
-                self.ui.external_notice = None;
+                // Solo un salvataggio riuscito azzera "modificato": altrimenti il
+                // file resterebbe segnato come allineato al disco senza esserlo.
+                if self.save_to_disk() {
+                    self.ui.changed = false;
+                    self.sync_baseline();
+                    self.ui.toast_ok(notice_now("File salvato"));
+                }
             }
             Action::Open => {
                 if let Some(path_buf) = rfd::FileDialog::new()
@@ -1744,9 +1882,9 @@ impl PjmApp {
                 // esportare.
                 let eligible: Vec<ProjectId> = body_projects(&self.app, self.ui.project_view);
                 match eligible[..] {
-                    [] => {
-                        eprintln!("Nessun progetto visibile: PDF non creato.")
-                    }
+                    [] => self
+                        .ui
+                        .toast_warn("Nessun progetto visibile: PDF non creato."),
                     [proj] => {
                         let entries = self
                             .app
@@ -1768,8 +1906,12 @@ impl PjmApp {
                 // (abilitato + modalità Vista corrente) con dati di avanzamento.
                 let visible = body_projects(&self.app, self.ui.project_view);
                 match crate::pdf_export::build_trend_pdf(&self.app, &visible) {
-                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("andamento", "pdf")),
-                    None => eprintln!("Nessun progetto con dati di avanzamento: PDF non creato."),
+                    Some(bytes) => {
+                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("andamento", "pdf"))
+                    }
+                    None => self
+                        .ui
+                        .toast_warn("Nessun progetto con dati di avanzamento: PDF non creato."),
                 }
             }
             Action::ExportPdfSelected { projects } => {
@@ -1779,10 +1921,12 @@ impl PjmApp {
                     &projects,
                     self.ui.bar_format,
                 ) {
-                    None => {
-                        eprintln!("Nessun progetto selezionato con inizio e fine: PDF non creato.")
+                    None => self.ui.toast_warn(
+                        "Nessun progetto selezionato con inizio e fine: PDF non creato.",
+                    ),
+                    Some(bytes) => {
+                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("progetti", "pdf"))
                     }
-                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("progetti", "pdf")),
                 }
             }
             Action::ExportPdfProject { proj, devs } => {
@@ -1793,8 +1937,12 @@ impl PjmApp {
                     &devs,
                     self.ui.bar_format,
                 ) {
-                    None => eprintln!("Progetto senza inizio/fine: PDF non creato."),
-                    Some(bytes) => save_pdf_dialog(bytes, &dated_file_name("progetto", "pdf")),
+                    None => self
+                        .ui
+                        .toast_warn("Progetto senza inizio/fine: PDF non creato."),
+                    Some(bytes) => {
+                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("progetto", "pdf"))
+                    }
                 }
             }
             Action::ExportSvgProject { proj, devs } => {
@@ -1805,8 +1953,12 @@ impl PjmApp {
                     &devs,
                     self.ui.bar_format,
                 ) {
-                    None => eprintln!("Progetto senza inizio/fine: SVG non creato."),
-                    Some(svg) => save_svg_dialog(svg, &dated_file_name("grafico", "svg")),
+                    None => self
+                        .ui
+                        .toast_warn("Progetto senza inizio/fine: SVG non creato."),
+                    Some(svg) => {
+                        save_svg_dialog(&mut self.ui, svg, &dated_file_name("grafico", "svg"))
+                    }
                 }
             }
             Action::GenerateMinuta {
@@ -1822,7 +1974,7 @@ impl PjmApp {
                     only_with_notes,
                     worker_notes,
                 );
-                save_md_dialog(md, &dated_file_name("minuta", "md"));
+                save_md_dialog(&mut self.ui, md, &dated_file_name("minuta", "md"));
             }
             Action::CreateMilestone(name, kind) => {
                 self.app.milestones.add_with_kind(&name, kind);
@@ -2814,5 +2966,115 @@ mod tests {
         assert_eq!(app.projects.project_milestones_at_week(pid, w), vec![a, b]);
         // …e ciascuna ha il suo colore, quindi le bande sono distinguibili.
         assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
+    }
+
+    // ── Notifiche in-app (toast) ────────────────────────────────────────────
+
+    #[test]
+    fn toast_icons_are_renderable() {
+        let ctx = egui::Context::default();
+        install_symbol_fallback(&ctx);
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let font = egui::FontId::proportional(14.0);
+        for level in [
+            ToastLevel::Info,
+            ToastLevel::Success,
+            ToastLevel::Warning,
+            ToastLevel::Error,
+        ] {
+            assert!(
+                ctx.fonts_mut(|f| f.has_glyphs(&font, level.icon())),
+                "l'icona di {level:?} ({}) non è disegnabile coi font caricati",
+                level.icon()
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_toasts_refresh_instead_of_stacking() {
+        let mut state = UiState::default();
+        state.toast_error("git: 'push' non riuscito");
+        state.toast_error("git: 'push' non riuscito");
+        state.toast_error("git: 'push' non riuscito");
+        // Un errore che si ripete a ogni autosave non impila copie.
+        assert_eq!(state.toasts.len(), 1);
+
+        // Un testo diverso è una notifica a sé.
+        state.toast_ok("File salvato");
+        assert_eq!(state.toasts.len(), 2);
+    }
+
+    #[test]
+    fn toast_list_is_capped_keeping_the_newest() {
+        let mut state = UiState::default();
+        for i in 0..(MAX_TOASTS + 3) {
+            state.toast_info(format!("messaggio {i}"));
+        }
+        assert_eq!(state.toasts.len(), MAX_TOASTS);
+        // Le più vecchie escono dalla cima: resta in coda l'ultima arrivata.
+        assert_eq!(
+            state.toasts.last().map(|t| t.text.as_str()),
+            Some(format!("messaggio {}", MAX_TOASTS + 2).as_str())
+        );
+        assert!(!state.toasts.iter().any(|t| t.text == "messaggio 0"));
+    }
+
+    #[test]
+    fn only_errors_are_sticky() {
+        // Gli errori restano finché non li si chiude; gli altri livelli scadono.
+        assert_eq!(ToastLevel::Error.ttl(), None);
+        for level in [ToastLevel::Info, ToastLevel::Success, ToastLevel::Warning] {
+            assert!(level.ttl().is_some(), "{level:?} deve scadere da sola");
+        }
+    }
+
+    /// Il layer si disegna davvero (layout annidato ✕ + testo a capo) e le
+    /// notifiche scadute spariscono da sole, quelle di errore no.
+    #[test]
+    fn toasts_layer_draws_and_expires() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(1000.0, 700.0),
+        ));
+
+        let mut state = UiState::default();
+        state.toast_error(
+            "Errore lungo che deve andare a capo dentro il riquadro \
+                           della notifica senza far esplodere il layout",
+        );
+        state.toast_ok("PDF salvato: progetto_26-08-10.pdf");
+        state.toast_warn("Nessun progetto visibile: PDF non creato.");
+
+        // Due frame: la prima registra l'area, la seconda disegna a layout stabile.
+        for _ in 0..2 {
+            let _ = ctx.run(input.clone(), |ctx| toasts_layer(ctx, &mut state));
+        }
+        assert_eq!(state.toasts.len(), 3, "nessuna deve sparire subito");
+
+        // Invecchiamo tutto oltre la ttl più lunga: resta solo l'errore.
+        let old = std::time::Instant::now() - std::time::Duration::from_secs(3600);
+        for t in state.toasts.iter_mut() {
+            t.born = old;
+        }
+        let _ = ctx.run(input.clone(), |ctx| toasts_layer(ctx, &mut state));
+        assert_eq!(state.toasts.len(), 1);
+        assert_eq!(state.toasts[0].level, ToastLevel::Error);
+    }
+
+    /// Un errore di salvataggio deve arrivare all'utente come notifica: qui il
+    /// percorso è una cartella inesistente, quindi la scrittura fallisce.
+    #[test]
+    fn failed_save_reports_an_error_toast() {
+        let app = App::new();
+        let bad = "/pjm_cartella_inesistente_per_test/workers.ron";
+        let err = app.save(bad).expect_err("il salvataggio deve fallire");
+
+        let mut state = UiState::default();
+        state.toast_error(err);
+        assert_eq!(state.toasts.len(), 1);
+        assert_eq!(state.toasts[0].level, ToastLevel::Error);
+        assert!(state.toasts[0].text.contains(bad));
     }
 }
