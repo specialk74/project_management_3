@@ -320,6 +320,8 @@ struct MinutaState {
     only_current: bool,
     /// true = escludi i progetti senza note nell'ambito scelto (default).
     only_with_notes: bool,
+    /// true = aggiungi anche le note delle celle effort (nota per worker).
+    worker_notes: bool,
 }
 
 #[derive(Default)]
@@ -685,6 +687,7 @@ pub(crate) enum Action {
         projects: Vec<ProjectId>,
         only_current: bool,
         only_with_notes: bool,
+        worker_notes: bool,
     },
     CreateMilestone(String, MilestoneKind),
     SetMilestoneColor {
@@ -1810,8 +1813,15 @@ impl PjmApp {
                 projects,
                 only_current,
                 only_with_notes,
+                worker_notes,
             } => {
-                let md = build_minuta(&self.app, &projects, only_current, only_with_notes);
+                let md = build_minuta(
+                    &self.app,
+                    &projects,
+                    only_current,
+                    only_with_notes,
+                    worker_notes,
+                );
                 save_md_dialog(md, &dated_file_name("minuta", "md"));
             }
             Action::CreateMilestone(name, kind) => {

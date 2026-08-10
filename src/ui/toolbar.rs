@@ -76,6 +76,7 @@ pub(crate) fn toolbar(
                         .collect(),
                     only_current: true,
                     only_with_notes: true,
+                    worker_notes: false,
                 });
                 ui.close_menu();
             }

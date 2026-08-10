@@ -158,6 +158,16 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 ### Toolbar menus (in `toolbar`)
 
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Esci.
+  - **Minuta** (`minuta_window` + `build_minuta` in `export.rs`, stato `MinutaState`):
+    note settimanali di progetto, più recenti prima. La spunta **«Includi le note dei
+    worker»** (`MinutaState.worker_notes` → `Action::GenerateMinuta.worker_notes`,
+    default off) aggiunge sotto ogni settimana le note delle **celle effort**
+    (`SingleEffort.note`) come `- **Worker** (Dev): testo`, raccolte da
+    `project_worker_notes` (ordine: dev del progetto, poi nome worker; righe extra
+    rientrate di 2 spazi da `worker_note_bullet`). Con l'opzione attiva una settimana
+    con **solo** note di cella compare lo stesso, e quelle note contano anche per il
+    filtro «Solo progetti con note». Le note **Dev** (`SingleDev.note`) e quelle
+    **worker/settimana del footer** (`Worker.week_notes`) restano fuori dalla minuta.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
 - **Filtri**: le prime quattro voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
   Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`) aprono **un'unica

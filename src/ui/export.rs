@@ -424,6 +424,11 @@ pub(crate) fn minuta_window(
             );
 
             ui.add_space(4.0);
+            ui.checkbox(&mut m.worker_notes, "Includi le note dei worker")
+                .on_hover_text(
+                    "Aggiunge sotto ogni settimana le note delle celle effort \
+                     (tasto destro su una cella), con nome del worker e dev.",
+                );
             ui.checkbox(&mut m.only_with_notes, "Solo progetti con note")
                 .on_hover_text(
                     "Se attivo, esclude i progetti senza note nell'ambito scelto; \
@@ -452,6 +457,7 @@ pub(crate) fn minuta_window(
             projects,
             only_current: m.only_current,
             only_with_notes: m.only_with_notes,
+            worker_notes: m.worker_notes,
         });
         state.minuta = None;
     } else if cancel || !open {
@@ -474,16 +480,72 @@ pub(crate) fn minuta_project_label(app: &App, proj: ProjectId) -> String {
     }
 }
 
+/// Una nota di cella effort da riportare nella minuta: chi l'ha scritta, in quale
+/// dev e il testo.
+struct WorkerNote {
+    worker: String,
+    dev: String,
+    note: String,
+}
+
+/// Note delle celle effort di un progetto (`SingleEffort.note`), raggruppate per
+/// settimana. Dentro la settimana l'ordine è quello dei dev del progetto e, a
+/// parità di dev, il nome del worker. Note vuote e worker "zero" sono ignorati;
+/// le settimane senza note non compaiono nella mappa.
+fn project_worker_notes(app: &App, proj: ProjectId) -> HashMap<WeekId, Vec<WorkerNote>> {
+    let mut out: HashMap<WeekId, Vec<WorkerNote>> = HashMap::new();
+    for dev in app.projects.list_devs(proj) {
+        let Some(sd) = app.projects.get_single_dev(proj, dev) else {
+            continue;
+        };
+        let dname = dev_name(app, dev);
+        for week in sd.get_weeks() {
+            let Some(sew) = sd.get_all(week) else {
+                continue;
+            };
+            let mut here: Vec<WorkerNote> = sew
+                .worker_id
+                .iter()
+                .filter(|(wid, _)| **wid != WORKER_ID_ZERO)
+                .filter_map(|(wid, se)| {
+                    let note = se.get_note();
+                    (!note.trim().is_empty()).then(|| WorkerNote {
+                        worker: app.workers.get_name_by_id(*wid).to_string(),
+                        dev: dname.clone(),
+                        note,
+                    })
+                })
+                .collect();
+            here.sort_by(|a, b| a.worker.cmp(&b.worker));
+            if !here.is_empty() {
+                out.entry(week).or_default().append(&mut here);
+            }
+        }
+    }
+    out
+}
+
+/// Voce di elenco per una nota worker: le righe successive alla prima sono
+/// rientrate di due spazi, così una nota multi-riga resta dentro il punto elenco.
+fn worker_note_bullet(n: &WorkerNote) -> String {
+    let body = n.note.trim().replace('\n', "\n  ");
+    format!("- **{}** ({}): {body}\n", n.worker, n.dev)
+}
+
 /// Costruisce il testo Markdown della minuta per i progetti indicati.
-/// `only_current`: se true include solo la nota della settimana corrente, altrimenti
-/// tutte le settimane (più recenti prima). `only_with_notes`: se true i progetti
-/// senza note nell'ambito scelto vengono esclusi; altrimenti compaiono con un
-/// segnaposto.
+/// `only_current`: se true include solo la settimana corrente, altrimenti tutte le
+/// settimane (più recenti prima). `only_with_notes`: se true i progetti senza note
+/// nell'ambito scelto vengono esclusi; altrimenti compaiono con un segnaposto.
+/// `worker_notes`: se true sotto la nota di ogni settimana viene aggiunto l'elenco
+/// delle note delle celle effort (una riga per worker); una settimana con **solo**
+/// note dei worker compare comunque, e quelle note contano anche per il filtro
+/// `only_with_notes`.
 pub(crate) fn build_minuta(
     app: &App,
     projects: &[ProjectId],
     only_current: bool,
     only_with_notes: bool,
+    worker_notes: bool,
 ) -> String {
     let current = current_week_id();
     let today = Utc::now().date_naive().format("%y-%m-%d");
@@ -491,17 +553,33 @@ pub(crate) fn build_minuta(
 
     for &proj in projects {
         let notes = app.projects.get_notes(proj);
-        // Settimane in ambito, ordinate per data decrescente, senza voci vuote.
-        let mut weeks: Vec<(WeekId, String)> = if only_current {
-            notes
-                .get(&current)
-                .map(|t| vec![(current, t.clone())])
-                .unwrap_or_default()
+        let mut wnotes = if worker_notes {
+            project_worker_notes(app, proj)
         } else {
-            notes.into_iter().collect()
+            HashMap::new()
         };
-        weeks.retain(|(_, t)| !t.trim().is_empty());
-        weeks.sort_by(|a, b| b.0.cmp(&a.0));
+
+        // Settimane in ambito: quelle con nota di progetto più quelle con note dei
+        // worker (una settimana può avere solo queste ultime). Più recenti prima.
+        let mut keys: Vec<WeekId> = notes
+            .keys()
+            .chain(wnotes.keys())
+            .copied()
+            .filter(|w| !only_current || *w == current)
+            .collect();
+        keys.sort_unstable();
+        keys.dedup();
+        keys.reverse();
+
+        // Testo + note worker di ogni settimana, saltando quelle senza nulla.
+        let weeks: Vec<(WeekId, String, Vec<WorkerNote>)> = keys
+            .into_iter()
+            .map(|w| {
+                let text = notes.get(&w).cloned().unwrap_or_default();
+                (w, text, wnotes.remove(&w).unwrap_or_default())
+            })
+            .filter(|(_, text, wn)| !text.trim().is_empty() || !wn.is_empty())
+            .collect();
 
         // Filtro "Solo progetti con note": salta i progetti vuoti nell'ambito.
         if weeks.is_empty() && only_with_notes {
@@ -512,14 +590,133 @@ pub(crate) fn build_minuta(
         if weeks.is_empty() {
             out.push_str("_(nessuna nota)_\n\n");
         } else {
-            for (w, t) in weeks {
+            for (w, text, wn) in weeks {
                 let label = days_to_local(w.0 as i32).format("%y-%m-%d");
-                out.push_str(&format!("**{label}**\n\n{}\n\n", t.trim_end()));
+                out.push_str(&format!("**{label}**\n\n"));
+                if !text.trim().is_empty() {
+                    out.push_str(&format!("{}\n\n", text.trim_end()));
+                }
+                if !wn.is_empty() {
+                    for n in &wn {
+                        out.push_str(&worker_note_bullet(n));
+                    }
+                    out.push('\n');
+                }
             }
         }
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// P1 ha una nota di progetto nella settimana corrente + note di cella per due
+    /// worker; nella settimana precedente ha **solo** una nota di cella. P2 non ha
+    /// note di progetto, solo una nota di cella.
+    fn app_with_notes() -> (App, ProjectId, ProjectId) {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let front = app.devs.add("Frontend");
+        let cur = current_week_id();
+        let prev = WeekId(cur.0 - WEEK_STEP);
+
+        let p1 = app.projects.add("P1", Some("AAA"), Some(cur));
+        app.projects.add_dev(p1, front);
+        app.projects
+            .set_notes(p1, HashMap::from([(cur, "Riunione settimanale".to_string())]));
+        app.projects.add_effort(p1, front, cur, alice, Effort(8));
+        app.projects.add_effort(p1, front, cur, bob, Effort(4));
+        app.projects.add_effort(p1, front, prev, alice, Effort(8));
+        app.projects.set_note(p1, front, cur, alice, "serve conferma API");
+        app.projects.set_note(p1, front, cur, bob, "blocco su migrazione");
+        app.projects
+            .set_note(p1, front, prev, alice, "ambiente di test giù");
+
+        let p2 = app.projects.add("P2", Some("BBB"), Some(cur));
+        app.projects.add_dev(p2, front);
+        app.projects.add_effort(p2, front, cur, bob, Effort(8));
+        app.projects.set_note(p2, front, cur, bob, "solo nota di cella");
+
+        (app, p1, p2)
+    }
+
+    #[test]
+    fn minuta_includes_worker_notes_only_when_requested() {
+        let (app, p1, _) = app_with_notes();
+
+        // Spento: la minuta resta quella di prima, solo note di progetto.
+        let off = build_minuta(&app, &[p1], false, true, false);
+        assert!(off.contains("Riunione settimanale"));
+        assert!(!off.contains("serve conferma API"));
+
+        // Acceso: le note di cella compaiono sotto la settimana, con worker e dev.
+        let on = build_minuta(&app, &[p1], false, true, true);
+        assert!(on.contains("Riunione settimanale"));
+        assert!(on.contains("- **Alice** (Frontend): serve conferma API\n"));
+        assert!(on.contains("- **Bob** (Frontend): blocco su migrazione\n"));
+
+        // Ordine dentro la settimana: worker in ordine alfabetico.
+        let a = on.find("serve conferma API").unwrap();
+        let b = on.find("blocco su migrazione").unwrap();
+        assert!(a < b);
+    }
+
+    #[test]
+    fn minuta_shows_weeks_with_only_worker_notes() {
+        let (app, p1, _) = app_with_notes();
+        let cur = current_week_id();
+        let prev = WeekId(cur.0 - WEEK_STEP);
+        let prev_label = days_to_local(prev.0 as i32).format("%y-%m-%d").to_string();
+
+        // Senza note worker la settimana precedente (priva di nota progetto) non c'è.
+        let off = build_minuta(&app, &[p1], false, true, false);
+        assert!(!off.contains(&prev_label));
+
+        // Con le note worker compare, con il solo elenco (nessun testo di progetto).
+        let on = build_minuta(&app, &[p1], false, true, true);
+        assert!(on.contains(&format!("**{prev_label}**\n\n- **Alice** (Frontend): ambiente")));
+
+        // «Solo settimana corrente» continua a tagliarla via.
+        let cur_only = build_minuta(&app, &[p1], true, true, true);
+        assert!(!cur_only.contains(&prev_label));
+        assert!(cur_only.contains("serve conferma API"));
+    }
+
+    #[test]
+    fn worker_notes_count_for_the_only_with_notes_filter() {
+        let (app, _, p2) = app_with_notes();
+
+        // P2 non ha note di progetto: senza note worker viene escluso…
+        let off = build_minuta(&app, &[p2], false, true, false);
+        assert!(!off.contains("BBB"));
+
+        // …e con le note worker attive rientra.
+        let on = build_minuta(&app, &[p2], false, true, true);
+        assert!(on.contains("## BBB"));
+        assert!(on.contains("- **Bob** (Frontend): solo nota di cella\n"));
+
+        // Senza il filtro compare comunque, ma con il segnaposto.
+        let placeholder = build_minuta(&app, &[p2], false, false, false);
+        assert!(placeholder.contains("## BBB"));
+        assert!(placeholder.contains("_(nessuna nota)_"));
+    }
+
+    #[test]
+    fn multiline_worker_note_stays_inside_the_bullet() {
+        let n = WorkerNote {
+            worker: "Alice".to_string(),
+            dev: "Frontend".to_string(),
+            note: "prima riga\nseconda riga".to_string(),
+        };
+        assert_eq!(
+            worker_note_bullet(&n),
+            "- **Alice** (Frontend): prima riga\n  seconda riga\n"
+        );
+    }
 }
 
 // ── Aiuto / Manuale ─────────────────────────────────────────────────────────

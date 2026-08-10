@@ -154,8 +154,14 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
 - **Minuta…** — genera un file Markdown con le note dei progetti selezionati.
   Apre una finestra dove scegli i **progetti non chiusi** da includere e se
   riportare **tutte le note** o **solo la settimana corrente**. La casella
-  **Solo progetti con note** (attiva di default) esclude i progetti senza note
-  nell'ambito scelto; disattivandola compaiono comunque con un segnaposto
+  **Includi le note dei worker** (spenta di default) aggiunge sotto ogni settimana
+  le **note delle celle effort** (capitolo 9) come elenco puntato
+  `- **Worker** (Dev): testo`, in ordine di dev e poi per nome del worker; una
+  settimana che ha *solo* note dei worker compare comunque, con il solo elenco. La
+  casella **Solo progetti con note** (attiva di default) esclude i progetti senza
+  note nell'ambito scelto — e, con le note dei worker attive, **anche quelle
+  contano**, quindi un progetto senza note di progetto ma con note di cella viene
+  incluso; disattivandola i progetti vuoti compaiono comunque con un segnaposto
   `_(nessuna nota)_`. Ogni progetto compare con la sua **tripletta** (o la
   descrizione se la tripletta è vuota) e le note settimanali con la data di
   riferimento (più recenti prima).
@@ -399,6 +405,9 @@ dell'elemento:
   **Note**.
 
 Passando il mouse su un elemento con nota, il testo compare come tooltip.
+
+Le note **di progetto** (quelle settimanali) e, se richieste, le note **di cella**
+finiscono nella **Minuta** (File ▸ Minuta…, capitolo 5).
 
 ---
 
