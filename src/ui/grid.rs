@@ -169,8 +169,9 @@ pub(crate) fn project_layout(
     out
 }
 
-/// True se il progetto ha almeno un dev in cui un worker con nome in `set` sta
-/// lavorando (effort > 0) nella settimana corrente. Usato dal filtro Ctrl+G.
+/// True se il progetto ha almeno un dev in cui un worker con nome in `set` è
+/// assegnato nella settimana corrente, **anche con effort 0** (conta
+/// l'assegnazione, non le ore). Usato dal filtro Ctrl+G.
 fn project_worker_in_current_week(app: &App, proj: ProjectId, set: &HashSet<String>) -> bool {
     let wk = current_week_id();
     app.projects.list_devs(proj).into_iter().any(|dev| {
@@ -178,10 +179,8 @@ fn project_worker_in_current_week(app: &App, proj: ProjectId, set: &HashSet<Stri
             .get_single_dev(proj, dev)
             .and_then(|sd| sd.get_all(wk))
             .is_some_and(|sew| {
-                sew.worker_id.iter().any(|(wid, se)| {
-                    *wid != WORKER_ID_ZERO
-                        && se.get_effort().0 > 0
-                        && set.contains(app.workers.get_name_by_id(*wid))
+                sew.worker_id.iter().any(|(wid, _)| {
+                    *wid != WORKER_ID_ZERO && set.contains(app.workers.get_name_by_id(*wid))
                 })
             })
     })
@@ -2013,15 +2012,16 @@ mod tests {
         let only_bob: HashSet<String> = ["Bob".to_string()].into_iter().collect();
         assert!(!project_worker_in_current_week(&app, p1, &only_bob));
 
-        // Effort 0 nella settimana corrente non conta come "sta lavorando".
+        // Anche con effort 0 il worker è assegnato nella settimana corrente → matcha.
         let p3 = app.projects.add("P3", Some("CCC"), Some(wk));
         app.projects.add_dev(p3, dev);
         app.projects.add_effort(p3, dev, wk, alice, Effort(0));
-        assert!(!project_worker_in_current_week(&app, p3, &both));
+        assert!(project_worker_in_current_week(&app, p3, &both));
     }
 
-    // Filtro Ctrl+D: è mostrato solo il dev selezionato, e solo se ha effort > 0
-    // nel progetto (il dev aggiunto ma vuoto non fa comparire il progetto).
+    // Filtro Ctrl+D: è mostrato solo il dev selezionato, e solo se ha almeno un
+    // worker assegnato nel progetto — anche a effort 0 (il dev aggiunto ma mai
+    // compilato non fa comparire il progetto).
     #[test]
     fn dev_filter_shows_only_selected_devs_with_effort() {
         let mut app = App::new();
@@ -2040,14 +2040,14 @@ mod tests {
         assert!(dev_shown(&app, p1, front, &only_front));
         assert!(!dev_shown(&app, p1, back, &only_front)); // non selezionato
 
-        // Backend selezionato ma senza effort → nascosto (e P1 sparirebbe).
+        // Backend selezionato ma senza worker assegnati → nascosto (e P1 sparirebbe).
         let only_back: DevFilter = Some([back].into_iter().collect());
         assert!(!dev_shown(&app, p1, back, &only_back));
         assert!(!dev_shown(&app, p1, front, &only_back));
 
-        // Effort 0 non basta.
+        // Un worker assegnato con effort 0 basta a mostrarlo.
         app.projects.add_effort(p1, back, wk, alice, Effort(0));
-        assert!(!dev_shown(&app, p1, back, &only_back));
+        assert!(dev_shown(&app, p1, back, &only_back));
 
         // Senza filtro nulla è nascosto.
         assert!(dev_shown(&app, p1, back, &None));

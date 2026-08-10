@@ -8,7 +8,8 @@
 use super::*;
 
 /// Per ogni nome worker: (numero di progetti APERTI, numero di progetti CHIUSI)
-/// distinti in cui il worker ha effort > 0. Con `current_week_only` (modalità
+/// distinti in cui il worker è assegnato, **anche con effort 0** (conta
+/// l'assegnazione, non le ore). Con `current_week_only` (modalità
 /// Ctrl+G) conta solo la presenza nella **settimana corrente**; altrimenti (Ctrl+F)
 /// su **tutte** le settimane. Ignora filtri e vista. Chiave per nome (come il
 /// filtro worker).
@@ -17,7 +18,7 @@ fn worker_project_counts(app: &App, current_week_only: bool) -> HashMap<String, 
     let mut counts: HashMap<String, (u32, u32)> = HashMap::new();
     for (proj, _) in app.projects.list() {
         let closed = app.projects.is_closed(proj);
-        // worker distinti presenti (effort > 0) in questo progetto
+        // worker distinti assegnati in questo progetto (anche a effort 0)
         let mut seen: HashSet<WorkerId> = HashSet::new();
         for dev in app.projects.list_devs(proj) {
             if let Some(sd) = app.projects.get_single_dev(proj, dev) {
@@ -28,8 +29,8 @@ fn worker_project_counts(app: &App, current_week_only: bool) -> HashMap<String, 
                 };
                 for wk in weeks {
                     if let Some(sew) = sd.get_all(wk) {
-                        for (wid, se) in sew.worker_id.iter() {
-                            if *wid != WORKER_ID_ZERO && se.get_effort().0 > 0 {
+                        for wid in sew.worker_id.keys() {
+                            if *wid != WORKER_ID_ZERO {
                                 seen.insert(*wid);
                             }
                         }
@@ -426,7 +427,8 @@ mod tests {
         app.projects.add_effort(p2, dev, cur, alice, Effort(8));
         app.projects.set_closed(p2, true);
 
-        // P3 aperto: Alice con effort 0 nella settimana corrente → non conta.
+        // P3 aperto: Alice con effort 0 nella settimana corrente → conta lo stesso
+        // (vale l'assegnazione, non le ore).
         let p3 = app.projects.add("P3", Some("CCC"), Some(cur));
         app.projects.add_dev(p3, dev);
         app.projects.add_effort(p3, dev, cur, alice, Effort(0));
@@ -436,14 +438,15 @@ mod tests {
         app.projects.add_dev(p4, dev);
         app.projects.add_effort(p4, dev, cur, bob, Effort(8));
 
-        // Ctrl+F: tutte le settimane. Bob è in P1 (altra settimana) + P4 = 2 aperti.
+        // Ctrl+F: tutte le settimane. Alice è in P1 + P3 (effort 0) aperti e P2
+        // chiuso; Bob è in P1 (altra settimana) + P4 = 2 aperti.
         let all = worker_project_counts(&app, false);
-        assert_eq!(all.get("Alice").copied(), Some((1, 1)));
+        assert_eq!(all.get("Alice").copied(), Some((2, 1)));
         assert_eq!(all.get("Bob").copied(), Some((2, 0)));
 
         // Ctrl+G: solo settimana corrente. Bob non è in P1 questa settimana → solo P4.
         let cw = worker_project_counts(&app, true);
-        assert_eq!(cw.get("Alice").copied(), Some((1, 1)));
+        assert_eq!(cw.get("Alice").copied(), Some((2, 1)));
         assert_eq!(cw.get("Bob").copied(), Some((1, 0)));
     }
 }

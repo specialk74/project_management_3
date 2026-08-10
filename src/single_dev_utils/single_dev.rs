@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::{
     single_effort_utils::{sinlge_effort::Effort, sinlge_effort_week::SingleEffortWeek},
-    workers_utils::worker::WorkerId,
+    workers_utils::worker::{WORKER_ID_ZERO, WorkerId},
 };
 
 #[derive(
@@ -170,6 +170,16 @@ impl SingleDev {
             .collect();
         v.sort();
         v
+    }
+
+    /// True se al dev è assegnato almeno un worker in una qualsiasi settimana,
+    /// **anche con effort 0**: conta l'assegnazione, non le ore. Usato dai filtri
+    /// (worker e dev), che mostrano progetti e dev anche a effort zero, mentre un
+    /// dev aggiunto e mai compilato resta nascosto.
+    pub fn has_any_worker(&self) -> bool {
+        self.weeks
+            .values()
+            .any(|wk| wk.worker_id.keys().any(|id| *id != WORKER_ID_ZERO))
     }
 
     /// Settimane con effort effettivo (>0), ordinate.

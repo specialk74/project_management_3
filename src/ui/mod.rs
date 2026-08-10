@@ -2114,8 +2114,9 @@ pub(crate) type DevFilter = Option<HashSet<DevId>>;
 
 /// Predicato unico del filtro dev, usato da `project_layout` (unica sorgente di
 /// griglia + colonna sinistra): il dev è mostrato se è selezionato **e** ha
-/// almeno una settimana con effort > 0 in questo progetto. Senza filtro attivo
-/// non nasconde nulla.
+/// almeno un worker assegnato in questo progetto, **anche con effort 0**
+/// (`has_any_worker`); resta nascosto solo il dev aggiunto e mai compilato.
+/// Senza filtro attivo non nasconde nulla.
 pub(crate) fn dev_shown(app: &App, proj: ProjectId, dev: DevId, filter: &DevFilter) -> bool {
     match filter {
         None => true,
@@ -2124,7 +2125,7 @@ pub(crate) fn dev_shown(app: &App, proj: ProjectId, dev: DevId, filter: &DevFilt
                 && app
                     .projects
                     .get_single_dev(proj, dev)
-                    .is_some_and(|sd| !sd.effort_weeks().is_empty())
+                    .is_some_and(|sd| sd.has_any_worker())
         }
     }
 }

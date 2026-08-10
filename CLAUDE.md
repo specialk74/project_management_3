@@ -176,10 +176,11 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
     visibilità nel footer non conta); accanto a ogni nome il conteggio progetti
     `N/Aperti - M/Chiuso` via `worker_project_counts(app, current_week_only)` = progetti
-    distinti con effort>0 del worker, split per `is_closed`, ignora vista/filtri.
+    distinti in cui il worker è **assegnato** (anche a effort 0 — conta l'assegnazione,
+    non le ore), split per `is_closed`, ignora vista/filtri.
     La spunta **«Solo settimana corrente»** è `UiState.worker_filter_current_week`
-    (Ctrl+G): mostra solo i progetti in cui un worker selezionato ha **effort > 0 nella
-    settimana corrente** (`current_week_id()`); dentro il progetto la resa resta identica
+    (Ctrl+G): mostra solo i progetti in cui un worker selezionato è **assegnato nella
+    settimana corrente** (`current_week_id()`, anche con effort 0); dentro il progetto la resa resta identica
     a Ctrl+F (tutte le settimane). Ctrl+F disattiva la modalità, Ctrl+G la riattiva; con
     la dialog aperta nella *altra* modalità la scorciatoia commuta soltanto, nella stessa
     fa il toggle di Select All. Il gate è il predicato `project_worker_in_current_week`
@@ -187,7 +188,9 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   - **Progetti** — visibilità enable/disable + ricerca/salto per tripletta (click sulla
     tripletta o Invio → `jump_to_project`, chiude la dialog e azzera la ricerca).
   - **Dev** — `UiState.dev_filter: Option<HashSet<DevId>>`: mostra solo i progetti in cui
-    un dev selezionato ha **effort > 0** e, dentro il progetto, **solo quei dev**.
+    un dev selezionato ha **almeno un worker assegnato** (`SingleDev::has_any_worker()`,
+    anche a effort 0; resta escluso il dev mai compilato) e, dentro il progetto,
+    **solo quei dev**.
     Predicato unico `dev_shown(app, proj, dev, &dev_filter)` applicato in
     `project_layout`; si combina in **AND** col filtro worker e, come quello, comprime
     l'header progetto alla sola tripletta (`filter_active`). Non persistito.

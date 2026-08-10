@@ -575,8 +575,8 @@ Variante del filtro worker che risponde alla domanda **«a quali progetti sta
 lavorando questo worker in questa settimana?»**. Usa la **stessa finestra e la stessa
 selezione** del filtro Workers normale, ma cambia il criterio con cui i progetti
 compaiono:
-- un progetto è mostrato **solo se** almeno un worker selezionato ha **effort nella
-  settimana corrente** (la settimana di oggi);
+- un progetto è mostrato **solo se** almeno un worker selezionato è **assegnato nella
+  settimana corrente** (la settimana di oggi), anche con **effort 0**;
 - **dentro** i progetti mostrati la visualizzazione è identica al filtro normale
   (righe dei worker selezionati su **tutte** le settimane): Ctrl+G decide solo *quali*
   progetti compaiono, non nasconde nulla all'interno.
@@ -589,11 +589,12 @@ commutarla (e viceversa con `Cmd/Ctrl+F`). `Shift+Cmd/Ctrl+G` deseleziona tutti 
 ### Filtro dev (colonna «Dev», `Cmd/Ctrl+D`)
 Risponde alla domanda **«su quali progetti si lavora per questo dev?»**. La colonna
 elenca **tutti i dev definiti** con una spunta ciascuno (più ricerca e "Select All"):
-- restano visibili **solo i progetti** in cui almeno un dev selezionato ha
-  **effort > 0** (in una qualsiasi settimana); un dev aggiunto al progetto ma senza
-  effort non lo fa comparire;
-- **dentro** il progetto sono disegnate **solo le righe dei dev selezionati** (con
-  effort); gli altri dev spariscono;
+- restano visibili **solo i progetti** in cui almeno un dev selezionato ha **almeno un
+  worker assegnato** in una qualsiasi settimana, **anche con effort 0** (conta
+  l'assegnazione, non le ore); un dev aggiunto al progetto e mai compilato non lo fa
+  comparire;
+- **dentro** il progetto sono disegnate **solo le righe dei dev selezionati**; gli
+  altri dev spariscono;
 - come per il filtro worker, l'intestazione del progetto mostra **solo la tripletta**,
   così l'elenco resta compatto.
 
