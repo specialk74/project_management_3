@@ -9,7 +9,10 @@ use crate::{
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
     single_effort_utils::sinlge_effort::Effort,
-    ui_style::{THIS_WEEK_DEFAULT, hex_rgb_string, parse_hex_rgb},
+    ui_style::{
+        MONTH_COLORS_DEFAULT, MONTH_TINT_PCT_DEFAULT, THIS_WEEK_DEFAULT, hex_rgb_string,
+        parse_hex_rgb,
+    },
     workers_utils::{
         worker::{DEFAULT_MAX_HOURS, WorkerId},
         workers::Workers,
@@ -31,6 +34,20 @@ pub fn default_week_color() -> String {
     hex_rgb_string(THIS_WEEK_DEFAULT)
 }
 
+/// Intensità di default della velatura dei mesi (percentuale).
+pub fn default_month_tint_pct() -> i32 {
+    MONTH_TINT_PCT_DEFAULT
+}
+
+/// Palette di default dei 12 mesi (gennaio → dicembre), nella forma scritta nel
+/// file (`["#RRGGBB", …]`).
+pub fn default_month_colors() -> Vec<String> {
+    MONTH_COLORS_DEFAULT
+        .iter()
+        .map(|c| hex_rgb_string(*c))
+        .collect()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct App {
     pub start_week: WeekId,
@@ -40,6 +57,16 @@ pub struct App {
     /// programma usa il default e lo segnala in `validate`.
     #[serde(default = "default_week_color")]
     pub week_color: String,
+    /// Colori di sfondo delle date, uno per mese: `["#RRGGBB", …]` da gennaio a
+    /// dicembre. Stesse regole di `week_color` (solo file, sempre scritto); le
+    /// voci mancanti o non valide usano il colore di default di quel mese.
+    #[serde(default = "default_month_colors")]
+    pub month_colors: Vec<String>,
+    /// Intensità della velatura dei mesi sulle righe delle date, in percentuale
+    /// (0 = invisibile, 100 = colore pieno). Solo file, sempre scritto; valori
+    /// fuori intervallo vengono riportati nei limiti e segnalati.
+    #[serde(default = "default_month_tint_pct")]
+    pub month_tint_pct: i32,
     #[serde(skip)]
     pub end_week: WeekId,
     #[serde(skip)]
@@ -65,6 +92,8 @@ impl App {
         Self {
             start_week: WeekId(start as usize),
             week_color: default_week_color(),
+            month_colors: default_month_colors(),
+            month_tint_pct: default_month_tint_pct(),
             end_week: WeekId(end as usize),
             n_week: WeekId(n_week as usize),
             workers: Workers::new(),
@@ -125,6 +154,28 @@ impl App {
                 self.week_color,
                 default_week_color()
             ));
+        }
+        if !(0..=100).contains(&self.month_tint_pct) {
+            issues.push(format!(
+                "Intensità dei colori dei mesi {}%: fuori dall'intervallo 0–100 (uso {}%).",
+                self.month_tint_pct,
+                self.month_tint_pct.clamp(0, 100)
+            ));
+        }
+        if self.month_colors.len() != 12 {
+            issues.push(format!(
+                "Colori dei mesi: {} valori invece di 12 (per i mesi mancanti uso il default).",
+                self.month_colors.len()
+            ));
+        }
+        for (i, c) in self.month_colors.iter().enumerate().take(12) {
+            if parse_hex_rgb(c).is_none() {
+                issues.push(format!(
+                    "Colore del mese {} «{c}» non valido: atteso \"#RRGGBB\" (uso {}).",
+                    i + 1,
+                    hex_rgb_string(MONTH_COLORS_DEFAULT[i])
+                ));
+            }
         }
         for (pid, pname) in self.projects.list() {
             if issues.len() >= MAX {
@@ -200,6 +251,19 @@ impl App {
     /// da `validate`, non è un errore bloccante).
     pub fn week_color_rgb(&self) -> u32 {
         parse_hex_rgb(&self.week_color).unwrap_or(THIS_WEEK_DEFAULT)
+    }
+
+    /// Colori dei 12 mesi come 0xRRGGBB (gennaio in posizione 0). Ogni voce
+    /// mancante o scritta male ricade sul default di quel mese, così una lista
+    /// incompleta non fa perdere i colori degli altri mesi.
+    pub fn month_colors_rgb(&self) -> [u32; 12] {
+        let mut out = MONTH_COLORS_DEFAULT;
+        for (i, slot) in out.iter_mut().enumerate() {
+            if let Some(rgb) = self.month_colors.get(i).and_then(|s| parse_hex_rgb(s)) {
+                *slot = rgb;
+            }
+        }
+        out
     }
 
     /// Serializza lo stato in stringa RON (stesso formato di `save`). Usato per
@@ -385,6 +449,93 @@ mod tests {
             .replacen("week_color: \"#CCFF00\",", "", 1);
         let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
         assert_eq!(app.week_color_rgb(), THIS_WEEK_DEFAULT);
+        assert!(app.validate().is_empty());
+    }
+
+    /// Anche i 12 colori dei mesi sono sempre nel file, pronti da editare.
+    #[test]
+    fn month_colors_are_always_written_even_when_default() {
+        let app = App::new();
+        assert_eq!(app.month_colors.len(), 12);
+        assert_eq!(app.month_colors[0], "#D74242");
+        let ron = app.to_ron_string();
+        assert!(ron.contains("month_colors"), "campo month_colors mancante");
+        for c in &app.month_colors {
+            assert!(ron.contains(c.as_str()), "colore {c} non serializzato");
+        }
+        assert_eq!(app.month_colors_rgb(), MONTH_COLORS_DEFAULT);
+    }
+
+    /// Anche l'intensità della velatura è nel file e si legge da lì.
+    #[test]
+    fn month_tint_pct_is_written_and_read_back() {
+        let app = App::new();
+        assert_eq!(app.month_tint_pct, MONTH_TINT_PCT_DEFAULT);
+        let ron = app.to_ron_string();
+        assert!(
+            ron.contains(&format!("month_tint_pct: {MONTH_TINT_PCT_DEFAULT}")),
+            "campo month_tint_pct mancante"
+        );
+
+        let ron = ron.replacen(
+            &format!("month_tint_pct: {MONTH_TINT_PCT_DEFAULT}"),
+            "month_tint_pct: 85",
+            1,
+        );
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.month_tint_pct, 85);
+        assert!(app.validate().is_empty());
+    }
+
+    /// Percentuale fuori scala: si usa il valore riportato nei limiti e lo si segnala.
+    #[test]
+    fn out_of_range_month_tint_pct_is_reported() {
+        let mut app = App::new();
+        app.month_tint_pct = 150;
+        let issues = app.validate();
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].contains("100%"), "{issues:?}");
+    }
+
+    /// I colori dei mesi scritti nel file sono quelli usati dalla GUI.
+    #[test]
+    fn month_colors_come_from_the_file() {
+        let ron = App::new()
+            .to_ron_string()
+            .replacen("\"#D74242\"", "\"#123456\"", 1);
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.month_colors_rgb()[0], 0x123456);
+        // gli altri mesi restano quelli scritti nel file (i default)
+        assert_eq!(app.month_colors_rgb()[1], MONTH_COLORS_DEFAULT[1]);
+        assert!(app.validate().is_empty());
+    }
+
+    /// Lista incompleta o voce sbagliata: gli altri mesi non si perdono, il
+    /// mese problematico ricade sul default ed è segnalato.
+    #[test]
+    fn partial_or_invalid_month_colors_fall_back_per_month() {
+        let mut app = App::new();
+        app.month_colors = vec!["#000000".into(), "boh".into()];
+        let rgb = app.month_colors_rgb();
+        assert_eq!(rgb[0], 0x000000);
+        assert_eq!(rgb[1], MONTH_COLORS_DEFAULT[1]); // non valido → default
+        assert_eq!(rgb[11], MONTH_COLORS_DEFAULT[11]); // mancante → default
+        let issues = app.validate();
+        assert_eq!(issues.len(), 2, "{issues:?}");
+        assert!(issues[0].contains("2 valori invece di 12"), "{issues:?}");
+        assert!(issues[1].contains("mese 2"), "{issues:?}");
+    }
+
+    /// File vecchi (senza il campo) restano caricabili: vale la palette di default.
+    #[test]
+    fn missing_month_colors_fall_back_to_default() {
+        let ron = App::new().to_ron_string();
+        // rimuove l'intera lista month_colors dal RON
+        let start = ron.find("    month_colors:").expect("campo presente");
+        let end = ron[start..].find("],").expect("fine lista") + start + 3;
+        let ron = format!("{}{}", &ron[..start], &ron[end..]);
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.month_colors_rgb(), MONTH_COLORS_DEFAULT);
         assert!(app.validate().is_empty());
     }
 

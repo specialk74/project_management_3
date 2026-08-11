@@ -28,6 +28,29 @@ pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // Colors.y
 /// `this_week()`, impostato a inizio frame da `set_this_week_color` con il
 /// valore letto dal file `.ron` (campo `week_color: "#RRGGBB"`).
 pub const THIS_WEEK_DEFAULT: u32 = 0xCC_FF_00;
+/// Palette **di default** dei 12 mesi (gennaio → dicembre): tinte equidistanti
+/// sulla ruota dei colori (30° l'una dall'altra), così due mesi vicini si
+/// distinguono. Come `THIS_WEEK_DEFAULT` non si usa direttamente: il colore
+/// effettivo è `month_color`/`month_tint`, impostato a inizio frame da
+/// `set_month_colors` con i valori del file `.ron` (campo `month_colors`).
+pub const MONTH_COLORS_DEFAULT: [u32; 12] = [
+    0xD74242, // gennaio
+    0xD78C42, // febbraio
+    0xD7D742, // marzo
+    0x8CD742, // aprile
+    0x42D742, // maggio
+    0x42D78C, // giugno
+    0x42D7D7, // luglio
+    0x428CD7, // agosto
+    0x4242D7, // settembre
+    0x8C42D7, // ottobre
+    0xD742D7, // novembre
+    0xD7428C, // dicembre
+];
+/// Intensità **di default** della velatura del mese sulle righe delle date, in
+/// percentuale (0 = invisibile, 100 = colore pieno). Come i colori si cambia dal
+/// file `.ron` (campo `month_tint_pct`), tramite `set_month_tint_pct`.
+pub const MONTH_TINT_PCT_DEFAULT: i32 = 60;
 pub const EFFORT_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // Colors.green
@@ -53,6 +76,13 @@ thread_local! {
     /// menù: si cambia **solo** dal file `.ron` (`week_color`) e viene impostato
     /// a inizio frame da `set_this_week_color`.
     static THIS_WEEK_COLOR: Cell<u32> = const { Cell::new(THIS_WEEK_DEFAULT) };
+    /// Colori dei 12 mesi (gennaio in posizione 0). Come il colore della
+    /// settimana si cambia **solo** dal file `.ron` (`month_colors`) ed è
+    /// impostato a inizio frame da `set_month_colors`.
+    static MONTH_COLORS: Cell<[u32; 12]> = const { Cell::new(MONTH_COLORS_DEFAULT) };
+    /// Intensità della velatura del mese (percentuale 0–100), anch'essa dal file
+    /// `.ron` (`month_tint_pct`) via `set_month_tint_pct`.
+    static MONTH_TINT_PCT: Cell<i32> = const { Cell::new(MONTH_TINT_PCT_DEFAULT) };
 }
 
 /// Attiva/disattiva la resa in scala di grigi (chiamata a inizio frame).
@@ -81,6 +111,57 @@ pub fn this_week() -> Color32 {
         ((rgb >> 16) & 0xFF) as u8,
         ((rgb >> 8) & 0xFF) as u8,
         (rgb & 0xFF) as u8,
+    )
+}
+
+/// Imposta la palette dei mesi (chiamata a inizio frame con i valori del file
+/// `.ron`). `rgb[0]` = gennaio … `rgb[11]` = dicembre.
+pub fn set_month_colors(rgb: [u32; 12]) {
+    MONTH_COLORS.with(|c| c.set(rgb));
+}
+
+/// Colore pieno del mese `month` (1 = gennaio … 12 = dicembre). Un mese fuori
+/// intervallo non può arrivare da `chrono`, ma per sicurezza rientra con il
+/// modulo invece di andare in panico.
+#[inline]
+pub fn month_color(month: u32) -> Color32 {
+    let idx = (month.saturating_sub(1) % 12) as usize;
+    let rgb = MONTH_COLORS.with(|c| c.get())[idx];
+    Color32::from_rgb(
+        ((rgb >> 16) & 0xFF) as u8,
+        ((rgb >> 8) & 0xFF) as u8,
+        (rgb & 0xFF) as u8,
+    )
+}
+
+/// Imposta l'intensità della velatura dei mesi (chiamata a inizio frame con il
+/// valore del file `.ron`). Valori fuori da 0–100 vengono riportati nei limiti.
+pub fn set_month_tint_pct(pct: i32) {
+    MONTH_TINT_PCT.with(|c| c.set(pct.clamp(0, 100)));
+}
+
+/// Velatura del mese da disegnare sopra lo sfondo delle righe di date: il
+/// colore del mese all'intensità configurata, già passato per `g(...)` (quindi
+/// grigio in modalità B/N).
+#[inline]
+pub fn month_tint(month: u32) -> Color32 {
+    let alpha = MONTH_TINT_PCT.with(|c| c.get()) as f32 / 100.0;
+    g(month_color(month)).gamma_multiply(alpha)
+}
+
+/// Sovrappone `over` (che può essere semitrasparente) a `base` (opaco) e
+/// restituisce il colore **risultante** opaco. Serve a sapere che sfondo si
+/// ritrova davvero sotto un testo dopo una o più velature, per poi scegliere il
+/// colore del testo con `contrast_text`. `Color32` ha l'alpha **premoltiplicata**
+/// (come dopo `gamma_multiply`), quindi la componente di `over` va sommata così
+/// com'è a quella di `base` attenuata.
+pub fn blend(base: Color32, over: Color32) -> Color32 {
+    let a = over.a() as f32 / 255.0;
+    let mix = |b: u8, o: u8| (b as f32 * (1.0 - a) + o as f32).round().min(255.0) as u8;
+    Color32::from_rgb(
+        mix(base.r(), over.r()),
+        mix(base.g(), over.g()),
+        mix(base.b(), over.b()),
     )
 }
 
@@ -368,6 +449,90 @@ mod tests {
     fn hex_string_round_trips() {
         assert_eq!(hex_rgb_string(THIS_WEEK_DEFAULT), "#CCFF00");
         assert_eq!(parse_hex_rgb(&hex_rgb_string(0x01A2B3)), Some(0x01A2B3));
+    }
+
+    /// I 12 mesi devono avere colori davvero diversi tra loro.
+    #[test]
+    fn month_palette_has_twelve_distinct_colors() {
+        let mut seen = std::collections::HashSet::new();
+        for c in MONTH_COLORS_DEFAULT {
+            assert!(seen.insert(c), "colore duplicato {c:#08X}");
+        }
+        assert_eq!(seen.len(), 12);
+    }
+
+    /// `month_color` indicizza per mese 1–12 e segue la palette impostata.
+    #[test]
+    fn month_color_follows_the_configured_palette() {
+        set_bw_mode(false);
+        let mut palette = MONTH_COLORS_DEFAULT;
+        palette[0] = 0x112233;
+        palette[11] = 0x445566;
+        set_month_colors(palette);
+        assert_eq!(month_color(1), Color32::from_rgb(0x11, 0x22, 0x33));
+        assert_eq!(month_color(12), Color32::from_rgb(0x44, 0x55, 0x66));
+        assert_eq!(month_color(5), from_hex(MONTH_COLORS_DEFAULT[4]));
+        // la velatura è lo stesso colore, solo trasparente
+        assert!(month_tint(1).a() < 255);
+        set_month_colors(MONTH_COLORS_DEFAULT);
+    }
+
+    /// L'intensità della velatura segue il valore del file: più alta = più
+    /// marcata, 100 = colore pieno, 0 = niente.
+    #[test]
+    fn month_tint_follows_the_configured_percentage() {
+        set_bw_mode(false);
+        set_month_colors(MONTH_COLORS_DEFAULT);
+
+        set_month_tint_pct(100);
+        assert_eq!(month_tint(3), month_color(3), "100% = colore pieno");
+        let full = month_tint(3).a();
+
+        set_month_tint_pct(60);
+        let mid = month_tint(3).a();
+        set_month_tint_pct(25);
+        let low = month_tint(3).a();
+        assert!(low < mid && mid < full, "{low} < {mid} < {full}");
+
+        set_month_tint_pct(0);
+        assert_eq!(month_tint(3).a(), 0, "0% = invisibile");
+
+        // fuori intervallo → riportata nei limiti, niente panico
+        set_month_tint_pct(500);
+        assert_eq!(month_tint(3).a(), full);
+        set_month_tint_pct(-10);
+        assert_eq!(month_tint(3).a(), 0);
+
+        set_month_tint_pct(MONTH_TINT_PCT_DEFAULT);
+    }
+
+    /// `blend` deve dare il colore che si vede davvero: niente sovrapposizione
+    /// = base, velatura piena = colore sopra, a metà una via di mezzo.
+    #[test]
+    fn blend_composes_the_visible_background() {
+        let base = Color32::from_rgb(0x1e, 0x1e, 0x1e);
+        assert_eq!(blend(base, Color32::TRANSPARENT), base);
+        assert_eq!(blend(base, Color32::WHITE), Color32::WHITE);
+        let half = blend(Color32::BLACK, Color32::WHITE.gamma_multiply(0.5));
+        assert!(
+            (100..=160).contains(&half.r()),
+            "atteso un grigio intermedio, trovato {half:?}"
+        );
+        assert_eq!(half.a(), 255, "il risultato è opaco");
+    }
+
+    /// Con velature marcate il testo della data resta leggibile perché segue lo
+    /// sfondo composto: chiaro su tinte scure, scuro su tinte chiare.
+    #[test]
+    fn date_text_stays_readable_on_strong_tints() {
+        set_bw_mode(false);
+        set_dark_theme(true);
+        set_month_colors(MONTH_COLORS_DEFAULT);
+        set_month_tint_pct(100);
+        // marzo (#D7D742) è chiarissimo, settembre (#4242D7) è scuro
+        assert_eq!(contrast_text(blend(bg(), month_tint(3))), Color32::BLACK);
+        assert_eq!(contrast_text(blend(bg(), month_tint(9))), Color32::WHITE);
+        set_month_tint_pct(MONTH_TINT_PCT_DEFAULT);
     }
 
     /// Il colore effettivo è quello impostato dal file, non una costante.

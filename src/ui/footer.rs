@@ -412,17 +412,23 @@ pub(crate) fn draw_right_footer(
         // gruppi mergiati (zoom): valori sommati e sola lettura (niente click/note/stato)
         let merged = ws.len() > 1;
 
+        // Velatura del mese sulla riga delle date (come nell'intestazione in alto),
+        // sotto all'evidenziazione della settimana corrente.
+        let hdr = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
+        // Sfondo effettivo sotto la data: decide il colore del testo (come in alto).
+        let mut hdr_bg = paint_month_tint(ui, hdr, ws);
+
         // tinta settimana corrente su tutta la colonna
         let is_this_week = ws.contains(&state.this_week);
         if is_this_week {
             let col =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
-            ui.painter()
-                .rect_filled(col, 0.0, g(this_week()).gamma_multiply(0.18));
+            let wk = g(this_week()).gamma_multiply(0.18);
+            ui.painter().rect_filled(col, 0.0, wk);
+            hdr_bg = blend(hdr_bg, wk);
         }
 
         // header: data settimana
-        let hdr = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
         let date = primo_giorno_settimana_corrente(&days_to_local(w))
             .format("%y-%m-%d")
             .to_string();
@@ -431,7 +437,7 @@ pub(crate) fn draw_right_footer(
             Align2::CENTER_CENTER,
             date,
             cell_font(),
-            text(),
+            contrast_text(hdr_bg),
         );
 
         // celle sovra per worker

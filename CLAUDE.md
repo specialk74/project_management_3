@@ -84,6 +84,8 @@ references; the UI lives entirely in the `src/ui/` module.
 App (workers.ron)
 ├── start_week / end_week : WeekId   — grid time range
 ├── week_color: String               — "#RRGGBB" current-week highlight (file-only setting)
+├── month_colors: Vec<String>        — 12 "#RRGGBB", Jan→Dec, date-row tint (file-only)
+├── month_tint_pct: i32              — month tint strength 0..100 (default 60, file-only)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
@@ -162,6 +164,25 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   `THIS_WEEK` const anymore) — grid column tint, footer column tint **and each footer
   worker cell** (the alternating `row_even()/row_alt()` fill is opaque and would cover
   the column tint, so the cell repaints it), plus the week header in `toolbar.rs`.
+- **Month tint on the date rows** — same file-only mechanism: `App.month_colors`
+  (`Vec<String>` of 12 `"#RRGGBB"`, Jan→Dec, always serialized) →
+  `App::month_colors_rgb() -> [u32; 12]` (**per-month** fallback to
+  `MONTH_COLORS_DEFAULT`, so a short or partly broken list keeps the other months;
+  `validate` reports the bad entries) → `set_month_colors(...)` once per frame →
+  `month_tint(month)` = `g(month_color(m))` at the strength of `App.month_tint_pct`
+  (0–100, default `MONTH_TINT_PCT_DEFAULT` = 60, clamped by `set_month_tint_pct`, also
+  set once per frame; out-of-range is reported by `validate`). Both the header cell
+  (`toolbar.rs`) and the footer's date row (`footer.rs`) paint it with the shared
+  `paint_month_tint(ui, cell, ws)` (`mod.rs`), **under** the current-week tint.
+  A week is **5 parts** (Mon–Fri, `MONTH_BAND_DAYS`): `month_bands(ws)` groups those
+  days by month and returns `(month, from, to)` fractions, so a week straddling two
+  months is drawn as two bands sized by the days each month owns (a month change on
+  Sat/Sun leaves one band); on merged (zoom) columns the group's weeks are concatenated
+  and the fractions span the whole cell. Because the tint can be strong,
+  `paint_month_tint` returns the background of the band **at the cell centre** (under
+  the label), rebuilt with `blend(base, over)` (`Color32` is **premultiplied**, so
+  `over`'s components are added to the attenuated `base`); the date is then drawn with
+  `contrast_text(...)` instead of `text()`.
 - Theme is resolved at the top of `PjmApp::ui()` from `UiState.theme_pref`
   (`Auto`/`Light`/`Dark`); `Auto` reads `ctx.system_theme()`. egui's own `Visuals`
   are set to match so menus/popups/text-edits follow the theme too.

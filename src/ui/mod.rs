@@ -986,9 +986,12 @@ impl eframe::App for PjmApp {
             // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
             set_bw_mode(state.bw_mode);
 
-            // Colore della settimana corrente: viene dal file (`week_color`), non
-            // dall'interfaccia; come il tema, si imposta una volta per frame.
+            // Colore della settimana corrente e palette dei mesi: vengono dal file
+            // (`week_color`, `month_colors`), non dall'interfaccia; come il tema,
+            // si impostano una volta per frame.
             set_this_week_color(app.week_color_rgb());
+            set_month_colors(app.month_colors_rgb());
+            set_month_tint_pct(app.month_tint_pct);
 
             // Tema chiaro/scuro: risolto a inizio frame. In Auto segue il tema del
             // sistema (macOS "Automatico" → chiaro di giorno, scuro la sera).
@@ -2085,6 +2088,60 @@ fn recompute_completion(app: &App, typed: &mut String, buf: &mut String) {
 
 // ── Helper griglia ──────────────────────────────────────────────────────────
 
+/// Giorni "colorati" di una settimana: lunedì–venerdì, cioè le 5 parti in cui
+/// si divide la cella per la velatura dei mesi.
+pub(crate) const MONTH_BAND_DAYS: usize = 5;
+
+/// Suddivisione della cella di una colonna nelle bande dei mesi che la
+/// attraversano. Ogni settimana vale `MONTH_BAND_DAYS` parti uguali (lun–ven) e
+/// i giorni consecutivi dello stesso mese sono raggruppati: una settimana tutta
+/// dentro un mese dà una sola banda `(mese, 0.0, 1.0)`, una a cavallo di due
+/// mesi dà la parte sinistra col mese che sta finendo, larga quanti sono i suoi
+/// giorni, e la restante col mese nuovo. Le frazioni sono relative alla
+/// larghezza della cella, così vale anche per le colonne mergiate (zoom), dove
+/// le settimane del gruppo si accodano.
+pub(crate) fn month_bands(ws: &[i32]) -> Vec<(u32, f32, f32)> {
+    let mut days: Vec<u32> = Vec::with_capacity(ws.len() * MONTH_BAND_DAYS);
+    for w in ws {
+        let first = primo_giorno_settimana_corrente(&days_to_local(*w));
+        for i in 0..MONTH_BAND_DAYS as u64 {
+            days.push((first + chrono::Days::new(i)).month());
+        }
+    }
+    let n = days.len() as f32;
+    let mut out: Vec<(u32, f32, f32)> = Vec::new();
+    for (i, m) in days.into_iter().enumerate() {
+        let to = (i + 1) as f32 / n;
+        match out.last_mut() {
+            Some((last, _, end)) if *last == m => *end = to,
+            _ => out.push((m, i as f32 / n, to)),
+        }
+    }
+    out
+}
+
+/// Disegna la velatura dei mesi su una cella di intestazione (in alto o nel
+/// footer) e ritorna lo sfondo che ne risulta **al centro** della cella, cioè
+/// quello sotto l'etichetta della data: serve a scegliere il colore del testo.
+pub(crate) fn paint_month_tint(ui: &egui::Ui, cell: Rect, ws: &[i32]) -> Color32 {
+    let mut center = bg();
+    for (month, from, to) in month_bands(ws) {
+        let tint = month_tint(month);
+        // Bordi arrotondati al pixel: bande adiacenti combaciano senza filetti.
+        let x0 = (cell.left() + cell.width() * from).round();
+        let x1 = (cell.left() + cell.width() * to).round();
+        let band = Rect::from_min_max(
+            egui::pos2(x0, cell.top()),
+            egui::pos2(x1.max(x0), cell.bottom()),
+        );
+        ui.painter().rect_filled(band, 0.0, tint);
+        if from <= 0.5 && 0.5 < to {
+            center = blend(bg(), tint);
+        }
+    }
+    center
+}
+
 fn weeks_vec(app: &App) -> Vec<i32> {
     (app.start_week.0..=app.end_week.0)
         .step_by(7)
@@ -2970,6 +3027,81 @@ mod tests {
         assert_eq!(app.projects.project_milestones_at_week(pid, w), vec![a, b]);
         // …e ciascuna ha il suo colore, quindi le bande sono distinguibili.
         assert_ne!(app.milestones.get_color(a), app.milestones.get_color(b));
+    }
+
+    // ── Bande dei mesi sulle righe delle date ──────────────────────────────
+
+    /// Numero di giorno (WeekId) del lunedì della settimana che contiene la data.
+    fn week_of(y: i32, m: u32, d: u32) -> i32 {
+        let date = chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        local_to_days(&primo_giorno_settimana_corrente(&date))
+    }
+
+    /// Settimana tutta dentro un mese: una banda sola, larga tutta la cella.
+    #[test]
+    fn month_bands_of_a_single_month_week() {
+        let bands = month_bands(&[week_of(2026, 8, 24)]);
+        assert_eq!(bands, vec![(8, 0.0, 1.0)]);
+    }
+
+    /// Settimana a cavallo: la parte sinistra è larga quanti sono i giorni
+    /// rimasti nel mese precedente (su 5), il resto è del mese nuovo.
+    #[test]
+    fn month_bands_split_on_the_day_the_month_changes() {
+        // lun 31/8 in agosto, mar–ven in settembre → 1/5 + 4/5
+        assert_eq!(
+            month_bands(&[week_of(2026, 8, 31)]),
+            vec![(8, 0.0, 0.2), (9, 0.2, 1.0)]
+        );
+        // lun–mer in settembre, gio 1/10 e ven in ottobre → 3/5 + 2/5
+        assert_eq!(
+            month_bands(&[week_of(2026, 9, 28)]),
+            vec![(9, 0.0, 0.6), (10, 0.6, 1.0)]
+        );
+        // il mese cambia di sabato: i 5 giorni colorati sono tutti di luglio
+        assert_eq!(month_bands(&[week_of(2026, 7, 27)]), vec![(7, 0.0, 1.0)]);
+        // cambio d'anno: dicembre → gennaio
+        assert_eq!(
+            month_bands(&[week_of(2025, 12, 29)]),
+            vec![(12, 0.0, 0.6), (1, 0.6, 1.0)]
+        );
+    }
+
+    /// Colonna mergiata (zoom): le settimane del gruppo si accodano, quindi le
+    /// frazioni sono sui `5 × n` giorni complessivi.
+    #[test]
+    fn month_bands_span_merged_columns() {
+        let bands = month_bands(&[week_of(2026, 8, 24), week_of(2026, 8, 31)]);
+        assert_eq!(bands, vec![(8, 0.0, 0.6), (9, 0.6, 1.0)]);
+        // le bande sono contigue e coprono tutta la cella
+        assert_eq!(bands.first().unwrap().1, 0.0);
+        assert_eq!(bands.last().unwrap().2, 1.0);
+        for pair in bands.windows(2) {
+            assert_eq!(pair[0].2, pair[1].1);
+        }
+    }
+
+    /// Lo sfondo restituito (quello che decide il colore della data) è quello
+    /// della banda che sta **sotto l'etichetta**, cioè al centro della cella.
+    #[test]
+    fn month_tint_center_is_the_band_under_the_label() {
+        set_bw_mode(false);
+        set_dark_theme(true);
+        set_month_colors(MONTH_COLORS_DEFAULT);
+        set_month_tint_pct(100);
+
+        let ctx = egui::Context::default();
+        let out = Cell::new(Color32::TRANSPARENT);
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let cell = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(COL_W, ROW_H));
+                // 1 solo giorno di agosto: il centro cade nella banda di settembre
+                out.set(paint_month_tint(ui, cell, &[week_of(2026, 8, 31)]));
+            });
+        });
+        assert_eq!(out.get(), blend(bg(), month_tint(9)));
+
+        set_month_tint_pct(MONTH_TINT_PCT_DEFAULT);
     }
 
     // ── Asse delle colonne (header + griglia + footer condividono questo) ───

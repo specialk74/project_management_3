@@ -389,9 +389,16 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                     continue;
                 };
                 let merged = ws.len() > 1;
+                // Velatura del mese (divisa in bande se la settimana è a cavallo
+                // di due mesi): sotto all'evidenziazione della settimana corrente,
+                // che resta il segnale più forte. Lo sfondo che ne risulta decide
+                // il colore del testo, così la data resta leggibile anche con
+                // velature marcate.
+                let mut cell_bg = paint_month_tint(ui, cell, ws);
                 if ws.contains(&state.this_week) {
-                    ui.painter()
-                        .rect_filled(cell, 0.0, g(this_week()).gamma_multiply(0.5));
+                    let wk = g(this_week()).gamma_multiply(0.5);
+                    ui.painter().rect_filled(cell, 0.0, wk);
+                    cell_bg = blend(cell_bg, wk);
                 }
                 // etichetta = data della prima settimana del gruppo
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))
@@ -410,7 +417,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                         Align2::CENTER_CENTER,
                         &txt,
                         cell_font(),
-                        text(),
+                        contrast_text(cell_bg),
                     );
                 }
                 if merged {

@@ -95,6 +95,48 @@ editando il file** `.ron`: non c'è una voce di menù. In testa al file:
 - In modalità **Bianco/Nero** (§15) il colore viene reso in scala di grigi come
   tutti gli altri.
 
+### Colori dei mesi (`month_colors`)
+
+Le due righe di **date** — l'intestazione delle settimane in cima alla griglia e
+la riga delle date del footer — hanno uno sfondo colorato **diverso per ogni
+mese**, così si vede a colpo d'occhio dove finisce un mese e comincia il
+successivo. Anche questi 12 colori si cambiano solo dal file:
+
+```ron
+(
+    start_week: (20290),
+    week_color: "#CCFF00",
+    month_colors: [
+        "#D74242",
+        "#D78C42",
+        ...
+    ],
+    month_tint_pct: 60,
+    ...
+)
+```
+
+- **12 valori in ordine da gennaio a dicembre**, stesso formato `"#RRGGBB"`.
+- Una settimana **a cavallo di due mesi** ha la cella divisa in **5 parti**
+  (lunedì–venerdì): a sinistra il mese che sta finendo, largo quanti sono i suoi
+  giorni, a destra il mese nuovo. Es. con il lunedì in agosto e gli altri quattro
+  giorni in settembre, un quinto della cella è del colore di agosto. Se il mese
+  cambia di sabato o domenica la cella resta di un colore solo.
+- Con lo **zoom** (settimane accorpate) vale la stessa regola sull'intero gruppo:
+  le settimane si accodano e le bande sono proporzionali ai giorni di ciascun mese.
+- **`month_tint_pct`** regola quanto è marcata la tinta: `0` = invisibile,
+  `100` = colore pieno, default `60`. Valori fuori scala vengono riportati nei
+  limiti e segnalati.
+- Il testo della data si adatta da solo allo sfondo che ne risulta (nero sulle
+  tinte chiare, bianco su quelle scure), quindi resta leggibile anche a
+  percentuali alte.
+- La velatura sta comunque **sotto** all'evidenziazione della settimana
+  corrente, che rimane il segnale più forte.
+- Se una voce manca o è scritta male, **solo quel mese** torna al suo colore di
+  default; il problema è segnalato nella finestra "Problema nel file".
+- Anche questi valori sono sempre riscritti nel file al salvataggio: eventuali
+  commenti aggiunti a mano nel `.ron` vengono persi.
+
 ---
 
 ## 3. Concetti e modello dati
@@ -923,6 +965,9 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 
 - **Giallo fosforescente (tinta colonna)**: settimana corrente (colore
   personalizzabile dal file — vedi §2).
+- **Tinta sulle righe delle date** (in alto e nel footer): il mese della data,
+  con 12 colori diversi; celle **bicolori** nelle settimane a cavallo di due mesi
+  (colori e intensità personalizzabili dal file — vedi §2).
 - **Azzurro (colonna)**: settimana di inizio progetto.
 - **Verde (colonna)**: settimana di fine/deadline progetto.
 - **Colonna gialla stretta**: confine di fine anno ("Effort residuo").
