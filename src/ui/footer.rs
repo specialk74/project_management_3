@@ -413,7 +413,8 @@ pub(crate) fn draw_right_footer(
         let merged = ws.len() > 1;
 
         // tinta settimana corrente su tutta la colonna
-        if ws.contains(&state.this_week) {
+        let is_this_week = ws.contains(&state.this_week);
+        if is_this_week {
             let col =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
             ui.painter()
@@ -440,6 +441,13 @@ pub(crate) fn draw_right_footer(
 
             let bg = if idx % 2 == 0 { row_even() } else { row_alt() };
             ui.painter().rect_filled(cell, 0.0, bg);
+            // Lo sfondo alternato è opaco e coprirebbe la tinta di colonna: la
+            // ridisegna sulla cella così la settimana corrente resta evidenziata
+            // come nella griglia sopra.
+            if is_this_week {
+                ui.painter()
+                    .rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+            }
 
             // Somma su tutte le settimane del gruppo (una sola al livello zoom 0).
             let value: i32 = ws
