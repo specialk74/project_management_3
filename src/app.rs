@@ -457,7 +457,7 @@ mod tests {
     fn month_colors_are_always_written_even_when_default() {
         let app = App::new();
         assert_eq!(app.month_colors.len(), 12);
-        assert_eq!(app.month_colors[0], "#D74242");
+        assert_eq!(app.month_colors[0], "#FF0000");
         let ron = app.to_ron_string();
         assert!(ron.contains("month_colors"), "campo month_colors mancante");
         for c in &app.month_colors {
@@ -502,7 +502,7 @@ mod tests {
     fn month_colors_come_from_the_file() {
         let ron = App::new()
             .to_ron_string()
-            .replacen("\"#D74242\"", "\"#123456\"", 1);
+            .replacen("\"#FF0000\"", "\"#123456\"", 1);
         let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
         assert_eq!(app.month_colors_rgb()[0], 0x123456);
         // gli altri mesi restano quelli scritti nel file (i default)

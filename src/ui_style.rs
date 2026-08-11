@@ -28,24 +28,24 @@ pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // Colors.y
 /// `this_week()`, impostato a inizio frame da `set_this_week_color` con il
 /// valore letto dal file `.ron` (campo `week_color: "#RRGGBB"`).
 pub const THIS_WEEK_DEFAULT: u32 = 0xCC_FF_00;
-/// Palette **di default** dei 12 mesi (gennaio → dicembre): tinte equidistanti
-/// sulla ruota dei colori (30° l'una dall'altra), così due mesi vicini si
-/// distinguono. Come `THIS_WEEK_DEFAULT` non si usa direttamente: il colore
-/// effettivo è `month_color`/`month_tint`, impostato a inizio frame da
-/// `set_month_colors` con i valori del file `.ron` (campo `month_colors`).
+/// Palette **di default** dei 12 mesi (gennaio → dicembre): i colori puri della
+/// ruota, uno ogni 30°, così due mesi vicini si distinguono. Come
+/// `THIS_WEEK_DEFAULT` non si usa direttamente: il colore effettivo è
+/// `month_color`/`month_tint`, impostato a inizio frame da `set_month_colors`
+/// con i valori del file `.ron` (campo `month_colors`).
 pub const MONTH_COLORS_DEFAULT: [u32; 12] = [
-    0xD74242, // gennaio
-    0xD78C42, // febbraio
-    0xD7D742, // marzo
-    0x8CD742, // aprile
-    0x42D742, // maggio
-    0x42D78C, // giugno
-    0x42D7D7, // luglio
-    0x428CD7, // agosto
-    0x4242D7, // settembre
-    0x8C42D7, // ottobre
-    0xD742D7, // novembre
-    0xD7428C, // dicembre
+    0xFF0000, // gennaio
+    0xFF8000, // febbraio
+    0xFFFF00, // marzo
+    0x80FF00, // aprile
+    0x00FF00, // maggio
+    0x00FF80, // giugno
+    0x00FFFF, // luglio
+    0x0080FF, // agosto
+    0x0000FF, // settembre
+    0x8000FF, // ottobre
+    0xFF00FF, // novembre
+    0xFF0080, // dicembre
 ];
 /// Intensità **di default** della velatura del mese sulle righe delle date, in
 /// percentuale (0 = invisibile, 100 = colore pieno). Come i colori si cambia dal
@@ -529,7 +529,7 @@ mod tests {
         set_dark_theme(true);
         set_month_colors(MONTH_COLORS_DEFAULT);
         set_month_tint_pct(100);
-        // marzo (#D7D742) è chiarissimo, settembre (#4242D7) è scuro
+        // marzo (#FFFF00) è chiarissimo, settembre (#0000FF) è scuro
         assert_eq!(contrast_text(blend(bg(), month_tint(3))), Color32::BLACK);
         assert_eq!(contrast_text(blend(bg(), month_tint(9))), Color32::WHITE);
         set_month_tint_pct(MONTH_TINT_PCT_DEFAULT);

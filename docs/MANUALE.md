@@ -107,8 +107,8 @@ successivo. Anche questi 12 colori si cambiano solo dal file:
     start_week: (20290),
     week_color: "#CCFF00",
     month_colors: [
-        "#D74242",
-        "#D78C42",
+        "#FF0000",
+        "#FF8000",
         ...
     ],
     month_tint_pct: 60,
