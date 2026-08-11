@@ -83,6 +83,7 @@ references; the UI lives entirely in the `src/ui/` module.
 ```
 App (workers.ron)
 ├── start_week / end_week : WeekId   — grid time range
+├── week_color: String               — "#RRGGBB" current-week highlight (file-only setting)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
@@ -151,6 +152,16 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 - `g(color)` applies the B/W (grayscale) transform when B/W mode is on (`set_bw_mode`
   per frame). Wrap accent colors in `g(...)`; theme functions already return final
   colors.
+- **Current-week highlight** — the only **file-configured** color: `App.week_color`
+  (`"#RRGGBB"`, `#[serde(default = "default_week_color")]`, **always serialized**, no
+  UI to change it). `App::week_color_rgb()` parses it (`ui_style::parse_hex_rgb`,
+  falling back to `THIS_WEEK_DEFAULT` = `0xCCFF00` neon yellow; an unparsable value is
+  reported by `App::validate` in the "Problema nel file" window). `PjmApp::ui()` calls
+  `set_this_week_color(app.week_color_rgb())` once per frame next to `set_bw_mode`/
+  `set_dark_theme`; drawing code reads the **function** `this_week()` (there is no
+  `THIS_WEEK` const anymore) — grid column tint, footer column tint **and each footer
+  worker cell** (the alternating `row_even()/row_alt()` fill is opaque and would cover
+  the column tint, so the cell repaints it), plus the week header in `toolbar.rs`.
 - Theme is resolved at the top of `PjmApp::ui()` from `UiState.theme_pref`
   (`Auto`/`Light`/`Dark`); `Auto` reads `ctx.system_theme()`. egui's own `Visuals`
   are set to match so menus/popups/text-edits follow the theme too.

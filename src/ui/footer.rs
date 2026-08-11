@@ -418,7 +418,7 @@ pub(crate) fn draw_right_footer(
             let col =
                 Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
             ui.painter()
-                .rect_filled(col, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+                .rect_filled(col, 0.0, g(this_week()).gamma_multiply(0.18));
         }
 
         // header: data settimana
@@ -446,7 +446,7 @@ pub(crate) fn draw_right_footer(
             // come nella griglia sopra.
             if is_this_week {
                 ui.painter()
-                    .rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+                    .rect_filled(cell, 0.0, g(this_week()).gamma_multiply(0.18));
             }
 
             // Somma su tutte le settimane del gruppo (una sola al livello zoom 0).

@@ -9,6 +9,7 @@ use crate::{
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
     single_effort_utils::sinlge_effort::Effort,
+    ui_style::{THIS_WEEK_DEFAULT, hex_rgb_string, parse_hex_rgb},
     workers_utils::{
         worker::{DEFAULT_MAX_HOURS, WorkerId},
         workers::Workers,
@@ -24,9 +25,21 @@ fn default_projects() -> Projects {
     Projects::new()
 }
 
+/// Colore di default dell'evidenziazione della settimana corrente, nella forma
+/// scritta nel file (`"#RRGGBB"`).
+pub fn default_week_color() -> String {
+    hex_rgb_string(THIS_WEEK_DEFAULT)
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct App {
     pub start_week: WeekId,
+    /// Colore dell'evidenziazione della settimana corrente, `"#RRGGBB"`. Si
+    /// cambia **solo** editando il file (non c'è una voce di menù) ed è sempre
+    /// scritto, anche quando vale il default. Se il valore non è valido il
+    /// programma usa il default e lo segnala in `validate`.
+    #[serde(default = "default_week_color")]
+    pub week_color: String,
     #[serde(skip)]
     pub end_week: WeekId,
     #[serde(skip)]
@@ -51,6 +64,7 @@ impl App {
         println!("new -> {} {} {}", n_week, start, end);
         Self {
             start_week: WeekId(start as usize),
+            week_color: default_week_color(),
             end_week: WeekId(end as usize),
             n_week: WeekId(n_week as usize),
             workers: Workers::new(),
@@ -105,6 +119,13 @@ impl App {
             .map(|(id, _, _)| id)
             .collect();
         let mut issues = Vec::new();
+        if parse_hex_rgb(&self.week_color).is_none() {
+            issues.push(format!(
+                "Colore settimana «{}» non valido: atteso \"#RRGGBB\" (uso {}).",
+                self.week_color,
+                default_week_color()
+            ));
+        }
         for (pid, pname) in self.projects.list() {
             if issues.len() >= MAX {
                 break;
@@ -172,6 +193,13 @@ impl App {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         Self::from_ron_str(&content)
+    }
+
+    /// Colore della settimana corrente come 0xRRGGBB: il valore del file se è
+    /// scritto correttamente, altrimenti il default (l'incoerenza è segnalata
+    /// da `validate`, non è un errore bloccante).
+    pub fn week_color_rgb(&self) -> u32 {
+        parse_hex_rgb(&self.week_color).unwrap_or(THIS_WEEK_DEFAULT)
     }
 
     /// Serializza lo stato in stringa RON (stesso formato di `save`). Usato per
@@ -322,5 +350,56 @@ mod tests {
     fn validate_clean_app_has_no_issues() {
         let app = App::new();
         assert!(app.validate().is_empty());
+    }
+
+    /// Il colore della settimana finisce nel file **anche** quando è il default:
+    /// così chi vuole cambiarlo trova già la riga da editare.
+    #[test]
+    fn week_color_is_always_written_even_when_default() {
+        let app = App::new();
+        assert_eq!(app.week_color, "#CCFF00");
+        assert!(
+            app.to_ron_string().contains("week_color: \"#CCFF00\""),
+            "il campo week_color deve essere serializzato"
+        );
+    }
+
+    /// Il colore scritto nel file è quello effettivamente usato dalla GUI.
+    #[test]
+    fn week_color_comes_from_the_file() {
+        let ron = App::new().to_ron_string().replacen(
+            "week_color: \"#CCFF00\"",
+            "week_color: \"#ff8800\"",
+            1,
+        );
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.week_color_rgb(), 0xFF8800);
+        assert!(app.validate().is_empty());
+    }
+
+    /// File vecchi (senza il campo) restano caricabili: vale il default.
+    #[test]
+    fn missing_week_color_falls_back_to_default() {
+        let ron = App::new()
+            .to_ron_string()
+            .replacen("week_color: \"#CCFF00\",", "", 1);
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.week_color_rgb(), THIS_WEEK_DEFAULT);
+        assert!(app.validate().is_empty());
+    }
+
+    /// Un colore scritto male non blocca il caricamento: default + segnalazione.
+    #[test]
+    fn invalid_week_color_is_reported_and_ignored() {
+        let ron = App::new().to_ron_string().replacen(
+            "week_color: \"#CCFF00\"",
+            "week_color: \"verde\"",
+            1,
+        );
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.week_color_rgb(), THIS_WEEK_DEFAULT);
+        let issues = app.validate();
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].contains("verde"), "{issues:?}");
     }
 }

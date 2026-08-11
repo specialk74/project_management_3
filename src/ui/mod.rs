@@ -986,6 +986,10 @@ impl eframe::App for PjmApp {
             // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
             set_bw_mode(state.bw_mode);
 
+            // Colore della settimana corrente: viene dal file (`week_color`), non
+            // dall'interfaccia; come il tema, si imposta una volta per frame.
+            set_this_week_color(app.week_color_rgb());
+
             // Tema chiaro/scuro: risolto a inizio frame. In Auto segue il tema del
             // sistema (macOS "Automatico" → chiaro di giorno, scuro la sera).
             let dark = match state.theme_pref {

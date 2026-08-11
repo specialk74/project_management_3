@@ -391,7 +391,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 let merged = ws.len() > 1;
                 if ws.contains(&state.this_week) {
                     ui.painter()
-                        .rect_filled(cell, 0.0, g(THIS_WEEK).gamma_multiply(0.5));
+                        .rect_filled(cell, 0.0, g(this_week()).gamma_multiply(0.5));
                 }
                 // etichetta = data della prima settimana del gruppo
                 let txt = primo_giorno_settimana_corrente(&days_to_local(w))

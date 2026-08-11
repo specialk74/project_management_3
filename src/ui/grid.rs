@@ -532,7 +532,7 @@ pub(crate) fn draw_dev_cells(
         }
         if !compact && ws.contains(&state.this_week) {
             ui.painter()
-                .rect_filled(col_rect, 0.0, g(THIS_WEEK).gamma_multiply(0.18));
+                .rect_filled(col_rect, 0.0, g(this_week()).gamma_multiply(0.18));
         }
 
         // ── Milestone: tinta colonna col colore della milestone + tooltip;

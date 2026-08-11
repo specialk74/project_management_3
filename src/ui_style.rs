@@ -23,7 +23,11 @@ pub const DEFAULT_MAX_HOURS: u32 = 40;
 // Colori (da styles.slint / Slint Colors.*)
 pub const BETWEEN_PROJECTS: Color32 = Color32::from_rgb(0x80, 0x80, 0x80); // Colors.gray
 pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // Colors.yellow
-pub const THIS_WEEK: Color32 = Color32::from_rgb(0x00, 0xce, 0x3a);
+/// Colore **di default** dell'evidenziazione della settimana corrente (giallo
+/// fosforescente). Non è una costante d'uso diretto: il colore effettivo è
+/// `this_week()`, impostato a inizio frame da `set_this_week_color` con il
+/// valore letto dal file `.ron` (campo `week_color: "#RRGGBB"`).
+pub const THIS_WEEK_DEFAULT: u32 = 0xCC_FF_00;
 pub const EFFORT_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // Colors.green
@@ -45,6 +49,10 @@ thread_local! {
     /// Tema corrente: true = scuro (default), false = chiaro. Impostato a inizio
     /// frame da `set_dark_theme` (risolto da Auto/Chiaro/Scuro in `ui.rs`).
     static DARK_THEME: Cell<bool> = const { Cell::new(true) };
+    /// Colore dell'evidenziazione della settimana corrente. Non c'è una voce di
+    /// menù: si cambia **solo** dal file `.ron` (`week_color`) e viene impostato
+    /// a inizio frame da `set_this_week_color`.
+    static THIS_WEEK_COLOR: Cell<u32> = const { Cell::new(THIS_WEEK_DEFAULT) };
 }
 
 /// Attiva/disattiva la resa in scala di grigi (chiamata a inizio frame).
@@ -55,6 +63,40 @@ pub fn set_bw_mode(on: bool) {
 /// Imposta il tema (chiamata a inizio frame). `true` = scuro, `false` = chiaro.
 pub fn set_dark_theme(on: bool) {
     DARK_THEME.with(|b| b.set(on));
+}
+
+/// Imposta il colore della settimana corrente (chiamata a inizio frame con il
+/// valore del file `.ron`). `rgb` è 0xRRGGBB.
+pub fn set_this_week_color(rgb: u32) {
+    THIS_WEEK_COLOR.with(|c| c.set(rgb));
+}
+
+/// Colore dell'evidenziazione della settimana corrente (griglia, footer,
+/// intestazione settimane). I chiamanti lo passano per `g(...)` come gli altri
+/// accenti.
+#[inline]
+pub fn this_week() -> Color32 {
+    let rgb = THIS_WEEK_COLOR.with(|c| c.get());
+    Color32::from_rgb(
+        ((rgb >> 16) & 0xFF) as u8,
+        ((rgb >> 8) & 0xFF) as u8,
+        (rgb & 0xFF) as u8,
+    )
+}
+
+/// Converte `"#RRGGBB"` (con `#` opzionale, maiuscole o minuscole) in 0xRRGGBB.
+/// `None` se la stringa non è un colore esadecimale a 6 cifre.
+pub fn parse_hex_rgb(s: &str) -> Option<u32> {
+    let hex = s.trim().strip_prefix('#').unwrap_or(s.trim());
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u32::from_str_radix(hex, 16).ok()
+}
+
+/// Forma canonica scritta nel `.ron`: `#RRGGBB` maiuscolo.
+pub fn hex_rgb_string(rgb: u32) -> String {
+    format!("#{:06X}", rgb & 0xFF_FFFF)
 }
 
 #[inline]
@@ -302,4 +344,39 @@ pub fn cell_font() -> FontId {
 #[inline]
 pub fn person_font() -> FontId {
     FontId::monospace(11.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_hex_colors_with_or_without_hash() {
+        assert_eq!(parse_hex_rgb("#CCFF00"), Some(0xCCFF00));
+        assert_eq!(parse_hex_rgb("ccff00"), Some(0xCCFF00));
+        assert_eq!(parse_hex_rgb("  #ff8800 "), Some(0xFF8800));
+    }
+
+    #[test]
+    fn rejects_malformed_colors() {
+        for s in ["", "#", "#FFF", "#GGFFAA", "#CCFF001", "verde"] {
+            assert_eq!(parse_hex_rgb(s), None, "«{s}» non è un colore valido");
+        }
+    }
+
+    #[test]
+    fn hex_string_round_trips() {
+        assert_eq!(hex_rgb_string(THIS_WEEK_DEFAULT), "#CCFF00");
+        assert_eq!(parse_hex_rgb(&hex_rgb_string(0x01A2B3)), Some(0x01A2B3));
+    }
+
+    /// Il colore effettivo è quello impostato dal file, non una costante.
+    #[test]
+    fn this_week_follows_the_configured_color() {
+        set_bw_mode(false);
+        set_this_week_color(0xFF8800);
+        assert_eq!(this_week(), Color32::from_rgb(0xFF, 0x88, 0x00));
+        set_this_week_color(THIS_WEEK_DEFAULT);
+        assert_eq!(this_week(), Color32::from_rgb(0xCC, 0xFF, 0x00));
+    }
 }

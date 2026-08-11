@@ -73,6 +73,28 @@ cargo test       # esegue i test
 - Il nome del file corrente è mostrato in alto a destra nella barra strumenti.
   Un asterisco `(*)` e il colore arancione segnalano modifiche non salvate.
 
+### Colore della settimana corrente (`week_color`)
+
+L'evidenziazione della **settimana corrente** (tinta sulla colonna in griglia e
+nel footer, intestazione della settimana) usa un colore che si cambia **solo
+editando il file** `.ron`: non c'è una voce di menù. In testa al file:
+
+```ron
+(
+    start_week: (20290),
+    week_color: "#CCFF00",
+    ...
+)
+```
+
+- Formato `"#RRGGBB"` (il `#` è facoltativo, maiuscole o minuscole indifferenti).
+- Il valore è **sempre scritto** nel file, anche quando è quello di default
+  (`#CCFF00`, giallo fosforescente): basta modificarlo e riaprire il file.
+- Se il colore è scritto male il programma usa il default e lo segnala nella
+  finestra "Problema nel file" al caricamento.
+- In modalità **Bianco/Nero** (§15) il colore viene reso in scala di grigi come
+  tutti gli altri.
+
 ---
 
 ## 3. Concetti e modello dati
@@ -899,7 +921,8 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 
 ## 19. Codici colore e indicatori
 
-- **Verde (tinta colonna)**: settimana corrente.
+- **Giallo fosforescente (tinta colonna)**: settimana corrente (colore
+  personalizzabile dal file — vedi §2).
 - **Azzurro (colonna)**: settimana di inizio progetto.
 - **Verde (colonna)**: settimana di fine/deadline progetto.
 - **Colonna gialla stretta**: confine di fine anno ("Effort residuo").
