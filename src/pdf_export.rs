@@ -907,7 +907,8 @@ fn page_shapes(
     let today_in_axis = today >= axis_start && today <= axis_end;
     if today_in_axis && today > proj_start {
         let xt = x_of(today);
-        shapes.extend(rect_fill(
+        // Angoli smussati come le barre dell'effort (stesso `corner_pct`).
+        shapes.extend(rect_round(
             x_of(proj_start),
             AXIS_TOP - 3.0,
             xt,

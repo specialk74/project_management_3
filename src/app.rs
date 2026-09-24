@@ -270,8 +270,35 @@ impl App {
     }
 
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_reporting_missing(path).map(|(app, _)| app)
+    }
+
+    /// Come `load`, ma riporta anche i parametri "solo file" assenti nel file
+    /// (vedi `missing_file_settings`): il chiamante li riscrive subito su disco,
+    /// così compaiono nel `.ron` pronti da modificare.
+    pub fn load_reporting_missing(
+        path: &str,
+    ) -> Result<(Self, Vec<&'static str>), Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
-        Self::from_ron_str(&content)
+        let app = Self::from_ron_str(&content)?;
+        Ok((app, Self::missing_file_settings(&content)))
+    }
+
+    /// Parametri "solo file" (nessuna UI per cambiarli: `week_color`,
+    /// `month_colors`, `month_tint_pct`, `corner_pct`) che mancano nel testo RON.
+    /// Un file scritto prima che il campo esistesse lo carica col default ma non
+    /// lo contiene finché non viene risalvato.
+    pub fn missing_file_settings(ron: &str) -> Vec<&'static str> {
+        const KEYS: [&str; 4] = ["week_color", "month_colors", "month_tint_pct", "corner_pct"];
+        KEYS.into_iter()
+            .filter(|key| {
+                !ron.lines().any(|l| {
+                    l.trim_start()
+                        .strip_prefix(key)
+                        .is_some_and(|rest| rest.trim_start().starts_with(':'))
+                })
+            })
+            .collect()
     }
 
     /// Colore della settimana corrente come 0xRRGGBB: il valore del file se è
@@ -584,6 +611,21 @@ mod tests {
         let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
         assert_eq!(app.corner_pct, 0);
         assert!(app.validate().is_empty());
+    }
+
+    /// Un file senza `corner_pct` viene riconosciuto: al caricamento si risalva.
+    #[test]
+    fn missing_file_settings_detects_absent_corner_pct() {
+        let ron = App::new().to_ron_string();
+        assert!(App::missing_file_settings(&ron).is_empty());
+        let without: String = ron
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("corner_pct:"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(App::missing_file_settings(&without), vec!["corner_pct"]);
+        let app = App::from_ron_str(&without).expect("il RON deve caricarsi");
+        assert!(App::missing_file_settings(&app.to_ron_string()).is_empty());
     }
 
     /// I file scritti prima della smussatura si rileggono col valore di default.

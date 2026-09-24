@@ -512,10 +512,16 @@ the footer date.
   `CORNER_PCT` thread-local (`set_corner_pct`, clamped) at the top of every page,
   so any caller — tests included — is consistent. `rect_round(...)` replaces
   `rect_fill` for the **effort bars** (all three `BarFormat`s), the **ghost
-  overlay** on them and the **month axis cells**; it emits a `Shape::Poly` from
+  overlay** on them, the **month axis cells** and the red **"Today" progress bar**
+  on the axis; it emits a `Shape::Poly` from
   `round_rect_pts` (6 segments per corner, no renderer change needed since Poly
   already renders to PDF and SVG) and falls back to a real `Shape::Rect` at 0.
-  Today's marker, the thin no-effort row and the grey footer band stay square.
+  Today's vertical line/triangle, the thin no-effort row and the grey footer band stay square.
+  **Missing file-only settings are written on load**: `App::load_reporting_missing`
+  returns `missing_file_settings(raw)` (`week_color`/`month_colors`/`month_tint_pct`/
+  `corner_pct` absent from the text); `PjmApp::write_missing_settings` (startup via
+  `PjmApp::new`, and **File ▸ Apri…**) saves immediately + info toast, so an old file
+  gains `corner_pct: 40` without waiting for another edit.
   The ghost overlay merges **consecutive** ghost weeks into one rect via
   `contiguous_runs` (both on the bar and on the thin no-effort row) — one rect per
   week would read as a row of detached tiles once the corners are rounded; the

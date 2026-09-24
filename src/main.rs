@@ -23,8 +23,8 @@ fn main() -> eframe::Result<()> {
         .unwrap_or_else(|| SAVE_PATH.to_string());
     // Se il file esiste ma non si carica, avvisa l'utente (evita di ripartire in
     // silenzio da vuoto e sovrascrivere per sbaglio un file esistente).
-    let (mut app, startup_error) = match App::load(&file_path) {
-        Ok(a) => (a, None),
+    let (mut app, missing, startup_error) = match App::load_reporting_missing(&file_path) {
+        Ok((a, missing)) => (a, missing, None),
         Err(e) => {
             let msg = std::path::Path::new(&file_path).exists().then(|| {
                 format!(
@@ -32,7 +32,7 @@ fn main() -> eframe::Result<()> {
                      salvando sovrascriverai il file esistente."
                 )
             });
-            (App::new(), msg)
+            (App::new(), Vec::new(), msg)
         }
     };
     app.compute_sovra();
@@ -52,6 +52,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         &title,
         native_options,
-        Box::new(move |cc| Ok(Box::new(PjmApp::new(app, file_path, startup_error, cc)))),
+        Box::new(move |cc| Ok(Box::new(PjmApp::new(app, file_path, missing, startup_error, cc)))),
     )
 }

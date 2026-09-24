@@ -943,6 +943,7 @@ impl PjmApp {
     pub fn new(
         app: App,
         current_file: String,
+        missing_settings: Vec<&'static str>,
         startup_error: Option<String>,
         cc: &eframe::CreationContext<'_>,
     ) -> Self {
@@ -973,7 +974,7 @@ impl PjmApp {
         // Errore di caricamento all'avvio + eventuali incoerenze di schema.
         let load_error = combine_issues(startup_error, app.validate());
 
-        Self {
+        let mut me = Self {
             app,
             ui: UiState {
                 current_file,
@@ -986,6 +987,22 @@ impl PjmApp {
                 load_error,
                 ..Default::default()
             },
+        };
+        me.write_missing_settings(&missing_settings);
+        me
+    }
+
+    /// Se al file appena caricato mancavano parametri "solo file" (es.
+    /// `corner_pct` in un file scritto prima che esistesse), lo risalva subito
+    /// così i valori compaiono nel `.ron`, pronti da modificare a mano.
+    fn write_missing_settings(&mut self, missing: &[&'static str]) {
+        if missing.is_empty() {
+            return;
+        }
+        if self.save_to_disk() {
+            self.sync_baseline();
+            self.ui
+                .toast_info(format!("Aggiunti al file i parametri: {}", missing.join(", ")));
         }
     }
 }
@@ -1758,8 +1775,8 @@ impl PjmApp {
                     .pick_file()
                 {
                     let path = path_buf.to_string_lossy().to_string();
-                    match App::load(&path) {
-                        Ok(loaded) => {
+                    match App::load_reporting_missing(&path) {
+                        Ok((loaded, missing)) => {
                             self.app = loaded;
                             self.ui.current_file = path;
                             self.ui.name_buffers.clear();
@@ -1771,6 +1788,7 @@ impl PjmApp {
                             self.sync_baseline();
                             // Validazione schema: segnala riferimenti pendenti.
                             self.ui.load_error = combine_issues(None, self.app.validate());
+                            self.write_missing_settings(&missing);
                         }
                         Err(e) => {
                             self.ui.load_error = Some(format!("Impossibile aprire «{path}»:\n{e}"));

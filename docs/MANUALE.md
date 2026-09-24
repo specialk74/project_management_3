@@ -140,7 +140,8 @@ successivo. Anche questi 12 colori si cambiano solo dal file:
 ### Smussatura degli angoli nella stampa (`corner_pct`)
 
 I rettangoli "pieni" del PDF/SVG — le **barre dell'effort** dei dev (in tutti e
-tre i formati barra) e le **celle della banda dei mesi** in alto — hanno gli
+tre i formati barra), le **celle della banda dei mesi** in alto e la **barra
+rossa di avanzamento "Today"** sull'asse — hanno gli
 **angoli arrotondati**. Quanto, lo decide un valore del file, letto a ogni avvio:
 
 ```ron
@@ -163,6 +164,9 @@ tre i formati barra) e le **celle della banda dei mesi** in alto — hanno gli
 - Come gli altri parametri "solo file": non c'è una voce di menù, il valore è
   sempre riscritto al salvataggio e, se è fuori dall'intervallo 0–100, viene
   riportato nei limiti e segnalato nella finestra "Problema nel file".
+- Se il file non contiene ancora `corner_pct` (o un altro parametro "solo file"),
+  all'apertura il programma lo **risalva subito** con il valore di default e lo
+  segnala con una notifica, così il campo compare nel `.ron` pronto da modificare.
 
 ---
 
