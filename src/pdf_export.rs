@@ -37,6 +37,25 @@ thread_local! {
     // assegnato a **effort 0** — e fa comparire anche il dev che ha solo un
     // ghost senza ore; `false` toglie del tutto la marcatura.
     static SHOW_GHOST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    // Smussatura degli angoli dei rettangoli "pieni" (barre effort e celle dei
+    // mesi), in percentuale: 0 = spigolo vivo, 100 = raggio massimo (metà del
+    // lato corto → estremi semicircolari). Viene dal file .ron (`App.corner_pct`)
+    // e la imposta `project_shapes` a ogni pagina.
+    static CORNER_PCT: std::cell::Cell<i32> = const { std::cell::Cell::new(CORNER_PCT_DEFAULT) };
+}
+
+/// Smussatura predefinita degli angoli, in percentuale del raggio massimo.
+/// È il valore scritto nel `.ron` quando il campo manca.
+pub const CORNER_PCT_DEFAULT: i32 = 40;
+
+/// Imposta la smussatura degli angoli (0–100, valori fuori intervallo vengono
+/// riportati nei limiti — `App::validate` li segnala all'utente).
+pub fn set_corner_pct(v: i32) {
+    CORNER_PCT.with(|c| c.set(v.clamp(0, 100)));
+}
+
+fn corner_pct() -> i32 {
+    CORNER_PCT.with(|c| c.get())
 }
 
 /// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
@@ -300,6 +319,43 @@ fn rect_fill(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<
         y1,
         color,
     }]
+}
+
+/// Punti (in senso antiorario) di un rettangolo con gli **angoli arrotondati**,
+/// approssimati con `SEG` segmenti per angolo: il raggio è
+/// `corner_pct()%` di metà lato corto, quindi al 100% gli estremi diventano
+/// semicerchi e allo 0% si torna allo spigolo vivo.
+fn round_rect_pts(x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<(f32, f32)> {
+    const SEG: usize = 6;
+    let (x0, x1) = (x0.min(x1), x0.max(x1));
+    let (y0, y1) = (y0.min(y1), y0.max(y1));
+    let r = (corner_pct() as f32 / 100.0) * (x1 - x0).min(y1 - y0) / 2.0;
+    let mut pts = Vec::with_capacity(4 * (SEG + 1));
+    // (centro dell'arco, angolo iniziale) per i quattro angoli, in senso orario
+    // partendo da quello in basso a sinistra.
+    let corners = [
+        ((x0 + r, y0 + r), std::f32::consts::PI),
+        ((x1 - r, y0 + r), 1.5 * std::f32::consts::PI),
+        ((x1 - r, y1 - r), 0.0),
+        ((x0 + r, y1 - r), 0.5 * std::f32::consts::PI),
+    ];
+    for ((cx, cy), a0) in corners {
+        for i in 0..=SEG {
+            let a = a0 + (i as f32 / SEG as f32) * 0.5 * std::f32::consts::PI;
+            pts.push((cx + r * a.cos(), cy + r * a.sin()));
+        }
+    }
+    pts
+}
+
+/// Rettangolo pieno con gli angoli **smussati** secondo l'impostazione del file
+/// (`App.corner_pct`): usato per le barre dell'effort e le celle dei mesi. Con
+/// smussatura 0 resta un rettangolo vero e proprio.
+fn rect_round(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<Shape> {
+    if corner_pct() <= 0 {
+        return rect_fill(x0, y0, x1, y1, color);
+    }
+    poly_fill(&round_rect_pts(x0, y0, x1, y1), color)
 }
 
 /// Poligono pieno da una lista di punti (mm).
@@ -798,7 +854,7 @@ fn page_shapes(
         let next = add_months(m, 1);
         let cell_x1 = x_of(local_to_days(&next));
         let fill = if idx % 2 == 0 { GRAY_DK } else { GRAY_LT };
-        shapes.extend(rect_fill(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
+        shapes.extend(rect_round(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
         // Separatore bianco a destra della cella.
         shapes.extend(line(cell_x1, AXIS_BOT, cell_x1, AXIS_TOP, 0.6, WHITE));
         // Riga verticale del mese, attraverso la zona delle righe dev.
@@ -1054,10 +1110,12 @@ fn page_shapes(
             ));
             // Settimane con un worker "ghost" (qui necessariamente a effort 0):
             // tratto rosso sulla riga sottile, così il ghost si vede anche
-            // quando il dev non ha ore.
-            for &day in &r.ghost_weeks {
-                let rx0 = x_of(day);
-                let rx1 = x_of(day + 7);
+            // quando il dev non ha ore. Anche qui le settimane consecutive
+            // formano un tratto unico.
+            let days: Vec<(i32, u32)> = r.ghost_weeks.iter().map(|d| (*d, 0)).collect();
+            for (gs, ge) in contiguous_runs(&days) {
+                let rx0 = x_of(gs);
+                let rx1 = x_of(ge + 7);
                 shapes.extend(rect_fill(
                     rx0,
                     yc - thin_hh,
@@ -1086,7 +1144,7 @@ fn page_shapes(
         match fmt {
             BarFormat::Continuous => {
                 // Un unico rettangolo dalla prima all'ultima settimana.
-                shapes.extend(rect_fill(
+                shapes.extend(rect_round(
                     bx0,
                     yc - bar_hh,
                     bx1.max(bx0 + 1.0),
@@ -1099,7 +1157,7 @@ fn page_shapes(
                 for (s, e) in contiguous_runs(&r.weeks) {
                     let rx0 = x_of(s);
                     let rx1 = x_of(e + 7);
-                    shapes.extend(rect_fill(
+                    shapes.extend(rect_round(
                         rx0,
                         yc - bar_hh,
                         rx1.max(rx0 + 1.0),
@@ -1118,7 +1176,7 @@ fn page_shapes(
                     let hh = (bar_hh * hours as f32 / denom).max(0.15);
                     let rx0 = x_of(day);
                     let rx1 = x_of(day + 7);
-                    shapes.extend(rect_fill(
+                    shapes.extend(rect_round(
                         rx0,
                         yc - hh,
                         rx1.max(rx0 + 1.0),
@@ -1129,24 +1187,39 @@ fn page_shapes(
             }
         }
         // Overlay rosso sulle settimane con worker "ghost": quei rettangoli sono
-        // sempre rossi, anche in mezzo alla barra del colore del dev. In formato
-        // proporzionale l'altezza segue le ore di quella settimana.
+        // sempre rossi, anche in mezzo alla barra del colore del dev.
         if !r.ghost_weeks.is_empty() {
-            let denom = proportional_ref(r.max_week) as f32;
-            for &day in &r.ghost_weeks {
-                let rx0 = x_of(day);
-                let rx1 = x_of(day + 7);
-                let hh = if matches!(fmt, BarFormat::Proportional) {
+            if matches!(fmt, BarFormat::Proportional) {
+                // Formato proporzionale: l'altezza segue le ore della singola
+                // settimana, quindi ogni settimana resta un rettangolo a sé.
+                let denom = proportional_ref(r.max_week) as f32;
+                for &day in &r.ghost_weeks {
+                    let rx0 = x_of(day);
+                    let rx1 = x_of(day + 7);
                     let hours = r
                         .weeks
                         .iter()
                         .find(|(d, _)| *d == day)
                         .map_or(0, |(_, h)| *h);
-                    (bar_hh * hours as f32 / denom).max(0.15)
-                } else {
-                    bar_hh
-                };
-                shapes.extend(rect_fill(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, RED));
+                    let hh = (bar_hh * hours as f32 / denom).max(0.15);
+                    shapes.extend(rect_round(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, RED));
+                }
+            } else {
+                // Altezza costante: le settimane ghost **consecutive** diventano
+                // un rettangolo unico, come la barra sotto — altrimenti con gli
+                // angoli smussati la marcatura si spezzerebbe in tessere.
+                let days: Vec<(i32, u32)> = r.ghost_weeks.iter().map(|d| (*d, 0)).collect();
+                for (gs, ge) in contiguous_runs(&days) {
+                    let rx0 = x_of(gs);
+                    let rx1 = x_of(ge + 7);
+                    shapes.extend(rect_round(
+                        rx0,
+                        yc - bar_hh,
+                        rx1.max(rx0 + 1.0),
+                        yc + bar_hh,
+                        RED,
+                    ));
+                }
             }
         }
         // Etichetta date a fine barra (o prima, se non ci sta a destra); se
@@ -1237,6 +1310,9 @@ fn project_shapes(
     };
     let proj_start = start_w.0 as i32;
     let proj_end = end_w.0 as i32;
+    // Smussatura degli angoli: impostazione del file .ron, letta a ogni pagina
+    // (così vale anche per chi chiama `project_shapes` direttamente, test inclusi).
+    set_corner_pct(app.corner_pct);
     let color_of = |dev_id: &DevId| {
         dev_info
             .get(dev_id)
@@ -2291,13 +2367,16 @@ mod tests {
             .collect()
     }
 
-    /// Numero di rettangoli rossi nella pagina. Ne esiste anche qualcuno non
-    /// legato ai ghost (il marker "Today"), quindi nei test si confrontano i
-    /// conteggi con e senza spunta, non il valore assoluto.
+    /// Numero di forme piene rosse nella pagina (rettangoli **e** poligoni: con
+    /// gli angoli smussati le marcature diventano poligoni). Ne esiste anche
+    /// qualcuna non legata ai ghost (il marker "Today"), quindi nei test si
+    /// confrontano i conteggi con e senza spunta, non il valore assoluto.
     fn red_rects(shapes: &[Shape]) -> usize {
         shapes
             .iter()
-            .filter(|sh| matches!(sh, Shape::Rect { color, .. } if *color == RED))
+            .filter(|sh| {
+                matches!(sh, Shape::Rect { color, .. } | Shape::Poly { color, .. } if *color == RED)
+            })
             .count()
     }
 
@@ -2400,6 +2479,138 @@ mod tests {
             "la settimana del ghost è marcata sulla riga sottile"
         );
         set_show_ghost(true);
+    }
+
+    /// Le settimane ghost **consecutive** formano un'unica marcatura: con gli
+    /// angoli smussati, un rettangolo per settimana si vedrebbe come una fila di
+    /// tessere staccate invece che come un tratto continuo.
+    #[test]
+    fn consecutive_ghost_weeks_are_merged_into_one_mark() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20120)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        let ghost = app.workers.add("Fantasma");
+        app.workers.set_ghost(ghost, true);
+        // Tre settimane consecutive col ghost, poi un buco, poi un'altra.
+        for w in [20007, 20014, 20021, 20035] {
+            app.projects
+                .add_effort(pid, dev, WeekId(w), ghost, Effort(8));
+        }
+
+        let marks = |fmt| {
+            set_show_ghost(true);
+            let on = project_shapes(
+                &app,
+                pid,
+                &project_name(&app, pid),
+                &dev_info_map(&app),
+                20030,
+                "",
+                Some(&[dev]),
+                true,
+                fmt,
+            )
+            .unwrap();
+            set_show_ghost(false);
+            let off = project_shapes(
+                &app,
+                pid,
+                &project_name(&app, pid),
+                &dev_info_map(&app),
+                20030,
+                "",
+                Some(&[dev]),
+                true,
+                fmt,
+            )
+            .unwrap();
+            set_show_ghost(true);
+            red_rects(&on) - red_rects(&off)
+        };
+
+        // Barra continua e segmentata: 2 marcature (il tratto 20007-20021 unito
+        // + la settimana isolata), non 4.
+        assert_eq!(marks(BarFormat::Continuous), 2);
+        assert_eq!(marks(BarFormat::Segmented), 2);
+        // Formato proporzionale: l'altezza cambia settimana per settimana,
+        // quindi restano 4 rettangoli distinti.
+        assert_eq!(marks(BarFormat::Proportional), 4);
+    }
+
+    /// La smussatura letta dal file decide la forma dei rettangoli: a 0 restano
+    /// rettangoli, sopra 0 le barre dell'effort e le celle dei mesi diventano
+    /// poligoni con gli angoli arrotondati (dentro il rettangolo di partenza).
+    #[test]
+    fn corner_pct_from_the_file_rounds_bars_and_month_cells() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        let dev_color = dev_info_map(&app).get(&dev).unwrap().1;
+
+        let shapes_of = |app: &App| shapes_all_devs(app, pid);
+        let colored = |shapes: &[Shape], want: (f32, f32, f32)| -> (usize, usize) {
+            let rects = shapes
+                .iter()
+                .filter(|sh| matches!(sh, Shape::Rect { color, .. } if *color == want))
+                .count();
+            let polys = shapes
+                .iter()
+                .filter(|sh| matches!(sh, Shape::Poly { color, .. } if *color == want))
+                .count();
+            (rects, polys)
+        };
+
+        // Spigolo vivo: la barra del dev è un rettangolo.
+        app.corner_pct = 0;
+        let sharp = shapes_of(&app);
+        assert_eq!(colored(&sharp, dev_color), (1, 0));
+        let (sharp_rects, _) = colored(&sharp, GRAY_DK); // celle dei mesi pari
+        assert!(sharp_rects > 0, "le celle dei mesi sono rettangoli");
+
+        // Smussata: stessa barra, ora poligono; idem le celle dei mesi.
+        app.corner_pct = 40;
+        let round = shapes_of(&app);
+        assert_eq!(colored(&round, dev_color), (0, 1));
+        assert_eq!(colored(&round, GRAY_DK), (0, sharp_rects));
+    }
+
+    /// Geometria del rettangolo smussato: 4 angoli × (SEG+1) punti, tutti dentro
+    /// il rettangolo di partenza, e raggio proporzionale alla percentuale.
+    #[test]
+    fn round_rect_points_stay_inside_the_rectangle() {
+        set_corner_pct(100);
+        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0);
+        assert_eq!(pts.len(), 28);
+        for (x, y) in &pts {
+            assert!((9.99..=30.01).contains(x), "x fuori: {x}");
+            assert!((19.99..=24.01).contains(y), "y fuori: {y}");
+        }
+        // Al 100% il raggio è metà del lato corto (2mm): il punto più a sinistra
+        // del bordo superiore è rientrato di 2mm rispetto allo spigolo.
+        let top_left_x = pts
+            .iter()
+            .filter(|(_, y)| (*y - 24.0).abs() < 0.01)
+            .map(|(x, _)| *x)
+            .fold(f32::MAX, f32::min);
+        assert!((top_left_x - 12.0).abs() < 0.05, "rientro atteso 2mm: {top_left_x}");
+
+        // Metà smussatura = metà raggio.
+        set_corner_pct(50);
+        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0);
+        let top_left_x = pts
+            .iter()
+            .filter(|(_, y)| (*y - 24.0).abs() < 0.01)
+            .map(|(x, _)| *x)
+            .fold(f32::MAX, f32::min);
+        assert!((top_left_x - 11.0).abs() < 0.05, "rientro atteso 1mm: {top_left_x}");
+
+        set_corner_pct(CORNER_PCT_DEFAULT);
     }
 
     #[test]
@@ -2596,20 +2807,19 @@ mod tests {
         app.projects
             .add_effort(pid, dev, WeekId(20035), WorkerId(0), Effort(16));
 
-        // Conteggio dei rettangoli nell'SVG: tutto è identico tra i formati
-        // tranne le barre del dev, quindi il totale isola il numero di barre.
-        // 3 settimane con effort, 2 tratti contigui (20007-20014 e 20035):
+        // Conteggio delle forme piene nell'SVG (rettangoli + poligoni: con gli
+        // angoli smussati le barre sono poligoni): tutto è identico tra i
+        // formati tranne le barre del dev, quindi il totale isola il numero di
+        // barre. 3 settimane con effort, 2 tratti contigui (20007-20014 e 20035):
         //   Continua = 1 barra, Segmentata = 2, Proporzionale = 3 (una a settimana).
-        let rects = |fmt| {
-            build_svg_project(&app, pid, &[dev], fmt)
-                .unwrap()
-                .matches("<rect")
-                .count()
+        let fills = |fmt| {
+            let svg = build_svg_project(&app, pid, &[dev], fmt).unwrap();
+            svg.matches("<rect").count() + svg.matches("<polygon").count()
         };
         let (cont, seg, prop) = (
-            rects(BarFormat::Continuous),
-            rects(BarFormat::Segmented),
-            rects(BarFormat::Proportional),
+            fills(BarFormat::Continuous),
+            fills(BarFormat::Segmented),
+            fills(BarFormat::Proportional),
         );
         assert_eq!(
             seg - cont,
@@ -2630,5 +2840,7 @@ mod tests {
         }
     }
 }
+
+
 
 

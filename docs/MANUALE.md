@@ -137,6 +137,33 @@ successivo. Anche questi 12 colori si cambiano solo dal file:
 - Anche questi valori sono sempre riscritti nel file al salvataggio: eventuali
   commenti aggiunti a mano nel `.ron` vengono persi.
 
+### Smussatura degli angoli nella stampa (`corner_pct`)
+
+I rettangoli "pieni" del PDF/SVG — le **barre dell'effort** dei dev (in tutti e
+tre i formati barra) e le **celle della banda dei mesi** in alto — hanno gli
+**angoli arrotondati**. Quanto, lo decide un valore del file, letto a ogni avvio:
+
+```ron
+(
+    start_week: (20290),
+    week_color: "#CCFF00",
+    month_colors: [...],
+    month_tint_pct: 60,
+    corner_pct: 40,
+    ...
+)
+```
+
+- È una **percentuale del raggio massimo**: `0` = spigolo vivo (come prima di
+  questa funzione), `100` = raggio massimo, cioè metà del lato corto — gli
+  estremi delle barre diventano semicerchi. Default `40`.
+- Il raggio è calcolato **sul lato corto** di ogni rettangolo, quindi barre
+  basse e celle alte restano proporzionate tra loro.
+- Vale sia per il PDF sia per l'SVG; nella griglia a schermo non cambia nulla.
+- Come gli altri parametri "solo file": non c'è una voce di menù, il valore è
+  sempre riscritto al salvataggio e, se è fuori dall'intervallo 0–100, viene
+  riportato nei limiti e segnalato nella finestra "Problema nel file".
+
 ---
 
 ## 3. Concetti e modello dati
@@ -442,8 +469,10 @@ anomala: quando un worker ghost viene inserito nell'effort di un dev,
    Il porpora distingue il ghost dai worker sovra-allocati (rossi). **Negli export
    PDF/SVG il ghost resta rosso** (punti 3–4);
 3. nel **PDF/SVG dei progetti** il rettangolo della barra è **rosso** nelle
-   settimane in cui è stato inserito, anche se in mezzo alla barra del colore del
-   dev, e il **nome del dev** (etichetta della riga) è scritto in **rosso**. Tutto
+   settimane in cui è stato inserito (le settimane **consecutive** formano un
+   tratto unico, non una fila di tessere), anche se in mezzo alla barra del
+   colore del dev, e il **nome del dev** (etichetta della riga) è scritto in
+   **rosso**. Tutto
    questo dipende dalla spunta **«Includi i worker ghost»** delle finestre di
    export (attiva per impostazione predefinita): con la spunta sono segnate anche
    le settimane in cui il ghost è **assegnato senza ore** (effort 0) e un dev che
@@ -827,6 +856,9 @@ e descrizione, asse dei mesi, milestone come bandierine (**fulmine** per quelle 
 tipo trigger), marker "Today", e una riga per dev.
 
 Un progetto è **idoneo** se è abilitato, non chiuso e ha **sia inizio sia fine**.
+
+Barre dell'effort e celle dei mesi sono disegnate con gli **angoli arrotondati**;
+quanto, lo decide `corner_pct` nel file dati (vedi capitolo 2).
 
 ### Esportazione con più progetti visibili
 **File ▸ Esporta…** con più progetti visibili apre una **finestra di selezione dei

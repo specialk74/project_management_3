@@ -86,6 +86,7 @@ App (workers.ron)
 ├── week_color: String               — "#RRGGBB" current-week highlight (file-only setting)
 ├── month_colors: Vec<String>        — 12 "#RRGGBB", Jan→Dec, date-row tint (file-only)
 ├── month_tint_pct: i32              — month tint strength 0..100 (default 60, file-only)
+├── corner_pct: i32                  — PDF/SVG corner rounding 0..100 (default 40, file-only)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
@@ -503,6 +504,24 @@ the footer date.
   whose sole assignment is a zero-effort ghost, and `page_shapes` paints red
   segments over the thin `no_effort` line (it `continue`s before the usual bar
   overlay), so a ghost at 0 is visible either way.
+- **Rounded corners** (`App.corner_pct`, `#[serde(default = "default_corner_pct")]`,
+  **always serialized**, no UI — same family as `week_color`/`month_tint_pct`;
+  default `pdf_export::CORNER_PCT_DEFAULT` = 40, out-of-range reported by
+  `App::validate`): percentage of the **maximum** radius (`pct/100 · min(w,h)/2`),
+  so 0 = square and 100 = pill-shaped ends. `project_shapes` pushes it into the
+  `CORNER_PCT` thread-local (`set_corner_pct`, clamped) at the top of every page,
+  so any caller — tests included — is consistent. `rect_round(...)` replaces
+  `rect_fill` for the **effort bars** (all three `BarFormat`s), the **ghost
+  overlay** on them and the **month axis cells**; it emits a `Shape::Poly` from
+  `round_rect_pts` (6 segments per corner, no renderer change needed since Poly
+  already renders to PDF and SVG) and falls back to a real `Shape::Rect` at 0.
+  Today's marker, the thin no-effort row and the grey footer band stay square.
+  The ghost overlay merges **consecutive** ghost weeks into one rect via
+  `contiguous_runs` (both on the bar and on the thin no-effort row) — one rect per
+  week would read as a row of detached tiles once the corners are rounded; the
+  `Proportional` format keeps one rect per week because each has its own height.
+  **Test gotcha**: bars are polygons now, so shape-counting tests must count
+  `Rect` **and** `Poly` (see `segmented_and_proportional_formats_produce_valid_output`).
 - **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
   drawn. `Continuous` (default, historical) = one rect first→last effort week;
   `Segmented` = one rect per run of consecutive effort weeks (gaps show), via

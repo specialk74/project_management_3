@@ -35,6 +35,12 @@ pub fn default_week_color() -> String {
 }
 
 /// Intensità di default della velatura dei mesi (percentuale).
+/// Smussatura degli angoli dei rettangoli nel PDF/SVG (barre effort e celle dei
+/// mesi), in percentuale del raggio massimo. Solo file, come i colori.
+pub fn default_corner_pct() -> i32 {
+    crate::pdf_export::CORNER_PCT_DEFAULT
+}
+
 pub fn default_month_tint_pct() -> i32 {
     MONTH_TINT_PCT_DEFAULT
 }
@@ -67,6 +73,13 @@ pub struct App {
     /// fuori intervallo vengono riportati nei limiti e segnalati.
     #[serde(default = "default_month_tint_pct")]
     pub month_tint_pct: i32,
+    /// Smussatura degli angoli nell'export PDF/SVG, in percentuale: 0 = spigolo
+    /// vivo, 100 = raggio massimo (estremi semicircolari). Riguarda le barre
+    /// dell'effort e le celle della banda dei mesi. Stesse regole degli altri
+    /// parametri "solo file": sempre scritto, valori fuori 0–100 riportati nei
+    /// limiti e segnalati da `validate`.
+    #[serde(default = "default_corner_pct")]
+    pub corner_pct: i32,
     #[serde(skip)]
     pub end_week: WeekId,
     #[serde(skip)]
@@ -94,6 +107,7 @@ impl App {
             week_color: default_week_color(),
             month_colors: default_month_colors(),
             month_tint_pct: default_month_tint_pct(),
+            corner_pct: default_corner_pct(),
             end_week: WeekId(end as usize),
             n_week: WeekId(n_week as usize),
             workers: Workers::new(),
@@ -153,6 +167,13 @@ impl App {
                 "Colore settimana «{}» non valido: atteso \"#RRGGBB\" (uso {}).",
                 self.week_color,
                 default_week_color()
+            ));
+        }
+        if !(0..=100).contains(&self.corner_pct) {
+            issues.push(format!(
+                "Smussatura degli angoli {}%: fuori dall'intervallo 0–100 (uso {}%).",
+                self.corner_pct,
+                self.corner_pct.clamp(0, 100)
             ));
         }
         if !(0..=100).contains(&self.month_tint_pct) {
@@ -539,6 +560,54 @@ mod tests {
         let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
         assert_eq!(app.month_tint_pct, 85);
         assert!(app.validate().is_empty());
+    }
+
+    /// La smussatura degli angoli dell'export vive nel file: scritta sempre,
+    /// riletta al riavvio e usata così com'è.
+    #[test]
+    fn corner_pct_is_written_and_read_back() {
+        use crate::pdf_export::CORNER_PCT_DEFAULT;
+
+        let app = App::new();
+        assert_eq!(app.corner_pct, CORNER_PCT_DEFAULT);
+        let ron = app.to_ron_string();
+        assert!(
+            ron.contains(&format!("corner_pct: {CORNER_PCT_DEFAULT}")),
+            "campo corner_pct mancante"
+        );
+
+        let ron = ron.replacen(
+            &format!("corner_pct: {CORNER_PCT_DEFAULT}"),
+            "corner_pct: 0",
+            1,
+        );
+        let app = App::from_ron_str(&ron).expect("il RON deve caricarsi");
+        assert_eq!(app.corner_pct, 0);
+        assert!(app.validate().is_empty());
+    }
+
+    /// I file scritti prima della smussatura si rileggono col valore di default.
+    #[test]
+    fn old_files_without_corner_pct_use_the_default() {
+        use crate::pdf_export::CORNER_PCT_DEFAULT;
+
+        let ron = App::new().to_ron_string();
+        let without: String = ron
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("corner_pct:"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let app = App::from_ron_str(&without).expect("il RON deve caricarsi");
+        assert_eq!(app.corner_pct, CORNER_PCT_DEFAULT);
+    }
+
+    #[test]
+    fn out_of_range_corner_pct_is_reported() {
+        let mut app = App::new();
+        app.corner_pct = -5;
+        let issues = app.validate();
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].contains("Smussatura"), "{issues:?}");
     }
 
     /// Percentuale fuori scala: si usa il valore riportato nei limiti e lo si segnala.
