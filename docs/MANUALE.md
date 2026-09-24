@@ -828,6 +828,13 @@ una **finestra di selezione**:
 - **checkbox** per includere/escludere ciascun dev;
 - **trascinamento** per riordinare i dev (una linea arancione indica il punto di
   inserimento); il rilascio sposta il dev;
+- sotto l'elenco dei dev, **«Milestone da includere»**: l'elenco delle milestone
+  **collocate in questo progetto**, in ordine di settimana, con **Select All** in
+  cima e una **checkbox** per ciascuna. Ogni riga mostra, nel colore della
+  milestone, l'icona del tipo (**⚑**/**⚡**), il nome, la settimana e le categorie
+  fra parentesi quadre (`[Int]`, `[Int/Ext]`, `[Ext]`). Vengono disegnate **solo
+  le milestone spuntate**; se il progetto non ne ha nessuna compare una scritta
+  al posto dell'elenco;
 - **Esporta…** genera il PDF con i dev selezionati, nell'ordine scelto; **Annulla**
   chiude.
 
@@ -836,12 +843,17 @@ Regole del PDF a singolo progetto:
 - i dev **senza effort** producono una **riga sottile** del colore del dev, che
   copre tutta la larghezza del calendario;
 - si può esportare **anche senza alcun dev selezionato**: la pagina esce comunque
-  con asse, milestone e resto delle informazioni.
+  con asse, milestone e resto delle informazioni;
+- la scelta delle milestone si combina **in AND** con le categorie: una milestone
+  finisce nel file solo se è **spuntata** nell'elenco **e** rientra nell'ambito di
+  quel file (nel PDF External, quindi, solo le milestone spuntate **e** marcate
+  External). Togliendo tutte le spunte la pagina esce senza bandierine.
 
 ### Esportazione del solo grafico in SVG
 Nella stessa finestra c'è **Esporta SVG…**: salva **solo il grafico** (lo stesso
 Gantt del PDF) in formato **SVG** vettoriale, **senza** tripletta/descrizione del
-progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev.
+progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev e la
+stessa selezione delle milestone.
 L'immagine è ritagliata al contenuto effettivo del grafico.
 
 ### Milestone da stampare: Internal / External
@@ -865,7 +877,9 @@ Le due caselle sono indipendenti:
 - **nessuna** → i pulsanti di export sono disattivati: non c'è niente da stampare.
 
 A cambiare è **solo** quali bandierine vengono disegnate: progetti, dev, barre,
-date e percentuali restano identici nei due file. La scelta è ricordata tra un
+date e percentuali restano identici nei due file. Nella finestra del **singolo
+progetto** questa scelta si somma a quella per singola milestone (vedi sopra):
+viene stampato solo ciò che passa **entrambi** i filtri. La scelta è ricordata tra un
 export e l'altro (non è salvata sul file); all'avvio parte da **solo Internal**,
 cioè il comportamento di prima delle categorie.
 

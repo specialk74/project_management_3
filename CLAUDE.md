@@ -452,6 +452,17 @@ the footer date.
   `path_with_suffix` (`name_internal.pdf` / `name_external.pdf`) when both were
   (`save_svg_dialog` is gone; SVG goes through the same path). The trend PDF has
   no milestones, so it is unaffected.
+- **Per-milestone selection** (single-project dialog only): `PdfExport.milestones:
+  Vec<(MilestoneId, WeekId, bool)>` is filled when `Action::ExportPdf` opens
+  `pdf_export_window` (from `list_project_milestones`, sorted by week then id, all
+  ticked). The dialog draws a «Milestone da includere» checklist (Select All +
+  one checkbox per milestone, labelled `icon nome — yy-mm-dd [Int/Ext]` in the
+  milestone color) under the dev list; the ticked ids ride along in
+  `Action::ExportPdfProject/ExportSvgProject { …, milestones }` and become
+  `set_milestone_allow(Some(ids))` — another `pdf_export.rs` thread-local
+  (`None` = no restriction, what the multi-project export sets). `project_shapes`
+  applies **allow-list AND scope**, so a milestone must be ticked *and* in scope.
+  `scoped_exports` resets both thread-locals when it is done.
 - **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
   drawn. `Continuous` (default, historical) = one rect first→last effort week;
   `Segmented` = one rect per run of consecutive effort weeks (gaps show), via

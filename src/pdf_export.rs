@@ -13,7 +13,7 @@ use printpdf::*;
 use crate::app::App;
 use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
 use crate::dev_utils::dev::DevId;
-use crate::milestones::MilestoneScope;
+use crate::milestones::{MilestoneId, MilestoneScope};
 use crate::project_utils::project::ProjectId;
 use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 
@@ -27,6 +27,11 @@ thread_local! {
     // cioè il comportamento storico.
     static MS_SCOPE: std::cell::Cell<MilestoneScope> =
         const { std::cell::Cell::new(MilestoneScope::Internal) };
+    // Milestone ammesse nell'export corrente, scelte una per una nella dialog
+    // del singolo progetto. `None` = nessun filtro (tutte quelle collocate nel
+    // progetto), che è il default e il caso dell'export multi-progetto.
+    static MS_ALLOW: std::cell::RefCell<Option<std::collections::HashSet<MilestoneId>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
@@ -46,6 +51,23 @@ pub fn set_milestone_scope(v: MilestoneScope) {
 
 fn milestone_scope() -> MilestoneScope {
     MS_SCOPE.with(|c| c.get())
+}
+
+/// Limita l'export alle milestone indicate (`None` = tutte). Si combina in
+/// **AND** con l'ambito: una milestone è disegnata se è nell'elenco ammesso
+/// **e** rientra nell'ambito del file.
+pub fn set_milestone_allow(ids: Option<Vec<MilestoneId>>) {
+    MS_ALLOW.with(|c| *c.borrow_mut() = ids.map(|v| v.into_iter().collect()));
+}
+
+/// La milestone è ammessa dall'elenco scelto dall'utente?
+fn milestone_allowed(id: MilestoneId) -> bool {
+    MS_ALLOW.with(|c| {
+        c.borrow()
+            .as_ref()
+            .map(|set| set.contains(&id))
+            .unwrap_or(true)
+    })
 }
 
 // Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
@@ -1304,9 +1326,9 @@ fn project_shapes(
     let mut flags = Vec::new();
     let scope = milestone_scope();
     for (mid, week) in app.projects.list_project_milestones(proj) {
-        // Fuori ambito (es. milestone solo Internal in una stampa External):
-        // la bandierina non viene disegnata.
-        if !app.milestones.in_scope(mid, scope) {
+        // Fuori ambito (es. milestone solo Internal in una stampa External) o
+        // non spuntata nella dialog: la bandierina non viene disegnata.
+        if !milestone_allowed(mid) || !app.milestones.in_scope(mid, scope) {
             continue;
         }
         let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
@@ -2202,6 +2224,53 @@ mod tests {
         assert!(svg.contains("AncheEsterna"));
 
         set_milestone_scope(MilestoneScope::Internal);
+    }
+
+    #[test]
+    fn only_the_selected_milestones_are_drawn() {
+        use crate::milestones::{MilestoneCategory, MilestoneScope};
+
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        let tenuta = app.milestones.add("Tenuta");
+        let scartata = app.milestones.add("Scartata");
+        app.projects.add_project_milestone(pid, tenuta, WeekId(20021));
+        app.projects
+            .add_project_milestone(pid, scartata, WeekId(20035));
+
+        // Solo la prima è spuntata nella dialog: l'altra non viene disegnata.
+        set_milestone_allow(Some(vec![tenuta]));
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("Tenuta"));
+        assert!(!svg.contains("Scartata"));
+
+        // Il filtro si combina in AND con l'ambito: in External resta fuori
+        // anche quella spuntata, se non è marcata External.
+        set_milestone_scope(MilestoneScope::External);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(!svg.contains("Tenuta"));
+        app.milestones
+            .set_category(tenuta, MilestoneCategory::External, true);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("Tenuta"));
+
+        // Nessuna selezione = nessuna bandierina.
+        set_milestone_scope(MilestoneScope::Internal);
+        set_milestone_allow(Some(Vec::new()));
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(!svg.contains("Tenuta"));
+        assert!(!svg.contains("Scartata"));
+
+        // Senza filtro (export multi-progetto) tornano tutte.
+        set_milestone_allow(None);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("Tenuta"));
+        assert!(svg.contains("Scartata"));
     }
 
     #[test]

@@ -306,6 +306,9 @@ fn body_projects(app: &App, view: ProjectViewMode) -> Vec<ProjectId> {
 struct PdfExport {
     proj: ProjectId,
     entries: Vec<(DevId, bool)>,
+    /// Milestone **collocate in questo progetto** con il flag di selezione, in
+    /// ordine di settimana: solo quelle spuntate finiscono nel PDF/SVG.
+    milestones: Vec<(MilestoneId, WeekId, bool)>,
 }
 
 /// Stato della dialog "Esporta PDF" con più progetti visibili: l'elenco dei
@@ -827,11 +830,14 @@ pub(crate) enum Action {
         proj: ProjectId,
         devs: Vec<DevId>,
         scopes: Vec<MilestoneScope>,
+        /// Milestone spuntate nella dialog (le altre non vengono disegnate).
+        milestones: Vec<MilestoneId>,
     },
     ExportSvgProject {
         proj: ProjectId,
         devs: Vec<DevId>,
         scopes: Vec<MilestoneScope>,
+        milestones: Vec<MilestoneId>,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -1048,8 +1054,9 @@ fn save_multi_export_dialog(
 
 /// Costruisce un export per ogni ambito milestone richiesto: imposta l'ambito
 /// (`set_milestone_scope`), chiama `build`, e restituisce le coppie
-/// `(suffisso file, byte)` degli export riusciti. Ripristina l'ambito di default
-/// così i `build_*` successivi (o i test) partono da Internal.
+/// `(suffisso file, byte)` degli export riusciti. Alla fine rimette ambito e
+/// filtro milestone ai valori di default, così i `build_*` successivi partono
+/// da Internal e senza restrizioni.
 fn scoped_exports(
     scopes: &[MilestoneScope],
     mut build: impl FnMut(MilestoneScope) -> Option<Vec<u8>>,
@@ -1062,6 +1069,7 @@ fn scoped_exports(
         }
     }
     crate::pdf_export::set_milestone_scope(MilestoneScope::default());
+    crate::pdf_export::set_milestone_allow(None);
     items
 }
 
@@ -2024,7 +2032,21 @@ impl PjmApp {
                             .into_iter()
                             .map(|d| (d, true))
                             .collect();
-                        self.ui.pdf_export = Some(PdfExport { proj, entries });
+                        // Milestone del progetto, in ordine di settimana e tutte
+                        // pre-selezionate (a parità di settimana, per id).
+                        let mut milestones: Vec<(MilestoneId, WeekId, bool)> = self
+                            .app
+                            .projects
+                            .list_project_milestones(proj)
+                            .into_iter()
+                            .map(|(id, w)| (id, w, true))
+                            .collect();
+                        milestones.sort_by_key(|(id, w, _)| (w.0, id.0));
+                        self.ui.pdf_export = Some(PdfExport {
+                            proj,
+                            entries,
+                            milestones,
+                        });
                     }
                     _ => {
                         let entries = eligible.into_iter().map(|id| (id, true)).collect();
@@ -2047,6 +2069,8 @@ impl PjmApp {
             }
             Action::ExportPdfSelected { projects, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                // Export multi-progetto: nessuna scelta milestone per progetto.
+                crate::pdf_export::set_milestone_allow(None);
                 // Un file per ambito milestone scelto (Internal e/o External).
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_pdf_selected(
@@ -2069,8 +2093,14 @@ impl PjmApp {
                     );
                 }
             }
-            Action::ExportPdfProject { proj, devs, scopes } => {
+            Action::ExportPdfProject {
+                proj,
+                devs,
+                scopes,
+                milestones,
+            } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_pdf_project(
                         &self.app,
@@ -2092,8 +2122,14 @@ impl PjmApp {
                     );
                 }
             }
-            Action::ExportSvgProject { proj, devs, scopes } => {
+            Action::ExportSvgProject {
+                proj,
+                devs,
+                scopes,
+                milestones,
+            } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_svg_project(
                         &self.app,
@@ -3185,6 +3221,48 @@ mod tests {
             path_with_suffix(std::path::Path::new("/tmp/grafico"), "external", "svg"),
             std::path::PathBuf::from("/tmp/grafico_external.svg")
         );
+    }
+
+    /// Smoke test della dialog di export a singolo progetto con l'elenco
+    /// milestone: si disegna senza panic (id delle due liste distinti) e la
+    /// selezione iniziale — tutte spuntate — resta tale finché non si clicca.
+    #[test]
+    fn pdf_export_window_draws_the_milestone_checklist() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(1000.0, 800.0),
+        ));
+
+        let mut app = App::new();
+        let proj = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(proj, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(proj, dev);
+        let a = app.milestones.add("Alpha");
+        let b = app.milestones.add("Beta");
+        app.projects.add_project_milestone(proj, a, WeekId(20021));
+        app.projects.add_project_milestone(proj, b, WeekId(20035));
+
+        let mut state = UiState {
+            pdf_export: Some(PdfExport {
+                proj,
+                entries: vec![(dev, true)],
+                milestones: vec![(a, WeekId(20021), true), (b, WeekId(20035), true)],
+            }),
+            ..Default::default()
+        };
+        let mut actions: Vec<Action> = Vec::new();
+        for _ in 0..2 {
+            let _ = ctx.run(input.clone(), |ctx| {
+                pdf_export_window(ctx, &app, &mut state, &mut actions);
+            });
+        }
+
+        assert!(actions.is_empty(), "senza click non parte nessun export");
+        let px = state.pdf_export.expect("la dialog resta aperta");
+        assert!(px.milestones.iter().all(|(_, _, s)| *s));
     }
 
     /// pressione nel successivo, rilascio in quello dopo. Un click compresso in

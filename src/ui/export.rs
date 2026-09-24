@@ -203,7 +203,9 @@ pub(crate) fn pdf_export_window(
     // Altezza massima della finestra e dell'elenco dev, in base allo schermo,
     // così su monitor HD la dialog resta gestibile (contenuti scrollabili).
     let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
-    let list_max = (ctx.screen_rect().height() * 0.42).max(120.0);
+    let list_max = (ctx.screen_rect().height() * 0.30).max(110.0);
+    // L'elenco milestone sta sotto quello dei dev: più basso, sempre scorrevole.
+    let ms_max = (ctx.screen_rect().height() * 0.18).max(80.0);
 
     egui::Window::new("Esporta PDF")
         .collapsible(false)
@@ -288,6 +290,52 @@ pub(crate) fn pdf_export_window(
             }
 
             ui.separator();
+            // Milestone del progetto: si sceglie una per una quali disegnare.
+            ui.label(egui::RichText::new("Milestone da includere").strong());
+            if px.milestones.is_empty() {
+                ui.label(
+                    egui::RichText::new("Nessuna milestone collocata in questo progetto.")
+                        .small()
+                        .color(text_dim()),
+                );
+            } else {
+                let all_ms = px.milestones.iter().all(|(_, _, s)| *s);
+                if let Some(v) = select_all_checkbox(ui, all_ms) {
+                    for m in px.milestones.iter_mut() {
+                        m.2 = v;
+                    }
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("pdf_milestone_list")
+                    .max_height(ms_max)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (id, week, sel) in px.milestones.iter_mut() {
+                            let name = app.milestones.get_name(*id).unwrap_or("?");
+                            let kind = app.milestones.get_kind(*id);
+                            let date = days_to_local(week.0 as i32).format("%y-%m-%d");
+                            let cats = app
+                                .milestones
+                                .get_categories(*id)
+                                .iter()
+                                .map(|c| c.short())
+                                .collect::<Vec<_>>()
+                                .join("/");
+                            ui.checkbox(
+                                sel,
+                                egui::RichText::new(format!(
+                                    "{} {name}  —  {date}  [{cats}]",
+                                    kind.icon()
+                                ))
+                                .color(u32_to_color(
+                                    app.milestones.get_color(*id).unwrap_or(0x808080),
+                                )),
+                            );
+                        }
+                    });
+            }
+
+            ui.separator();
             bar_format_selector(ui, &mut fmt);
 
             ui.separator();
@@ -336,12 +384,32 @@ pub(crate) fn pdf_export_window(
             .collect::<Vec<_>>()
     });
 
+    // Milestone spuntate (stesso prestito di `px` dei dev, prima di azzerarlo).
+    let milestones_if_export = (do_export || do_export_svg).then(|| {
+        px.milestones
+            .iter()
+            .filter(|(_, _, s)| *s)
+            .map(|(id, _, _)| *id)
+            .collect::<Vec<_>>()
+    });
+
     if let Some(devs) = devs_if_export {
         let scopes = scopes.list();
+        let milestones = milestones_if_export.unwrap_or_default();
         if do_export_svg {
-            actions.push(Action::ExportSvgProject { proj, devs, scopes });
+            actions.push(Action::ExportSvgProject {
+                proj,
+                devs,
+                scopes,
+                milestones,
+            });
         } else {
-            actions.push(Action::ExportPdfProject { proj, devs, scopes });
+            actions.push(Action::ExportPdfProject {
+                proj,
+                devs,
+                scopes,
+                milestones,
+            });
         }
         state.pdf_export = None;
     } else if cancel || !open {
