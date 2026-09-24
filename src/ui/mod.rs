@@ -390,6 +390,18 @@ const MAX_TOASTS: usize = 5;
 /// Ambiti milestone spuntati nelle dialog di export (vedi `MilestoneScope`).
 /// Default: solo Internal, cioè un unico PDF con tutte le milestone — il
 /// comportamento di prima delle categorie.
+/// Spunta «Includi i worker ghost» delle dialog di export. Parte **attiva** (il
+/// comportamento storico: i ghost sono un'anomalia da vedere), per questo è un
+/// tipo a sé — `UiState` deriva `Default` e un `bool` partirebbe da `false`.
+#[derive(Clone, Copy)]
+pub(crate) struct ExportGhost(pub bool);
+
+impl Default for ExportGhost {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct ExportScopes {
     pub internal: bool,
@@ -585,6 +597,10 @@ pub struct UiState {
     // includere le percentuali (presunta/dichiarata) nel PDF/SVG esportato;
     // scelta chiesta nelle dialog di export, ricordata tra un export e l'altro.
     export_progress_pct: bool,
+    // stampare o no i worker "ghost" (marcatura rossa, comprese le settimane a
+    // effort 0); scelta chiesta nelle dialog di export, ricordata tra un export
+    // e l'altro, non persistita.
+    export_ghost: ExportGhost,
     // ambiti milestone scelti nelle dialog di export (Internal / External):
     // uno spuntato = un file, entrambi = due file. Ricordato tra un export e
     // l'altro, non persistito.
@@ -2100,6 +2116,7 @@ impl PjmApp {
             }
             Action::ExportPdfSelected { projects, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
                 // Export multi-progetto: nessuna scelta milestone per progetto.
                 crate::pdf_export::set_milestone_allow(None);
                 // Un file per ambito milestone scelto (Internal e/o External).
@@ -2131,6 +2148,7 @@ impl PjmApp {
                 milestones,
             } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_pdf_project(
@@ -2160,6 +2178,7 @@ impl PjmApp {
                 milestones,
             } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_svg_project(

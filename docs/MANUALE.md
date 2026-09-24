@@ -443,7 +443,12 @@ anomala: quando un worker ghost viene inserito nell'effort di un dev,
    PDF/SVG il ghost resta rosso** (punti 3–4);
 3. nel **PDF/SVG dei progetti** il rettangolo della barra è **rosso** nelle
    settimane in cui è stato inserito, anche se in mezzo alla barra del colore del
-   dev, e il **nome del dev** (etichetta della riga) è scritto in **rosso**;
+   dev, e il **nome del dev** (etichetta della riga) è scritto in **rosso**. Tutto
+   questo dipende dalla spunta **«Includi i worker ghost»** delle finestre di
+   export (attiva per impostazione predefinita): con la spunta sono segnate anche
+   le settimane in cui il ghost è **assegnato senza ore** (effort 0) e un dev che
+   ha **solo** un ghost a zero viene stampato lo stesso; senza spunta il PDF/SVG
+   non li evidenzia affatto (vedi capitolo 16);
 4. nel **PDF degli andamenti** il tratto di linea (presunta) che sale in quella
    settimana — e il relativo pallino — è **rosso e più spesso**, per far risaltare
    il problema anche in mezzo alla linea del colore del dev.
@@ -902,6 +907,23 @@ progetto** questa scelta si somma a quella per singola milestone (vedi sopra):
 viene stampato solo ciò che passa **entrambi** i filtri. La scelta è ricordata tra un
 export e l'altro (non è salvata sul file); all'avvio parte da **solo Internal**,
 cioè il comportamento di prima delle categorie.
+
+### Worker ghost nella stampa
+In tutte le finestre di export c'è la casella **«Includi i worker ghost (anche a
+effort 0)»**, **attiva** per impostazione predefinita:
+
+- **attiva** — i worker ghost sono evidenziati in rosso come sempre (rettangoli
+  rossi sulle settimane interessate e nome del dev in rosso) e, in più, contano
+  anche le settimane in cui il ghost è **assegnato senza ore**: quelle settimane
+  vengono marcate lo stesso, sulla barra o sulla riga sottile del dev. Un dev la
+  cui **unica** assegnazione è un ghost a effort 0 compare nel PDF anche
+  nell'export a più progetti, che normalmente stampa solo i dev con effort;
+- **disattiva** — la stampa ignora del tutto i ghost: nessun rosso, e i dev senza
+  ore restano fuori come prima.
+
+La scelta vale sia per il PDF sia per l'SVG ed è ricordata tra un export e l'altro
+(non è salvata sul file). Il PDF **Andamento…** non è interessato: lì i ghost sono
+sempre segnati sulle settimane in cui hanno ore.
 
 ### Formato delle barre dei dev
 In tutte le finestre di export c'è un selettore **Formato barre**, con una piccola

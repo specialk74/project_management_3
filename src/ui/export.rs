@@ -143,6 +143,19 @@ pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export
         });
 }
 
+/// Spunta «Includi i worker ghost», condivisa dalle dialog di export: con la
+/// spunta i ghost sono marcati in rosso (nome dev e settimane) **anche dove
+/// sono assegnati a effort 0**, e un dev che ha solo un ghost senza ore viene
+/// stampato lo stesso; senza spunta la stampa ignora del tutto i ghost.
+pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
+    ui.checkbox(&mut ghost.0, "Includi i worker ghost (anche a effort 0)")
+        .on_hover_text(
+            "Con la spunta i worker ghost sono segnati in rosso anche nelle \
+             settimane in cui sono assegnati senza ore, e il dev che ha solo un \
+             ghost compare comunque. Senza spunta il PDF non li evidenzia.",
+        );
+}
+
 /// Selettore degli **ambiti milestone** da stampare, condiviso dalle dialog di
 /// export. `Internal` produce un file con le milestone Internal **e** External,
 /// `External` uno con le sole External; spuntandoli entrambi si ottengono due
@@ -185,8 +198,10 @@ pub(crate) fn pdf_export_window(
     let mut fmt = state.bar_format;
     // Idem per la scelta "includi percentuali di avanzamento" nell'export.
     let mut show_pct = state.export_progress_pct;
-    // Idem per gli ambiti milestone (Internal / External) da stampare.
+    // Idem per gli ambiti milestone (Internal / External) da stampare…
     let mut scopes = state.export_scopes;
+    // …e per la stampa dei worker "ghost".
+    let mut ghost = state.export_ghost;
     let proj = px.proj;
     let trip = app.projects.get_tripletta(proj);
     let title = if trip.is_empty() {
@@ -343,6 +358,7 @@ pub(crate) fn pdf_export_window(
                 &mut show_pct,
                 "Includi percentuali di avanzamento (presunta/dichiarata)",
             );
+            ghost_checkbox(ui, &mut ghost);
 
             ui.separator();
             milestone_scope_selector(ui, &mut scopes);
@@ -374,6 +390,7 @@ pub(crate) fn pdf_export_window(
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
     state.export_scopes = scopes;
+    state.export_ghost = ghost;
 
     // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
     let devs_if_export = (do_export || do_export_svg).then(|| {
@@ -433,6 +450,7 @@ pub(crate) fn pdf_multi_export_window(
     let mut fmt = state.bar_format;
     let mut show_pct = state.export_progress_pct;
     let mut scopes = state.export_scopes;
+    let mut ghost = state.export_ghost;
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
@@ -462,6 +480,7 @@ pub(crate) fn pdf_multi_export_window(
                 &mut show_pct,
                 "Includi percentuali di avanzamento (presunta/dichiarata)",
             );
+            ghost_checkbox(ui, &mut ghost);
 
             ui.separator();
             milestone_scope_selector(ui, &mut scopes);
@@ -483,6 +502,7 @@ pub(crate) fn pdf_multi_export_window(
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
     state.export_scopes = scopes;
+    state.export_ghost = ghost;
 
     if do_export {
         let projects: Vec<ProjectId> = px

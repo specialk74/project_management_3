@@ -32,6 +32,11 @@ thread_local! {
     // progetto), che è il default e il caso dell'export multi-progetto.
     static MS_ALLOW: std::cell::RefCell<Option<std::collections::HashSet<MilestoneId>>> =
         const { std::cell::RefCell::new(None) };
+    // Stampa dei worker "ghost": `true` (default, comportamento storico) marca
+    // in rosso nome dev e settimane col ghost — comprese quelle in cui è
+    // assegnato a **effort 0** — e fa comparire anche il dev che ha solo un
+    // ghost senza ore; `false` toglie del tutto la marcatura.
+    static SHOW_GHOST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
@@ -58,6 +63,15 @@ fn milestone_scope() -> MilestoneScope {
 /// **e** rientra nell'ambito del file.
 pub fn set_milestone_allow(ids: Option<Vec<MilestoneId>>) {
     MS_ALLOW.with(|c| *c.borrow_mut() = ids.map(|v| v.into_iter().collect()));
+}
+
+/// Imposta se l'export deve stampare i worker "ghost" (default: sì).
+pub fn set_show_ghost(v: bool) {
+    SHOW_GHOST.with(|c| c.set(v));
+}
+
+fn show_ghost() -> bool {
+    SHOW_GHOST.with(|c| c.get())
 }
 
 /// La milestone è ammessa dall'elenco scelto dall'utente?
@@ -1038,6 +1052,20 @@ fn page_shapes(
                 yc + thin_hh,
                 r.color,
             ));
+            // Settimane con un worker "ghost" (qui necessariamente a effort 0):
+            // tratto rosso sulla riga sottile, così il ghost si vede anche
+            // quando il dev non ha ore.
+            for &day in &r.ghost_weeks {
+                let rx0 = x_of(day);
+                let rx1 = x_of(day + 7);
+                shapes.extend(rect_fill(
+                    rx0,
+                    yc - thin_hh,
+                    rx1.max(rx0 + 1.0),
+                    yc + thin_hh,
+                    RED,
+                ));
+            }
             continue;
         }
 
@@ -1228,12 +1256,17 @@ fn project_shapes(
         let max = weeks.iter().map(|(_, h)| *h).max().unwrap_or(0);
         (weeks, max)
     };
-    // Settimane (giorni) del dev in cui un worker "ghost" ha effort > 0.
+    // Settimane (giorni) del dev in cui un worker "ghost" è assegnato, **anche
+    // con effort 0**. Con la stampa dei ghost disattivata l'elenco è vuoto e
+    // nulla viene marcato di rosso.
     let ghost_weeks = |dev_id: DevId| -> Vec<i32> {
+        if !show_ghost() {
+            return Vec::new();
+        }
         let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
             return Vec::new();
         };
-        sd.weeks_with_worker(|wid| app.workers.is_ghost(wid))
+        sd.weeks_with_worker_assigned(|wid| app.workers.is_ghost(wid))
             .into_iter()
             .map(|w| w.0 as i32)
             .collect()
@@ -1258,10 +1291,29 @@ fn project_shapes(
                 let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
                     continue;
                 };
+                let (label, color) = color_of(&dev_id);
+                let gw = ghost_weeks(dev_id);
                 let Some((first, last)) = sd.effort_span() else {
+                    // Niente ore: di norma il dev non si stampa, ma se ci è
+                    // assegnato un ghost (a effort 0) e la stampa dei ghost è
+                    // attiva, la riga esce comunque — è l'anomalia da vedere.
+                    if !gw.is_empty() {
+                        let (presumed_pct, declared_pct) = pct_data(dev_id);
+                        rows.push(Row {
+                            label,
+                            color,
+                            start_day: proj_start,
+                            end_day: proj_end,
+                            no_effort: true,
+                            weeks: Vec::new(),
+                            max_week: 0,
+                            presumed_pct,
+                            declared_pct,
+                            ghost_weeks: gw,
+                        });
+                    }
                     continue;
                 };
-                let (label, color) = color_of(&dev_id);
                 let (weeks, max_week) = week_data(dev_id);
                 let (presumed_pct, declared_pct) = pct_data(dev_id);
                 rows.push(Row {
@@ -1274,7 +1326,7 @@ fn project_shapes(
                     max_week,
                     presumed_pct,
                     declared_pct,
-                    ghost_weeks: ghost_weeks(dev_id),
+                    ghost_weeks: gw,
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -1315,7 +1367,9 @@ fn project_shapes(
                             max_week: 0,
                             presumed_pct,
                             declared_pct,
-                            ghost_weeks: Vec::new(),
+                            // Anche senza ore il ghost va segnalato: nome in
+                            // rosso e tratti rossi sulla riga sottile.
+                            ghost_weeks: ghost_weeks(dev_id),
                         })
                     }
                 }
@@ -2224,6 +2278,128 @@ mod tests {
         assert!(svg.contains("AncheEsterna"));
 
         set_milestone_scope(MilestoneScope::Internal);
+    }
+
+    /// Testi disegnati nella pagina (etichette dev, date, titoli…).
+    fn texts(shapes: &[Shape]) -> Vec<String> {
+        shapes
+            .iter()
+            .filter_map(|sh| match sh {
+                Shape::Text { s, .. } => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Numero di rettangoli rossi nella pagina. Ne esiste anche qualcuno non
+    /// legato ai ghost (il marker "Today"), quindi nei test si confrontano i
+    /// conteggi con e senza spunta, non il valore assoluto.
+    fn red_rects(shapes: &[Shape]) -> usize {
+        shapes
+            .iter()
+            .filter(|sh| matches!(sh, Shape::Rect { color, .. } if *color == RED))
+            .count()
+    }
+
+    /// Progetto con due dev: uno con effort normale e un ghost assegnato a
+    /// **effort 0**, l'altro con **solo** il ghost a 0 (nessuna ora).
+    fn app_with_zero_effort_ghost() -> (App, ProjectId, DevId, DevId) {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let normale = app.devs.add("Frontend");
+        let solo_ghost = app.devs.add("Backend");
+        app.projects.add_dev(pid, normale);
+        app.projects.add_dev(pid, solo_ghost);
+        let worker = app.workers.add("Mario");
+        let ghost = app.workers.add("Fantasma");
+        app.workers.set_ghost(ghost, true);
+        // Dev normale: ore vere + il ghost assegnato senza ore.
+        app.projects
+            .add_effort(pid, normale, WeekId(20007), worker, Effort(8));
+        app.projects
+            .add_effort(pid, normale, WeekId(20014), ghost, Effort(0));
+        // Dev con il solo ghost a zero: nessuna ora in tutto il progetto.
+        app.projects
+            .add_effort(pid, solo_ghost, WeekId(20021), ghost, Effort(0));
+        (app, pid, normale, solo_ghost)
+    }
+
+    fn shapes_all_devs(app: &App, pid: ProjectId) -> Vec<Shape> {
+        project_shapes(
+            app,
+            pid,
+            &project_name(app, pid),
+            &dev_info_map(app),
+            20030,
+            "",
+            None, // come l'export multi-progetto: solo i dev con effort
+            false,
+            BarFormat::Continuous,
+        )
+        .unwrap()
+    }
+
+    /// Con la spunta «Includi i worker ghost» il ghost si stampa anche dove ha
+    /// effort 0, e il dev che ha solo lui compare lo stesso; senza spunta la
+    /// pagina torna a ignorarli.
+    #[test]
+    fn zero_effort_ghost_is_printed_only_when_enabled() {
+        let (app, pid, ..) = app_with_zero_effort_ghost();
+
+        set_show_ghost(true);
+        let on = shapes_all_devs(&app, pid);
+        assert!(
+            texts(&on).iter().any(|t| t == "Backend"),
+            "il dev con il solo ghost a effort 0 deve comparire"
+        );
+        set_show_ghost(false);
+        let off = shapes_all_devs(&app, pid);
+        assert!(
+            !texts(&off).iter().any(|t| t == "Backend"),
+            "senza spunta il dev senza ore non si stampa"
+        );
+        assert!(
+            texts(&off).iter().any(|t| t == "Frontend"),
+            "il dev con effort resta stampato"
+        );
+        // Due settimane col ghost (una sul dev con ore, una su quello senza).
+        assert_eq!(
+            red_rects(&on) - red_rects(&off),
+            2,
+            "una marcatura rossa per ogni settimana col ghost"
+        );
+
+        set_show_ghost(true);
+    }
+
+    /// Nella pagina del singolo progetto (dev scelti a mano) il ghost a effort 0
+    /// marca la riga sottile del dev senza ore.
+    #[test]
+    fn zero_effort_ghost_marks_the_thin_row_of_a_dev_without_effort() {
+        let (app, pid, _, solo_ghost) = app_with_zero_effort_ghost();
+        let page = |ghost_on: bool| -> Vec<Shape> {
+            set_show_ghost(ghost_on);
+            project_shapes(
+                &app,
+                pid,
+                &project_name(&app, pid),
+                &dev_info_map(&app),
+                20030,
+                "",
+                Some(&[solo_ghost]), // ordine scelto dall'utente
+                true,
+                BarFormat::Continuous,
+            )
+            .unwrap()
+        };
+
+        assert_eq!(
+            red_rects(&page(true)) - red_rects(&page(false)),
+            1,
+            "la settimana del ghost è marcata sulla riga sottile"
+        );
+        set_show_ghost(true);
     }
 
     #[test]

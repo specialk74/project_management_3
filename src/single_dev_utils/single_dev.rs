@@ -172,6 +172,21 @@ impl SingleDev {
         v
     }
 
+    /// Settimane (ordinate) in cui almeno un worker che soddisfa `pred` è
+    /// **assegnato**, anche con **effort 0**: conta l'assegnazione, non le ore.
+    /// Serve all'export quando si chiede di stampare i worker "ghost" anche
+    /// dove non hanno ore (vedi `weeks_with_worker`, che invece filtra > 0).
+    pub fn weeks_with_worker_assigned<F: Fn(WorkerId) -> bool>(&self, pred: F) -> Vec<WeekId> {
+        let mut v: Vec<WeekId> = self
+            .weeks
+            .iter()
+            .filter(|(_, wk)| wk.worker_id.keys().any(|id| pred(*id)))
+            .map(|(w, _)| *w)
+            .collect();
+        v.sort();
+        v
+    }
+
     /// True se al dev è assegnato almeno un worker in una qualsiasi settimana,
     /// **anche con effort 0**: conta l'assegnazione, non le ore. Usato dai filtri
     /// (worker e dev), che mostrano progetti e dev anche a effort zero, mentre un

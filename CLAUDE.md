@@ -294,7 +294,8 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   footer week cell are **always purple** (highest priority, beats hidden/saturation).
   The GUI uses `GHOST_PURPLE` (in `ui_style.rs`, wrapped in `g(...)`) to distinguish
   ghosts from over-allocated workers (which stay red); **exports keep ghosts red**:
-  (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks` + red dev-name label;
+  (3) project PDF/SVG bars overlay **red** on `Row.ghost_weeks` + red dev-name
+  label — gated by the export checkbox, see **Ghost in export** below;
   (4) the trend PDF draws the incoming presunta segment + dot **red and thicker** for
   a ghost week.
 - **Vai a oggi** (`Cmd/Ctrl+T`): ricalcola `columns_vec` con lo zoom/compact correnti,
@@ -488,6 +489,20 @@ the footer date.
   (`None` = no restriction, what the multi-project export sets). `project_shapes`
   applies **allow-list AND scope**, so a milestone must be ticked *and* in scope.
   `scoped_exports` resets both thread-locals when it is done.
+- **Ghost in export** (`set_show_ghost(bool)` — a `pdf_export.rs` thread-local,
+  default **true** = historical behavior): the «Includi i worker ghost (anche a
+  effort 0)» checkbox of both Gantt dialogs (`ghost_checkbox` in `export.rs`,
+  bound to `UiState.export_ghost: ExportGhost` — a newtype because `UiState`
+  derives `Default` and this one starts **on**; remembered across exports, not
+  persisted). The three export handlers call `set_show_ghost(self.ui.export_ghost.0)`
+  next to `set_show_pct`. Effects inside `project_shapes`: `ghost_weeks(dev)` is
+  empty when off, and when on it uses `SingleDev::weeks_with_worker_assigned`
+  (**assignment, effort 0 included**) instead of the >0-only `weeks_with_worker`
+  that the trend PDF still uses. With it on, the `order = None` path (multi-project
+  export, normally devs **with** effort only) also emits a `no_effort` row for a dev
+  whose sole assignment is a zero-effort ghost, and `page_shapes` paints red
+  segments over the thin `no_effort` line (it `continue`s before the usual bar
+  overlay), so a ghost at 0 is visible either way.
 - **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
   drawn. `Continuous` (default, historical) = one rect first→last effort week;
   `Segmented` = one rect per run of consecutive effort weeks (gaps show), via
