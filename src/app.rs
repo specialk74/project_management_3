@@ -197,6 +197,13 @@ impl App {
                         "Progetto «{pname}»: milestone inesistente (id {}).",
                         mid.0
                     ));
+                } else if !self.milestones.available_for(mid, pid) {
+                    // Milestone personalizzata di un ALTRO progetto: non
+                    // dovrebbe essere collocata qui.
+                    let mname = self.milestones.get_name(mid).unwrap_or("?");
+                    issues.push(format!(
+                        "Progetto «{pname}»: la milestone «{mname}» appartiene a un altro progetto."
+                    ));
                 }
             }
         }
@@ -338,6 +345,53 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_milestone_survives_ron_round_trip_and_stays_private() {
+        use crate::milestones::MilestoneKind;
+
+        let mut app = App::new();
+        let p1 = app.projects.add("Uno", Some("AAA"), Some(WeekId(20000)));
+        let p2 = app.projects.add("Due", Some("BBB"), Some(WeekId(20000)));
+        let globale = app.milestones.add("Globale");
+        let solo_p1 =
+            app.milestones
+                .add_owned("Solo Uno", MilestoneKind::Goal, Vec::new(), Some(p1));
+        app.projects.add_project_milestone(p1, solo_p1, WeekId(20014));
+        app.projects.add_project_milestone(p2, globale, WeekId(20014));
+
+        let reloaded = App::from_ron_str(&app.to_ron_string()).expect("RON valido");
+        assert_eq!(reloaded.milestones.owner(solo_p1), Some(p1));
+        assert!(!reloaded.milestones.available_for(solo_p1, p2));
+        let p2_ids: Vec<_> = reloaded
+            .milestones
+            .list_for_project(p2)
+            .into_iter()
+            .map(|(id, _, _)| id)
+            .collect();
+        assert_eq!(p2_ids, vec![globale]);
+        // File coerente: nessuna segnalazione.
+        assert!(reloaded.validate().is_empty(), "{:?}", reloaded.validate());
+    }
+
+    #[test]
+    fn validate_reports_a_milestone_placed_in_the_wrong_project() {
+        use crate::milestones::MilestoneKind;
+
+        let mut app = App::new();
+        let p1 = app.projects.add("Uno", Some("AAA"), None);
+        let p2 = app.projects.add("Due", Some("BBB"), None);
+        let solo_p1 =
+            app.milestones
+                .add_owned("Solo Uno", MilestoneKind::Goal, Vec::new(), Some(p1));
+        // Collocazione anomala (il menù non la permette, un file modificato a
+        // mano sì): va segnalata nella finestra "Problema nel file".
+        app.projects.add_project_milestone(p2, solo_p1, WeekId(20014));
+
+        let issues = app.validate();
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].contains("appartiene a un altro progetto"), "{issues:?}");
+    }
 
     #[test]
     fn declared_history_survives_ron_round_trip() {

@@ -388,6 +388,31 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `milestone_manager_window` (`milestone_categories_toggles` compact Int/Ext
   selectable labels → `Action::SetMilestoneCategory`). Same two widgets rule as
   the kind: a **submenu** inside toolbar menus, plain widgets inside windows.
+- **Project-owned milestones** (`Milestone.owner: Option<ProjectId>`,
+  `#[serde(default, skip_serializing_if = "Option::is_none")]`, so old files load
+  as global): `None` = system-wide milestone, `Some(p)` = private to that project.
+  `Milestones::list_for_project(p)` (globals + `p`'s own) drives the grid's
+  «Aggiungi milestone qui» menu — `list()` stays "everything" and is what the
+  manager shows, with the owner's `project_label` beside the name. Created only
+  from that grid menu: a `milestone_categories_submenu` («Categorie: …», bound to
+  `UiState.new_project_milestone_categories`, remembered across insertions) over
+  the `add_field` «Nuova milestone solo qui…» →
+  `Action::CreateProjectMilestone { proj, week, name, categories }` →
+  `add_owned(name, Goal, categories, Some(proj))` **plus** `add_project_milestone`
+  (created and placed in one go; kind/color are adjusted later in the manager,
+  and so are the categories if needed). The submenu's toggle rule lives in the
+  free fn `toggle_category` (ordered, deduped, never empty), shared with the
+  toolbar path and unit-tested. The scope is
+  fixed at creation — there is no global⇄project switch. `App::validate` reports
+  a placement whose milestone belongs to another project, and
+  `Milestones::purge_project` exists for dropping a project's own milestones.
+  **Menu gotcha**: that submenu is built with `SubMenuButton` +
+  `MenuConfig::close_behavior(CloseOnClickOutside)` — a context menu defaults to
+  `CloseOnClick`, which closes the whole menu the moment you click **into the
+  text field**, so the name could never be typed (caught by, and guarded with,
+  `project_milestone_field_keeps_the_context_menu_open`, which drives real
+  right-click/click/type/Enter events). `add_field` returns the text field's
+  `Response` for that test.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
 - **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`Closed`/

@@ -559,6 +559,12 @@ pub struct UiState {
     new_dev: String,
     new_category: String,
     new_milestone: String,
+    // nome della milestone "di progetto" in corso di creazione dal menù della
+    // griglia (tasto destro sulla riga alta ▸ Aggiungi milestone qui)
+    new_project_milestone: String,
+    // categorie di stampa scelte per la PROSSIMA milestone di progetto
+    // (vuoto = solo Internal); restano per l'inserimento successivo
+    new_project_milestone_categories: Vec<MilestoneCategory>,
     // tipo scelto per la PROSSIMA milestone creata dal menù Aggiungi
     new_milestone_kind: MilestoneKind,
     // categorie scelte per la PROSSIMA milestone creata dal menù Aggiungi
@@ -846,6 +852,15 @@ pub(crate) enum Action {
         worker_notes: bool,
     },
     CreateMilestone(String, MilestoneKind, Vec<MilestoneCategory>),
+    /// Milestone **personalizzata** di un progetto, creata dal menù della
+    /// griglia e collocata subito nella settimana su cui si è cliccato.
+    CreateProjectMilestone {
+        proj: ProjectId,
+        week: WeekId,
+        name: String,
+        /// Categorie di stampa scelte nel menù (vuoto = solo Internal).
+        categories: Vec<MilestoneCategory>,
+    },
     SetMilestoneColor {
         milestone: MilestoneId,
         color: u32,
@@ -970,6 +985,22 @@ fn combine_issues(err: Option<String>, warnings: Vec<String>) -> Option<String> 
         parts.push(format!("Incoerenze nel file:\n• {}", warnings.join("\n• ")));
     }
     (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+/// Etichetta breve di un progetto: la tripletta, o la descrizione se la
+/// tripletta è vuota, o infine l'id. Condivisa da minuta, gestore milestone e
+/// ovunque serva nominare un progetto in una riga.
+pub(crate) fn project_label(app: &App, proj: ProjectId) -> String {
+    let trip = app.projects.get_tripletta(proj);
+    if !trip.is_empty() {
+        return trip;
+    }
+    let name = app.projects.get_info(proj);
+    if !name.trim().is_empty() {
+        name
+    } else {
+        format!("Progetto {}", proj.0)
+    }
 }
 
 /// Nome file predefinito per gli export, con la **data corrente** (locale)
@@ -2171,6 +2202,23 @@ impl PjmApp {
                 self.app.milestones.add_with(&name, kind, categories);
                 self.mark_changed();
             }
+            Action::CreateProjectMilestone {
+                proj,
+                week,
+                name,
+                categories,
+            } => {
+                // Tipo di default (traguardo) e colore automatico: si cambiano
+                // poi dal gestore. Le categorie si scelgono qui nel menù.
+                let id = self.app.milestones.add_owned(
+                    &name,
+                    MilestoneKind::default(),
+                    categories,
+                    Some(proj),
+                );
+                self.app.projects.add_project_milestone(proj, id, week);
+                self.mark_changed();
+            }
             Action::SetMilestoneColor { milestone, color } => {
                 self.app.milestones.set_color(milestone, color);
                 self.mark_changed();
@@ -2764,10 +2812,30 @@ fn milestone_category_items(
     changed
 }
 
-/// Selettore delle categorie per i **menù** della toolbar (Aggiungi ▸
-/// Milestone): un sottomenù «Categorie: … ⏵», come quello del tipo — dentro un
-/// menù serve un sottomenù e non una combo (vedi `milestone_kind_combo`).
-pub(crate) fn milestone_categories_submenu(ui: &mut egui::Ui, cats: &mut Vec<MilestoneCategory>) {
+/// Aggiunge/toglie una categoria da un elenco in fase di creazione, applicando
+/// la stessa regola del modello: l'elenco risultante è ordinato, senza doppioni
+/// e mai vuoto (togliendo l'ultima si ricade su Internal).
+pub(crate) fn toggle_category(
+    cats: &[MilestoneCategory],
+    cat: MilestoneCategory,
+    on: bool,
+) -> Vec<MilestoneCategory> {
+    let mut next: Vec<MilestoneCategory> = cats.iter().copied().filter(|x| *x != cat).collect();
+    if on {
+        next.push(cat);
+    }
+    effective_categories(&next)
+}
+
+/// Selettore delle categorie per i **menù** (Aggiungi ▸ Milestone nella toolbar
+/// e «Aggiungi milestone qui» nella griglia): un sottomenù «Categorie: … ⏵»,
+/// come quello del tipo — dentro un menù serve un sottomenù e non una combo
+/// (vedi `milestone_kind_combo`). Ritorna la `Response` del pulsante (serve ai
+/// test per aprirlo).
+pub(crate) fn milestone_categories_submenu(
+    ui: &mut egui::Ui,
+    cats: &mut Vec<MilestoneCategory>,
+) -> egui::Response {
     let eff = effective_categories(cats);
     let label = eff
         .iter()
@@ -2781,14 +2849,10 @@ pub(crate) fn milestone_categories_submenu(ui: &mut egui::Ui, cats: &mut Vec<Mil
         )
         .ui(ui, |ui| {
             if let Some((c, on)) = milestone_category_items(ui, &eff, false) {
-                let mut next = eff.clone();
-                next.retain(|x| *x != c);
-                if on {
-                    next.push(c);
-                }
-                *cats = effective_categories(&next);
+                *cats = toggle_category(&eff, c, on);
             }
-        });
+        })
+        .0
 }
 
 /// Selettore compatto (Int / Ext) per una riga del gestore milestone. Ritorna
@@ -3277,6 +3341,169 @@ mod tests {
         pending.push(vec![egui::Event::PointerMoved(pos)]);
         pending.push(vec![btn(true)]);
         pending.push(vec![btn(false)]);
+    }
+
+    /// La spunta delle categorie in fase di creazione segue la stessa regola
+    /// del modello: elenco ordinato, senza doppioni e mai vuoto.
+    #[test]
+    fn toggle_category_keeps_the_list_ordered_and_non_empty() {
+        // Da "vuoto" (= Internal) si aggiunge External → entrambe.
+        let both = toggle_category(
+            &effective_categories(&[]),
+            MilestoneCategory::External,
+            true,
+        );
+        assert_eq!(
+            both,
+            vec![MilestoneCategory::Internal, MilestoneCategory::External]
+        );
+        // Tolta Internal resta solo External…
+        let only_ext = toggle_category(&both, MilestoneCategory::Internal, false);
+        assert_eq!(only_ext, vec![MilestoneCategory::External]);
+        // …e togliendo anche l'ultima si torna a Internal.
+        assert_eq!(
+            toggle_category(&only_ext, MilestoneCategory::External, false),
+            vec![MilestoneCategory::Internal]
+        );
+    }
+
+    /// Come `queue_click`, ma col tasto destro (apertura del menù contestuale).
+    fn queue_right_click(pending: &mut Vec<Vec<egui::Event>>, pos: egui::Pos2) {
+        let btn = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        pending.push(vec![egui::Event::PointerMoved(pos)]);
+        pending.push(vec![btn(true)]);
+        pending.push(vec![btn(false)]);
+    }
+
+    /// Il campo «Nuova milestone solo qui…» vive dentro un sottomenù del menù
+    /// contestuale della griglia: cliccarci dentro e scrivere **non deve
+    /// chiudere il menù**, altrimenti il nome non si riuscirebbe a digitare.
+    /// (Stessa classe di problemi del selettore del tipo, vedi sotto.)
+    #[test]
+    fn project_milestone_field_keeps_the_context_menu_open() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(900.0, 600.0),
+        ));
+
+        let anchor = Cell::new(egui::Rect::NOTHING);
+        let sub_btn = Cell::new(egui::Rect::NOTHING);
+        let field = Cell::new(egui::Rect::NOTHING);
+        let menu_open = Cell::new(false);
+        let sub_open = Cell::new(false);
+        let focused = Cell::new(false);
+        let created: Cell<Option<String>> = Cell::new(None);
+        let cats_btn = Cell::new(egui::Rect::NOTHING);
+        let mut cats: Vec<MilestoneCategory> = Vec::new();
+        let mut opened_cats = false;
+        let mut buf = String::new();
+        let mut typed = false;
+        let mut submitted = false;
+        let mut clicked_field = false;
+        let mut pending: Vec<Vec<egui::Event>> = Vec::new();
+
+        for _ in 0..40 {
+            let mut inp = input.clone();
+            if !pending.is_empty() {
+                inp.events = pending.remove(0);
+            }
+            menu_open.set(false);
+            sub_open.set(false);
+            let _ = ctx.run(inp, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    // Stessa struttura di `draw_milestone_strip`: una zona che
+                    // risponde al tasto destro, un sottomenù col campo dentro.
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(200.0, 40.0), Sense::click());
+                    anchor.set(rect);
+                    resp.context_menu(|ui| {
+                        menu_open.set(true);
+                        // Stessa configurazione del sottomenù di `grid.rs`.
+                        let r = egui::containers::menu::SubMenuButton::new(
+                            "Aggiungi milestone qui",
+                        )
+                        .config(
+                            egui::containers::menu::MenuConfig::new()
+                                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+                        )
+                        .ui(ui, |ui| {
+                            sub_open.set(true);
+                            // Sopra il campo, il sottomenù delle categorie:
+                            // aprirlo non deve chiudere il menù contestuale.
+                            cats_btn.set(
+                                milestone_categories_submenu(ui, &mut cats).rect,
+                            );
+                            let e = add_field(
+                                ui,
+                                "Milestone di progetto",
+                                "Nuova milestone solo qui…",
+                                &mut buf,
+                                |name| created.set(Some(name)),
+                            );
+                            field.set(e.rect);
+                            focused.set(e.has_focus());
+                        });
+                        sub_btn.set(r.0.rect);
+                    });
+                });
+            });
+
+            if !pending.is_empty() {
+                continue;
+            }
+            if !menu_open.get() {
+                queue_right_click(&mut pending, anchor.get().center());
+            } else if !sub_open.get() {
+                queue_click(&mut pending, sub_btn.get().center());
+            } else if !opened_cats {
+                // Apre «Categorie: …»: il menù deve restare aperto.
+                queue_click(&mut pending, cats_btn.get().center());
+                opened_cats = true;
+            } else if !clicked_field {
+                queue_click(&mut pending, field.get().center());
+                clicked_field = true;
+            } else if !typed {
+                pending.push(vec![egui::Event::Text("Rilascio".to_string())]);
+                typed = true;
+            } else if !submitted {
+                // Invio = conferma: crea la milestone e svuota il campo.
+                assert_eq!(buf, "Rilascio", "il testo digitato non è arrivato al campo");
+                assert!(focused.get(), "il campo ha perso il focus mentre si scriveva");
+                pending.push(vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Default::default(),
+                }]);
+                submitted = true;
+            }
+        }
+
+        assert!(menu_open.get(), "il menù contestuale si è chiuso");
+        assert!(sub_open.get(), "il sottomenù si è chiuso");
+        assert!(
+            cats_btn.get().is_finite(),
+            "il sottomenù «Categorie» non è stato disegnato"
+        );
+        assert_eq!(
+            cats,
+            Vec::new(),
+            "aprire il sottomenù non deve cambiare le categorie"
+        );
+        assert_eq!(
+            created.take(),
+            Some("Rilascio".to_string()),
+            "l'Invio non ha creato la milestone di progetto"
+        );
+        assert!(buf.is_empty(), "il campo va svuotato dopo la creazione");
     }
 
     /// Il selettore del tipo milestone nel menù «Aggiungi» **non deve chiudere

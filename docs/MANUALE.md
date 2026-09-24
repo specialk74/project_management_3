@@ -492,8 +492,10 @@ milestone), sottomenù **Sposta**:
 
 ## 11. Milestone
 
-Le milestone hanno **nome**, **colore**, **tipo** e **categorie di stampa**, e sono
-condivise tra i progetti.
+Le milestone hanno **nome**, **colore**, **tipo** e **categorie di stampa**.
+Possono essere **di sistema** (condivise da tutti i progetti) oppure
+**personalizzate di un progetto**: queste ultime compaiono solo negli elenchi di
+quel progetto e non in quelli degli altri.
 
 Il **tipo** distingue due usi:
 
@@ -519,19 +521,37 @@ quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
 - Una milestone ha **sempre almeno una categoria**: togliendo l'ultima spunta si
   ricade su Internal (la spunta rimasta da sola non è cliccabile).
 
-- **Creare**: Aggiungi ▸ Milestone — prima si scelgono il **tipo** dalla voce
+- **Creare una milestone di progetto**: tasto destro sulla riga alta di una
+  colonna-dev del progetto → **Aggiungi milestone qui**. In cima al sottomenù ci
+  sono la voce **«Categorie: …»** (si apre passandoci sopra col mouse: **Internal**,
+  **External** o entrambe — la spunta rimasta da sola non è cliccabile, perché una
+  milestone deve avere almeno una categoria) e il campo **«Nuova milestone solo
+  qui…»**: scegli le categorie, scrivi il nome e premi Invio (o «+ Milestone di
+  progetto»). La milestone nasce **di quel progetto**, con le categorie scelte, e
+  viene collocata subito nella settimana su cui hai cliccato. La scelta delle
+  categorie resta per l'inserimento successivo. Nasce come **traguardo** con un
+  colore assegnato in automatico: tipo e colore (e, volendo, di nuovo le
+  categorie) si cambiano poi dal gestore.
+- **Creare una milestone di sistema**: Aggiungi ▸ Milestone — prima si scelgono il **tipo** dalla voce
   «Tipo: …» e le **categorie** dalla voce «Categorie: …» (si aprono passandoci
   sopra col mouse), poi si scrive il nome. Tipo e categorie restano per
   l'inserimento successivo, comodo per creare più milestone simili di fila. Il
   colore si imposta dal gestore.
-- **Gestire**: Filtri ▸ Milestone… — elenco con selettore colore, **tendina del
-  tipo**, le spunte **Int / Ext** delle categorie (tutto modificabile in
-  qualsiasi momento, anche dopo l'inserimento) e cestino per eliminarle
-  (l'eliminazione le toglie anche da tutti i progetti).
+- **Gestire**: Filtri ▸ Milestone… — elenco di **tutte** le milestone (di sistema
+  e personalizzate) con selettore colore, **tendina del tipo**, le spunte
+  **Int / Ext** delle categorie (tutto modificabile in qualsiasi momento, anche
+  dopo l'inserimento) e cestino per eliminarle (l'eliminazione le toglie anche da
+  tutti i progetti). Le milestone personalizzate hanno accanto al nome, in
+  piccolo, la **tripletta del progetto** a cui appartengono.
+- **L'ambito si sceglie alla creazione** e non si cambia più: una milestone di
+  sistema resta tale, una di progetto resta legata al suo progetto.
 - **Assegnare a una settimana**: tasto destro sulla riga alta di una colonna-dev
-  → **Aggiungi milestone qui** → scegli la milestone. Nell'elenco ogni nome è
-  preceduto dall'icona del tipo — **⚑** traguardo, **⚡** trigger — nel colore
-  della milestone, così si vede subito quale si sta mettendo. Dallo stesso menù
+  → **Aggiungi milestone qui** → scegli la milestone. L'elenco contiene le
+  milestone **di sistema** più quelle **personalizzate di questo progetto**
+  (marcate con un «·» finale): le milestone personalizzate di un altro progetto
+  non compaiono. Ogni nome è preceduto dall'icona del tipo — **⚑** traguardo,
+  **⚡** trigger — nel colore della milestone, così si vede subito quale si sta
+  mettendo. Dallo stesso menù
   puoi **rimuoverle**. Nella stessa settimana puoi mettere **più milestone diverse**
   (quelle già presenti sono marcate con «●»); la stessa milestone invece compare
   una sola volta per progetto — riassegnarla a un'altra settimana la sposta.

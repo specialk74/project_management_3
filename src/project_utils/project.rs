@@ -13,7 +13,7 @@ use crate::{
     workers_utils::worker::WorkerId,
 };
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
 pub struct ProjectId(pub usize);
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]

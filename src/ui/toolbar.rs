@@ -2,16 +2,18 @@
 
 use super::*;
 
-/// Riga "campo di testo + bottone +<label>" usata nel menù "Aggiungi".
-/// Chiama `on_submit` col nome (non vuoto) alla pressione di Invio o del
-/// bottone e svuota il campo; la tendina resta aperta per inserimenti multipli.
+/// Riga "campo di testo + bottone +<label>" usata nel menù "Aggiungi" e nel
+/// menù contestuale della griglia. Chiama `on_submit` col nome (non vuoto) alla
+/// pressione di Invio o del bottone e svuota il campo; la tendina resta aperta
+/// per inserimenti multipli. Ritorna la `Response` del campo di testo (serve ai
+/// test per cliccarci dentro).
 pub(crate) fn add_field(
     ui: &mut egui::Ui,
     label: &str,
     hint: &str,
     value: &mut String,
     mut on_submit: impl FnMut(String),
-) {
+) -> egui::Response {
     ui.horizontal(|ui| {
         let e = ui.add(
             egui::TextEdit::singleline(value)
@@ -23,7 +25,9 @@ pub(crate) fn add_field(
         if submit && !value.is_empty() {
             on_submit(std::mem::take(value));
         }
-    });
+        e
+    })
+    .inner
 }
 
 pub(crate) fn toolbar(

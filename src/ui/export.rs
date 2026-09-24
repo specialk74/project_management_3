@@ -582,19 +582,9 @@ pub(crate) fn minuta_window(
     }
 }
 
-/// Etichetta del progetto nella minuta: la tripletta, o la descrizione se la
-/// tripletta è vuota, o infine l'id.
+/// Etichetta del progetto nella minuta: la stessa di `project_label`.
 pub(crate) fn minuta_project_label(app: &App, proj: ProjectId) -> String {
-    let trip = app.projects.get_tripletta(proj);
-    if !trip.is_empty() {
-        return trip;
-    }
-    let name = app.projects.get_info(proj);
-    if !name.trim().is_empty() {
-        name
-    } else {
-        format!("Progetto {}", proj.0)
-    }
+    project_label(app, proj)
 }
 
 /// Una nota di cella effort da riportare nella minuta: chi l'ha scritta, in quale

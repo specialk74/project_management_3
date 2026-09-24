@@ -431,7 +431,10 @@ pub(crate) fn milestone_manager_window(
         .show(ctx, |ui| {
             ui.set_min_width(title_width(ui, "Milestone").max(220.0));
             if milestones.is_empty() {
-                ui.label("Nessuna milestone. Creane una dalla toolbar.");
+                ui.label(
+                    "Nessuna milestone. Creane una dalla toolbar (di sistema) o dal menù \
+                     della griglia di un progetto (solo di quel progetto).",
+                );
             }
             egui::ScrollArea::vertical()
                 .max_height(400.0)
@@ -446,6 +449,21 @@ pub(crate) fn milestone_manager_window(
                                 });
                             }
                             ui.label(name);
+                            // Milestone personalizzata: accanto al nome il
+                            // progetto a cui appartiene (non compare altrove).
+                            if let Some(owner) = app.milestones.owner(*id) {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "· {}",
+                                        project_label(app, owner)
+                                    ))
+                                    .small()
+                                    .color(text_dim()),
+                                )
+                                .on_hover_text(
+                                    "Milestone disponibile solo in questo progetto",
+                                );
+                            }
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {

@@ -724,10 +724,43 @@ fn draw_milestone_strip(
     let week_id = WeekId(w as usize);
     resp.context_menu(|ui| {
         // ── Sottomenù: Aggiungi milestone qui (+ rimozione) ──
-        ui.menu_button("Aggiungi milestone qui", |ui| {
-            let all = app.milestones.list();
+        // Sottomenù configurato `CloseOnClickOutside`: dentro c'è un campo di
+        // testo e con la chiusura al primo click (default dei menù contestuali)
+        // il click nel campo chiuderebbe tutto prima di poter scrivere. Le voci
+        // chiudono comunque il menù da sé con `ui.close()`.
+        // Verificato dal test `project_milestone_field_keeps_the_context_menu_open`.
+        egui::containers::menu::SubMenuButton::new("Aggiungi milestone qui")
+            .config(
+                egui::containers::menu::MenuConfig::new()
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+            )
+            .ui(ui, |ui| {
+            // Campo rapido: crea una milestone **solo di questo progetto** e la
+            // colloca subito in questa settimana. Prima le categorie di stampa
+            // (Internal e/o External), poi il nome; tipo e colore si regolano
+            // poi da «Filtri ▸ Milestone…».
+            milestone_categories_submenu(ui, &mut state.new_project_milestone_categories);
+            let categories = state.new_project_milestone_categories.clone();
+            add_field(
+                ui,
+                "Milestone di progetto",
+                "Nuova milestone solo qui…",
+                &mut state.new_project_milestone,
+                |name| {
+                    actions.push(Action::CreateProjectMilestone {
+                        proj,
+                        week: week_id,
+                        name,
+                        categories: categories.clone(),
+                    })
+                },
+            );
+            ui.separator();
+
+            // Elenco: le milestone di sistema più quelle di QUESTO progetto.
+            let all = app.milestones.list_for_project(proj);
             if all.is_empty() {
-                ui.label("(nessuna — creane dalla toolbar)");
+                ui.label("(nessuna — creane una qui sopra o dalla toolbar)");
             }
             for (id, name, color) in &all {
                 let here = ms_here.contains(id);
@@ -735,9 +768,18 @@ fn draw_milestone_strip(
                 // Icona del tipo prima del nome: bandierina o fulmine,
                 // gli stessi simboli che finiscono nell'export.
                 let icon = app.milestones.get_kind(*id).icon();
-                let label =
-                    egui::RichText::new(format!("{mark}{icon} {name}")).color(u32_to_color(*color));
-                if ui.button(label).clicked() {
+                let own = app.milestones.owner(*id).is_some();
+                // Le personalizzate si riconoscono dal suffisso «·» e dal tooltip.
+                let suffix = if own { " ·" } else { "" };
+                let label = egui::RichText::new(format!("{mark}{icon} {name}{suffix}"))
+                    .color(u32_to_color(*color));
+                let btn = ui.button(label);
+                let btn = if own {
+                    btn.on_hover_text("Milestone solo di questo progetto")
+                } else {
+                    btn
+                };
+                if btn.clicked() {
                     actions.push(Action::AddProjectMilestone {
                         proj,
                         milestone: *id,
@@ -761,7 +803,7 @@ fn draw_milestone_strip(
                     }
                 }
             }
-        });
+            });
 
         // ── Sottomenù: Sposta effort ──
         ui.menu_button("Sposta", |ui| {
