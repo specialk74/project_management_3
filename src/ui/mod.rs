@@ -329,6 +329,11 @@ struct MinutaState {
     worker_notes: bool,
 }
 
+/// Stato della dialog "Report" (File ▸ Report…): progetti con flag di selezione.
+struct ReportState {
+    entries: Vec<(ProjectId, bool)>,
+}
+
 // ── Notifiche in-app (toast) ────────────────────────────────────────────────
 
 /// Gravità di una notifica: decide icona, colore e durata.
@@ -539,6 +544,8 @@ pub struct UiState {
     pdf_multi_export: Option<PdfMultiExport>,
     // dialog "Minuta" (File ▸ Minuta…): selezione progetti + scelta note
     minuta: Option<MinutaState>,
+    // dialog "Report" (File ▸ Report…): selezione dei progetti del PDF
+    report: Option<ReportState>,
     // autosave: istante (secondi, orologio egui) dell'ultimo salvataggio
     last_save_time: f64,
     // messaggio di errore/incoerenza da mostrare dopo un caricamento fallito o
@@ -860,6 +867,9 @@ pub(crate) enum Action {
         devs: Vec<DevId>,
         scopes: Vec<MilestoneScope>,
         milestones: Vec<MilestoneId>,
+    },
+    GenerateReport {
+        projects: Vec<ProjectId>,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -1357,6 +1367,7 @@ impl eframe::App for PjmApp {
             pdf_export_window(ui.ctx(), app, state, &mut actions);
             pdf_multi_export_window(ui.ctx(), app, state, &mut actions);
             minuta_window(ui.ctx(), app, state, &mut actions);
+            report_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             filters_window(ui.ctx(), app, state, &mut actions);
@@ -2218,6 +2229,16 @@ impl PjmApp {
                         &dated_file_name("grafico", "svg"),
                         items,
                     );
+                }
+            }
+            Action::GenerateReport { projects } => {
+                match crate::pdf_export::build_report_pdf(&self.app, &projects) {
+                    Some(bytes) => {
+                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("report", "pdf"))
+                    }
+                    None => self
+                        .ui
+                        .toast_warn("Nessun progetto selezionato: report non creato."),
                 }
             }
             Action::GenerateMinuta {

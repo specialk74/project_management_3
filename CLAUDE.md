@@ -190,7 +190,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 ### Toolbar menus (in `toolbar`)
 
-- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Esci.
+- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Report… (PDF riepilogo progetti), Esci.
   - **Minuta** (`minuta_window` + `build_minuta` in `export.rs`, stato `MinutaState`):
     note settimanali di progetto, più recenti prima. La spunta **«Includi le note dei
     worker»** (`MinutaState.worker_notes` → `Action::GenerateMinuta.worker_notes`,
@@ -242,6 +242,16 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da
   hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost),
   Closed…
+  - **Report** (`report_window` in `export.rs`, stato `ReportState { entries }`
+    preselezionato con `body_projects`, → `Action::GenerateReport { projects }` →
+    `pdf_export::build_report_pdf`): PDF di riepilogo, **una pagina (o più) per
+    progetto** via `report_pages` — tripletta, categoria, info, inizio/fine
+    (`gg/mm/aaaa`), avanzamento presunto/effettivo, poi la tabella di **tutti** i dev
+    (`list_devs`) da `report_devs` → `ReportDev { planned, used, allocated, missing }`:
+    usato = `effort_up_to(oggi)`, allocato = tutte le ore in griglia, mancante =
+    stimato − usato (negativo = sforamento, in **rosso**); le % sono sullo stimato
+    del dev (`ReportDev::pct`, `None` ⇒ «—» con stimato 0). La tabella continua su
+    pagine successive (intestazione ripetuta) se i dev non entrano.
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 

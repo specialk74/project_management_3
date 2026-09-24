@@ -2135,6 +2135,340 @@ pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
     )
 }
 
+// --- Report di progetto (File ▸ Report…) ------------------------------------
+
+/// Numeri di un dev nel report: ore stimate (pianificato), usate fino a oggi,
+/// allocate in griglia (tutte le settimane, anche future) e mancanti
+/// (`stimato − usato`, negativo in caso di sforamento).
+#[derive(Debug, Clone, PartialEq)]
+struct ReportDev {
+    name: String,
+    color: (f32, f32, f32),
+    planned: i64,
+    used: i64,
+    allocated: i64,
+    missing: i64,
+}
+
+impl ReportDev {
+    /// Percentuale di `value` rispetto allo stimato del dev, arrotondata.
+    /// `None` (⇒ "—") se lo stimato è 0.
+    fn pct(&self, value: i64) -> Option<i64> {
+        (self.planned > 0).then(|| (value as f64 * 100.0 / self.planned as f64).round() as i64)
+    }
+}
+
+/// Tutti i dev del progetto (nell'ordine della griglia) con i numeri del report.
+fn report_devs(app: &App, proj: ProjectId, dev_info: &DevInfo, today: i32) -> Vec<ReportDev> {
+    app.projects
+        .list_devs(proj)
+        .into_iter()
+        .filter_map(|id| {
+            let sd = app.projects.get_single_dev(proj, id)?;
+            let (name, color) = dev_info
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| ("?".to_string(), BLACK));
+            let planned = sd.planned_effort().0 as i64;
+            let used = sd.effort_up_to(WeekId(today as usize)).0 as i64;
+            let allocated = sd
+                .get_weeks()
+                .into_iter()
+                .last()
+                .map_or(0, |w| sd.effort_up_to(w).0 as i64);
+            Some(ReportDev {
+                name,
+                color,
+                planned,
+                used,
+                allocated,
+                missing: planned - used,
+            })
+        })
+        .collect()
+}
+
+/// Data di una settimana nel report (`gg/mm/aaaa`), "—" se assente.
+fn report_date(w: Option<WeekId>) -> String {
+    w.map_or_else(
+        || "—".to_string(),
+        |w| day_to_date(w.0 as i32).format("%d/%m/%Y").to_string(),
+    )
+}
+
+/// Percentuale formattata ("—" se non definita).
+fn report_pct(p: Option<i64>) -> String {
+    p.map_or_else(|| "—".to_string(), |p| format!("{p}%"))
+}
+
+// Geometria della tabella dei dev (mm): colonna nome + 4 gruppi (ore, %).
+const REPORT_X0: f32 = X_LABEL;
+const REPORT_X1: f32 = PAGE_W - X_LABEL;
+const REPORT_NAME_W: f32 = 70.0;
+const REPORT_ROW_H: f32 = 6.5;
+const REPORT_GROUPS: [&str; 4] = [
+    "Stimato",
+    "Usato fino a oggi",
+    "Allocato in griglia",
+    "Mancante",
+];
+
+/// Pagine (primitive) del report di un progetto: intestazione con tripletta,
+/// categoria, info, date e avanzamento complessivo, poi la tabella dei dev. Se
+/// i dev non entrano in una pagina la tabella continua sulle successive (con
+/// l'intestazione della tabella ripetuta).
+fn report_pages(
+    app: &App,
+    proj: ProjectId,
+    dev_info: &DevInfo,
+    today: i32,
+    created: &str,
+) -> Vec<Vec<Shape>> {
+    let tripletta = app.projects.get_tripletta(proj);
+    let title = if tripletta.trim().is_empty() {
+        "(senza tripletta)".to_string()
+    } else {
+        tripletta
+    };
+    let category = app
+        .projects
+        .get_category(proj)
+        .and_then(|c| app.categories.get_name(c))
+        .unwrap_or("—")
+        .to_string();
+    let info = project_name(app, proj);
+    let start = report_date(app.projects.get_project_start_week(proj));
+    let end = report_date(app.projects.get_project_end_week(proj));
+    let presumed = app
+        .projects
+        .project_presumed_progress_pct(proj, WeekId(today as usize));
+    let actual = app.projects.project_progress_pct(proj);
+    let devs = report_devs(app, proj, dev_info, today);
+
+    let footer = |shapes: &mut Vec<Shape>| {
+        shapes.extend(rect_fill(
+            REPORT_X0,
+            FOOTER_BOT,
+            REPORT_X1,
+            FOOTER_TOP,
+            GRAY_FOOTER,
+        ));
+        shapes.extend(text_center(
+            (REPORT_X0 + REPORT_X1) / 2.0,
+            (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+            created,
+            8.0,
+            false,
+            TEXT_GRAY,
+        ));
+    };
+
+    // --- Intestazione del progetto (solo prima pagina) ------------------------
+    let mut shapes = Vec::new();
+    let mut y = PAGE_H - 16.0;
+    shapes.extend(text_left(REPORT_X0, y, &title, 18.0, true, BLACK));
+    y -= 9.0;
+    let label_value = |shapes: &mut Vec<Shape>, y: f32, label: &str, value: &str| {
+        shapes.extend(text_left(REPORT_X0, y, label, 10.0, true, BLACK));
+        shapes.extend(text_left(REPORT_X0 + 34.0, y, value, 10.0, false, BLACK));
+    };
+    label_value(&mut shapes, y, "Categoria:", &category);
+    y -= 6.0;
+    // Info su più righe (a capo espliciti preservati), con un tetto per non
+    // mangiarsi la tabella: le righe in eccesso finiscono in "…".
+    const INFO_MAX_LINES: usize = 8;
+    let mut info_lines = wrap_multiline(&info, 120);
+    if info_lines.is_empty() {
+        info_lines.push("—".to_string());
+    }
+    if info_lines.len() > INFO_MAX_LINES {
+        info_lines.truncate(INFO_MAX_LINES);
+        info_lines[INFO_MAX_LINES - 1].push_str(" …");
+    }
+    shapes.extend(text_left(REPORT_X0, y, "Info:", 10.0, true, BLACK));
+    for l in &info_lines {
+        shapes.extend(text_left(REPORT_X0 + 34.0, y, l, 9.0, false, BLACK));
+        y -= 4.6;
+    }
+    y -= 1.4;
+    label_value(&mut shapes, y, "Inizio:", &start);
+    shapes.extend(text_left(REPORT_X0 + 80.0, y, "Fine:", 10.0, true, BLACK));
+    shapes.extend(text_left(REPORT_X0 + 94.0, y, &end, 10.0, false, BLACK));
+    y -= 6.0;
+    label_value(
+        &mut shapes,
+        y,
+        "Avanzamento:",
+        &format!(
+            "presunto {}  ·  effettivo {}",
+            report_pct(presumed.map(i64::from)),
+            report_pct(actual.map(i64::from)),
+        ),
+    );
+    y -= 10.0;
+
+    // --- Tabella dei dev -------------------------------------------------------
+    let group_w = (REPORT_X1 - REPORT_X0 - REPORT_NAME_W) / REPORT_GROUPS.len() as f32;
+    let group_x = |g: usize| REPORT_X0 + REPORT_NAME_W + g as f32 * group_w;
+    // Intestazione su due righe: nome del gruppo sopra, "ore"/"%" sotto.
+    let table_header = |shapes: &mut Vec<Shape>, y: f32| -> f32 {
+        shapes.extend(rect_fill(
+            REPORT_X0,
+            y - 2.0 * REPORT_ROW_H,
+            REPORT_X1,
+            y,
+            GRAY_FOOTER,
+        ));
+        shapes.extend(text_left(
+            REPORT_X0 + 2.0,
+            y - 2.0 * REPORT_ROW_H + 2.2,
+            "Dev",
+            9.0,
+            true,
+            BLACK,
+        ));
+        for (g, name) in REPORT_GROUPS.iter().enumerate() {
+            let gx = group_x(g);
+            shapes.extend(text_center(
+                gx + group_w / 2.0,
+                y - REPORT_ROW_H + 2.2,
+                name,
+                9.0,
+                true,
+                BLACK,
+            ));
+            shapes.extend(text_right(
+                gx + group_w * 0.55,
+                y - 2.0 * REPORT_ROW_H + 2.2,
+                "ore",
+                8.0,
+                false,
+                TEXT_GRAY,
+            ));
+            shapes.extend(text_right(
+                gx + group_w - 5.0,
+                y - 2.0 * REPORT_ROW_H + 2.2,
+                "%",
+                8.0,
+                false,
+                TEXT_GRAY,
+            ));
+            shapes.extend(line(gx, y, gx, y - 2.0 * REPORT_ROW_H, 0.2, GRAY_LT));
+        }
+        y - 2.0 * REPORT_ROW_H
+    };
+
+    let mut pages = Vec::new();
+    y = table_header(&mut shapes, y);
+    if devs.is_empty() {
+        shapes.extend(text_left(
+            REPORT_X0 + 2.0,
+            y - REPORT_ROW_H + 2.2,
+            "Nessun dev nel progetto.",
+            9.0,
+            false,
+            TEXT_GRAY,
+        ));
+    }
+    for (i, d) in devs.iter().enumerate() {
+        // Pagina piena: chiudi e riparti con l'intestazione della tabella.
+        if y - REPORT_ROW_H < FOOTER_TOP + 4.0 {
+            footer(&mut shapes);
+            pages.push(std::mem::take(&mut shapes));
+            y = PAGE_H - 16.0;
+            shapes.extend(text_left(
+                REPORT_X0,
+                y,
+                &format!("{title} (continua)"),
+                14.0,
+                true,
+                BLACK,
+            ));
+            y = table_header(&mut shapes, y - 8.0);
+        }
+        let top = y;
+        y -= REPORT_ROW_H;
+        if i % 2 == 1 {
+            shapes.extend(rect_fill(REPORT_X0, y, REPORT_X1, top, (0.96, 0.96, 0.96)));
+        }
+        let ty = y + 2.2;
+        // Quadratino col colore del dev + nome (troncato alla colonna).
+        shapes.extend(rect_fill(
+            REPORT_X0 + 2.0,
+            y + 1.6,
+            REPORT_X0 + 5.2,
+            y + 4.8,
+            d.color,
+        ));
+        shapes.extend(text_left(
+            REPORT_X0 + 7.0,
+            ty,
+            &truncate_to_w(&d.name, 9.0, REPORT_NAME_W - 9.0),
+            9.0,
+            false,
+            BLACK,
+        ));
+        let values = [d.planned, d.used, d.allocated, d.missing];
+        for (g, v) in values.into_iter().enumerate() {
+            let gx = group_x(g);
+            // Mancante negativo = sforamento → in rosso.
+            let color = if g == 3 && v < 0 { RED } else { BLACK };
+            shapes.extend(text_right(
+                gx + group_w * 0.55,
+                ty,
+                &format!("{v} h"),
+                9.0,
+                false,
+                color,
+            ));
+            shapes.extend(text_right(
+                gx + group_w - 5.0,
+                ty,
+                &report_pct(d.pct(v)),
+                9.0,
+                false,
+                color,
+            ));
+            shapes.extend(line(gx, top, gx, y, 0.2, GRAY_LT));
+        }
+        shapes.extend(line(REPORT_X0, y, REPORT_X1, y, 0.2, GRAY_LT));
+    }
+    footer(&mut shapes);
+    pages.push(shapes);
+    pages
+}
+
+/// PDF del report: per ogni progetto dato (nell'ordine dato) una o più pagine
+/// con tripletta, categoria, info, date, avanzamento complessivo (presunto ed
+/// effettivo) e la tabella di tutti i dev (stimato / usato fino a oggi /
+/// allocato in griglia / mancante, in ore e in % dello stimato del dev).
+/// `None` se la lista è vuota.
+pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
+    if projects.is_empty() {
+        return None;
+    }
+    let mut doc = PdfDocument::new("Report");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let dev_info = dev_info_map(app);
+
+    let pages: Vec<PdfPage> = projects
+        .iter()
+        .flat_map(|&id| report_pages(app, id, &dev_info, today, &created))
+        .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
+        .collect();
+    Some(
+        doc.with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut Vec::new()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2173,6 +2507,58 @@ mod tests {
             bytes.starts_with(b"%PDF"),
             "l'output deve essere un PDF valido"
         );
+    }
+
+    /// Report: stimato/usato fino a oggi/allocato/mancante per dev, con le %
+    /// rispetto allo stimato; il mancante va in negativo quando si sfora.
+    #[test]
+    fn report_devs_numbers_and_overrun() {
+        let mut app = App::new();
+        let pid = app.projects.add("Info", Some("REP"), Some(WeekId(20000)));
+        let a = app.devs.add("Backend");
+        let b = app.devs.add("Frontend");
+        let c = app.devs.add("QA");
+        let w = WorkerId(0);
+        app.projects.add_dev_effort(pid, a, Effort(40));
+        app.projects.add_effort(pid, a, WeekId(20000), w, Effort(10));
+        app.projects.add_effort(pid, a, WeekId(20007), w, Effort(10));
+        app.projects.add_effort(pid, a, WeekId(20014), w, Effort(10)); // futuro
+        app.projects.add_dev_effort(pid, b, Effort(10));
+        app.projects.add_effort(pid, b, WeekId(20000), w, Effort(15)); // sforamento
+        app.projects.add_dev(pid, c); // nessuno stimato
+
+        let today = 20010; // dopo le prime due settimane, prima della terza
+        let devs = report_devs(&app, pid, &dev_info_map(&app), today);
+        assert_eq!(devs.len(), 3, "tutti i dev, anche senza stimato");
+        let by = |n: &str| devs.iter().find(|d| d.name == n).unwrap().clone();
+
+        let da = by("Backend");
+        assert_eq!((da.planned, da.used, da.allocated, da.missing), (40, 20, 30, 20));
+        assert_eq!((da.pct(da.used), da.pct(da.allocated), da.pct(da.missing)), (Some(50), Some(75), Some(50)));
+
+        let db = by("Frontend");
+        assert_eq!(db.missing, -5);
+        assert_eq!(db.pct(db.missing), Some(-50));
+
+        let dc = by("QA");
+        assert_eq!((dc.planned, dc.pct(dc.planned)), (0, None));
+    }
+
+    /// Il report produce un PDF valido e, con molti dev, la tabella continua su
+    /// più pagine; senza progetti non produce nulla.
+    #[test]
+    fn report_pdf_is_valid_and_paginates() {
+        let mut app = App::new();
+        assert!(build_report_pdf(&app, &[]).is_none());
+        let pid = app.projects.add("Info\nsu due righe", Some("REP"), Some(WeekId(20000)));
+        for i in 0..40 {
+            let d = app.devs.add(&format!("Dev {i}"));
+            app.projects.add_dev_effort(pid, d, Effort(8));
+        }
+        let pages = report_pages(&app, pid, &dev_info_map(&app), 20000, "oggi");
+        assert!(pages.len() > 1, "40 dev non stanno in una pagina");
+        let bytes = build_report_pdf(&app, &[pid]).expect("un progetto → Some");
+        assert!(bytes.starts_with(b"%PDF"));
     }
 
     #[test]

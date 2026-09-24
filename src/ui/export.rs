@@ -602,6 +602,56 @@ pub(crate) fn minuta_window(
     }
 }
 
+/// Dialog "Report" (File ▸ Report…): scelta dei progetti da includere nel PDF
+/// di riepilogo (`pdf_export::build_report_pdf`).
+pub(crate) fn report_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(r) = state.report.as_mut() else {
+        return;
+    };
+    let mut open = true;
+    let mut generate = false;
+    let mut cancel = false;
+
+    egui::Window::new("Report")
+        .collapsible(false)
+        .resizable(true)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label("Progetti da includere nel report:");
+            ui.add_space(4.0);
+            project_checklist(ui, app, &mut r.entries);
+            ui.separator();
+            let any = r.entries.iter().any(|(_, s)| *s);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(any, egui::Button::new("Genera Report…")).clicked() {
+                    generate = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    if generate {
+        let projects: Vec<ProjectId> = r
+            .entries
+            .iter()
+            .filter(|(_, s)| *s)
+            .map(|(p, _)| *p)
+            .collect();
+        actions.push(Action::GenerateReport { projects });
+        state.report = None;
+    } else if cancel || !open {
+        state.report = None;
+    }
+}
+
 /// Etichetta del progetto nella minuta: la stessa di `project_label`.
 pub(crate) fn minuta_project_label(app: &App, proj: ProjectId) -> String {
     project_label(app, proj)

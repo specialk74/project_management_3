@@ -84,6 +84,24 @@ pub(crate) fn toolbar(
                 });
                 ui.close_menu();
             }
+            if ui
+                .button("Report…")
+                .on_hover_text(
+                    "PDF di riepilogo dei progetti scelti: dati del progetto, avanzamento \
+                     e ore stimate/usate/mancanti di ogni dev",
+                )
+                .clicked()
+            {
+                // Progetti del corpo centrale (abilitati + Vista corrente)
+                // preselezionati, come nella minuta.
+                state.report = Some(ReportState {
+                    entries: body_projects(app, state.project_view)
+                        .into_iter()
+                        .map(|id| (id, true))
+                        .collect(),
+                });
+                ui.close_menu();
+            }
             ui.separator();
             if ui.button("Esci").clicked() {
                 // Richiede la chiusura: se ci sono modifiche non salvate,

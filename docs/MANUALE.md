@@ -260,6 +260,19 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
   `_(nessuna nota)_`. Ogni progetto compare con la sua **tripletta** (o la
   descrizione se la tripletta è vuota) e le note settimanali con la data di
   riferimento (più recenti prima).
+- **Report…** — genera un **PDF di riepilogo** dei progetti scelti. La finestra
+  propone i progetti visibili nel corpo centrale (tutti spuntati, con Select All).
+  Ogni progetto parte su una **nuova pagina** e riporta:
+  - **tripletta**, **categoria**, **info** del progetto, **data di inizio e di fine**;
+  - l'**avanzamento complessivo**: *presunto* (ore usate fino a oggi sullo stimato)
+    ed *effettivo* (media delle % dichiarate dai dev, pesata sullo stimato);
+  - una tabella con **tutti i dev** del progetto e, per ciascuno, ore e % di:
+    **Stimato** (sempre 100%), **Usato fino a oggi** (ore in griglia fino alla
+    settimana corrente), **Allocato in griglia** (tutte le ore assegnate, anche
+    nelle settimane future) e **Mancante** (= stimato − usato fino a oggi). Le %
+    sono calcolate sullo **stimato del dev**; con stimato 0 compare «—». Un
+    mancante **negativo** (sforamento) è scritto **in rosso**.
+  Se i dev non entrano in una pagina, la tabella continua sulla successiva.
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
   conferma (Salva ed esci / Esci senza salvare / Annulla).
 
