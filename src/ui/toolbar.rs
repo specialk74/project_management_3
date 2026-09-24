@@ -132,13 +132,17 @@ pub(crate) fn toolbar(
                 // successivo, comodo per creare più trigger di fila. Qui serve
                 // il sottomenù e non la combo: vedi `milestone_kind_combo`.
                 milestone_kind_submenu(ui, &mut state.new_milestone_kind);
+                // …e le categorie di stampa (Internal e/o External), che
+                // decidono in quale PDF la milestone comparirà.
+                milestone_categories_submenu(ui, &mut state.new_milestone_categories);
                 let kind = state.new_milestone_kind;
+                let categories = state.new_milestone_categories.clone();
                 add_field(
                     ui,
                     "Milestone",
                     "Nome milestone…",
                     &mut state.new_milestone,
-                    |name| actions.push(Action::CreateMilestone(name, kind)),
+                    |name| actions.push(Action::CreateMilestone(name, kind, categories.clone())),
                 );
             });
 

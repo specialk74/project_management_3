@@ -66,6 +66,75 @@ impl MilestoneKind {
     }
 }
 
+/// Categoria di stampa di una milestone: una milestone può appartenere a una o
+/// più categorie. Serve **solo** in export: decide in quale PDF la bandierina
+/// compare (vedi `MilestoneScope`).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
+pub enum MilestoneCategory {
+    Internal,
+    External,
+}
+
+impl MilestoneCategory {
+    /// Tutte le categorie esistenti, nell'ordine in cui vanno mostrate.
+    pub const ALL: [MilestoneCategory; 2] = [MilestoneCategory::Internal, MilestoneCategory::External];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MilestoneCategory::Internal => "Internal",
+            MilestoneCategory::External => "External",
+        }
+    }
+
+    /// Etichetta breve per i controlli compatti (gestore milestone).
+    pub fn short(self) -> &'static str {
+        match self {
+            MilestoneCategory::Internal => "Int",
+            MilestoneCategory::External => "Ext",
+        }
+    }
+}
+
+/// Ambito di stampa scelto nelle dialog di export: quali milestone finiscono nel
+/// PDF/SVG. Regola voluta dall'utente:
+/// - `Internal` → milestone **Internal + External** (cioè tutte);
+/// - `External` → **solo** le milestone marcate External.
+///
+/// Se entrambi gli ambiti sono scelti si generano due file distinti.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MilestoneScope {
+    #[default]
+    Internal,
+    External,
+}
+
+impl MilestoneScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            MilestoneScope::Internal => "Internal",
+            MilestoneScope::External => "External",
+        }
+    }
+
+    /// Suffisso aggiunto al nome file quando si esportano entrambi gli ambiti.
+    pub fn file_suffix(self) -> &'static str {
+        match self {
+            MilestoneScope::Internal => "internal",
+            MilestoneScope::External => "external",
+        }
+    }
+
+    /// Una milestone con queste categorie va stampata in questo ambito?
+    /// `Internal` prende tutto (Internal + External, elenco vuoto compreso);
+    /// `External` solo chi è esplicitamente External.
+    pub fn accepts(self, categories: &[MilestoneCategory]) -> bool {
+        match self {
+            MilestoneScope::Internal => true,
+            MilestoneScope::External => categories.contains(&MilestoneCategory::External),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Milestone {
     pub name: String,
@@ -75,6 +144,36 @@ pub struct Milestone {
     /// scritti prima dell'introduzione del tipo: si rileggono come traguardi.
     #[serde(default)]
     pub kind: MilestoneKind,
+    /// Categorie di stampa (vedi `MilestoneCategory`). **Elenco vuoto = solo
+    /// Internal**: è così che si rileggono i file scritti prima delle categorie,
+    /// che quindi continuano a comparire nel PDF Internal come prima.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<MilestoneCategory>,
+}
+
+impl Milestone {
+    /// La milestone appartiene alla categoria? L'elenco vuoto vale `Internal`.
+    pub fn has_category(&self, cat: MilestoneCategory) -> bool {
+        match cat {
+            MilestoneCategory::Internal => {
+                self.categories.is_empty() || self.categories.contains(&cat)
+            }
+            MilestoneCategory::External => self.categories.contains(&cat),
+        }
+    }
+
+    /// Categorie effettive (mai vuote: l'elenco vuoto vale `Internal`).
+    pub fn effective_categories(&self) -> Vec<MilestoneCategory> {
+        MilestoneCategory::ALL
+            .into_iter()
+            .filter(|c| self.has_category(*c))
+            .collect()
+    }
+
+    /// Va stampata in questo ambito di export?
+    pub fn in_scope(&self, scope: MilestoneScope) -> bool {
+        scope.accepts(&self.effective_categories())
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
@@ -86,6 +185,21 @@ pub struct Milestones {
 impl Default for MilestoneId {
     fn default() -> Self {
         MilestoneId(0)
+    }
+}
+
+/// Ordina le categorie come `MilestoneCategory::ALL`, toglie i doppioni e
+/// garantisce che l'elenco non sia mai vuoto (vuoto = Internal, quindi si
+/// scrive `Internal` esplicito).
+fn normalize_categories(cats: Vec<MilestoneCategory>) -> Vec<MilestoneCategory> {
+    let out: Vec<MilestoneCategory> = MilestoneCategory::ALL
+        .into_iter()
+        .filter(|c| cats.contains(c))
+        .collect();
+    if out.is_empty() {
+        vec![MilestoneCategory::Internal]
+    } else {
+        out
     }
 }
 
@@ -131,6 +245,17 @@ impl Milestones {
 
     /// Come `add` ma scegliendo il tipo (traguardo / trigger).
     pub fn add_with_kind(&mut self, name: &str, kind: MilestoneKind) -> MilestoneId {
+        self.add_with(name, kind, Vec::new())
+    }
+
+    /// Come `add_with_kind` ma fissando anche le categorie di stampa
+    /// (elenco vuoto = solo Internal).
+    pub fn add_with(
+        &mut self,
+        name: &str,
+        kind: MilestoneKind,
+        categories: Vec<MilestoneCategory>,
+    ) -> MilestoneId {
         let color = self.pick_color();
         let id = self.last_id;
         self.milestones.insert(
@@ -139,6 +264,7 @@ impl Milestones {
                 name: name.to_string(),
                 color,
                 kind,
+                categories: normalize_categories(categories),
             },
         );
         self.last_id.0 += 1;
@@ -177,6 +303,41 @@ impl Milestones {
         if let Some(m) = self.milestones.get_mut(&id) {
             m.kind = kind;
         }
+    }
+
+    /// Categorie effettive della milestone (mai vuote: senza categorie è
+    /// `Internal`). Milestone inesistente → `Internal`.
+    pub fn get_categories(&self, id: MilestoneId) -> Vec<MilestoneCategory> {
+        self.milestones
+            .get(&id)
+            .map(|m| m.effective_categories())
+            .unwrap_or_else(|| vec![MilestoneCategory::Internal])
+    }
+
+    pub fn has_category(&self, id: MilestoneId, cat: MilestoneCategory) -> bool {
+        self.milestones
+            .get(&id)
+            .map(|m| m.has_category(cat))
+            .unwrap_or(cat == MilestoneCategory::Internal)
+    }
+
+    /// Aggiunge/toglie una categoria. Una milestone non resta mai senza
+    /// categorie: togliendo l'ultima si ricade su `Internal`.
+    pub fn set_category(&mut self, id: MilestoneId, cat: MilestoneCategory, on: bool) {
+        if let Some(m) = self.milestones.get_mut(&id) {
+            let mut cats = m.effective_categories();
+            cats.retain(|c| *c != cat);
+            if on {
+                cats.push(cat);
+            }
+            m.categories = normalize_categories(cats);
+        }
+    }
+
+    /// La milestone va stampata in questo ambito di export? Un id sconosciuto
+    /// (non dovrebbe capitare) è trattato come Internal.
+    pub fn in_scope(&self, id: MilestoneId, scope: MilestoneScope) -> bool {
+        scope.accepts(&self.get_categories(id))
     }
 
     pub fn set_color(&mut self, id: MilestoneId, color: u32) {
@@ -256,6 +417,89 @@ mod tests {
         // I .ron scritti prima del tipo non hanno il campo `kind`.
         let m: Milestone = ron::from_str(r#"(name: "Vecchia", color: 123)"#).unwrap();
         assert_eq!(m.kind, MilestoneKind::Goal);
+    }
+
+    #[test]
+    fn milestone_without_categories_counts_as_internal() {
+        // I .ron scritti prima delle categorie non hanno il campo: valgono
+        // Internal, quindi restano nella stampa Internal e fuori da External.
+        let m: Milestone = ron::from_str(r#"(name: "Vecchia", color: 123)"#).unwrap();
+        assert!(m.has_category(MilestoneCategory::Internal));
+        assert!(!m.has_category(MilestoneCategory::External));
+        assert!(m.in_scope(MilestoneScope::Internal));
+        assert!(!m.in_scope(MilestoneScope::External));
+    }
+
+    #[test]
+    fn internal_scope_prints_every_milestone_external_only_the_external_ones() {
+        let mut ms = Milestones::new();
+        let int = ms.add("Interna");
+        let ext = ms.add_with(
+            "Esterna",
+            MilestoneKind::Goal,
+            vec![MilestoneCategory::External],
+        );
+        let both = ms.add_with(
+            "Entrambe",
+            MilestoneKind::Goal,
+            vec![MilestoneCategory::Internal, MilestoneCategory::External],
+        );
+        for id in [int, ext, both] {
+            assert!(ms.in_scope(id, MilestoneScope::Internal));
+        }
+        assert!(!ms.in_scope(int, MilestoneScope::External));
+        assert!(ms.in_scope(ext, MilestoneScope::External));
+        assert!(ms.in_scope(both, MilestoneScope::External));
+    }
+
+    #[test]
+    fn set_category_never_leaves_a_milestone_without_categories() {
+        let mut ms = Milestones::new();
+        let a = ms.add("Alpha");
+        ms.set_category(a, MilestoneCategory::External, true);
+        assert_eq!(
+            ms.get_categories(a),
+            vec![MilestoneCategory::Internal, MilestoneCategory::External]
+        );
+        // Tolta Internal resta solo External…
+        ms.set_category(a, MilestoneCategory::Internal, false);
+        assert_eq!(ms.get_categories(a), vec![MilestoneCategory::External]);
+        // …e togliendo anche l'ultima si ricade su Internal.
+        ms.set_category(a, MilestoneCategory::External, false);
+        assert_eq!(ms.get_categories(a), vec![MilestoneCategory::Internal]);
+    }
+
+    #[test]
+    fn add_with_normalizes_categories() {
+        let mut ms = Milestones::new();
+        // Ordine invertito e doppione: l'elenco salvato è ordinato e unico.
+        let a = ms.add_with(
+            "Alpha",
+            MilestoneKind::Goal,
+            vec![
+                MilestoneCategory::External,
+                MilestoneCategory::Internal,
+                MilestoneCategory::External,
+            ],
+        );
+        assert_eq!(
+            ms.get(a).unwrap().categories,
+            vec![MilestoneCategory::Internal, MilestoneCategory::External]
+        );
+    }
+
+    #[test]
+    fn categories_survive_a_ron_round_trip() {
+        let m = Milestone {
+            name: "Consegna".to_string(),
+            color: 0x112233,
+            kind: MilestoneKind::Trigger,
+            categories: vec![MilestoneCategory::Internal, MilestoneCategory::External],
+        };
+        let txt = ron::to_string(&m).unwrap();
+        let back: Milestone = ron::from_str(&txt).unwrap();
+        assert_eq!(back.categories, m.categories);
+        assert_eq!(back.kind, MilestoneKind::Trigger);
     }
 
     #[test]

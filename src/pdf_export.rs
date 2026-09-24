@@ -13,6 +13,7 @@ use printpdf::*;
 use crate::app::App;
 use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
 use crate::dev_utils::dev::DevId;
+use crate::milestones::MilestoneScope;
 use crate::project_utils::project::ProjectId;
 use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 
@@ -21,6 +22,11 @@ use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 // impostato prima di ogni `build_*`, letto da `page_shapes`. Default: off.
 thread_local! {
     static SHOW_PCT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // Ambito milestone dell'export corrente (vedi `MilestoneScope`): decide
+    // quali bandierine finiscono nella pagina. Default: Internal (= tutte),
+    // cioè il comportamento storico.
+    static MS_SCOPE: std::cell::Cell<MilestoneScope> =
+        const { std::cell::Cell::new(MilestoneScope::Internal) };
 }
 
 /// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
@@ -30,6 +36,16 @@ pub fn set_show_pct(v: bool) {
 
 fn show_pct() -> bool {
     SHOW_PCT.with(|c| c.get())
+}
+
+/// Imposta l'ambito milestone del prossimo `build_*`: `Internal` disegna tutte
+/// le milestone (Internal + External), `External` solo quelle External.
+pub fn set_milestone_scope(v: MilestoneScope) {
+    MS_SCOPE.with(|c| c.set(v));
+}
+
+fn milestone_scope() -> MilestoneScope {
+    MS_SCOPE.with(|c| c.get())
 }
 
 // Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
@@ -1286,7 +1302,13 @@ fn project_shapes(
     }
 
     let mut flags = Vec::new();
+    let scope = milestone_scope();
     for (mid, week) in app.projects.list_project_milestones(proj) {
+        // Fuori ambito (es. milestone solo Internal in una stampa External):
+        // la bandierina non viene disegnata.
+        if !app.milestones.in_scope(mid, scope) {
+            continue;
+        }
         let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
         let mcol = app.milestones.get_color(mid).map(u32_rgb).unwrap_or(BLACK);
         flags.push(Flag {
@@ -2142,6 +2164,44 @@ mod tests {
 
         // L'asta e l'etichetta restano: cambia solo la punta.
         assert!(svg.contains("Consegna"), "il nome resta sotto l'asta");
+    }
+
+    #[test]
+    fn milestone_scope_filters_the_flags_in_the_export() {
+        use crate::milestones::{MilestoneCategory, MilestoneScope};
+
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+
+        // Una milestone senza categorie (= Internal) e una marcata External.
+        let interna = app.milestones.add("SoloInterna");
+        let esterna = app.milestones.add("AncheEsterna");
+        app.milestones
+            .set_category(esterna, MilestoneCategory::External, true);
+        app.projects.add_project_milestone(pid, interna, WeekId(20021));
+        app.projects.add_project_milestone(pid, esterna, WeekId(20035));
+
+        // Internal: tutte e due le bandierine.
+        set_milestone_scope(MilestoneScope::Internal);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("SoloInterna"));
+        assert!(svg.contains("AncheEsterna"));
+
+        // External: solo quella External.
+        set_milestone_scope(MilestoneScope::External);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(
+            !svg.contains("SoloInterna"),
+            "la milestone Internal non va nella stampa External"
+        );
+        assert!(svg.contains("AncheEsterna"));
+
+        set_milestone_scope(MilestoneScope::Internal);
     }
 
     #[test]

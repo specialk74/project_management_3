@@ -238,7 +238,8 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
   il bottone; il campo resta aperto per inserimenti multipli.
 - **Dev** — aggiunge un nuovo ruolo/disciplina.
 - **Categoria** — aggiunge una categoria di progetto.
-- **Milestone** — crea una nuova milestone (poi assegnabile ai progetti).
+- **Milestone** — crea una nuova milestone (poi assegnabile ai progetti), con
+  **tipo** e **categorie di stampa** scelti prima del nome.
 
 ### Filtri
 Le prime quattro voci aprono **la stessa dialog «Filtri»** (tre colonne: Workers,
@@ -491,7 +492,8 @@ milestone), sottomenù **Sposta**:
 
 ## 11. Milestone
 
-Le milestone hanno **nome**, **colore** e **tipo**, e sono condivise tra i progetti.
+Le milestone hanno **nome**, **colore**, **tipo** e **categorie di stampa**, e sono
+condivise tra i progetti.
 
 Il **tipo** distingue due usi:
 
@@ -503,13 +505,29 @@ Il **tipo** distingue due usi:
 Il tipo è una proprietà della **milestone**, non della singola collocazione:
 cambiarlo vale per tutti i progetti in cui quella milestone è collocata.
 
-- **Creare**: Aggiungi ▸ Milestone — prima si sceglie il **tipo** dalla voce
-  «Tipo: …» (si apre passandoci sopra col mouse), poi si scrive il nome. La
-  scelta del tipo resta per l'inserimento successivo, comodo per creare più
-  trigger di fila. Il colore si imposta dal gestore.
+Le **categorie di stampa** sono **Internal** ed **External** e una milestone può
+appartenere a **una o a entrambe**. Servono **solo in fase di stampa**: decidono in
+quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
+16). Nella griglia non cambiano nulla.
+
+- **Internal** — la milestone finisce nella stampa Internal.
+- **External** — la milestone finisce nella stampa External **e anche** in quella
+  Internal (la stampa Internal contiene Internal + External).
+- Una milestone **senza categorie** — è il caso di tutte quelle create prima di
+  questa funzione — vale **Internal**: continua a comparire nella stampa Internal
+  come sempre e resta fuori da quella External.
+- Una milestone ha **sempre almeno una categoria**: togliendo l'ultima spunta si
+  ricade su Internal (la spunta rimasta da sola non è cliccabile).
+
+- **Creare**: Aggiungi ▸ Milestone — prima si scelgono il **tipo** dalla voce
+  «Tipo: …» e le **categorie** dalla voce «Categorie: …» (si aprono passandoci
+  sopra col mouse), poi si scrive il nome. Tipo e categorie restano per
+  l'inserimento successivo, comodo per creare più milestone simili di fila. Il
+  colore si imposta dal gestore.
 - **Gestire**: Filtri ▸ Milestone… — elenco con selettore colore, **tendina del
-  tipo** (modificabile in qualsiasi momento, anche dopo l'inserimento) e cestino
-  per eliminarle (l'eliminazione le toglie anche da tutti i progetti).
+  tipo**, le spunte **Int / Ext** delle categorie (tutto modificabile in
+  qualsiasi momento, anche dopo l'inserimento) e cestino per eliminarle
+  (l'eliminazione le toglie anche da tutti i progetti).
 - **Assegnare a una settimana**: tasto destro sulla riga alta di una colonna-dev
   → **Aggiungi milestone qui** → scegli la milestone. Nell'elenco ogni nome è
   preceduto dall'icona del tipo — **⚑** traguardo, **⚡** trigger — nel colore
@@ -794,7 +812,8 @@ progetti**:
 - **Select All** in cima per selezionare/deselezionare tutti;
 - **checkbox** per includere/escludere ciascun progetto;
 - **Esporta PDF…** genera un PDF con una pagina per ogni progetto **selezionato e
-  idoneo**; **Annulla** chiude senza esportare.
+  idoneo** (uno o due file, secondo le categorie milestone scelte); **Annulla**
+  chiude senza esportare.
 
 Nel Gantt i dev **con effort** sono ordinati per data di inizio dell'effort; i dev
 senza effort non compaiono.
@@ -824,6 +843,31 @@ Nella stessa finestra c'è **Esporta SVG…**: salva **solo il grafico** (lo ste
 Gantt del PDF) in formato **SVG** vettoriale, **senza** tripletta/descrizione del
 progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev.
 L'immagine è ritagliata al contenuto effettivo del grafico.
+
+### Milestone da stampare: Internal / External
+In tutte le finestre di export (PDF a più progetti, PDF del singolo progetto, SVG)
+c'è il riquadro **«Milestone da stampare»** con due caselle:
+
+- **Internal (Internal + External)** — il file contiene **tutte** le milestone,
+  quelle Internal e quelle External (comprese quelle senza categoria, che valgono
+  Internal).
+- **External (solo External)** — il file contiene **solo** le milestone marcate
+  External.
+
+Le due caselle sono indipendenti:
+
+- **una sola spuntata** → viene creato **un file**, con il nome scelto nel dialog
+  di salvataggio;
+- **tutte e due** → vengono creati **due file** con una sola scelta del nome: al
+  nome indicato viene aggiunto il suffisso dell'ambito, per esempio
+  `progetti_2026_07_13_internal.pdf` e `progetti_2026_07_13_external.pdf` (una
+  notifica per ciascun file salvato);
+- **nessuna** → i pulsanti di export sono disattivati: non c'è niente da stampare.
+
+A cambiare è **solo** quali bandierine vengono disegnate: progetti, dev, barre,
+date e percentuali restano identici nei due file. La scelta è ricordata tra un
+export e l'altro (non è salvata sul file); all'avvio parte da **solo Internal**,
+cioè il comportamento di prima delle categorie.
 
 ### Formato delle barre dei dev
 In tutte le finestre di export c'è un selettore **Formato barre**, con una piccola

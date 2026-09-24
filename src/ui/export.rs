@@ -143,6 +143,31 @@ pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export
         });
 }
 
+/// Selettore degli **ambiti milestone** da stampare, condiviso dalle dialog di
+/// export. `Internal` produce un file con le milestone Internal **e** External,
+/// `External` uno con le sole External; spuntandoli entrambi si ottengono due
+/// file (stesso nome + suffisso `_internal` / `_external`).
+pub(crate) fn milestone_scope_selector(ui: &mut egui::Ui, scopes: &mut ExportScopes) {
+    ui.label(egui::RichText::new("Milestone da stampare").strong());
+    ui.checkbox(&mut scopes.internal, "Internal  (Internal + External)")
+        .on_hover_text("Un file con tutte le milestone: Internal ed External.");
+    ui.checkbox(&mut scopes.external, "External  (solo External)")
+        .on_hover_text("Un file con le sole milestone marcate External.");
+    if scopes.internal && scopes.external {
+        ui.label(
+            egui::RichText::new("Verranno creati due file: …_internal e …_external")
+                .small()
+                .color(text_dim()),
+        );
+    } else if scopes.is_empty() {
+        ui.label(
+            egui::RichText::new("Seleziona almeno un ambito per esportare.")
+                .small()
+                .color(warn_amber()),
+        );
+    }
+}
+
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
 /// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
 /// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
@@ -160,6 +185,8 @@ pub(crate) fn pdf_export_window(
     let mut fmt = state.bar_format;
     // Idem per la scelta "includi percentuali di avanzamento" nell'export.
     let mut show_pct = state.export_progress_pct;
+    // Idem per gli ambiti milestone (Internal / External) da stampare.
+    let mut scopes = state.export_scopes;
     let proj = px.proj;
     let trip = app.projects.get_tripletta(proj);
     let title = if trip.is_empty() {
@@ -270,13 +297,20 @@ pub(crate) fn pdf_export_window(
             );
 
             ui.separator();
+            milestone_scope_selector(ui, &mut scopes);
+
+            ui.separator();
+            let can_export = !scopes.is_empty();
             ui.horizontal(|ui| {
                 // Esportabile anche con zero dev: esce comunque il resto (milestone…).
-                if ui.button("Esporta PDF…").clicked() {
+                if ui
+                    .add_enabled(can_export, egui::Button::new("Esporta PDF…"))
+                    .clicked()
+                {
                     do_export = true;
                 }
                 if ui
-                    .button("Esporta SVG…")
+                    .add_enabled(can_export, egui::Button::new("Esporta SVG…"))
                     .on_hover_text("Solo il grafico, senza tripletta/descrizione né data")
                     .clicked()
                 {
@@ -291,6 +325,7 @@ pub(crate) fn pdf_export_window(
     // Ricorda il formato scelto per i prossimi export.
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
+    state.export_scopes = scopes;
 
     // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
     let devs_if_export = (do_export || do_export_svg).then(|| {
@@ -302,10 +337,11 @@ pub(crate) fn pdf_export_window(
     });
 
     if let Some(devs) = devs_if_export {
+        let scopes = scopes.list();
         if do_export_svg {
-            actions.push(Action::ExportSvgProject { proj, devs });
+            actions.push(Action::ExportSvgProject { proj, devs, scopes });
         } else {
-            actions.push(Action::ExportPdfProject { proj, devs });
+            actions.push(Action::ExportPdfProject { proj, devs, scopes });
         }
         state.pdf_export = None;
     } else if cancel || !open {
@@ -328,6 +364,7 @@ pub(crate) fn pdf_multi_export_window(
     // Copia locale del formato (vedi nota in `pdf_export_window`).
     let mut fmt = state.bar_format;
     let mut show_pct = state.export_progress_pct;
+    let mut scopes = state.export_scopes;
     let mut open = true;
     let mut do_export = false;
     let mut cancel = false;
@@ -357,8 +394,16 @@ pub(crate) fn pdf_multi_export_window(
                 &mut show_pct,
                 "Includi percentuali di avanzamento (presunta/dichiarata)",
             );
+
+            ui.separator();
+            milestone_scope_selector(ui, &mut scopes);
+
+            ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Esporta PDF…").clicked() {
+                if ui
+                    .add_enabled(!scopes.is_empty(), egui::Button::new("Esporta PDF…"))
+                    .clicked()
+                {
                     do_export = true;
                 }
                 if ui.button("Annulla").clicked() {
@@ -369,6 +414,7 @@ pub(crate) fn pdf_multi_export_window(
 
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
+    state.export_scopes = scopes;
 
     if do_export {
         let projects: Vec<ProjectId> = px
@@ -377,7 +423,10 @@ pub(crate) fn pdf_multi_export_window(
             .filter(|(_, s)| *s)
             .map(|(p, _)| *p)
             .collect();
-        actions.push(Action::ExportPdfSelected { projects });
+        actions.push(Action::ExportPdfSelected {
+            projects,
+            scopes: scopes.list(),
+        });
         state.pdf_multi_export = None;
     } else if cancel || !open {
         state.pdf_multi_export = None;

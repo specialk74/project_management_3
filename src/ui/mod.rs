@@ -14,7 +14,7 @@ pub(crate) use crate::date_utils::dates::{
     days_to_local, local_to_days, parse_date_str, primo_giorno_settimana_corrente,
 };
 pub(crate) use crate::dev_utils::dev::DevId;
-pub(crate) use crate::milestones::{MilestoneId, MilestoneKind};
+pub(crate) use crate::milestones::{MilestoneCategory, MilestoneId, MilestoneKind, MilestoneScope};
 pub(crate) use crate::project_utils::project::{Enable, OverflowResolution, ProjectId};
 pub(crate) use crate::single_dev_utils::single_dev::{WEEK_STEP, WeekId};
 pub(crate) use crate::single_effort_utils::sinlge_effort::Effort;
@@ -384,6 +384,43 @@ pub(crate) struct Toast {
 /// Oltre questo numero le notifiche più vecchie vengono scartate.
 const MAX_TOASTS: usize = 5;
 
+/// Ambiti milestone spuntati nelle dialog di export (vedi `MilestoneScope`).
+/// Default: solo Internal, cioè un unico PDF con tutte le milestone — il
+/// comportamento di prima delle categorie.
+#[derive(Clone, Copy)]
+pub(crate) struct ExportScopes {
+    pub internal: bool,
+    pub external: bool,
+}
+
+impl Default for ExportScopes {
+    fn default() -> Self {
+        Self {
+            internal: true,
+            external: false,
+        }
+    }
+}
+
+impl ExportScopes {
+    /// Ambiti scelti, nell'ordine in cui vanno esportati.
+    pub fn list(&self) -> Vec<MilestoneScope> {
+        let mut v = Vec::new();
+        if self.internal {
+            v.push(MilestoneScope::Internal);
+        }
+        if self.external {
+            v.push(MilestoneScope::External);
+        }
+        v
+    }
+
+    /// Nessun ambito spuntato: non c'è niente da esportare.
+    pub fn is_empty(&self) -> bool {
+        !self.internal && !self.external
+    }
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -521,6 +558,9 @@ pub struct UiState {
     new_milestone: String,
     // tipo scelto per la PROSSIMA milestone creata dal menù Aggiungi
     new_milestone_kind: MilestoneKind,
+    // categorie scelte per la PROSSIMA milestone creata dal menù Aggiungi
+    // (vuoto = solo Internal, come i file scritti prima delle categorie)
+    new_milestone_categories: Vec<MilestoneCategory>,
     // finestra di gestione milestone (elenco, colore, tipo, elimina)
     show_milestone_manager: bool,
     milestone_manager_just_opened: bool,
@@ -536,6 +576,10 @@ pub struct UiState {
     // includere le percentuali (presunta/dichiarata) nel PDF/SVG esportato;
     // scelta chiesta nelle dialog di export, ricordata tra un export e l'altro.
     export_progress_pct: bool,
+    // ambiti milestone scelti nelle dialog di export (Internal / External):
+    // uno spuntato = un file, entrambi = due file. Ricordato tra un export e
+    // l'altro, non persistito.
+    export_scopes: ExportScopes,
     // finestra "Confronta/Importa progetto…": presente quando un file parallelo è
     // stato caricato per il confronto. Mentre è aperta l'autosave è sospeso.
     compare: Option<CompareState>,
@@ -776,14 +820,18 @@ pub(crate) enum Action {
     ExportTrend,
     ExportPdfSelected {
         projects: Vec<ProjectId>,
+        /// Ambiti milestone da stampare: uno = un file, due = due file.
+        scopes: Vec<MilestoneScope>,
     },
     ExportPdfProject {
         proj: ProjectId,
         devs: Vec<DevId>,
+        scopes: Vec<MilestoneScope>,
     },
     ExportSvgProject {
         proj: ProjectId,
         devs: Vec<DevId>,
+        scopes: Vec<MilestoneScope>,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -791,7 +839,7 @@ pub(crate) enum Action {
         only_with_notes: bool,
         worker_notes: bool,
     },
-    CreateMilestone(String, MilestoneKind),
+    CreateMilestone(String, MilestoneKind, Vec<MilestoneCategory>),
     SetMilestoneColor {
         milestone: MilestoneId,
         color: u32,
@@ -799,6 +847,11 @@ pub(crate) enum Action {
     SetMilestoneKind {
         milestone: MilestoneId,
         kind: MilestoneKind,
+    },
+    SetMilestoneCategory {
+        milestone: MilestoneId,
+        category: MilestoneCategory,
+        on: bool,
     },
     DeleteMilestone {
         milestone: MilestoneId,
@@ -937,6 +990,16 @@ fn save_export_dialog(
     else {
         return;
     };
+    write_export_file(state, kind, &path, data);
+}
+
+/// Scrive un file di export e riporta l'esito come notifica in-app.
+fn write_export_file(
+    state: &mut UiState,
+    kind: &str,
+    path: &std::path::Path,
+    data: impl AsRef<[u8]>,
+) {
     let p = path.to_string_lossy().to_string();
     match std::fs::write(&p, data) {
         Ok(()) => {
@@ -950,14 +1013,75 @@ fn save_export_dialog(
     }
 }
 
+/// Dialog di salvataggio unico per un export che può produrre **più file** (uno
+/// per ambito milestone): il nome si sceglie una volta sola e, se i file sono
+/// più d'uno, a ognuno viene aggiunto il suffisso dell'ambito
+/// (`progetti_2026_07_13_internal.pdf` / `…_external.pdf`). Con un solo file il
+/// nome scelto è usato tale e quale.
+fn save_multi_export_dialog(
+    state: &mut UiState,
+    kind: &str,
+    ext: &str,
+    default_name: &str,
+    items: Vec<(String, Vec<u8>)>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter(kind, &[ext])
+        .set_file_name(default_name)
+        .save_file()
+    else {
+        return;
+    };
+    let single = items.len() == 1;
+    for (suffix, data) in items {
+        let target = if single || suffix.is_empty() {
+            path.clone()
+        } else {
+            path_with_suffix(&path, &suffix, ext)
+        };
+        write_export_file(state, kind, &target, data);
+    }
+}
+
+/// Costruisce un export per ogni ambito milestone richiesto: imposta l'ambito
+/// (`set_milestone_scope`), chiama `build`, e restituisce le coppie
+/// `(suffisso file, byte)` degli export riusciti. Ripristina l'ambito di default
+/// così i `build_*` successivi (o i test) partono da Internal.
+fn scoped_exports(
+    scopes: &[MilestoneScope],
+    mut build: impl FnMut(MilestoneScope) -> Option<Vec<u8>>,
+) -> Vec<(String, Vec<u8>)> {
+    let mut items = Vec::new();
+    for sc in scopes {
+        crate::pdf_export::set_milestone_scope(*sc);
+        if let Some(bytes) = build(*sc) {
+            items.push((sc.file_suffix().to_string(), bytes));
+        }
+    }
+    crate::pdf_export::set_milestone_scope(MilestoneScope::default());
+    items
+}
+
+/// `cartella/nome_suffisso.est` a partire dal percorso scelto nel dialog
+/// (l'estensione del percorso, o `ext` se manca).
+fn path_with_suffix(path: &std::path::Path, suffix: &str, ext: &str) -> std::path::PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let e = path
+        .extension()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ext.to_string());
+    path.with_file_name(format!("{stem}_{suffix}.{e}"))
+}
+
 /// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
 fn save_pdf_dialog(state: &mut UiState, bytes: Vec<u8>, default_name: &str) {
     save_export_dialog(state, "PDF", "pdf", default_name, bytes);
-}
-
-/// Mostra il dialog di salvataggio SVG e scrive il contenuto nel file scelto.
-fn save_svg_dialog(state: &mut UiState, svg: String, default_name: &str) {
-    save_export_dialog(state, "SVG", "svg", default_name, svg);
 }
 
 /// Mostra il dialog di salvataggio Markdown e scrive il contenuto nel file scelto.
@@ -1921,51 +2045,75 @@ impl PjmApp {
                         .toast_warn("Nessun progetto con dati di avanzamento: PDF non creato."),
                 }
             }
-            Action::ExportPdfSelected { projects } => {
+            Action::ExportPdfSelected { projects, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                match crate::pdf_export::build_pdf_selected(
-                    &self.app,
-                    &projects,
-                    self.ui.bar_format,
-                ) {
-                    None => self.ui.toast_warn(
+                // Un file per ambito milestone scelto (Internal e/o External).
+                let items = scoped_exports(&scopes, |_| {
+                    crate::pdf_export::build_pdf_selected(
+                        &self.app,
+                        &projects,
+                        self.ui.bar_format,
+                    )
+                });
+                if items.is_empty() {
+                    self.ui.toast_warn(
                         "Nessun progetto selezionato con inizio e fine: PDF non creato.",
-                    ),
-                    Some(bytes) => {
-                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("progetti", "pdf"))
-                    }
+                    );
+                } else {
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "PDF",
+                        "pdf",
+                        &dated_file_name("progetti", "pdf"),
+                        items,
+                    );
                 }
             }
-            Action::ExportPdfProject { proj, devs } => {
+            Action::ExportPdfProject { proj, devs, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                match crate::pdf_export::build_pdf_project(
-                    &self.app,
-                    proj,
-                    &devs,
-                    self.ui.bar_format,
-                ) {
-                    None => self
-                        .ui
-                        .toast_warn("Progetto senza inizio/fine: PDF non creato."),
-                    Some(bytes) => {
-                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("progetto", "pdf"))
-                    }
+                let items = scoped_exports(&scopes, |_| {
+                    crate::pdf_export::build_pdf_project(
+                        &self.app,
+                        proj,
+                        &devs,
+                        self.ui.bar_format,
+                    )
+                });
+                if items.is_empty() {
+                    self.ui
+                        .toast_warn("Progetto senza inizio/fine: PDF non creato.");
+                } else {
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "PDF",
+                        "pdf",
+                        &dated_file_name("progetto", "pdf"),
+                        items,
+                    );
                 }
             }
-            Action::ExportSvgProject { proj, devs } => {
+            Action::ExportSvgProject { proj, devs, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                match crate::pdf_export::build_svg_project(
-                    &self.app,
-                    proj,
-                    &devs,
-                    self.ui.bar_format,
-                ) {
-                    None => self
-                        .ui
-                        .toast_warn("Progetto senza inizio/fine: SVG non creato."),
-                    Some(svg) => {
-                        save_svg_dialog(&mut self.ui, svg, &dated_file_name("grafico", "svg"))
-                    }
+                let items = scoped_exports(&scopes, |_| {
+                    crate::pdf_export::build_svg_project(
+                        &self.app,
+                        proj,
+                        &devs,
+                        self.ui.bar_format,
+                    )
+                    .map(String::into_bytes)
+                });
+                if items.is_empty() {
+                    self.ui
+                        .toast_warn("Progetto senza inizio/fine: SVG non creato.");
+                } else {
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "SVG",
+                        "svg",
+                        &dated_file_name("grafico", "svg"),
+                        items,
+                    );
                 }
             }
             Action::GenerateMinuta {
@@ -1983,8 +2131,8 @@ impl PjmApp {
                 );
                 save_md_dialog(&mut self.ui, md, &dated_file_name("minuta", "md"));
             }
-            Action::CreateMilestone(name, kind) => {
-                self.app.milestones.add_with_kind(&name, kind);
+            Action::CreateMilestone(name, kind, categories) => {
+                self.app.milestones.add_with(&name, kind, categories);
                 self.mark_changed();
             }
             Action::SetMilestoneColor { milestone, color } => {
@@ -1993,6 +2141,14 @@ impl PjmApp {
             }
             Action::SetMilestoneKind { milestone, kind } => {
                 self.app.milestones.set_kind(milestone, kind);
+                self.mark_changed();
+            }
+            Action::SetMilestoneCategory {
+                milestone,
+                category,
+                on,
+            } => {
+                self.app.milestones.set_category(milestone, category, on);
                 self.mark_changed();
             }
             Action::DeleteMilestone { milestone } => {
@@ -2524,6 +2680,94 @@ pub(crate) fn milestone_kind_submenu(ui: &mut egui::Ui, kind: &mut MilestoneKind
     changed
 }
 
+/// Categorie effettive di una milestone in fase di **creazione** (l'elenco in
+/// `UiState.new_milestone_categories`): elenco vuoto = solo Internal, come per
+/// le milestone già salvate.
+pub(crate) fn effective_categories(cats: &[MilestoneCategory]) -> Vec<MilestoneCategory> {
+    let out: Vec<MilestoneCategory> = MilestoneCategory::ALL
+        .into_iter()
+        .filter(|c| cats.contains(c))
+        .collect();
+    if out.is_empty() {
+        vec![MilestoneCategory::Internal]
+    } else {
+        out
+    }
+}
+
+/// Voci del selettore delle **categorie di stampa** (Internal / External),
+/// condivise dal sottomenù di creazione e dal gestore milestone. `cats` è
+/// l'elenco effettivo (mai vuoto); `compact` usa le etichette brevi Int/Ext.
+/// Ritorna `Some((categoria, nuovo_stato))` quando l'utente cambia una spunta.
+///
+/// L'ultima categoria rimasta non si può togliere: una milestone senza
+/// categorie varrebbe comunque Internal, quindi la spunta non risponderebbe.
+fn milestone_category_items(
+    ui: &mut egui::Ui,
+    cats: &[MilestoneCategory],
+    compact: bool,
+) -> Option<(MilestoneCategory, bool)> {
+    let mut changed = None;
+    for c in MilestoneCategory::ALL {
+        let on = cats.contains(&c);
+        let last = on && cats.len() == 1;
+        let text = if compact { c.short() } else { c.label() };
+        let resp = ui
+            .add_enabled(!last, egui::SelectableLabel::new(on, text))
+            .on_hover_text(match c {
+                MilestoneCategory::Internal => "Stampata nel PDF Internal",
+                MilestoneCategory::External => {
+                    "Stampata nel PDF External (e anche in quello Internal)"
+                }
+            })
+            .on_disabled_hover_text("Una milestone deve avere almeno una categoria.");
+        if resp.clicked() {
+            changed = Some((c, !on));
+        }
+    }
+    changed
+}
+
+/// Selettore delle categorie per i **menù** della toolbar (Aggiungi ▸
+/// Milestone): un sottomenù «Categorie: … ⏵», come quello del tipo — dentro un
+/// menù serve un sottomenù e non una combo (vedi `milestone_kind_combo`).
+pub(crate) fn milestone_categories_submenu(ui: &mut egui::Ui, cats: &mut Vec<MilestoneCategory>) {
+    let eff = effective_categories(cats);
+    let label = eff
+        .iter()
+        .map(|c| c.label())
+        .collect::<Vec<_>>()
+        .join(" + ");
+    egui::containers::menu::SubMenuButton::new(format!("Categorie: {label}"))
+        .config(
+            egui::containers::menu::MenuConfig::new()
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+        )
+        .ui(ui, |ui| {
+            if let Some((c, on)) = milestone_category_items(ui, &eff, false) {
+                let mut next = eff.clone();
+                next.retain(|x| *x != c);
+                if on {
+                    next.push(c);
+                }
+                *cats = effective_categories(&next);
+            }
+        });
+}
+
+/// Selettore compatto (Int / Ext) per una riga del gestore milestone. Ritorna
+/// il cambio richiesto dall'utente, da tradurre in `Action::SetMilestoneCategory`.
+pub(crate) fn milestone_categories_toggles(
+    ui: &mut egui::Ui,
+    cats: &[MilestoneCategory],
+) -> Option<(MilestoneCategory, bool)> {
+    let mut changed = None;
+    ui.horizontal(|ui| {
+        changed = milestone_category_items(ui, cats, true);
+    });
+    changed
+}
+
 /// Larghezza della combo del tipo milestone: tiene "Traguardo"/"Trigger" senza
 /// che la tendina cambi larghezza tra le due voci.
 const MILESTONE_KIND_COMBO_W: f32 = 78.0;
@@ -2883,6 +3127,66 @@ mod tests {
     }
 
     /// Accoda gli eventi di un click "realistico" su `pos`: hover in un frame,
+    /// Gli ambiti spuntati nelle dialog di export diventano l'elenco passato
+    /// alle azioni: uno = un file, due = due file (ordine Internal, External).
+    #[test]
+    fn export_scopes_list_follows_the_checkboxes() {
+        let dflt = ExportScopes::default();
+        assert_eq!(dflt.list(), vec![MilestoneScope::Internal]);
+        assert!(!dflt.is_empty());
+
+        let both = ExportScopes {
+            internal: true,
+            external: true,
+        };
+        assert_eq!(
+            both.list(),
+            vec![MilestoneScope::Internal, MilestoneScope::External]
+        );
+
+        let none = ExportScopes {
+            internal: false,
+            external: false,
+        };
+        assert!(none.is_empty());
+        assert!(none.list().is_empty());
+    }
+
+    /// Un export per ambito richiesto, con il suffisso del file; gli ambiti in
+    /// cui non esce niente (progetto senza inizio/fine) non producono file.
+    #[test]
+    fn scoped_exports_builds_one_item_per_scope() {
+        let items = scoped_exports(
+            &[MilestoneScope::Internal, MilestoneScope::External],
+            |sc| Some(sc.label().as_bytes().to_vec()),
+        );
+        let suffixes: Vec<String> = items.iter().map(|(s, _)| s.clone()).collect();
+        assert_eq!(suffixes, vec!["internal".to_string(), "external".to_string()]);
+        assert_eq!(items[1].1, b"External".to_vec());
+
+        assert!(scoped_exports(&[MilestoneScope::Internal], |_| None).is_empty());
+    }
+
+    /// Con due ambiti si salva una volta sola e i file prendono il suffisso
+    /// dell'ambito, mantenendo cartella ed estensione scelte nel dialog.
+    #[test]
+    fn path_with_suffix_appends_the_scope_to_the_file_name() {
+        let p = std::path::Path::new("/tmp/export/progetti_2026_07_13.pdf");
+        assert_eq!(
+            path_with_suffix(p, MilestoneScope::Internal.file_suffix(), "pdf"),
+            std::path::PathBuf::from("/tmp/export/progetti_2026_07_13_internal.pdf")
+        );
+        assert_eq!(
+            path_with_suffix(p, MilestoneScope::External.file_suffix(), "pdf"),
+            std::path::PathBuf::from("/tmp/export/progetti_2026_07_13_external.pdf")
+        );
+        // Senza estensione nel percorso scelto si usa quella dell'export.
+        assert_eq!(
+            path_with_suffix(std::path::Path::new("/tmp/grafico"), "external", "svg"),
+            std::path::PathBuf::from("/tmp/grafico_external.svg")
+        );
+    }
+
     /// pressione nel successivo, rilascio in quello dopo. Un click compresso in
     /// un frame solo non riproduce il comportamento di menù e tendine.
     fn queue_click(pending: &mut Vec<Vec<egui::Event>>, pos: egui::Pos2) {

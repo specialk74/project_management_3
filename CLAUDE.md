@@ -89,7 +89,7 @@ App (workers.ron)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
 ├── categories: Categories
-├── milestones: Milestones           — name + color + kind, shared across projects
+├── milestones: Milestones           — name + color + kind + categorie di stampa (Internal/External), shared across projects
 ├── sovra     : HashMap<(WeekId, WorkerId), Effort>  — per-week per-worker allocation
 └── projects  : Projects
     └── Project (tripletta, name, start, end, category, enable, closed, milestones)
@@ -374,6 +374,20 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   is unchanged. In **PDF/SVG** `pole_tip` draws the usual triangular pennant for
   `Goal` and a **mini lightning bolt** (6-point polygon) for `Trigger`, same color,
   same pole/label/arch layout.
+- **Milestone categories** (`MilestoneCategory { Internal, External }`, field
+  `Milestone.categories: Vec<MilestoneCategory>`, `#[serde(default,
+  skip_serializing_if = "Vec::is_empty")]`): **print-only** metadata — the grid
+  ignores them. **Empty = Internal**, so old RON files keep printing as before;
+  `Milestone::has_category` / `effective_categories` apply that fallback and
+  `Milestones::set_category(id, cat, on)` normalizes through
+  `normalize_categories` (ordered, deduped, **never empty** — dropping the last
+  one falls back to Internal, and the UI disables that last toggle). Picked at
+  creation (**Aggiungi ▸ Milestone**, `milestone_categories_submenu` →
+  `UiState.new_milestone_categories` → `Action::CreateMilestone(name, kind,
+  categories)` → `Milestones::add_with`) and editable per row in
+  `milestone_manager_window` (`milestone_categories_toggles` compact Int/Ext
+  selectable labels → `Action::SetMilestoneCategory`). Same two widgets rule as
+  the kind: a **submenu** inside toolbar menus, plain widgets inside windows.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
 - **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`Closed`/
@@ -420,6 +434,24 @@ the footer date.
   (remembered across exports, not persisted); the `Action::ExportPdf*/ExportSvgProject`
   handlers call `set_show_pct(self.ui.export_progress_pct)` before `build_*`.
 
+- **Milestone scope** (`MilestoneScope { Internal, External }` in `milestones.rs`;
+  `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`, like
+  `set_show_pct`, default `Internal`): which flags `project_shapes` draws.
+  `Internal` → **all** milestones (Internal + External, uncategorized included);
+  `External` → **only** those carrying `MilestoneCategory::External`
+  (`Milestones::in_scope`). Chosen in **every** Gantt export dialog by
+  `milestone_scope_selector` (`src/ui/export.rs`) bound to
+  `UiState.export_scopes: ExportScopes { internal, external }` (default
+  `internal = true`, remembered across exports, not persisted; the export buttons
+  are disabled when neither is ticked). The list goes into
+  `Action::ExportPdfSelected/ExportPdfProject/ExportSvgProject { …, scopes }`,
+  whose handlers call `scoped_exports(&scopes, build)` (`mod.rs`): one `build_*`
+  per scope, each tagged with `MilestoneScope::file_suffix()`, then the scope is
+  reset to the default. Saving goes through `save_multi_export_dialog`: **one**
+  rfd dialog, one file with the chosen name when a single scope was picked, and
+  `path_with_suffix` (`name_internal.pdf` / `name_external.pdf`) when both were
+  (`save_svg_dialog` is gone; SVG goes through the same path). The trend PDF has
+  no milestones, so it is unaffected.
 - **Bar format** (`BarFormat`, passed through every `build_*`): how a dev's bar is
   drawn. `Continuous` (default, historical) = one rect first→last effort week;
   `Segmented` = one rect per run of consecutive effort weeks (gaps show), via

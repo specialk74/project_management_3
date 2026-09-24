@@ -463,6 +463,18 @@ pub(crate) fn milestone_manager_window(
                                             kind,
                                         });
                                     }
+                                    // Categorie di stampa (Int / Ext): decidono
+                                    // in quale PDF la milestone viene disegnata.
+                                    let cats = app.milestones.get_categories(*id);
+                                    if let Some((category, on)) =
+                                        milestone_categories_toggles(ui, &cats)
+                                    {
+                                        actions.push(Action::SetMilestoneCategory {
+                                            milestone: *id,
+                                            category,
+                                            on,
+                                        });
+                                    }
                                 },
                             );
                         });
