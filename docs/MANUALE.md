@@ -295,8 +295,8 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
   **tipo** e **categorie di stampa** scelti prima del nome.
 
 ### Filtri
-Le prime cinque voci aprono **la stessa dialog «Filtri»** (quattro colonne: Workers,
-Progetti, Dev, Categorie — vedi §14): cambia solo la colonna che riceve il focus.
+Le prime sei voci aprono **la stessa dialog «Filtri»** (cinque colonne: Workers,
+Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve il focus.
 - **Progetti…** — colonna Progetti: elenco dei progetti (non chiusi) con una spunta
   per ciascuno che attiva/disattiva la **visibilità** nella griglia, ricerca e salto
   rapido ("Select All" per agire su tutti). Scorciatoia `Cmd/Ctrl+P`.
@@ -312,6 +312,8 @@ Progetti, Dev, Categorie — vedi §14): cambia solo la colonna che riceve il fo
   selezionato e, dentro il progetto, solo quel dev. Scorciatoia `Cmd/Ctrl+D`.
 - **Categorie…** — colonna Categorie (vedi §14): restano solo i progetti delle
   categorie selezionate. Scorciatoia `Cmd/Ctrl+K`.
+- **Anni…** — colonna Anni (vedi §14): restano solo i progetti che iniziano,
+  finiscono o stanno tutti negli anni selezionati. Scorciatoia `Cmd/Ctrl+Y`.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
 - **Closed…** — finestra per marcare/smarcare i progetti come **chiusi**. Un
@@ -686,10 +688,10 @@ ghost non è visualizzato nel footer.
 
 ## 14. Filtri
 
-Workers, Progetti, Dev e Categorie vivono in **un'unica dialog «Filtri»** a quattro
-colonne affiancate. La aprono indifferentemente `Cmd/Ctrl+F` (Workers), `Cmd/Ctrl+G`
-(Workers sulla settimana corrente), `Cmd/Ctrl+P` (Progetti), `Cmd/Ctrl+D` (Dev) e
-`Cmd/Ctrl+K` (Categorie), oppure le voci corrispondenti del menù **Filtri**: cambia
+Workers, Progetti, Dev, Categorie e Anni vivono in **un'unica dialog «Filtri»** a
+cinque colonne affiancate. La aprono indifferentemente `Cmd/Ctrl+F` (Workers),
+`Cmd/Ctrl+G` (Workers sulla settimana corrente), `Cmd/Ctrl+P` (Progetti), `Cmd/Ctrl+D`
+(Dev), `Cmd/Ctrl+K` (Categorie) e `Cmd/Ctrl+Y` (Anni), oppure le voci corrispondenti del menù **Filtri**: cambia
 solo la colonna che riceve il **focus** sul proprio campo di ricerca. Ogni colonna ha
 **ricerca**, **«Select All»** ed elenco con spunte, e i filtri restano indipendenti
 (si combinano tra loro). `Esc` o un click fuori chiudono la dialog.
@@ -697,9 +699,9 @@ solo la colonna che riceve il **focus** sul proprio campo di ricerca. Ogni colon
 Premendo di nuovo la **stessa** scorciatoia a dialog aperta si fa il **toggle di
 "Select All"** della sua colonna (quindi la seconda pressione deseleziona tutto);
 il toggle agisce sugli elementi **attualmente elencati**, cioè rispetta la ricerca.
-`Shift+Cmd/Ctrl+F` / `+G` / `+D` / `+K` deselezionano tutto senza aprire la dialog.
+`Shift+Cmd/Ctrl+F` / `+G` / `+D` / `+K` / `+Y` deselezionano tutto senza aprire la dialog.
 
-**`Cmd/Ctrl+J` azzera tutti i filtri**: worker, dev e categorie tornano *tutti
+**`Cmd/Ctrl+J` azzera tutti i filtri**: worker, dev, categorie e anni tornano *tutti
 selezionati*, tutti i progetti aperti tornano visibili, la modalità «Solo settimana
 corrente» si spegne e le ricerche si svuotano — cioè si torna a vedere tutto. Non è un
 toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona nulla** e
@@ -798,6 +800,28 @@ già aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+K` **deseleziona
 le categorie. Con tutte le voci selezionate il filtro è considerato spento. La
 selezione **non** è salvata sul file. (Il selettore di categoria nel footer, che
 limita i totali-anno per dev, è indipendente da questo filtro.)
+
+### Filtro anno (colonna «Anni», `Cmd/Ctrl+Y`)
+Risponde alla domanda **«quali progetti riguardano questo anno?»**. La colonna elenca
+gli **anni** che compaiono nelle date di inizio o di fine dei progetti, con ricerca,
+"Select All" e una spunta per anno. Sopra l'elenco si sceglie il **criterio**:
+- **Inizia nell'anno** (predefinito) — la data di **inizio** del progetto cade in uno
+  degli anni spuntati;
+- **Finisce nell'anno** — la data di **fine** cade in uno degli anni spuntati;
+- **Tutto nell'anno** — inizio **e** fine cadono nello **stesso** anno, e quell'anno è
+  spuntato. Un progetto che va dal 2025 al 2026 **non** passa nemmeno con entrambi
+  gli anni spuntati.
+
+Con il filtro attivo, un progetto **senza la data** richiesta dal criterio (inizio,
+fine o entrambe) è **nascosto**. Come il filtro categoria agisce sul **progetto
+intero** (intestazione completa, nessuna riga nascosta), vale anche per gli **elenchi
+di esportazione** e si combina in **AND** con gli altri filtri e con **Vista ▸
+Progetti**.
+
+Scorciatoie: `Cmd/Ctrl+Y` apre la dialog sulla colonna Anni; premuto a **dialog già
+aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+Y` **deseleziona tutti** gli
+anni. Con **tutti gli anni spuntati** il filtro è considerato **spento**, qualunque sia
+il criterio. Né la selezione né il criterio sono salvati sul file.
 
 ### Ghost worker (Filtri ▸ Ghost worker…)
 Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
@@ -1116,6 +1140,8 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | `Shift + Cmd/Ctrl + D` | Deseleziona tutti i dev nel filtro |
 | `Cmd/Ctrl + K` | Apri la dialog «Filtri» sulla colonna Categorie (solo i progetti delle categorie selezionate) |
 | `Shift + Cmd/Ctrl + K` | Deseleziona tutte le categorie nel filtro |
+| `Cmd/Ctrl + Y` | Apri la dialog «Filtri» sulla colonna Anni (progetti che iniziano / finiscono / stanno tutti nell'anno) |
+| `Shift + Cmd/Ctrl + Y` | Deseleziona tutti gli anni nel filtro |
 | `Cmd/Ctrl + P` | Apri la dialog «Filtri» sulla colonna Progetti (ricerca, visibilità e salto rapido) |
 | `Cmd/Ctrl + J` | **Azzera tutti i filtri**: torna a vedere tutto (ripetibile, non deseleziona mai) |
 | `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |

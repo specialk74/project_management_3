@@ -1,9 +1,9 @@
-//! Dialog unica dei filtri: Workers + Progetti + Dev + Categorie in quattro
-//! colonne affiancate.
+//! Dialog unica dei filtri: Workers + Progetti + Dev + Categorie + Anni in
+//! cinque colonne affiancate.
 //!
 //! È l'unica finestra aperta da `Cmd/Ctrl+F` (workers), `Cmd/Ctrl+G` (workers
-//! sulla settimana corrente), `Cmd/Ctrl+P` (progetti), `Cmd/Ctrl+D` (dev) e
-//! `Cmd/Ctrl+K` (categorie):
+//! sulla settimana corrente), `Cmd/Ctrl+P` (progetti), `Cmd/Ctrl+D` (dev),
+//! `Cmd/Ctrl+K` (categorie) e `Cmd/Ctrl+Y` (anni):
 //! la scorciatoia porta il focus sul campo di ricerca della propria colonna e,
 //! a finestra già aperta, fa il toggle del "Select All" di quella colonna.
 
@@ -126,11 +126,19 @@ pub(crate) fn filters_window(
         .filter(|(_, n)| matches(&qc, n))
         .collect();
 
+    // Anni: quelli delle date di inizio/fine dei progetti.
+    let qy = state.year_search.trim().to_lowercase();
+    let years: Vec<i32> = available_years(app)
+        .into_iter()
+        .filter(|y| matches(&qy, &y.to_string()))
+        .collect();
+
     // ── Toggle "Select All" richiesti dalle scorciatoie ──────────────────────
     // Agiscono sugli elementi ATTUALMENTE elencati (quindi rispettano la ricerca).
     let mut wfilter = state.worker_filter.clone();
     let mut dfilter = state.dev_filter.clone();
     let mut cfilter = state.category_filter.clone();
+    let mut yfilter = state.year_filter.clone();
 
     if std::mem::take(&mut state.worker_filter_toggle_all) {
         let currently_all = match &wfilter {
@@ -149,6 +157,10 @@ pub(crate) fn filters_window(
     if std::mem::take(&mut state.category_filter_toggle_all) {
         let currently_all = category_all_selected(&cfilter, &cats);
         set_category_selection(&mut cfilter, app, &cats, !currently_all);
+    }
+    if std::mem::take(&mut state.year_filter_toggle_all) {
+        let currently_all = year_all_selected(&yfilter, &years);
+        set_year_selection(&mut yfilter, app, &years, !currently_all);
     }
     if std::mem::take(&mut state.project_filter_toggle_all) {
         let currently_all = !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
@@ -373,6 +385,49 @@ pub(crate) fn filters_window(
                             }
                         });
                 });
+                ui.separator();
+
+                // ── Anni ─────────────────────────────────────────────────────
+                ui.vertical(|ui| {
+                    ui.set_min_width(140.0);
+                    ui.set_max_width(140.0);
+                    ui.strong("Anni");
+                    let te = search_field(ui, "Cerca anno…", &mut state.year_search);
+                    if focus == Some(FilterPane::Years) {
+                        te.request_focus();
+                    }
+                    // Criterio: quale data del progetto deve cadere nell'anno.
+                    for c in YearCriterion::ALL {
+                        ui.radio_value(&mut state.year_criterion, c, c.label());
+                    }
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .id_salt("filters_years")
+                        .max_height(400.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            let currently_all = year_all_selected(&yfilter, &years);
+                            if let Some(v) = select_all_checkbox(ui, currently_all) {
+                                set_year_selection(&mut yfilter, app, &years, v);
+                            }
+                            for y in &years {
+                                let mut sel = match &yfilter {
+                                    None => true,
+                                    Some(s) => s.contains(y),
+                                };
+                                if ui.checkbox(&mut sel, y.to_string()).changed() {
+                                    let set = yfilter.get_or_insert_with(|| {
+                                        available_years(app).into_iter().collect()
+                                    });
+                                    if sel {
+                                        set.insert(*y);
+                                    } else {
+                                        set.remove(y);
+                                    }
+                                }
+                            }
+                        });
+                });
             });
         });
 
@@ -381,9 +436,11 @@ pub(crate) fn filters_window(
     normalize_worker_filter(&mut wfilter, app);
     normalize_dev_filter(&mut dfilter, app);
     normalize_category_filter(&mut cfilter, app);
+    normalize_year_filter(&mut yfilter, app);
     state.worker_filter = wfilter;
     state.dev_filter = dfilter;
     state.category_filter = cfilter;
+    state.year_filter = yfilter;
 
     if let Some(id) = jump {
         state.jump_to_project = Some(id);
@@ -450,6 +507,35 @@ fn normalize_worker_filter(filter: &mut Filter, app: &App) {
 fn normalize_dev_filter(filter: &mut DevFilter, app: &App) {
     if let Some(set) = filter {
         if app.devs.list().iter().all(|(id, _)| set.contains(id)) {
+            *filter = None;
+        }
+    }
+}
+
+/// Vero se tutti gli anni `shown` (quelli elencati) sono selezionati.
+fn year_all_selected(filter: &YearFilter, shown: &[i32]) -> bool {
+    match filter {
+        None => !shown.is_empty(),
+        Some(s) => !shown.is_empty() && shown.iter().all(|y| s.contains(y)),
+    }
+}
+
+/// Come `set_dev_selection` per gli anni elencati.
+fn set_year_selection(filter: &mut YearFilter, app: &App, shown: &[i32], on: bool) {
+    let set = filter.get_or_insert_with(|| available_years(app).into_iter().collect());
+    for y in shown {
+        if on {
+            set.insert(*y);
+        } else {
+            set.remove(y);
+        }
+    }
+}
+
+/// Tutti gli anni selezionati ⇒ filtro spento (qualunque sia il criterio).
+fn normalize_year_filter(filter: &mut YearFilter, app: &App) {
+    if let Some(set) = filter {
+        if available_years(app).iter().all(|y| set.contains(y)) {
             *filter = None;
         }
     }
@@ -582,7 +668,11 @@ mod tests {
         assert!(category_shown(&app, p_none, &f));
 
         // body_projects (elenchi di export) segue lo stesso filtro.
-        let ids: Vec<usize> = body_projects(&app, ProjectViewMode::Open, &f)
+        let pf = ProjectFilter {
+            category: f.clone(),
+            ..Default::default()
+        };
+        let ids: Vec<usize> = body_projects(&app, ProjectViewMode::Open, &pf)
             .into_iter()
             .map(|p| p.0)
             .collect();
@@ -595,5 +685,61 @@ mod tests {
         let mut partial = f.clone();
         normalize_category_filter(&mut partial, &app);
         assert!(partial.is_some());
+    }
+
+    #[test]
+    fn year_filter_applies_the_chosen_criterion() {
+        use chrono::NaiveDate;
+        let wk = |y, m, d| {
+            WeekId(local_to_days(&NaiveDate::from_ymd_opt(y, m, d).unwrap()) as usize)
+        };
+        let mut app = App::new();
+        // 2025 → 2026
+        let across = app.projects.add("A", Some("AAA"), Some(wk(2025, 10, 6)));
+        app.projects.set_project_end_week(across, Some(wk(2026, 3, 2)));
+        // tutto nel 2026
+        let inside = app.projects.add("B", Some("BBB"), Some(wk(2026, 2, 2)));
+        app.projects.set_project_end_week(inside, Some(wk(2026, 6, 1)));
+        // inizio 2026, senza fine
+        let open_end = app.projects.add("C", Some("CCC"), Some(wk(2026, 4, 6)));
+
+        let y2026: YearFilter = Some([2026].into_iter().collect());
+        let shown = |crit| {
+            [across, inside, open_end]
+                .into_iter()
+                .filter(|p| year_shown(&app, *p, &y2026, crit))
+                .map(|p| p.0)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(YearCriterion::Starts), vec![inside.0, open_end.0]);
+        // senza data di fine → nascosto con il filtro attivo
+        assert_eq!(shown(YearCriterion::Ends), vec![across.0, inside.0]);
+        assert_eq!(shown(YearCriterion::Within), vec![inside.0]);
+
+        // Più anni: basta soddisfare il criterio per uno di essi; "Tutto
+        // nell'anno" richiede comunque inizio e fine nello STESSO anno.
+        let both: YearFilter = Some([2025, 2026].into_iter().collect());
+        assert!(year_shown(&app, across, &both, YearCriterion::Starts));
+        assert!(!year_shown(&app, across, &both, YearCriterion::Within));
+
+        // Nessun filtro: tutto visibile, anche senza date.
+        assert!(year_shown(&app, open_end, &None, YearCriterion::Within));
+
+        // Filtro anno e categoria si combinano (ProjectFilter) e valgono per l'export.
+        let pf = ProjectFilter {
+            years: y2026,
+            criterion: YearCriterion::Within,
+            ..Default::default()
+        };
+        let ids: Vec<usize> = body_projects(&app, ProjectViewMode::Open, &pf)
+            .into_iter()
+            .map(|p| p.0)
+            .collect();
+        assert_eq!(ids, vec![inside.0]);
+
+        // Tutti gli anni selezionati ⇒ filtro spento.
+        let mut all: YearFilter = Some(available_years(&app).into_iter().collect());
+        normalize_year_filter(&mut all, &app);
+        assert!(all.is_none());
     }
 }

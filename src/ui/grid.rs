@@ -19,7 +19,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             &filter,
             state.worker_filter_current_week,
             &dev_filter,
-            &state.category_filter,
+            &ProjectFilter::from_state(state),
             state.project_view,
             compact,
             merged,
@@ -109,7 +109,7 @@ pub(crate) fn project_layout(
     filter: &Filter,
     current_week_only: bool,
     dev_filter: &DevFilter,
-    cat_filter: &CategoryFilter,
+    proj_filter: &ProjectFilter,
     view: ProjectViewMode,
     compact: bool,
     merged: bool,
@@ -125,9 +125,9 @@ pub(crate) fn project_layout(
         if !project_in_body(app, view, proj_id) {
             continue;
         }
-        // Filtro categoria (Ctrl+K): agisce sul progetto intero, quindi non
-        // comprime l'header (a differenza dei filtri worker/dev).
-        if !category_shown(app, proj_id, cat_filter) {
+        // Filtri categoria (Ctrl+K) e anno (Ctrl+Y): agiscono sul progetto
+        // intero, quindi non comprimono l'header (a differenza di worker/dev).
+        if !proj_filter.shows(app, proj_id) {
             continue;
         }
         // Modalità "settimana corrente" (Ctrl+G): col filtro worker attivo mostra
@@ -371,7 +371,7 @@ pub(crate) fn grid(
         filter,
         state.worker_filter_current_week,
         dev_filter,
-        &state.category_filter,
+        &ProjectFilter::from_state(state),
         state.project_view,
         compact,
         merged,
@@ -1383,7 +1383,7 @@ pub(crate) fn left_column(
         filter,
         state.worker_filter_current_week,
         dev_filter,
-        &state.category_filter,
+        &ProjectFilter::from_state(state),
         state.project_view,
         compact,
         merged,

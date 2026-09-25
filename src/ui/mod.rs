@@ -211,13 +211,39 @@ pub(crate) enum ProjectViewMode {
 
 /// Colonna della dialog unica dei filtri: decide quale campo di ricerca riceve
 /// il focus quando la finestra compare (Ctrl+F/G → Workers, Ctrl+P → Progetti,
-/// Ctrl+D → Dev, Ctrl+K → Categorie).
+/// Ctrl+D → Dev, Ctrl+K → Categorie, Ctrl+Y → Anni).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FilterPane {
     Workers,
     Projects,
     Devs,
     Categories,
+    Years,
+}
+
+/// Criterio del filtro anno (Ctrl+Y): quale data del progetto deve cadere in
+/// uno degli anni selezionati. Scelto nella colonna «Anni», non persistito.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum YearCriterion {
+    /// La data di **inizio** cade nell'anno.
+    #[default]
+    Starts,
+    /// La data di **fine** cade nell'anno.
+    Ends,
+    /// Inizio **e** fine cadono nello **stesso** anno.
+    Within,
+}
+
+impl YearCriterion {
+    pub(crate) const ALL: [YearCriterion; 3] = [Self::Starts, Self::Ends, Self::Within];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Starts => "Inizia nell'anno",
+            Self::Ends => "Finisce nell'anno",
+            Self::Within => "Tutto nell'anno",
+        }
+    }
 }
 
 /// Voce di menù «Filtri ▸ …»: apre la dialog unica (o la chiude se era già
@@ -238,15 +264,18 @@ pub(crate) fn reset_all_filters(app: &App, state: &mut UiState, actions: &mut Ve
     state.worker_filter = None;
     state.dev_filter = None;
     state.category_filter = None;
+    state.year_filter = None;
     state.worker_filter_current_week = false;
     state.worker_search.clear();
     state.project_search.clear();
     state.dev_search.clear();
     state.category_search.clear();
+    state.year_search.clear();
     // Eventuali toggle richiesti nello stesso frame non devono ri-deselezionare.
     state.worker_filter_toggle_all = false;
     state.dev_filter_toggle_all = false;
     state.category_filter_toggle_all = false;
+    state.year_filter_toggle_all = false;
     state.project_filter_toggle_all = false;
     // Visibilità progetti: i chiusi restano fuori (chiudere forza `enable = false`).
     for (proj, _) in app.projects.list() {
@@ -292,21 +321,22 @@ fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
 }
 
 /// Progetti attualmente presenti nel corpo centrale, coerenti con la modalità
-/// Vista (aperti / chiusi / tutti), con il filtro di visibilità e con il filtro
-/// categoria (che, come la visibilità, agisce su progetti interi). Non tiene
+/// Vista (aperti / chiusi / tutti), con il filtro di visibilità e con i filtri
+/// categoria e anno (`ProjectFilter`, che come la visibilità agiscono su
+/// progetti interi). Non tiene
 /// conto del filtro worker (che nasconde solo dev, non progetti interi ai fini
 /// dell'export). Usato per allineare gli elenchi di PDF/SVG/minuta a ciò che si
 /// vede a schermo, in ordine di visualizzazione.
 fn body_projects(
     app: &App,
     view: ProjectViewMode,
-    cat_filter: &CategoryFilter,
+    pf: &ProjectFilter,
 ) -> Vec<ProjectId> {
     app.projects
         .list_full()
         .into_iter()
         .filter(|(id, _, _)| project_in_body(app, view, *id))
-        .filter(|(id, _, _)| category_shown(app, *id, cat_filter))
+        .filter(|(id, _, _)| pf.shows(app, *id))
         .map(|(id, _, _)| id)
         .collect()
 }
@@ -478,6 +508,7 @@ pub struct UiState {
     worker_search: String,
     dev_search: String,
     category_search: String,
+    year_search: String,
     // progetto verso cui scrollare al prossimo frame (risolto in `body`)
     jump_to_project: Option<ProjectId>,
     editing: Option<Editing>,
@@ -506,6 +537,11 @@ pub struct UiState {
     // progetti la cui categoria è nel set (`None` nel set = "Senza categoria").
     // Agisce su progetti interi, come la visibilità. Non persistito.
     category_filter: CategoryFilter,
+    // filtro anno (Ctrl+Y): None = nessun filtro; Some(set) = mostra solo i
+    // progetti che soddisfano `year_criterion` per almeno un anno del set. Agisce
+    // su progetti interi. Non persistito (come il criterio).
+    year_filter: YearFilter,
+    year_criterion: YearCriterion,
     // dialog unica dei filtri (Workers + Progetti + Dev): aperta da Ctrl+F/G/P/D.
     show_filters: bool,
     // ultima colonna richiesta (scorciatoia/menù): `filters_focus_dirty` chiede di
@@ -525,6 +561,7 @@ pub struct UiState {
     worker_filter_toggle_all: bool,
     dev_filter_toggle_all: bool,
     category_filter_toggle_all: bool,
+    year_filter_toggle_all: bool,
     project_filter_toggle_all: bool,
     // true finché la finestra popup/nota è già stata mostrata almeno un frame:
     // serve a dare il focus al campo di testo solo alla prima comparsa.
@@ -1240,6 +1277,7 @@ impl eframe::App for PjmApp {
                 key_g,
                 key_d,
                 key_k,
+                key_y,
                 key_p,
                 key_t,
                 key_j,
@@ -1255,6 +1293,7 @@ impl eframe::App for PjmApp {
                         cmd && i.key_pressed(egui::Key::G),
                         cmd && i.key_pressed(egui::Key::D),
                         cmd && i.key_pressed(egui::Key::K),
+                        cmd && i.key_pressed(egui::Key::Y),
                         cmd && i.key_pressed(egui::Key::P),
                         cmd && i.key_pressed(egui::Key::T),
                         cmd && i.key_pressed(egui::Key::J),
@@ -1331,6 +1370,16 @@ impl eframe::App for PjmApp {
                     open_filters(state, FilterPane::Categories);
                 }
                 focus_pane(state, FilterPane::Categories);
+            }
+            if key_y {
+                if shift {
+                    state.year_filter = Some(HashSet::new()); // deseleziona tutti
+                } else if state.show_filters {
+                    state.year_filter_toggle_all = true;
+                } else {
+                    open_filters(state, FilterPane::Years);
+                }
+                focus_pane(state, FilterPane::Years);
             }
             if key_p {
                 if state.show_filters {
@@ -2134,7 +2183,11 @@ impl PjmApp {
                 // la dialog di selezione/ordinamento dei dev; con più di uno apri
                 // la dialog di selezione dei progetti; con nessuno non c'è nulla da
                 // esportare.
-                let eligible: Vec<ProjectId> = body_projects(&self.app, self.ui.project_view, &self.ui.category_filter);
+                let eligible: Vec<ProjectId> = body_projects(
+                    &self.app,
+                    self.ui.project_view,
+                    &ProjectFilter::from_state(&self.ui),
+                );
                 match eligible[..] {
                     [] => self
                         .ui
@@ -2172,7 +2225,11 @@ impl PjmApp {
             Action::ExportTrend => {
                 // PDF andamento nel tempo: una pagina per ogni progetto visibile
                 // (abilitato + modalità Vista corrente) con dati di avanzamento.
-                let visible = body_projects(&self.app, self.ui.project_view, &self.ui.category_filter);
+                let visible = body_projects(
+                    &self.app,
+                    self.ui.project_view,
+                    &ProjectFilter::from_state(&self.ui),
+                );
                 match crate::pdf_export::build_trend_pdf(&self.app, &visible) {
                     Some(bytes) => {
                         save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("andamento", "pdf"))
@@ -2702,6 +2759,52 @@ pub(crate) fn category_shown(app: &App, proj: ProjectId, filter: &CategoryFilter
     match filter {
         None => true,
         Some(set) => set.contains(&app.projects.get_category(proj)),
+    }
+}
+
+/// Filtro anno (Ctrl+Y): `None` = nessun filtro, `Some(set)` = solo gli anni del set.
+pub(crate) type YearFilter = Option<HashSet<i32>>;
+
+/// Predicato del filtro anno: il progetto passa se soddisfa `crit` per **almeno
+/// uno** degli anni selezionati. Un progetto senza la data richiesta dal criterio
+/// (inizio per `Starts`, fine per `Ends`, entrambe per `Within`) è nascosto
+/// quando il filtro è attivo. Senza filtro attivo non nasconde nulla.
+pub(crate) fn year_shown(app: &App, proj: ProjectId, filter: &YearFilter, crit: YearCriterion) -> bool {
+    let Some(set) = filter else {
+        return true;
+    };
+    let year = |w: Option<WeekId>| w.map(|w| days_to_local(w.0 as i32).year());
+    let start = year(app.projects.get_project_start_week(proj));
+    let end = year(app.projects.get_project_end_week(proj));
+    match crit {
+        YearCriterion::Starts => start.is_some_and(|y| set.contains(&y)),
+        YearCriterion::Ends => end.is_some_and(|y| set.contains(&y)),
+        YearCriterion::Within => matches!((start, end), (Some(s), Some(e)) if s == e && set.contains(&s)),
+    }
+}
+
+/// Filtri che agiscono su **progetti interi** (categoria + anno): l'unica regola
+/// condivisa da `project_layout` (griglia + colonna sinistra) e `body_projects`
+/// (elenchi di export). Non comprimono l'header, a differenza di worker/dev.
+#[derive(Clone, Default)]
+pub(crate) struct ProjectFilter {
+    pub(crate) category: CategoryFilter,
+    pub(crate) years: YearFilter,
+    pub(crate) criterion: YearCriterion,
+}
+
+impl ProjectFilter {
+    pub(crate) fn from_state(state: &UiState) -> Self {
+        Self {
+            category: state.category_filter.clone(),
+            years: state.year_filter.clone(),
+            criterion: state.year_criterion,
+        }
+    }
+
+    pub(crate) fn shows(&self, app: &App, proj: ProjectId) -> bool {
+        category_shown(app, proj, &self.category)
+            && year_shown(app, proj, &self.years, self.criterion)
     }
 }
 
@@ -3307,21 +3410,21 @@ mod tests {
 
         // Solo aperti: solo l'aperto e visibile.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::Open, &None)),
+            ids(body_projects(&app, ProjectViewMode::Open, &ProjectFilter::default())),
             vec![open.0],
             "Open deve mostrare solo l'aperto visibile"
         );
 
         // Solo chiusi: solo il chiuso, malgrado enable = false.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::Closed, &None)),
+            ids(body_projects(&app, ProjectViewMode::Closed, &ProjectFilter::default())),
             vec![closed.0],
             "Closed deve mostrare il progetto chiuso"
         );
 
         // Tutti: aperto visibile + chiuso; l'aperto nascosto resta escluso.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::All, &None)),
+            ids(body_projects(&app, ProjectViewMode::All, &ProjectFilter::default())),
             vec![open.0, closed.0],
             "All: aperto visibile + chiuso"
         );
@@ -4005,7 +4108,7 @@ mod tests {
                     filter,
                     false,
                     dev_filter,
-                    &None,
+                    &ProjectFilter::default(),
                     ProjectViewMode::Open,
                     compact,
                     false,
