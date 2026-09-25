@@ -272,6 +272,15 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
     nelle settimane future) e **Mancante** (= stimato − usato fino a oggi). Le %
     sono calcolate sullo **stimato del dev**; con stimato 0 compare «—». Un
     mancante **negativo** (sforamento) è scritto **in rosso**.
+  - solo per i progetti **a cavallo della fine dell'anno corrente** (iniziano entro
+    il 31/12 e finiscono l'anno dopo; servono entrambe le date), due colonne in più
+    che **scompongono il Mancante**: **Fino al 31/12/AAAA** = ore allocate in griglia
+    dalla settimana successiva a oggi fino a fine anno (una settimana che inizia
+    entro il 31/12 conta nell'anno, come in griglia), e **Dal 1/1/AAAA a fine** =
+    il resto del mancante (Mancante − la colonna precedente), cioè quanto resta da
+    fare dall'inizio del nuovo anno alla fine del progetto. Le due colonne sommano
+    al Mancante; se l'allocato fino a fine anno supera già lo stimato, la seconda è
+    **negativa e in rosso**.
   Se i dev non entrano in una pagina, la tabella continua sulla successiva.
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
   conferma (Salva ed esci / Esci senza salvare / Annulla).

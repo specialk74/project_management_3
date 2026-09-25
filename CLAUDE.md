@@ -260,6 +260,13 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     stimato − usato (negativo = sforamento, in **rosso**); le % sono sullo stimato
     del dev (`ReportDev::pct`, `None` ⇒ «—» con stimato 0). La tabella continua su
     pagine successive (intestazione ripetuta) se i dev non entrano.
+    **Fine anno**: se `report_year_end(app, proj, today)` è `Some((anno, 31/12))`
+    (inizio ≤ anno di oggi < anno di fine, entrambe le date presenti) la tabella ha
+    **due gruppi in più** e la colonna nome si stringe (`REPORT_NAME_W_YEAR`):
+    `ReportDev.year_split = (fino_31_12, dal_1_1)` con `fino_31_12 =
+    effort_up_to(31/12) − usato` (settimane keyed per lunedì: quella che parte
+    entro il 31/12 conta nell'anno) e `dal_1_1 = mancante − fino_31_12` (negativo
+    ⇒ rosso). Titoli dei gruppi rimpiccioliti se non entrano.
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 

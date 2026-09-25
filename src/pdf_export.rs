@@ -2140,6 +2140,12 @@ pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
 /// Numeri di un dev nel report: ore stimate (pianificato), usate fino a oggi,
 /// allocate in griglia (tutte le settimane, anche future) e mancanti
 /// (`stimato − usato`, negativo in caso di sforamento).
+///
+/// `year_split` c'è solo per i progetti a cavallo della fine dell'anno corrente
+/// (vedi `report_year_end`) e scompone il mancante: `(fino_al_31_12,
+/// dall_1_1)` = ore allocate in griglia da oggi (escluso) al 31/12, e il resto
+/// del mancante (`missing − fino_al_31_12`, negativo se l'allocazione fino a
+/// fine anno supera già lo stimato).
 #[derive(Debug, Clone, PartialEq)]
 struct ReportDev {
     name: String,
@@ -2148,6 +2154,7 @@ struct ReportDev {
     used: i64,
     allocated: i64,
     missing: i64,
+    year_split: Option<(i64, i64)>,
 }
 
 impl ReportDev {
@@ -2158,8 +2165,24 @@ impl ReportDev {
     }
 }
 
+/// Fine dell'anno corrente (anno di `today`) se il progetto la attraversa:
+/// `Some((anno, giorno del 31/12))` quando inizio e fine sono entrambi definiti,
+/// l'inizio cade entro quell'anno e la fine in un anno successivo (stesso
+/// criterio della colonna gialla di fine anno in griglia). `None` altrimenti.
+fn report_year_end(app: &App, proj: ProjectId, today: i32) -> Option<(i32, i32)> {
+    let year = day_to_date(today).year();
+    let start_y = day_to_date(app.projects.get_project_start_week(proj)?.0 as i32).year();
+    let end_y = day_to_date(app.projects.get_project_end_week(proj)?.0 as i32).year();
+    if !(start_y <= year && end_y > year) {
+        return None;
+    }
+    let dec31 = NaiveDate::from_ymd_opt(year, 12, 31)?;
+    Some((year, local_to_days(&dec31)))
+}
+
 /// Tutti i dev del progetto (nell'ordine della griglia) con i numeri del report.
 fn report_devs(app: &App, proj: ProjectId, dev_info: &DevInfo, today: i32) -> Vec<ReportDev> {
+    let year_end = report_year_end(app, proj, today);
     app.projects
         .list_devs(proj)
         .into_iter()
@@ -2176,13 +2199,21 @@ fn report_devs(app: &App, proj: ProjectId, dev_info: &DevInfo, today: i32) -> Ve
                 .into_iter()
                 .last()
                 .map_or(0, |w| sd.effort_up_to(w).0 as i64);
+            let missing = planned - used;
+            // Le settimane sono chiavi per giorno d'inizio: quella che parte
+            // entro il 31/12 conta nell'anno, come in griglia.
+            let year_split = year_end.map(|(_, dec31)| {
+                let to_year_end = sd.effort_up_to(WeekId(dec31 as usize)).0 as i64 - used;
+                (to_year_end, missing - to_year_end)
+            });
             Some(ReportDev {
                 name,
                 color,
                 planned,
                 used,
                 allocated,
-                missing: planned - used,
+                missing,
+                year_split,
             })
         })
         .collect()
@@ -2201,10 +2232,12 @@ fn report_pct(p: Option<i64>) -> String {
     p.map_or_else(|| "—".to_string(), |p| format!("{p}%"))
 }
 
-// Geometria della tabella dei dev (mm): colonna nome + 4 gruppi (ore, %).
+// Geometria della tabella dei dev (mm): colonna nome + 4 gruppi (ore, %), più
+// 2 gruppi di fine anno per i progetti a cavallo (colonna nome più stretta).
 const REPORT_X0: f32 = X_LABEL;
 const REPORT_X1: f32 = PAGE_W - X_LABEL;
 const REPORT_NAME_W: f32 = 70.0;
+const REPORT_NAME_W_YEAR: f32 = 50.0;
 const REPORT_ROW_H: f32 = 6.5;
 const REPORT_GROUPS: [&str; 4] = [
     "Stimato",
@@ -2244,6 +2277,19 @@ fn report_pages(
         .project_presumed_progress_pct(proj, WeekId(today as usize));
     let actual = app.projects.project_progress_pct(proj);
     let devs = report_devs(app, proj, dev_info, today);
+    // Gruppi della tabella: i 4 fissi più, se il progetto attraversa la fine
+    // dell'anno corrente, la scomposizione del mancante attorno al 31/12.
+    let year_end = report_year_end(app, proj, today);
+    let mut groups: Vec<String> = REPORT_GROUPS.iter().map(|g| g.to_string()).collect();
+    if let Some((year, _)) = year_end {
+        groups.push(format!("Fino al 31/12/{year}"));
+        groups.push(format!("Dal 1/1/{} a fine", year + 1));
+    }
+    let name_w = if year_end.is_some() {
+        REPORT_NAME_W_YEAR
+    } else {
+        REPORT_NAME_W
+    };
 
     let footer = |shapes: &mut Vec<Shape>| {
         shapes.extend(rect_fill(
@@ -2308,8 +2354,8 @@ fn report_pages(
     y -= 10.0;
 
     // --- Tabella dei dev -------------------------------------------------------
-    let group_w = (REPORT_X1 - REPORT_X0 - REPORT_NAME_W) / REPORT_GROUPS.len() as f32;
-    let group_x = |g: usize| REPORT_X0 + REPORT_NAME_W + g as f32 * group_w;
+    let group_w = (REPORT_X1 - REPORT_X0 - name_w) / groups.len() as f32;
+    let group_x = |g: usize| REPORT_X0 + name_w + g as f32 * group_w;
     // Intestazione su due righe: nome del gruppo sopra, "ore"/"%" sotto.
     let table_header = |shapes: &mut Vec<Shape>, y: f32| -> f32 {
         shapes.extend(rect_fill(
@@ -2327,13 +2373,15 @@ fn report_pages(
             true,
             BLACK,
         ));
-        for (g, name) in REPORT_GROUPS.iter().enumerate() {
+        for (g, name) in groups.iter().enumerate() {
             let gx = group_x(g);
+            // Titolo rimpicciolito se non entra nel gruppo.
+            let size = (9.0 * (group_w - 2.0) / text_w_mm(name, 9.0)).min(9.0);
             shapes.extend(text_center(
                 gx + group_w / 2.0,
                 y - REPORT_ROW_H + 2.2,
                 name,
-                9.0,
+                size,
                 true,
                 BLACK,
             ));
@@ -2403,16 +2451,20 @@ fn report_pages(
         shapes.extend(text_left(
             REPORT_X0 + 7.0,
             ty,
-            &truncate_to_w(&d.name, 9.0, REPORT_NAME_W - 9.0),
+            &truncate_to_w(&d.name, 9.0, name_w - 9.0),
             9.0,
             false,
             BLACK,
         ));
-        let values = [d.planned, d.used, d.allocated, d.missing];
+        let mut values = vec![d.planned, d.used, d.allocated, d.missing];
+        if year_end.is_some() {
+            let (to_ye, after) = d.year_split.unwrap_or((0, 0));
+            values.extend([to_ye, after]);
+        }
         for (g, v) in values.into_iter().enumerate() {
             let gx = group_x(g);
-            // Mancante negativo = sforamento → in rosso.
-            let color = if g == 3 && v < 0 { RED } else { BLACK };
+            // Mancante (e sua quota dopo il 31/12) negativo = sforamento → rosso.
+            let color = if (g == 3 || g == 5) && v < 0 { RED } else { BLACK };
             shapes.extend(text_right(
                 gx + group_w * 0.55,
                 ty,
@@ -2441,7 +2493,9 @@ fn report_pages(
 /// PDF del report: per ogni progetto dato (nell'ordine dato) una o più pagine
 /// con tripletta, categoria, info, date, avanzamento complessivo (presunto ed
 /// effettivo) e la tabella di tutti i dev (stimato / usato fino a oggi /
-/// allocato in griglia / mancante, in ore e in % dello stimato del dev).
+/// allocato in griglia / mancante, in ore e in % dello stimato del dev; per i
+/// progetti a cavallo della fine dell'anno corrente anche il mancante scomposto
+/// in "fino al 31/12" e "dal 1/1 a fine progetto").
 /// `None` se la lista è vuota.
 pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
     if projects.is_empty() {
@@ -2542,6 +2596,54 @@ mod tests {
 
         let dc = by("QA");
         assert_eq!((dc.planned, dc.pct(dc.planned)), (0, None));
+    }
+
+    /// Progetto a cavallo della fine dell'anno corrente: il mancante si scompone
+    /// in ore allocate da oggi al 31/12 e resto dal 1/1; progetto tutto dentro
+    /// l'anno: nessuna scomposizione.
+    #[test]
+    fn report_year_split_only_for_projects_crossing_year_end() {
+        let day = |y, m, d| local_to_days(&NaiveDate::from_ymd_opt(y, m, d).unwrap());
+        let wk = |y, m, d| WeekId(day(y, m, d) as usize);
+        // Settimane (lunedì) del 2026 attorno a oggi e a fine anno.
+        let (w_past, w_oct, w_dec, w_jan) = (
+            wk(2026, 9, 14),
+            wk(2026, 10, 5),
+            wk(2026, 12, 28), // parte il 28/12 → conta nel 2026
+            wk(2027, 1, 4),
+        );
+        let today = day(2026, 9, 25);
+        let w = WorkerId(0);
+
+        let mut app = App::new();
+        let dev = app.devs.add("Backend");
+        let cross = app.projects.add("A cavallo", Some("CRS"), Some(w_past));
+        app.projects.set_project_end_week(cross, Some(wk(2027, 3, 1)));
+        app.projects.add_dev_effort(cross, dev, Effort(200));
+        app.projects.add_effort(cross, dev, w_past, w, Effort(80)); // usato
+        app.projects.add_effort(cross, dev, w_oct, w, Effort(30));
+        app.projects.add_effort(cross, dev, w_dec, w, Effort(20));
+        app.projects.add_effort(cross, dev, w_jan, w, Effort(40));
+
+        assert_eq!(report_year_end(&app, cross, today), Some((2026, day(2026, 12, 31))));
+        let d = &report_devs(&app, cross, &dev_info_map(&app), today)[0];
+        assert_eq!(d.missing, 120);
+        // 30 + 20 allocate entro il 31/12; il resto del mancante è per il 2027.
+        assert_eq!(d.year_split, Some((50, 70)));
+
+        // Tutto nel 2026 → nessuna colonna di fine anno.
+        let inside = app.projects.add("Dentro", Some("INS"), Some(w_past));
+        app.projects.set_project_end_week(inside, Some(w_dec));
+        app.projects.add_dev_effort(inside, dev, Effort(10));
+        assert_eq!(report_year_end(&app, inside, today), None);
+        assert_eq!(report_devs(&app, inside, &dev_info_map(&app), today)[0].year_split, None);
+
+        // Senza data di fine non si può dire → nessuna colonna.
+        let open_end = app.projects.add("Senza fine", Some("OPN"), Some(w_past));
+        assert_eq!(report_year_end(&app, open_end, today), None);
+
+        // Le pagine si generano con i gruppi extra.
+        assert!(!report_pages(&app, cross, &dev_info_map(&app), today, "oggi").is_empty());
     }
 
     /// Il report produce un PDF valido e, con molti dev, la tabella continua su
