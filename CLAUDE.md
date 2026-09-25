@@ -202,18 +202,18 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     filtro «Solo progetti con note». Le note **Dev** (`SingleDev.note`) e quelle
     **worker/settimana del footer** (`Worker.week_notes`) restano fuori dalla minuta.
 - **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
-- **Filtri**: le prime quattro voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
-  Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`) aprono **un'unica
-  dialog** `filters_window` (`src/ui/filters.rs`, `UiState.show_filters`) a **tre
-  colonne** — Workers | Progetti | Dev — ognuna con campo di ricerca, Select All ed
+- **Filtri**: le prime cinque voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
+  Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`, Categorie…
+  `Cmd/Ctrl+K`) aprono **un'unica dialog** `filters_window` (`src/ui/filters.rs`,
+  `UiState.show_filters`) a **quattro colonne** — Workers | Progetti | Dev | Categorie — ognuna con campo di ricerca, Select All ed
   elenco con checkbox. La scorciatoia/voce di menù decide solo quale colonna riceve il
   focus (`UiState.filters_focus: Option<FilterPane>` + `filters_focus_dirty` one-shot;
   helper `open_filters`/`focus_pane`/`toggle_filters`). Ripremuta a dialog aperta, la
   stessa scorciatoia fa il **toggle di Select All** della sua colonna
   (`*_filter_toggle_all`), applicato agli elementi **attualmente elencati** (rispetta la
   ricerca); `Shift+…` deseleziona tutto senza aprire. **`Cmd/Ctrl+J`** →
-  `reset_all_filters(app, state, actions)`: rimette `worker_filter`/`dev_filter` a
-  `None`, spegne `worker_filter_current_week`, svuota le tre ricerche e riabilita tutti
+  `reset_all_filters(app, state, actions)`: rimette `worker_filter`/`dev_filter`/
+  `category_filter` a `None`, spegne `worker_filter_current_week`, svuota le ricerche e riabilita tutti
   i progetti **non chiusi** (`Action::SetProjectEnabled`, che non marca il file come
   modificato). È **idempotente**: ripremuto non deseleziona nulla. Dettagli per colonna:
   - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
@@ -237,6 +237,14 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     Predicato unico `dev_shown(app, proj, dev, &dev_filter)` applicato in
     `project_layout`; si combina in **AND** col filtro worker e, come quello, comprime
     l'header progetto alla sola tripletta (`filter_active`). Non persistito.
+  - **Categorie** — `UiState.category_filter: CategoryFilter` =
+    `Option<HashSet<Option<CategoryId>>>` (la voce `None` del set è «Senza
+    categoria», prima in elenco). Predicato unico `category_shown(app, proj, &f)`
+    applicato in `project_layout` **e** in `body_projects(app, view, &cat_filter)`,
+    quindi vale anche per gli elenchi di export. Agisce sul **progetto intero**: non
+    entra in `filter_active` (header completo) e non nasconde progetti senza dev.
+    Indipendente dal selettore categoria del footer (`selected_category`, totali-anno).
+    Non persistito.
 
   Restano finestre a sé: Milestone… (manager), Ghost worker… (`ghost_manager_window`:
   elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da

@@ -1,7 +1,9 @@
-//! Dialog unica dei filtri: Workers + Progetti + Dev in tre colonne affiancate.
+//! Dialog unica dei filtri: Workers + Progetti + Dev + Categorie in quattro
+//! colonne affiancate.
 //!
 //! È l'unica finestra aperta da `Cmd/Ctrl+F` (workers), `Cmd/Ctrl+G` (workers
-//! sulla settimana corrente), `Cmd/Ctrl+P` (progetti) e `Cmd/Ctrl+D` (dev):
+//! sulla settimana corrente), `Cmd/Ctrl+P` (progetti), `Cmd/Ctrl+D` (dev) e
+//! `Cmd/Ctrl+K` (categorie):
 //! la scorciatoia porta il focus sul campo di ricerca della propria colonna e,
 //! a finestra già aperta, fa il toggle del "Select All" di quella colonna.
 
@@ -75,7 +77,7 @@ pub(crate) fn filters_window(
         return;
     }
 
-    // ── Dati delle tre colonne (già filtrati dalla rispettiva ricerca) ───────
+    // ── Dati delle quattro colonne (già filtrati dalla rispettiva ricerca) ───────
     let qw = state.worker_search.trim().to_lowercase();
     let workers: Vec<String> = app
         .workers
@@ -117,10 +119,18 @@ pub(crate) fn filters_window(
         .filter(|(_, n)| matches(&qd, n))
         .collect();
 
+    // Categorie: «Senza categoria» (None) in testa, poi quelle definite.
+    let qc = state.category_search.trim().to_lowercase();
+    let cats: Vec<(Option<CategoryId>, String)> = all_category_items(app)
+        .into_iter()
+        .filter(|(_, n)| matches(&qc, n))
+        .collect();
+
     // ── Toggle "Select All" richiesti dalle scorciatoie ──────────────────────
     // Agiscono sugli elementi ATTUALMENTE elencati (quindi rispettano la ricerca).
     let mut wfilter = state.worker_filter.clone();
     let mut dfilter = state.dev_filter.clone();
+    let mut cfilter = state.category_filter.clone();
 
     if std::mem::take(&mut state.worker_filter_toggle_all) {
         let currently_all = match &wfilter {
@@ -135,6 +145,10 @@ pub(crate) fn filters_window(
             Some(s) => !devs.is_empty() && devs.iter().all(|(id, _)| s.contains(id)),
         };
         set_dev_selection(&mut dfilter, app, &devs, !currently_all);
+    }
+    if std::mem::take(&mut state.category_filter_toggle_all) {
+        let currently_all = category_all_selected(&cfilter, &cats);
+        set_category_selection(&mut cfilter, app, &cats, !currently_all);
     }
     if std::mem::take(&mut state.project_filter_toggle_all) {
         let currently_all = !projects.is_empty() && projects.iter().all(|(_, en, _)| en.0);
@@ -322,6 +336,43 @@ pub(crate) fn filters_window(
                             }
                         });
                 });
+                ui.separator();
+
+                // ── Categorie ────────────────────────────────────────────────
+                ui.vertical(|ui| {
+                    ui.set_min_width(160.0);
+                    ui.set_max_width(160.0);
+                    ui.strong("Categorie");
+                    let te = search_field(ui, "Cerca categoria…", &mut state.category_search);
+                    if focus == Some(FilterPane::Categories) {
+                        te.request_focus();
+                    }
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .id_salt("filters_categories")
+                        .max_height(400.0)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            let currently_all = category_all_selected(&cfilter, &cats);
+                            if let Some(v) = select_all_checkbox(ui, currently_all) {
+                                set_category_selection(&mut cfilter, app, &cats, v);
+                            }
+                            for (id, name) in &cats {
+                                let mut sel = match &cfilter {
+                                    None => true,
+                                    Some(s) => s.contains(id),
+                                };
+                                if ui.checkbox(&mut sel, name).changed() {
+                                    let set = cfilter.get_or_insert_with(|| all_category_ids(app));
+                                    if sel {
+                                        set.insert(*id);
+                                    } else {
+                                        set.remove(id);
+                                    }
+                                }
+                            }
+                        });
+                });
             });
         });
 
@@ -329,8 +380,10 @@ pub(crate) fn filters_window(
     // griglia non paga il costo del filtro e i menù non mostrano la spunta.
     normalize_worker_filter(&mut wfilter, app);
     normalize_dev_filter(&mut dfilter, app);
+    normalize_category_filter(&mut cfilter, app);
     state.worker_filter = wfilter;
     state.dev_filter = dfilter;
+    state.category_filter = cfilter;
 
     if let Some(id) = jump {
         state.jump_to_project = Some(id);
@@ -402,6 +455,64 @@ fn normalize_dev_filter(filter: &mut DevFilter, app: &App) {
     }
 }
 
+/// Etichetta della voce «nessuna categoria» del filtro categorie.
+const NO_CATEGORY: &str = "Senza categoria";
+
+/// Voci selezionabili del filtro categorie, a prescindere dalla ricerca:
+/// «Senza categoria» in testa, poi le categorie definite (per id).
+fn all_category_items(app: &App) -> Vec<(Option<CategoryId>, String)> {
+    std::iter::once((None, NO_CATEGORY.to_string()))
+        .chain(
+            app.categories
+                .list()
+                .into_iter()
+                .map(|(id, n)| (Some(id), n)),
+        )
+        .collect()
+}
+
+/// L'insieme "tutte selezionate" del filtro categorie.
+fn all_category_ids(app: &App) -> HashSet<Option<CategoryId>> {
+    all_category_items(app)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Vero se tutte le categorie `shown` (quelle elencate) sono selezionate.
+fn category_all_selected(filter: &CategoryFilter, shown: &[(Option<CategoryId>, String)]) -> bool {
+    match filter {
+        None => !shown.is_empty(),
+        Some(s) => !shown.is_empty() && shown.iter().all(|(id, _)| s.contains(id)),
+    }
+}
+
+/// Come `set_dev_selection` per le categorie elencate.
+fn set_category_selection(
+    filter: &mut CategoryFilter,
+    app: &App,
+    shown: &[(Option<CategoryId>, String)],
+    on: bool,
+) {
+    let set = filter.get_or_insert_with(|| all_category_ids(app));
+    for (id, _) in shown {
+        if on {
+            set.insert(*id);
+        } else {
+            set.remove(id);
+        }
+    }
+}
+
+/// Idem per il filtro categorie.
+fn normalize_category_filter(filter: &mut CategoryFilter, app: &App) {
+    if let Some(set) = filter {
+        if all_category_ids(app).iter().all(|id| set.contains(id)) {
+            *filter = None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +559,41 @@ mod tests {
         let cw = worker_project_counts(&app, true);
         assert_eq!(cw.get("Alice").copied(), Some((2, 1)));
         assert_eq!(cw.get("Bob").copied(), Some((1, 0)));
+    }
+
+    #[test]
+    fn category_filter_selects_projects_by_category() {
+        let mut app = App::new();
+        let web = app.categories.add("Web");
+        let hw = app.categories.add("HW");
+        let p_web = app.projects.add("P1", Some("AAA"), None);
+        app.projects.set_category(p_web, Some(web));
+        let p_hw = app.projects.add("P2", Some("BBB"), None);
+        app.projects.set_category(p_hw, Some(hw));
+        let p_none = app.projects.add("P3", Some("CCC"), None);
+
+        // Nessun filtro: tutto visibile.
+        assert!(category_shown(&app, p_none, &None));
+
+        // Solo Web + «Senza categoria».
+        let f: CategoryFilter = Some([Some(web), None].into_iter().collect());
+        assert!(category_shown(&app, p_web, &f));
+        assert!(!category_shown(&app, p_hw, &f));
+        assert!(category_shown(&app, p_none, &f));
+
+        // body_projects (elenchi di export) segue lo stesso filtro.
+        let ids: Vec<usize> = body_projects(&app, ProjectViewMode::Open, &f)
+            .into_iter()
+            .map(|p| p.0)
+            .collect();
+        assert_eq!(ids, vec![p_web.0, p_none.0]);
+
+        // Tutte selezionate ⇒ il filtro si normalizza a "spento".
+        let mut all: CategoryFilter = Some(all_category_ids(&app));
+        normalize_category_filter(&mut all, &app);
+        assert!(all.is_none());
+        let mut partial = f.clone();
+        normalize_category_filter(&mut partial, &app);
+        assert!(partial.is_some());
     }
 }

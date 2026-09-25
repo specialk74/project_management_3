@@ -211,12 +211,13 @@ pub(crate) enum ProjectViewMode {
 
 /// Colonna della dialog unica dei filtri: decide quale campo di ricerca riceve
 /// il focus quando la finestra compare (Ctrl+F/G → Workers, Ctrl+P → Progetti,
-/// Ctrl+D → Dev).
+/// Ctrl+D → Dev, Ctrl+K → Categorie).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FilterPane {
     Workers,
     Projects,
     Devs,
+    Categories,
 }
 
 /// Voce di menù «Filtri ▸ …»: apre la dialog unica (o la chiude se era già
@@ -236,13 +237,16 @@ pub(crate) fn toggle_filters(state: &mut UiState, pane: FilterPane) {
 pub(crate) fn reset_all_filters(app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     state.worker_filter = None;
     state.dev_filter = None;
+    state.category_filter = None;
     state.worker_filter_current_week = false;
     state.worker_search.clear();
     state.project_search.clear();
     state.dev_search.clear();
+    state.category_search.clear();
     // Eventuali toggle richiesti nello stesso frame non devono ri-deselezionare.
     state.worker_filter_toggle_all = false;
     state.dev_filter_toggle_all = false;
+    state.category_filter_toggle_all = false;
     state.project_filter_toggle_all = false;
     // Visibilità progetti: i chiusi restano fuori (chiudere forza `enable = false`).
     for (proj, _) in app.projects.list() {
@@ -288,15 +292,21 @@ fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
 }
 
 /// Progetti attualmente presenti nel corpo centrale, coerenti con la modalità
-/// Vista (aperti / chiusi / tutti) e con il filtro di visibilità. Non tiene
+/// Vista (aperti / chiusi / tutti), con il filtro di visibilità e con il filtro
+/// categoria (che, come la visibilità, agisce su progetti interi). Non tiene
 /// conto del filtro worker (che nasconde solo dev, non progetti interi ai fini
 /// dell'export). Usato per allineare gli elenchi di PDF/SVG/minuta a ciò che si
 /// vede a schermo, in ordine di visualizzazione.
-fn body_projects(app: &App, view: ProjectViewMode) -> Vec<ProjectId> {
+fn body_projects(
+    app: &App,
+    view: ProjectViewMode,
+    cat_filter: &CategoryFilter,
+) -> Vec<ProjectId> {
     app.projects
         .list_full()
         .into_iter()
         .filter(|(id, _, _)| project_in_body(app, view, *id))
+        .filter(|(id, _, _)| category_shown(app, *id, cat_filter))
         .map(|(id, _, _)| id)
         .collect()
 }
@@ -467,6 +477,7 @@ pub struct UiState {
     project_search: String,
     worker_search: String,
     dev_search: String,
+    category_search: String,
     // progetto verso cui scrollare al prossimo frame (risolto in `body`)
     jump_to_project: Option<ProjectId>,
     editing: Option<Editing>,
@@ -491,6 +502,10 @@ pub struct UiState {
     // progetti in cui almeno un dev selezionato ha effort > 0, e dentro il
     // progetto solo quei dev. Si combina in AND con il filtro worker. Non persistito.
     dev_filter: Option<HashSet<DevId>>,
+    // filtro categoria (Ctrl+K): None = nessun filtro; Some(set) = mostra solo i
+    // progetti la cui categoria è nel set (`None` nel set = "Senza categoria").
+    // Agisce su progetti interi, come la visibilità. Non persistito.
+    category_filter: CategoryFilter,
     // dialog unica dei filtri (Workers + Progetti + Dev): aperta da Ctrl+F/G/P/D.
     show_filters: bool,
     // ultima colonna richiesta (scorciatoia/menù): `filters_focus_dirty` chiede di
@@ -509,6 +524,7 @@ pub struct UiState {
     // "Filtri" nello stesso frame.
     worker_filter_toggle_all: bool,
     dev_filter_toggle_all: bool,
+    category_filter_toggle_all: bool,
     project_filter_toggle_all: bool,
     // true finché la finestra popup/nota è già stata mostrata almeno un frame:
     // serve a dare il focus al campo di testo solo alla prima comparsa.
@@ -1218,14 +1234,27 @@ impl eframe::App for PjmApp {
 
             // Scorciatoie globali (Cmd su macOS, Ctrl altrove). Calcolate in anticipo
             // per non trattenere un borrow di `ui` durante i pannelli.
-            let (key_s, key_f, key_g, key_d, key_p, key_t, key_j, shift, key_1, key_2, key_3) =
-                ui.ctx().input(|i| {
+            let (
+                key_s,
+                key_f,
+                key_g,
+                key_d,
+                key_k,
+                key_p,
+                key_t,
+                key_j,
+                shift,
+                key_1,
+                key_2,
+                key_3,
+            ) = ui.ctx().input(|i| {
                     let cmd = i.modifiers.command || i.modifiers.ctrl;
                     (
                         cmd && i.key_pressed(egui::Key::S),
                         cmd && i.key_pressed(egui::Key::F),
                         cmd && i.key_pressed(egui::Key::G),
                         cmd && i.key_pressed(egui::Key::D),
+                        cmd && i.key_pressed(egui::Key::K),
                         cmd && i.key_pressed(egui::Key::P),
                         cmd && i.key_pressed(egui::Key::T),
                         cmd && i.key_pressed(egui::Key::J),
@@ -1292,6 +1321,16 @@ impl eframe::App for PjmApp {
                     open_filters(state, FilterPane::Devs);
                 }
                 focus_pane(state, FilterPane::Devs);
+            }
+            if key_k {
+                if shift {
+                    state.category_filter = Some(HashSet::new()); // deseleziona tutte
+                } else if state.show_filters {
+                    state.category_filter_toggle_all = true;
+                } else {
+                    open_filters(state, FilterPane::Categories);
+                }
+                focus_pane(state, FilterPane::Categories);
             }
             if key_p {
                 if state.show_filters {
@@ -2095,7 +2134,7 @@ impl PjmApp {
                 // la dialog di selezione/ordinamento dei dev; con più di uno apri
                 // la dialog di selezione dei progetti; con nessuno non c'è nulla da
                 // esportare.
-                let eligible: Vec<ProjectId> = body_projects(&self.app, self.ui.project_view);
+                let eligible: Vec<ProjectId> = body_projects(&self.app, self.ui.project_view, &self.ui.category_filter);
                 match eligible[..] {
                     [] => self
                         .ui
@@ -2133,7 +2172,7 @@ impl PjmApp {
             Action::ExportTrend => {
                 // PDF andamento nel tempo: una pagina per ogni progetto visibile
                 // (abilitato + modalità Vista corrente) con dati di avanzamento.
-                let visible = body_projects(&self.app, self.ui.project_view);
+                let visible = body_projects(&self.app, self.ui.project_view, &self.ui.category_filter);
                 match crate::pdf_export::build_trend_pdf(&self.app, &visible) {
                     Some(bytes) => {
                         save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("andamento", "pdf"))
@@ -2648,6 +2687,21 @@ pub(crate) fn dev_shown(app: &App, proj: ProjectId, dev: DevId, filter: &DevFilt
                     .get_single_dev(proj, dev)
                     .is_some_and(|sd| sd.has_any_worker())
         }
+    }
+}
+
+/// Filtro categoria (Ctrl+K): `None` = nessun filtro, `Some(set)` = solo i
+/// progetti con una di queste categorie; la voce `None` del set è «Senza
+/// categoria» (progetto a cui non è stata assegnata alcuna categoria).
+pub(crate) type CategoryFilter = Option<HashSet<Option<CategoryId>>>;
+
+/// Predicato unico del filtro categoria, usato da `project_layout` (griglia +
+/// colonna sinistra) e da `body_projects` (elenchi di export): agisce sul
+/// progetto intero. Senza filtro attivo non nasconde nulla.
+pub(crate) fn category_shown(app: &App, proj: ProjectId, filter: &CategoryFilter) -> bool {
+    match filter {
+        None => true,
+        Some(set) => set.contains(&app.projects.get_category(proj)),
     }
 }
 
@@ -3253,21 +3307,21 @@ mod tests {
 
         // Solo aperti: solo l'aperto e visibile.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::Open)),
+            ids(body_projects(&app, ProjectViewMode::Open, &None)),
             vec![open.0],
             "Open deve mostrare solo l'aperto visibile"
         );
 
         // Solo chiusi: solo il chiuso, malgrado enable = false.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::Closed)),
+            ids(body_projects(&app, ProjectViewMode::Closed, &None)),
             vec![closed.0],
             "Closed deve mostrare il progetto chiuso"
         );
 
         // Tutti: aperto visibile + chiuso; l'aperto nascosto resta escluso.
         assert_eq!(
-            ids(body_projects(&app, ProjectViewMode::All)),
+            ids(body_projects(&app, ProjectViewMode::All, &None)),
             vec![open.0, closed.0],
             "All: aperto visibile + chiuso"
         );
@@ -3951,6 +4005,7 @@ mod tests {
                     filter,
                     false,
                     dev_filter,
+                    &None,
                     ProjectViewMode::Open,
                     compact,
                     false,

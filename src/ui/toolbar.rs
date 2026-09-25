@@ -74,7 +74,7 @@ pub(crate) fn toolbar(
                 // Apre la dialog con i progetti del corpo centrale (abilitati +
                 // modalità Vista corrente) preselezionati.
                 state.minuta = Some(MinutaState {
-                    entries: body_projects(app, state.project_view)
+                    entries: body_projects(app, state.project_view, &state.category_filter)
                         .into_iter()
                         .map(|id| (id, true))
                         .collect(),
@@ -95,7 +95,7 @@ pub(crate) fn toolbar(
                 // Progetti del corpo centrale (abilitati + Vista corrente)
                 // preselezionati, come nella minuta.
                 state.report = Some(ReportState {
-                    entries: body_projects(app, state.project_view)
+                    entries: body_projects(app, state.project_view, &state.category_filter)
                         .into_iter()
                         .map(|id| (id, true))
                         .collect(),
@@ -204,6 +204,13 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 toggle_filters(state, FilterPane::Devs);
+                ui.close_menu();
+            }
+            if ui
+                .selectable_label(state.category_filter.is_some(), "Categorie…  (⌘/Ctrl+K)")
+                .clicked()
+            {
+                toggle_filters(state, FilterPane::Categories);
                 ui.close_menu();
             }
             if ui.button("Milestone…").clicked() {

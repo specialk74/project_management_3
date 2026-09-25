@@ -286,8 +286,8 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
   **tipo** e **categorie di stampa** scelti prima del nome.
 
 ### Filtri
-Le prime quattro voci aprono **la stessa dialog «Filtri»** (tre colonne: Workers,
-Progetti, Dev — vedi §14): cambia solo la colonna che riceve il focus.
+Le prime cinque voci aprono **la stessa dialog «Filtri»** (quattro colonne: Workers,
+Progetti, Dev, Categorie — vedi §14): cambia solo la colonna che riceve il focus.
 - **Progetti…** — colonna Progetti: elenco dei progetti (non chiusi) con una spunta
   per ciascuno che attiva/disattiva la **visibilità** nella griglia, ricerca e salto
   rapido ("Select All" per agire su tutti). Scorciatoia `Cmd/Ctrl+P`.
@@ -301,6 +301,8 @@ Progetti, Dev — vedi §14): cambia solo la colonna che riceve il focus.
   Scorciatoia `Cmd/Ctrl+G`; premere `Cmd/Ctrl+F` torna al filtro su tutte le settimane.
 - **Dev…** — colonna Dev (vedi §14): restano solo i progetti che hanno un dev
   selezionato e, dentro il progetto, solo quel dev. Scorciatoia `Cmd/Ctrl+D`.
+- **Categorie…** — colonna Categorie (vedi §14): restano solo i progetti delle
+  categorie selezionate. Scorciatoia `Cmd/Ctrl+K`.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
 - **Closed…** — finestra per marcare/smarcare i progetti come **chiusi**. Un
@@ -675,22 +677,22 @@ ghost non è visualizzato nel footer.
 
 ## 14. Filtri
 
-Workers, Progetti e Dev vivono in **un'unica dialog «Filtri»** a tre colonne
-affiancate. La aprono indifferentemente `Cmd/Ctrl+F` (Workers), `Cmd/Ctrl+G`
-(Workers sulla settimana corrente), `Cmd/Ctrl+P` (Progetti) e `Cmd/Ctrl+D` (Dev),
-oppure le voci corrispondenti del menù **Filtri**: cambia solo la colonna che
-riceve il **focus** sul proprio campo di ricerca. Ogni colonna ha **ricerca**,
-**«Select All»** ed elenco con spunte, e i tre filtri restano indipendenti (si
-combinano tra loro). `Esc` o un click fuori chiudono la dialog.
+Workers, Progetti, Dev e Categorie vivono in **un'unica dialog «Filtri»** a quattro
+colonne affiancate. La aprono indifferentemente `Cmd/Ctrl+F` (Workers), `Cmd/Ctrl+G`
+(Workers sulla settimana corrente), `Cmd/Ctrl+P` (Progetti), `Cmd/Ctrl+D` (Dev) e
+`Cmd/Ctrl+K` (Categorie), oppure le voci corrispondenti del menù **Filtri**: cambia
+solo la colonna che riceve il **focus** sul proprio campo di ricerca. Ogni colonna ha
+**ricerca**, **«Select All»** ed elenco con spunte, e i filtri restano indipendenti
+(si combinano tra loro). `Esc` o un click fuori chiudono la dialog.
 
 Premendo di nuovo la **stessa** scorciatoia a dialog aperta si fa il **toggle di
 "Select All"** della sua colonna (quindi la seconda pressione deseleziona tutto);
 il toggle agisce sugli elementi **attualmente elencati**, cioè rispetta la ricerca.
-`Shift+Cmd/Ctrl+F` / `+G` / `+D` deselezionano tutto senza aprire la dialog.
+`Shift+Cmd/Ctrl+F` / `+G` / `+D` / `+K` deselezionano tutto senza aprire la dialog.
 
-**`Cmd/Ctrl+J` azzera tutti i filtri**: worker e dev tornano *tutti selezionati*,
-tutti i progetti aperti tornano visibili, la modalità «Solo settimana corrente» si
-spegne e le tre ricerche si svuotano — cioè si torna a vedere tutto. Non è un
+**`Cmd/Ctrl+J` azzera tutti i filtri**: worker, dev e categorie tornano *tutti
+selezionati*, tutti i progetti aperti tornano visibili, la modalità «Solo settimana
+corrente» si spegne e le ricerche si svuotano — cioè si torna a vedere tutto. Non è un
 toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona nulla** e
 ripristina semplicemente lo stesso stato. Non tocca i progetti **chiusi** (restano
 nascosti finché non li riapri da «Filtri ▸ Closed…») né la modalità **Vista ▸
@@ -768,6 +770,25 @@ Scorciatoie: `Cmd/Ctrl+D` apre la dialog sulla colonna Dev; premuto a **dialog g
 aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+D` **deseleziona tutti** i
 dev. Con tutti i dev selezionati il filtro è considerato spento. La selezione **non** è
 salvata sul file.
+
+### Filtro categoria (colonna «Categorie», `Cmd/Ctrl+K`)
+Risponde alla domanda **«quali progetti appartengono a questa categoria?»**. La colonna
+elenca, con una spunta ciascuna (più ricerca e "Select All"), la voce **«Senza
+categoria»** (progetti a cui non è stata assegnata una categoria) seguita da **tutte le
+categorie definite**:
+- restano visibili **solo i progetti** la cui categoria è selezionata;
+- il filtro agisce sul **progetto intero**: dentro il progetto non sparisce nulla e
+  l'intestazione resta **completa** (a differenza dei filtri worker e dev);
+- come la visibilità della colonna Progetti, vale anche per gli **elenchi di
+  esportazione** (PDF, SVG, Andamento, Minuta, Report), che partono dai progetti
+  mostrati a schermo.
+
+Si **combina in AND** con gli altri filtri e con la modalità **Vista ▸ Progetti**.
+Scorciatoie: `Cmd/Ctrl+K` apre la dialog sulla colonna Categorie; premuto a **dialog
+già aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+K` **deseleziona tutte**
+le categorie. Con tutte le voci selezionate il filtro è considerato spento. La
+selezione **non** è salvata sul file. (Il selettore di categoria nel footer, che
+limita i totali-anno per dev, è indipendente da questo filtro.)
 
 ### Ghost worker (Filtri ▸ Ghost worker…)
 Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
@@ -1084,6 +1105,8 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | `Shift + Cmd/Ctrl + G` | Deseleziona tutti i worker nel filtro (settimana corrente) |
 | `Cmd/Ctrl + D` | Apri la dialog «Filtri» sulla colonna Dev (solo i progetti col dev selezionato, e solo quel dev) |
 | `Shift + Cmd/Ctrl + D` | Deseleziona tutti i dev nel filtro |
+| `Cmd/Ctrl + K` | Apri la dialog «Filtri» sulla colonna Categorie (solo i progetti delle categorie selezionate) |
+| `Shift + Cmd/Ctrl + K` | Deseleziona tutte le categorie nel filtro |
 | `Cmd/Ctrl + P` | Apri la dialog «Filtri» sulla colonna Progetti (ricerca, visibilità e salto rapido) |
 | `Cmd/Ctrl + J` | **Azzera tutti i filtri**: torna a vedere tutto (ripetibile, non deseleziona mai) |
 | `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |
