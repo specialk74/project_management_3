@@ -266,7 +266,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     preselezionato con `body_projects`, → `Action::GenerateReport { projects }` →
     `pdf_export::build_report_pdf`): PDF di riepilogo, **una pagina (o più) per
     progetto** via `report_pages` — tripletta, categoria, info, inizio/fine
-    (`gg/mm/aaaa`), avanzamento presunto/effettivo, poi la tabella di **tutti** i dev
+    (`mm/dd/yyyy`), avanzamento presunto/effettivo, poi la tabella di **tutti** i dev
     (`list_devs`) da `report_devs` → `ReportDev { planned, used, allocated, missing }`:
     usato = `effort_up_to(oggi)`, allocato = tutte le ore in griglia, mancante =
     stimato − usato (negativo = sforamento, in **rosso**); le % sono sullo stimato
@@ -474,6 +474,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
 
 ### PDF / SVG export (`pdf_export.rs`)
 
+**Exports are in English with US dates** (the GUI stays Italian): every string drawn
+into PDF/SVG is English (`MONTHS_EN`, "Today"/"today", report headings…), full dates use
+`US_DATE` (`%m/%d/%Y` — footer `created`, report start/end) and `short_date` gives
+`"Sep 22"` (month first). Keep new export text in English.
+
 Drawing is backend-agnostic: `page_shapes(...)` builds a `Vec<Shape>` (Rect/Poly/
 Line/Text in mm, origin bottom-left), then `render_pdf(fonts, &shapes)` emits
 printpdf `Op`s and `render_svg(&shapes)` emits an SVG string (Y-flipped, cropped to
@@ -497,6 +502,12 @@ the footer date.
   **«Includi percentuali di avanzamento»** checkbox bound to `UiState.export_progress_pct`
   (remembered across exports, not persisted); the `Action::ExportPdf*/ExportSvgProject`
   handlers call `set_show_pct(self.ui.export_progress_pct)` before `build_*`.
+- **Year in dev dates** (`set_show_year(bool)` — `pdf_export.rs` thread-local,
+  default **on**): the «Includi l'anno nelle date dei dev ('26)» checkbox
+  (`year_checkbox` in `export.rs`, `UiState.export_show_year: ExportYear` — a
+  newtype like `ExportGhost` so it starts **on**; remembered, not persisted) of both Gantt dialogs. `dev_date(days)` = `short_date` + ` 'YY`
+  (`"Sep 22 '26"`) and is used **only** for the date label after each dev bar;
+  milestone flag dates keep `short_date`.
 
 - **Milestone scope** (`MilestoneScope { Internal, External }` in `milestones.rs`;
   `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`, like
@@ -532,8 +543,13 @@ the footer date.
   effort 0)» checkbox of both Gantt dialogs (`ghost_checkbox` in `export.rs`,
   bound to `UiState.export_ghost: ExportGhost` — a newtype because `UiState`
   derives `Default` and this one starts **on**; remembered across exports, not
-  persisted). The three export handlers call `set_show_ghost(self.ui.export_ghost.0)`
-  next to `set_show_pct`. Effects inside `project_shapes`: `ghost_weeks(dev)` is
+  persisted). `ExportGhost { show, red }`: `show` is the checkbox, `red` a
+  sub-option (radio «Colore ghost: Rosso / Colore del dev», enabled only when
+  `show`, default red). The three export handlers call
+  `set_show_ghost(export_ghost.show)` + `set_ghost_red(export_ghost.red)` next to
+  `set_show_pct`. In `page_shapes` the overlays use `ghost_col` = `RED` or the
+  row's `r.color`; with dev color the dev-name label stays **black**. Gantt
+  PDF/SVG only — the trend PDF ignores it (always red). Effects inside `project_shapes`: `ghost_weeks(dev)` is
   empty when off, and when on it uses `SingleDev::weeks_with_worker_assigned`
   (**assignment, effort 0 included**) instead of the >0-only `weeks_with_worker`
   that the trend PDF still uses. With it on, the `order = None` path (multi-project
@@ -598,7 +614,7 @@ the footer date.
   project start **and** end excluded, so the chart starts at the first data point), Y axis
   = **auto 0..max** (rounded to a multiple of 20 with headroom, so over-budget >100% is
   visible). Includes title (tripletta+name), a solid/dashed style key, a dev-colour
-  legend, a red **"oggi"** line, a **red horizontal 100% reference line** (the rest of
+  legend, a red **"today"** line, a **red horizontal 100% reference line** (the rest of
   the Y grid is grey, every 20%), and the same grey footer bar; **no milestone flags**.
   Every polyline **vertex is marked with a dot** (`dot`/`dots` helpers) so the exact
   data points that build each line are visible. Reusable drawing helpers:

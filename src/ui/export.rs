@@ -143,17 +143,43 @@ pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export
         });
 }
 
-/// Spunta «Includi i worker ghost», condivisa dalle dialog di export: con la
-/// spunta i ghost sono marcati in rosso (nome dev e settimane) **anche dove
-/// sono assegnati a effort 0**, e un dev che ha solo un ghost senza ore viene
-/// stampato lo stesso; senza spunta la stampa ignora del tutto i ghost.
-pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
-    ui.checkbox(&mut ghost.0, "Includi i worker ghost (anche a effort 0)")
+/// Spunta «anno nelle date dei dev», condivisa dalle dialog di export.
+pub(crate) fn year_checkbox(ui: &mut egui::Ui, show_year: &mut bool) {
+    ui.checkbox(show_year, "Includi l'anno nelle date dei dev ('26)")
         .on_hover_text(
-            "Con la spunta i worker ghost sono segnati in rosso anche nelle \
-             settimane in cui sono assegnati senza ore, e il dev che ha solo un \
-             ghost compare comunque. Senza spunta il PDF non li evidenzia.",
+            "Accanto a ogni barra le date diventano ad es. «Sep 22 '26 - Oct 5 '26» \
+             invece di «Sep 22 - Oct 5». Le date delle milestone non cambiano.",
         );
+}
+
+/// Spunta «Includi i worker ghost», condivisa dalle dialog di export: con la
+/// spunta i ghost sono marcati **anche dove sono assegnati a effort 0**, e un
+/// dev che ha solo un ghost senza ore viene stampato lo stesso; senza spunta la
+/// stampa ignora del tutto i ghost. Sotto, la sotto-opzione del colore
+/// (`ExportGhost.red`): rosso con nome dev rosso, oppure colore del dev con
+/// nome nero.
+pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
+    ui.checkbox(&mut ghost.show, "Includi i worker ghost (anche a effort 0)")
+        .on_hover_text(
+            "Con la spunta i worker ghost sono segnati (in rosso o nel colore del \
+             dev) anche nelle settimane in cui sono assegnati senza ore, e il dev \
+             che ha solo un ghost compare comunque. Senza spunta il PDF non li \
+             evidenzia.",
+        );
+    // Sotto-opzione: colore della marcatura, attiva solo con la spunta.
+    ui.add_enabled_ui(ghost.show, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_space(18.0);
+            ui.label("Colore ghost:");
+            ui.radio_value(&mut ghost.red, true, "Rosso")
+                .on_hover_text("Settimane ghost e nome del dev in rosso.");
+            ui.radio_value(&mut ghost.red, false, "Colore del dev")
+                .on_hover_text(
+                    "Settimane ghost nel colore del dev e nome nero: il ghost \
+                     non è evidenziato come anomalia.",
+                );
+        });
+    });
 }
 
 /// Selettore degli **ambiti milestone** da stampare, condiviso dalle dialog di
@@ -198,6 +224,7 @@ pub(crate) fn pdf_export_window(
     let mut fmt = state.bar_format;
     // Idem per la scelta "includi percentuali di avanzamento" nell'export.
     let mut show_pct = state.export_progress_pct;
+    let mut show_year = state.export_show_year;
     // Idem per gli ambiti milestone (Internal / External) da stampare…
     let mut scopes = state.export_scopes;
     // …e per la stampa dei worker "ghost".
@@ -358,6 +385,7 @@ pub(crate) fn pdf_export_window(
                 &mut show_pct,
                 "Includi percentuali di avanzamento (presunta/dichiarata)",
             );
+            year_checkbox(ui, &mut show_year.0);
             ghost_checkbox(ui, &mut ghost);
 
             ui.separator();
@@ -389,6 +417,7 @@ pub(crate) fn pdf_export_window(
     // Ricorda il formato scelto per i prossimi export.
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
+    state.export_show_year = show_year;
     state.export_scopes = scopes;
     state.export_ghost = ghost;
 
@@ -449,6 +478,7 @@ pub(crate) fn pdf_multi_export_window(
     // Copia locale del formato (vedi nota in `pdf_export_window`).
     let mut fmt = state.bar_format;
     let mut show_pct = state.export_progress_pct;
+    let mut show_year = state.export_show_year;
     let mut scopes = state.export_scopes;
     let mut ghost = state.export_ghost;
     let mut open = true;
@@ -480,6 +510,7 @@ pub(crate) fn pdf_multi_export_window(
                 &mut show_pct,
                 "Includi percentuali di avanzamento (presunta/dichiarata)",
             );
+            year_checkbox(ui, &mut show_year.0);
             ghost_checkbox(ui, &mut ghost);
 
             ui.separator();
@@ -501,6 +532,7 @@ pub(crate) fn pdf_multi_export_window(
 
     state.bar_format = fmt;
     state.export_progress_pct = show_pct;
+    state.export_show_year = show_year;
     state.export_scopes = scopes;
     state.export_ghost = ghost;
 

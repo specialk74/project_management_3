@@ -439,9 +439,29 @@ const MAX_TOASTS: usize = 5;
 /// comportamento storico: i ghost sono un'anomalia da vedere), per questo è un
 /// tipo a sé — `UiState` deriva `Default` e un `bool` partirebbe da `false`.
 #[derive(Clone, Copy)]
-pub(crate) struct ExportGhost(pub bool);
+pub(crate) struct ExportGhost {
+    /// «Includi i worker ghost (anche a effort 0)».
+    pub show: bool,
+    /// Sotto-opzione: marcatura in rosso (`true`) o nel colore del dev.
+    pub red: bool,
+}
 
 impl Default for ExportGhost {
+    fn default() -> Self {
+        Self {
+            show: true,
+            red: true,
+        }
+    }
+}
+
+/// Spunta «Includi l'anno nelle date dei dev» delle dialog di export. Parte
+/// **attiva**: tipo a sé per lo stesso motivo di `ExportGhost` (`UiState`
+/// deriva `Default` e un `bool` partirebbe da `false`).
+#[derive(Clone, Copy)]
+pub(crate) struct ExportYear(pub bool);
+
+impl Default for ExportYear {
     fn default() -> Self {
         Self(true)
     }
@@ -657,6 +677,9 @@ pub struct UiState {
     // includere le percentuali (presunta/dichiarata) nel PDF/SVG esportato;
     // scelta chiesta nelle dialog di export, ricordata tra un export e l'altro.
     export_progress_pct: bool,
+    // aggiungere l'anno abbreviato ('26) alle date dei dev nel PDF/SVG;
+    // ricordata tra un export e l'altro, non persistita.
+    export_show_year: ExportYear,
     // stampare o no i worker "ghost" (marcatura rossa, comprese le settimane a
     // effort 0); scelta chiesta nelle dialog di export, ricordata tra un export
     // e l'altro, non persistita.
@@ -2241,7 +2264,9 @@ impl PjmApp {
             }
             Action::ExportPdfSelected { projects, scopes } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
+                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
+                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
                 // Export multi-progetto: nessuna scelta milestone per progetto.
                 crate::pdf_export::set_milestone_allow(None);
                 // Un file per ambito milestone scelto (Internal e/o External).
@@ -2273,7 +2298,9 @@ impl PjmApp {
                 milestones,
             } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
+                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
+                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_pdf_project(
@@ -2303,7 +2330,9 @@ impl PjmApp {
                 milestones,
             } => {
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.0);
+                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
+                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
+                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
                     crate::pdf_export::build_svg_project(

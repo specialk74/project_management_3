@@ -266,17 +266,19 @@ All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
   - **tripletta**, **categoria**, **info** del progetto, **data di inizio e di fine**;
   - l'**avanzamento complessivo**: *presunto* (ore usate fino a oggi sullo stimato)
     ed *effettivo* (media delle % dichiarate dai dev, pesata sullo stimato);
-  - una tabella con **tutti i dev** del progetto e, per ciascuno, ore e % di:
-    **Stimato** (sempre 100%), **Usato fino a oggi** (ore in griglia fino alla
-    settimana corrente), **Allocato in griglia** (tutte le ore assegnate, anche
-    nelle settimane future) e **Mancante** (= stimato − usato fino a oggi). Le %
+  - una tabella con **tutti i dev** del progetto e, per ciascuno, ore e % di
+    (intestazioni stampate in inglese, vedi §16):
+    **Stimato** / *Estimated* (sempre 100%), **Usato fino a oggi** / *Used to date*
+    (ore in griglia fino alla settimana corrente), **Allocato in griglia** /
+    *Allocated in grid* (tutte le ore assegnate, anche nelle settimane future) e
+    **Mancante** / *Remaining* (= stimato − usato fino a oggi). Le %
     sono calcolate sullo **stimato del dev**; con stimato 0 compare «—». Un
     mancante **negativo** (sforamento) è scritto **in rosso**.
   - solo per i progetti **a cavallo della fine dell'anno corrente** (iniziano entro
     il 31/12 e finiscono l'anno dopo; servono entrambe le date), due colonne in più
-    che **scompongono il Mancante**: **Fino al 31/12/AAAA** = ore allocate in griglia
+    che **scompongono il Mancante**: **Fino al 31/12/AAAA** (*Through 12/31/AAAA*) = ore allocate in griglia
     dalla settimana successiva a oggi fino a fine anno (una settimana che inizia
-    entro il 31/12 conta nell'anno, come in griglia), e **Dal 1/1/AAAA a fine** =
+    entro il 31/12 conta nell'anno, come in griglia), e **Dal 1/1/AAAA a fine** (*From 1/1/AAAA to end*) =
     il resto del mancante (Mancante − la colonna precedente), cioè quanto resta da
     fare dall'inizio del nuovo anno alla fine del progetto. Le due colonne sommano
     al Mancante; se l'allocato fino a fine anno supera già lo stimato, la seconda è
@@ -507,7 +509,9 @@ anomala: quando un worker ghost viene inserito nell'effort di un dev,
    export (attiva per impostazione predefinita): con la spunta sono segnate anche
    le settimane in cui il ghost è **assegnato senza ore** (effort 0) e un dev che
    ha **solo** un ghost a zero viene stampato lo stesso; senza spunta il PDF/SVG
-   non li evidenzia affatto (vedi capitolo 16);
+   non li evidenzia affatto. Con la sotto-opzione **Colore ghost: Colore del
+   dev** le stesse settimane sono disegnate nel colore del dev e il nome resta
+   nero (vedi capitolo 16);
 4. nel **PDF degli andamenti** il tratto di linea (presunta) che sale in quella
    settimana — e il relativo pallino — è **rosso e più spesso**, per far risaltare
    il problema anche in mezzo alla linea del colore del dev.
@@ -926,6 +930,13 @@ Ogni progetto idoneo diventa una **pagina** in stile Gantt con: titolo (triplett
 e descrizione, asse dei mesi, milestone come bandierine (**fulmine** per quelle di
 tipo trigger), marker "Today", e una riga per dev.
 
+> **Lingua e date degli export.** Tutti i PDF (Gantt, Andamento, Report) e gli SVG
+> sono stampati **in inglese** (mesi `Jan`…`Dec`, «Today», «today», intestazioni del
+> report…) e con le **date all'americana**: `mm/dd/yyyy` per le date complete (data di
+> creazione nel footer, inizio/fine nel report) e `Sep 22` (mese prima del giorno) per
+> le etichette brevi delle barre e delle milestone (con l'anno opzionale `Sep 22 '26`
+accanto alle barre, vedi «Anno nelle date dei dev»). La GUI resta in italiano.
+
 Un progetto è **idoneo** se è abilitato, non chiuso e ha **sia inizio sia fine**.
 
 Barre dell'effort e celle dei mesi sono disegnate con gli **angoli arrotondati**;
@@ -1024,7 +1035,17 @@ effort 0)»**, **attiva** per impostazione predefinita:
 - **disattiva** — la stampa ignora del tutto i ghost: nessun rosso, e i dev senza
   ore restano fuori come prima.
 
-La scelta vale sia per il PDF sia per l'SVG ed è ricordata tra un export e l'altro
+Sotto la casella, attiva solo quando è spuntata, c'è la scelta **Colore ghost**:
+
+- **Rosso** (predefinito) — come descritto sopra: settimane ghost e nome del dev
+  in rosso;
+- **Colore del dev** — le settimane ghost sono disegnate **nel colore del dev**
+  (sulla barra o sulla riga sottile) e il nome del dev resta **nero**: il ghost
+  non è segnalato come anomalia. Resta però valido il resto della spunta: le
+  settimane con il ghost a effort 0 sono comunque disegnate (con la barra
+  continua possono quindi allungarla) e il dev con solo un ghost a zero compare.
+
+Le scelte valgono sia per il PDF sia per l'SVG ed è ricordata tra un export e l'altro
 (non è salvata sul file). Il PDF **Andamento…** non è interessato: lì i ghost sono
 sempre segnati sulle settimane in cui hanno ore.
 
@@ -1061,6 +1082,14 @@ ricade nell'intervallo del grafico. Se la casella è disattivata
 per il PDF sia per l'SVG ed è ricordata tra un export e l'altro (non è salvata sul
 file).
 
+### Anno nelle date dei dev
+Sempre nelle finestre di export, la casella **«Includi l'anno nelle date dei dev
+('26)»** aggiunge l'**anno abbreviato** all'etichetta delle date a fine barra, nello
+stile americano con l'apostrofo: `Sep 22 '26 - Oct 5 '26` invece di `Sep 22 - Oct 5`.
+Utile per i progetti che durano più di un anno. Le date delle bandierine delle
+milestone non cambiano. È **attiva** per impostazione predefinita, vale per PDF e
+SVG ed è ricordata tra un export e l'altro (non è salvata sul file).
+
 ### Andamento nel tempo (PDF)
 **File ▸ Andamento…** esporta un PDF con l'**andamento nel tempo** delle percentuali
 di avanzamento, **una pagina per progetto** visibile. In ogni pagina, per ciascun dev
@@ -1077,7 +1106,7 @@ esatti con cui è costruito il grafico. C'è anche una coppia di linee **nere** 
 l'andamento **aggregato di progetto** (che parte dal **primo effort in assoluto**). L'asse
 verticale si adatta al valore massimo (se una presunta supera il 100% lo sforamento è
 visibile); una **riga rossa orizzontale** segna il **100%** e una linea rossa verticale
-segna **«oggi»**. In alto la tripletta+nome del
+segna **«today»**. In alto la tripletta+nome del
 progetto e una legenda dei colori; in basso la solita banda grigia con la data. Non ci
 sono le bandierine delle milestone. Un progetto senza dev con effort pianificato non
 produce pagina.

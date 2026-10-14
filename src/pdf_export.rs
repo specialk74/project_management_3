@@ -22,6 +22,9 @@ use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 // impostato prima di ogni `build_*`, letto da `page_shapes`. Default: off.
 thread_local! {
     static SHOW_PCT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // Anno abbreviato ('26) nelle date accanto alle barre dei dev: "Sep 22 '26".
+    // Default: on, come la spunta nelle dialog di export.
+    static SHOW_YEAR: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     // Ambito milestone dell'export corrente (vedi `MilestoneScope`): decide
     // quali bandierine finiscono nella pagina. Default: Internal (= tutte),
     // cioè il comportamento storico.
@@ -37,6 +40,10 @@ thread_local! {
     // assegnato a **effort 0** — e fa comparire anche il dev che ha solo un
     // ghost senza ore; `false` toglie del tutto la marcatura.
     static SHOW_GHOST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+    // Colore della marcatura ghost quando `SHOW_GHOST` è attivo: `true`
+    // (default, storico) = rosso con nome dev rosso; `false` = colore del dev
+    // e nome nero (le settimane ghost restano disegnate, anche a effort 0).
+    static GHOST_RED: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     // Smussatura degli angoli dei rettangoli "pieni" (barre effort e celle dei
     // mesi), in percentuale: 0 = spigolo vivo, 100 = raggio massimo (metà del
     // lato corto → estremi semicircolari). Viene dal file .ron (`App.corner_pct`)
@@ -67,6 +74,15 @@ fn show_pct() -> bool {
     SHOW_PCT.with(|c| c.get())
 }
 
+/// Imposta se le date dei dev riportano anche l'anno abbreviato (`'26`).
+pub fn set_show_year(v: bool) {
+    SHOW_YEAR.with(|c| c.set(v));
+}
+
+fn show_year() -> bool {
+    SHOW_YEAR.with(|c| c.get())
+}
+
 /// Imposta l'ambito milestone del prossimo `build_*`: `Internal` disegna tutte
 /// le milestone (Internal + External), `External` solo quelle External.
 pub fn set_milestone_scope(v: MilestoneScope) {
@@ -91,6 +107,15 @@ pub fn set_show_ghost(v: bool) {
 
 fn show_ghost() -> bool {
     SHOW_GHOST.with(|c| c.get())
+}
+
+/// Imposta il colore della marcatura ghost: rosso (default) o colore del dev.
+pub fn set_ghost_red(v: bool) {
+    GHOST_RED.with(|c| c.set(v));
+}
+
+fn ghost_red() -> bool {
+    GHOST_RED.with(|c| c.get())
 }
 
 /// La milestone è ammessa dall'elenco scelto dall'utente?
@@ -164,9 +189,13 @@ const RED: (f32, f32, f32) = (0.86, 0.15, 0.15);
 /// settimana piena "standard" non riempie tutta l'altezza se il dev è scarico.
 const PROPORTIONAL_REF_MIN: u32 = 40;
 
-const MONTHS_IT: [&str; 12] = [
-    "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
+/// Nomi brevi dei mesi stampati in PDF/SVG (gli export sono in inglese).
+const MONTHS_EN: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/// Formato data degli export (americano, `mm/dd/yyyy`).
+const US_DATE: &str = "%m/%d/%Y";
 
 /// Primitiva di disegno indipendente dal formato: coordinate in mm, origine in
 /// basso a sinistra (come nel PDF). Renderizzata sia in PDF (`render_pdf`) sia in
@@ -245,10 +274,21 @@ fn add_months(d: NaiveDate, n: i32) -> NaiveDate {
     }
 }
 
-/// Etichetta data breve: "22 Set".
+/// Etichetta data breve, all'americana: "Sep 22".
 fn short_date(days: i32) -> String {
     let d = day_to_date(days);
-    format!("{} {}", d.day(), MONTHS_IT[(d.month() - 1) as usize])
+    format!("{} {}", MONTHS_EN[(d.month() - 1) as usize], d.day())
+}
+
+/// Data del dev accanto alla barra: "Sep 22", oppure "Sep 22 '26" se l'utente
+/// ha chiesto l'anno (`set_show_year`).
+fn dev_date(days: i32) -> String {
+    if show_year() {
+        let y = day_to_date(days).year().rem_euclid(100);
+        format!("{} '{y:02}", short_date(days))
+    } else {
+        short_date(days)
+    }
 }
 
 // --- Helper testo/disegno ---------------------------------------------------
@@ -860,7 +900,7 @@ fn page_shapes(
         // Riga verticale del mese, attraverso la zona delle righe dev.
         shapes.extend(line(cell_x0, ROWS_BOT, cell_x0, AXIS_BOT, 0.4, GRAY_GUIDE));
         // Etichetta mese (bianca, in basso a sinistra della cella) se ci sta.
-        let name = MONTHS_IT[(m.month() - 1) as usize];
+        let name = MONTHS_EN[(m.month() - 1) as usize];
         if cell_x1 - cell_x0 > text_w_mm(name, 8.0) + 1.5 {
             shapes.extend(text_left(
                 cell_x0 + 1.5,
@@ -1093,8 +1133,15 @@ fn page_shapes(
         let yc = ROWS_TOP - (i as f32 + 0.5) * row_h;
         // Etichetta a sinistra (nome dev), troncata se troppo lunga.
         let label = truncate_to_w(&r.label, 8.0, label_w);
+        // Marcatura ghost: rosso, oppure il colore del dev se l'utente l'ha
+        // scelto nell'export (allora anche il nome resta nero).
+        let ghost_col = if ghost_red() { RED } else { r.color };
         // Nome del dev in rosso se contiene almeno un worker "ghost".
-        let label_col = if r.ghost_weeks.is_empty() { BLACK } else { RED };
+        let label_col = if r.ghost_weeks.is_empty() || !ghost_red() {
+            BLACK
+        } else {
+            RED
+        };
         shapes.extend(text_left(X_LABEL, yc - 1.3, &label, 8.0, false, label_col));
         let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
 
@@ -1122,7 +1169,7 @@ fn page_shapes(
                     yc - thin_hh,
                     rx1.max(rx0 + 1.0),
                     yc + thin_hh,
-                    RED,
+                    ghost_col,
                 ));
             }
             continue;
@@ -1203,7 +1250,13 @@ fn page_shapes(
                         .find(|(d, _)| *d == day)
                         .map_or(0, |(_, h)| *h);
                     let hh = (bar_hh * hours as f32 / denom).max(0.15);
-                    shapes.extend(rect_round(rx0, yc - hh, rx1.max(rx0 + 1.0), yc + hh, RED));
+                    shapes.extend(rect_round(
+                        rx0,
+                        yc - hh,
+                        rx1.max(rx0 + 1.0),
+                        yc + hh,
+                        ghost_col,
+                    ));
                 }
             } else {
                 // Altezza costante: le settimane ghost **consecutive** diventano
@@ -1218,7 +1271,7 @@ fn page_shapes(
                         yc - bar_hh,
                         rx1.max(rx0 + 1.0),
                         yc + bar_hh,
-                        RED,
+                        ghost_col,
                     ));
                 }
             }
@@ -1227,7 +1280,7 @@ fn page_shapes(
         // richiesto, le percentuali (presunta/dichiarata) la seguono, tutto a
         // destra e con lo **stesso font delle date** (7.0). Le righe senza effort
         // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
-        let mut lbl = format!("{} - {}", short_date(r.start_day), short_date(r.end_day));
+        let mut lbl = format!("{} - {}", dev_date(r.start_day), dev_date(r.end_day));
         if show_pct() {
             let pct = match r.presumed_pct {
                 Some(p) => format!("({p}%/{}%)", r.declared_pct),
@@ -1497,14 +1550,14 @@ fn project_shapes(
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
 pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
-    let mut doc = PdfDocument::new("Progetti");
+    let mut doc = PdfDocument::new("Projects");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
     let fonts = Fonts {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
 
@@ -1538,14 +1591,14 @@ pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
 /// i vincoli per pagina: il progetto deve avere inizio E fine. `None` se nessun
 /// progetto selezionato produce una pagina.
 pub fn build_pdf_selected(app: &App, selected: &[ProjectId], fmt: BarFormat) -> Option<Vec<u8>> {
-    let mut doc = PdfDocument::new("Progetti");
+    let mut doc = PdfDocument::new("Projects");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
     let fonts = Fonts {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
 
@@ -1587,7 +1640,7 @@ pub fn build_pdf_project(
     ordered_devs: &[DevId],
     fmt: BarFormat,
 ) -> Option<Vec<u8>> {
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
@@ -1603,7 +1656,7 @@ pub fn build_pdf_project(
         fmt,
     )?;
 
-    let mut doc = PdfDocument::new("Progetto");
+    let mut doc = PdfDocument::new("Project");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
     let fonts = Fonts {
@@ -1854,7 +1907,7 @@ fn trend_page_shapes(
     shapes.extend(text_left(
         kx + 10.0,
         199.5,
-        "presunta/rendicontata",
+        "estimated/reported",
         7.0,
         false,
         TEXT_GRAY,
@@ -1863,7 +1916,7 @@ fn trend_page_shapes(
     shapes.extend(text_left(
         kx + 10.0,
         195.5,
-        "dichiarata",
+        "declared",
         7.0,
         false,
         TEXT_GRAY,
@@ -1906,9 +1959,9 @@ fn trend_page_shapes(
             0.2,
             GRAY_GUIDE,
         ));
-        let mname = MONTHS_IT[(m.month() - 1) as usize];
+        let mname = MONTHS_EN[(m.month() - 1) as usize];
         let lbl = if first || m.month() == 1 {
-            format!("{} {:02}", mname, m.year() % 100)
+            format!("{} '{:02}", mname, m.year() % 100)
         } else {
             mname.to_string()
         };
@@ -1953,7 +2006,7 @@ fn trend_page_shapes(
         shapes.extend(text_center(
             xt,
             TREND_PLOT_TOP + 1.0,
-            "oggi",
+            "today",
             6.5,
             false,
             RED,
@@ -2040,9 +2093,9 @@ fn trend_page_shapes(
         shapes.extend(dots(&pts, 0.85, BLACK));
         if let Some(&(lx, ly)) = pts.last() {
             shapes.extend(text_left(
-                (lx + 1.5).min(CHART_X1 - text_w_mm("Progetto", 7.0)),
+                (lx + 1.5).min(CHART_X1 - text_w_mm("Project", 7.0)),
                 ly - 1.0,
-                "Progetto",
+                "Project",
                 7.0,
                 true,
                 BLACK,
@@ -2100,14 +2153,14 @@ fn trend_page_shapes(
 /// PDF dell'andamento nel tempo: una pagina per progetto (con dati), linee
 /// presunta/dichiarata per dev e progetto. `None` se nessun progetto ha dati.
 pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
-    let mut doc = PdfDocument::new("Andamento");
+    let mut doc = PdfDocument::new("Trend");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
     let fonts = Fonts {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let created = chrono::Local::now().format(US_DATE).to_string();
     let now = chrono::Local::now().date_naive();
     let today = local_to_days(&now);
     let today_week = local_to_days(&primo_giorno_settimana_corrente(&now));
@@ -2219,11 +2272,11 @@ fn report_devs(app: &App, proj: ProjectId, dev_info: &DevInfo, today: i32) -> Ve
         .collect()
 }
 
-/// Data di una settimana nel report (`gg/mm/aaaa`), "—" se assente.
+/// Data di una settimana nel report (`mm/dd/yyyy`, americana), "—" se assente.
 fn report_date(w: Option<WeekId>) -> String {
     w.map_or_else(
         || "—".to_string(),
-        |w| day_to_date(w.0 as i32).format("%d/%m/%Y").to_string(),
+        |w| day_to_date(w.0 as i32).format(US_DATE).to_string(),
     )
 }
 
@@ -2240,10 +2293,10 @@ const REPORT_NAME_W: f32 = 70.0;
 const REPORT_NAME_W_YEAR: f32 = 50.0;
 const REPORT_ROW_H: f32 = 6.5;
 const REPORT_GROUPS: [&str; 4] = [
-    "Stimato",
-    "Usato fino a oggi",
-    "Allocato in griglia",
-    "Mancante",
+    "Estimated",
+    "Used to date",
+    "Allocated in grid",
+    "Remaining",
 ];
 
 /// Pagine (primitive) del report di un progetto: intestazione con tripletta,
@@ -2259,7 +2312,7 @@ fn report_pages(
 ) -> Vec<Vec<Shape>> {
     let tripletta = app.projects.get_tripletta(proj);
     let title = if tripletta.trim().is_empty() {
-        "(senza tripletta)".to_string()
+        "(no code)".to_string()
     } else {
         tripletta
     };
@@ -2282,8 +2335,8 @@ fn report_pages(
     let year_end = report_year_end(app, proj, today);
     let mut groups: Vec<String> = REPORT_GROUPS.iter().map(|g| g.to_string()).collect();
     if let Some((year, _)) = year_end {
-        groups.push(format!("Fino al 31/12/{year}"));
-        groups.push(format!("Dal 1/1/{} a fine", year + 1));
+        groups.push(format!("Through 12/31/{year}"));
+        groups.push(format!("From 1/1/{} to end", year + 1));
     }
     let name_w = if year_end.is_some() {
         REPORT_NAME_W_YEAR
@@ -2318,7 +2371,7 @@ fn report_pages(
         shapes.extend(text_left(REPORT_X0, y, label, 10.0, true, BLACK));
         shapes.extend(text_left(REPORT_X0 + 34.0, y, value, 10.0, false, BLACK));
     };
-    label_value(&mut shapes, y, "Categoria:", &category);
+    label_value(&mut shapes, y, "Category:", &category);
     y -= 6.0;
     // Info su più righe (a capo espliciti preservati), con un tetto per non
     // mangiarsi la tabella: le righe in eccesso finiscono in "…".
@@ -2337,16 +2390,16 @@ fn report_pages(
         y -= 4.6;
     }
     y -= 1.4;
-    label_value(&mut shapes, y, "Inizio:", &start);
-    shapes.extend(text_left(REPORT_X0 + 80.0, y, "Fine:", 10.0, true, BLACK));
+    label_value(&mut shapes, y, "Start:", &start);
+    shapes.extend(text_left(REPORT_X0 + 80.0, y, "End:", 10.0, true, BLACK));
     shapes.extend(text_left(REPORT_X0 + 94.0, y, &end, 10.0, false, BLACK));
     y -= 6.0;
     label_value(
         &mut shapes,
         y,
-        "Avanzamento:",
+        "Progress:",
         &format!(
-            "presunto {}  ·  effettivo {}",
+            "estimated {}  ·  actual {}",
             report_pct(presumed.map(i64::from)),
             report_pct(actual.map(i64::from)),
         ),
@@ -2388,7 +2441,7 @@ fn report_pages(
             shapes.extend(text_right(
                 gx + group_w * 0.55,
                 y - 2.0 * REPORT_ROW_H + 2.2,
-                "ore",
+                "hours",
                 8.0,
                 false,
                 TEXT_GRAY,
@@ -2412,7 +2465,7 @@ fn report_pages(
         shapes.extend(text_left(
             REPORT_X0 + 2.0,
             y - REPORT_ROW_H + 2.2,
-            "Nessun dev nel progetto.",
+            "No devs in this project.",
             9.0,
             false,
             TEXT_GRAY,
@@ -2427,7 +2480,7 @@ fn report_pages(
             shapes.extend(text_left(
                 REPORT_X0,
                 y,
-                &format!("{title} (continua)"),
+                &format!("{title} (continued)"),
                 14.0,
                 true,
                 BLACK,
@@ -2508,7 +2561,7 @@ pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
 
@@ -2941,6 +2994,44 @@ mod tests {
         set_show_ghost(true);
     }
 
+    /// Con «Colore del dev» il ghost resta stampato (il dev col solo ghost a
+    /// effort 0 compare, le settimane sono marcate) ma senza nulla di rosso:
+    /// marcature nel colore del dev e nome nero.
+    #[test]
+    fn ghost_in_dev_color_prints_no_red() {
+        let (app, pid, ..) = app_with_zero_effort_ghost();
+        let red_texts = |shapes: &[Shape]| {
+            shapes
+                .iter()
+                .filter(|sh| matches!(sh, Shape::Text { color, .. } if *color == RED))
+                .count()
+        };
+
+        set_show_ghost(false);
+        let off = shapes_all_devs(&app, pid);
+        set_show_ghost(true);
+        set_ghost_red(true);
+        let red = shapes_all_devs(&app, pid);
+        set_ghost_red(false);
+        let dev_col = shapes_all_devs(&app, pid);
+        set_ghost_red(true);
+
+        assert!(
+            texts(&dev_col).iter().any(|t| t == "Backend"),
+            "il dev con il solo ghost a effort 0 compare anche nel colore del dev"
+        );
+        assert_eq!(
+            red_rects(&dev_col),
+            red_rects(&off),
+            "nessuna marcatura rossa per i ghost"
+        );
+        assert_eq!(red_texts(&dev_col), red_texts(&off), "nomi dei dev neri");
+        assert!(red_texts(&red) > red_texts(&off), "in rosso il nome è rosso");
+        // Le marcature ci sono comunque, nel colore del dev: stesso numero di
+        // forme della versione rossa.
+        assert_eq!(dev_col.len(), red.len());
+    }
+
     /// Nella pagina del singolo progetto (dev scelti a mano) il ghost a effort 0
     /// marca la riga sottile del dev senza ore.
     #[test]
@@ -3178,6 +3269,51 @@ mod tests {
         assert!(svg.contains("80%/60%"), "con flag deve comparire 80%/60%");
         assert!(!svg.contains("33%"), "il dev senza effort non mostra la %");
         set_show_pct(false);
+    }
+
+    /// La spunta «anno» aggiunge `'AA` a entrambe le date del dev (e solo a
+    /// quelle: il resto della pagina non cambia).
+    #[test]
+    fn show_year_adds_short_year_to_dev_dates() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
+        let page = || {
+            project_shapes(
+                &app,
+                pid,
+                &project_name(&app, pid),
+                &dev_info_map(&app),
+                20030,
+                "",
+                Some(&[dev]),
+                true,
+                BarFormat::Continuous,
+            )
+            .unwrap()
+        };
+
+        set_show_year(false);
+        let off = texts(&page());
+        set_show_year(true);
+        let on = texts(&page());
+        set_show_year(false);
+        let y = format!("'{:02}", day_to_date(20007).year() % 100);
+        let dated: Vec<_> = on.iter().filter(|t| t.contains(" - ")).collect();
+        assert_eq!(dated.len(), 1, "una sola etichetta date: {on:?}");
+        assert_eq!(
+            dated[0].matches(&y).count(),
+            2,
+            "anno abbreviato dopo entrambe le date: {}",
+            dated[0]
+        );
+        assert!(!off.iter().any(|t| t.contains(&y)), "senza spunta niente anno");
+        assert_eq!(on.len(), off.len(), "nessun altro testo cambia");
+        set_show_year(true);
     }
 
     #[test]
