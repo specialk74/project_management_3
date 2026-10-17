@@ -19,6 +19,37 @@ pub struct ProjectId(pub usize);
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub struct Enable(pub bool);
 
+/// Stato del progetto scelto nella finestra «Stato progetti». `OnHold` si
+/// comporta in tutto come `Closed` (è chiuso: `is_closed()` vale `true`); cambia
+/// solo l'etichetta mostrata (es. nella matrice progetti × worker).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
+pub enum ProjectStatus {
+    Active,
+    OnHold,
+    Closed,
+}
+
+impl ProjectStatus {
+    pub const ALL: [ProjectStatus; 3] = [
+        ProjectStatus::Active,
+        ProjectStatus::OnHold,
+        ProjectStatus::Closed,
+    ];
+
+    /// Etichetta nella GUI.
+    pub fn label(self) -> &'static str {
+        match self {
+            ProjectStatus::Active => "Attivo",
+            ProjectStatus::OnHold => "On-Hold",
+            ProjectStatus::Closed => "Closed",
+        }
+    }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// Come gestire lo sforamento di un confine di progetto quando si sposta un
 /// blocco di effort oltre l'inizio o la fine.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,6 +92,11 @@ pub struct Project {
     /// .ron privi del campo. Un progetto chiuso è automaticamente non-enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     closed: Option<bool>,
+    /// Progetto **on-hold**: è chiuso (`closed` = true, così le versioni
+    /// precedenti del programma lo vedono chiuso) ma etichettato on-hold.
+    /// Significativo solo insieme a `closed`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    on_hold: bool,
     /// Milestone collocate nel progetto: id milestone → settimana. La chiave
     /// garantisce che la stessa milestone non compaia più volte nel progetto.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -90,6 +126,7 @@ impl Project {
             category: None,
             order: 0,
             closed: None,
+            on_hold: false,
             milestones: HashMap::new(),
             notes: HashMap::new(),
         }
@@ -106,6 +143,7 @@ impl Project {
             category: None,
             order: 0,
             closed: None,
+            on_hold: false,
             milestones: HashMap::new(),
             notes: HashMap::new(),
         }
@@ -305,6 +343,7 @@ impl Project {
             && self.category == o.category
             && self.order == o.order
             && self.closed == o.closed
+            && self.on_hold == o.on_hold
             && self.milestones == o.milestones
             && self.notes == o.notes
     }
@@ -320,9 +359,27 @@ impl Project {
 
     /// Imposta lo stato "chiuso". Chiudere un progetto lo rende anche
     /// automaticamente non-enabled; riaprirlo lo rende di nuovo enabled.
+    /// Toglie sempre l'on-hold (per metterlo c'è `set_status`).
     pub fn set_closed(&mut self, closed: bool) {
         self.closed = if closed { Some(true) } else { None };
+        self.on_hold = false;
         self.enable = Enable(!closed);
+    }
+
+    /// Stato del progetto: attivo, on-hold (chiuso + `on_hold`) o chiuso.
+    pub fn status(&self) -> ProjectStatus {
+        match (self.is_closed(), self.on_hold) {
+            (false, _) => ProjectStatus::Active,
+            (true, true) => ProjectStatus::OnHold,
+            (true, false) => ProjectStatus::Closed,
+        }
+    }
+
+    /// Imposta lo stato: on-hold e closed chiudono il progetto (con `enable` a
+    /// false), attivo lo riapre.
+    pub fn set_status(&mut self, status: ProjectStatus) {
+        self.set_closed(status != ProjectStatus::Active);
+        self.on_hold = status == ProjectStatus::OnHold;
     }
 
     pub fn get_keys(

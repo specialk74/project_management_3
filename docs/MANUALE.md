@@ -318,8 +318,9 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
   finiscono o stanno tutti negli anni selezionati. Scorciatoia `Cmd/Ctrl+Y`.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
-- **Closed…** — finestra per marcare/smarcare i progetti come **chiusi**. Un
-  progetto chiuso sparisce dagli elenchi "attivi" e dall'export.
+- **Stato progetti…** — finestra con lo **stato** di ogni progetto: **Attivo**,
+  **On-Hold** o **Closed** (vedi «Stato dei progetti» nel capitolo 14). Un progetto
+  on-hold o closed sparisce dagli elenchi "attivi" e dall'export.
 
 ### Vista
 - **Vista compatta** — vista a barre compresse (vedi §15).
@@ -382,8 +383,8 @@ su/giù nell'elenco.
 ### Visibilità, chiusura
 - **Abilita/disabilita** dalla finestra **Filtri ▸ Progetti…**: un progetto
   disabilitato non è mostrato nella griglia (ma resta nell'elenco del filtro).
-- **Chiudi** dalla finestra **Filtri ▸ Closed…**: un progetto chiuso è escluso da
-  elenchi attivi ed export.
+- **Chiudi o metti in on-hold** dalla finestra **Filtri ▸ Stato progetti…**: un
+  progetto chiuso (o on-hold) è escluso da elenchi attivi ed export.
 
 > Nota: non esiste un'eliminazione definitiva del progetto; per toglierlo dalla
 > vista lo si disabilita o lo si chiude.
@@ -712,7 +713,7 @@ selezionati*, tutti i progetti aperti tornano visibili, la modalità «Solo sett
 corrente» si spegne e le ricerche si svuotano — cioè si torna a vedere tutto. Non è un
 toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona nulla** e
 ripristina semplicemente lo stesso stato. Non tocca i progetti **chiusi** (restano
-nascosti finché non li riapri da «Filtri ▸ Closed…») né la modalità **Vista ▸
+nascosti finché non li riapri da «Filtri ▸ Stato progetti…») né la modalità **Vista ▸
 Progetti** (`Cmd/Ctrl+1/2/3`).
 
 ### Progetti — visibilità + salto rapido (colonna «Progetti», `Cmd/Ctrl+P`)
@@ -834,8 +835,20 @@ Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclu
 dal filtro Ctrl+F) con una spunta **Ghost** ciascuno. È il modo sempre raggiungibile
 per associare/togliere il ghost. Vedi §8, «Worker "ghost"».
 
-### Progetti chiusi (Filtri ▸ Closed…)
-Finestra per marcare/smarcare i progetti come chiusi.
+### Stato dei progetti (Filtri ▸ Stato progetti…)
+Finestra con tutti i progetti in ordine alfabetico e, accanto a ciascuno, una
+**combo** con il suo stato:
+
+- **Attivo** — il progetto è aperto;
+- **On-Hold** — il progetto è sospeso: **si comporta in tutto come un progetto
+  chiuso** (grigio nella griglia, escluso dagli elenchi attivi e dall'export,
+  visibile con *Solo chiusi*), ma nella **matrice progetti × worker** è indicato
+  come «on-hold» invece che «chiuso»;
+- **Closed** — il progetto è chiuso.
+
+Nel file un progetto on-hold resta registrato come chiuso più l'indicazione
+`on_hold: true`: una versione precedente del programma lo apre semplicemente come
+chiuso.
 
 ---
 
@@ -953,13 +966,16 @@ progetto**.
    (colore automatico per categoria, grigio per «Senza categoria», che va in fondo).
    Un **progetto chiuso** resta nel gruppo della sua categoria: la sua riga mantiene
    il colore della categoria ma **spento verso il grigio e a strisce**, con
-   l'indicazione «chiuso» accanto alla tripletta; conta comunque nel riepilogo.
+   l'indicazione «chiuso» (oppure «on-hold», se il progetto è on-hold) accanto
+   alla tripletta; conta comunque nel riepilogo.
 4. **Celle** — all'incrocio progetto × worker ci sono i **dev** con cui il worker è
    assegnato nell'intervallo, **uno per riga** se sono più d'uno.
 5. **Riepilogo** — subito sotto la matrice (allineato alle sue colonne), una riga per
    categoria: per ogni worker, in quanti progetti di quella categoria è presente
-   (vuoto = nessuno), e
-   in ultima riga il **Totale progetti** in cui il worker è coinvolto (aperti e chiusi).
+   (vuoto = nessuno), seguita da tre sotto-righe con la **suddivisione per stato**:
+   **Attivi**, **On-Hold** e **Closed**; in fondo il **Totale progetti** in cui il
+   worker è coinvolto, con la stessa suddivisione. Nel PDF, se il riepilogo non
+   entra nella pagina, continua sulla successiva con l'intestazione dei worker.
 
 **Esporta PDF…** crea subito il PDF (si sceglie solo dove salvarlo) con la matrice,
 il riepilogo e l'intervallo di date in testa; se nella combo «Anni» hai scelto degli

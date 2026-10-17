@@ -230,8 +230,8 @@ pub(crate) fn toolbar(
                 state.ghost_manager_just_opened = state.show_ghost_manager;
                 ui.close_menu();
             }
-            let closed_btn = ui.button("Closed…");
-            // La finestra "Closed" si ancora sotto questa voce di menù.
+            let closed_btn = ui.button("Stato progetti…");
+            // La finestra "Stato progetti" si ancora sotto questa voce di menù.
             state.closed_btn_pos = closed_btn.rect.left_bottom();
             if closed_btn.clicked() {
                 state.show_closed_filter = !state.show_closed_filter;

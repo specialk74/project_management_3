@@ -15,7 +15,9 @@ pub(crate) use crate::date_utils::dates::{
 };
 pub(crate) use crate::dev_utils::dev::DevId;
 pub(crate) use crate::milestones::{MilestoneCategory, MilestoneId, MilestoneKind, MilestoneScope};
-pub(crate) use crate::project_utils::project::{Enable, OverflowResolution, ProjectId};
+pub(crate) use crate::project_utils::project::{
+    Enable, OverflowResolution, ProjectId, ProjectStatus,
+};
 pub(crate) use crate::single_dev_utils::single_dev::{WEEK_STEP, WeekId};
 pub(crate) use crate::single_effort_utils::sinlge_effort::Effort;
 pub(crate) use crate::ui_style::*;
@@ -612,6 +614,16 @@ pub struct UiState {
     // evita la chiusura "click-fuori" nello stesso frame in cui la finestra si apre
     filters_just_opened: bool,
     closed_filter_just_opened: bool,
+    // un menu (combo dello stato) era aperto nel frame precedente della
+    // finestra «Stato progetti»: il click che sceglie una voce chiude il menu
+    // nello stesso frame, e non deve contare come «click fuori».
+    closed_filter_popup_was_open: bool,
+    // solo test: rettangoli delle combo di stato e delle voci del menu aperto,
+    // per simulare click veri.
+    #[cfg(test)]
+    status_combo_rects: Vec<Rect>,
+    #[cfg(test)]
+    status_item_rects: Vec<Rect>,
     // richiesta (da Ctrl+F / Ctrl+G / Ctrl+P / Ctrl+D a dialog già aperta) di fare
     // il toggle del "Select All" della rispettiva colonna; consumata dalla dialog
     // "Filtri" nello stesso frame.
@@ -947,9 +959,11 @@ pub(crate) enum Action {
         proj: ProjectId,
         enabled: bool,
     },
-    SetProjectClosed {
+    /// Stato del progetto (Attivo / On-Hold / Closed) dalla finestra «Stato
+    /// progetti».
+    SetProjectStatus {
         proj: ProjectId,
-        closed: bool,
+        status: ProjectStatus,
     },
     SetWorkerMaxHours {
         worker: WorkerId,
@@ -2219,8 +2233,8 @@ impl PjmApp {
                 // modificato (come il filtro per worker).
                 self.app.projects.set_enable(proj, Enable(enabled));
             }
-            Action::SetProjectClosed { proj, closed } => {
-                self.app.projects.set_closed(proj, closed);
+            Action::SetProjectStatus { proj, status } => {
+                self.app.projects.set_status(proj, status);
                 self.mark_changed();
             }
             Action::SetWorkerMaxHours { worker, hours } => {
@@ -3723,6 +3737,78 @@ mod tests {
         pending.push(vec![egui::Event::PointerMoved(pos)]);
         pending.push(vec![btn(true)]);
         pending.push(vec![btn(false)]);
+    }
+
+    /// Finestra «Stato progetti»: aprire la combo di un progetto e scegliere
+    /// «On-Hold» con click veri produce l'azione **senza chiudere la finestra**
+    /// (il menu della combo è un livello a sé, il click non è «fuori»).
+    #[test]
+    fn status_combo_sets_on_hold_and_keeps_the_window_open() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(900.0, 600.0),
+        ));
+        let mut app = App::new();
+        let proj = app.projects.add("Uno", Some("P1"), None);
+        let mut state = UiState {
+            show_closed_filter: true,
+            closed_filter_just_opened: true,
+            closed_btn_pos: egui::pos2(50.0, 50.0),
+            ..Default::default()
+        };
+        let mut got: Option<ProjectStatus> = None;
+        let mut pending: Vec<Vec<egui::Event>> = Vec::new();
+        let mut opened = false;
+        let mut picked = false;
+        for _ in 0..30 {
+            let mut inp = input.clone();
+            if !pending.is_empty() {
+                inp.events = pending.remove(0);
+            }
+            let mut actions = Vec::new();
+            let _ = ctx.run_ui(inp, |ui| {
+                closed_filter_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            for a in actions {
+                if let Action::SetProjectStatus { proj: p, status } = a {
+                    assert_eq!(p, proj);
+                    got = Some(status);
+                    app.projects.set_status(p, status);
+                }
+            }
+            if got.is_some() {
+                // Qualche frame in più: la finestra deve restare aperta.
+                if pending.is_empty() {
+                    break;
+                }
+                continue;
+            }
+            assert!(state.show_closed_filter, "la finestra si è chiusa");
+            if !pending.is_empty() {
+                continue;
+            }
+            if !opened {
+                queue_click(&mut pending, state.status_combo_rects[0].center());
+                opened = true;
+            } else if !picked && state.status_item_rects.len() == 3 {
+                // Voci: Attivo, On-Hold, Closed.
+                queue_click(&mut pending, state.status_item_rects[1].center());
+                picked = true;
+            }
+        }
+        assert_eq!(got, Some(ProjectStatus::OnHold));
+        assert_eq!(app.projects.status(proj), ProjectStatus::OnHold);
+        assert!(app.projects.is_closed(proj));
+        // Altri frame senza input: la finestra resta aperta.
+        for _ in 0..3 {
+            let mut actions = Vec::new();
+            let _ = ctx.run_ui(input.clone(), |ui| {
+                closed_filter_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+        }
+        assert!(state.show_closed_filter, "scelta la voce, la finestra deve restare aperta");
     }
 
     /// La spunta delle categorie in fase di creazione segue la stessa regola

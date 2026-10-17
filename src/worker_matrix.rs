@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::app::App;
 use crate::categories::CategoryId;
-use crate::project_utils::project::ProjectId;
+use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
 /// Una riga della matrice (un progetto).
@@ -24,6 +24,9 @@ pub struct MatrixRow {
     /// Progetto chiuso: resta nel gruppo della sua categoria ma la riga è
     /// disegnata grigia a strisce.
     pub closed: bool,
+    /// Stato del progetto: on-hold e closed sono entrambi `closed` (stessa
+    /// resa), cambia solo l'etichetta.
+    pub status: ProjectStatus,
     /// Per ogni worker (stesso ordine di `MatrixData.workers`): i nomi dei dev
     /// con cui è assegnato nell'intervallo, nell'ordine dei dev del progetto.
     pub cells: Vec<Vec<String>>,
@@ -40,9 +43,15 @@ pub struct MatrixData {
     /// `summary[c][w]` = progetti della categoria `categories[c]` in cui il
     /// worker `workers[w]` è presente.
     pub summary: Vec<Vec<u32>>,
+    /// `summary_status[c][w]` = come `summary`, divisi per stato nell'ordine di
+    /// `ProjectStatus::ALL` (attivi, on-hold, closed).
+    pub summary_status: Vec<Vec<[u32; 3]>>,
     /// `totals[w]` = progetti (di qualunque categoria, aperti e chiusi) in cui
     /// il worker `workers[w]` è presente.
     pub totals: Vec<u32>,
+    /// `status_totals[w]` = progetti del worker `workers[w]` per stato, nell'ordine
+    /// di `ProjectStatus::ALL` (attivi, on-hold, closed).
+    pub status_totals: Vec<[u32; 3]>,
 }
 
 /// La settimana che inizia il giorno `week_start` (lunedì, 7 giorni) si
@@ -53,6 +62,7 @@ pub fn week_overlaps(week_start: i32, from: i32, to: i32) -> bool {
 
 /// Costruisce la matrice per i worker `selected` (ordinati come `workers.list()`)
 /// nell'intervallo di giorni `[from, to]`.
+#[cfg(test)]
 pub fn build(app: &App, selected: &HashSet<WorkerId>, from: i32, to: i32) -> MatrixData {
     build_filtered(app, selected, from, to, &BTreeSet::new())
 }
@@ -109,6 +119,7 @@ pub fn build_filtered(
             name: app.projects.get_info(proj),
             category: app.projects.get_category(proj),
             closed: app.projects.is_closed(proj),
+            status: app.projects.status(proj),
             cells,
         });
     }
@@ -139,12 +150,40 @@ pub fn build_filtered(
         .map(|wi| rows.iter().filter(|r| !r.cells[wi].is_empty()).count() as u32)
         .collect();
 
+    let summary_status = categories
+        .iter()
+        .map(|cat| {
+            (0..workers.len())
+                .map(|wi| {
+                    ProjectStatus::ALL.map(|st| {
+                        rows.iter()
+                            .filter(|r| {
+                                r.category == *cat && r.status == st && !r.cells[wi].is_empty()
+                            })
+                            .count() as u32
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    let status_totals = (0..workers.len())
+        .map(|wi| {
+            ProjectStatus::ALL.map(|st| {
+                rows.iter()
+                    .filter(|r| r.status == st && !r.cells[wi].is_empty())
+                    .count() as u32
+            })
+        })
+        .collect();
+
     MatrixData {
         workers,
         rows,
         categories,
         summary,
+        summary_status,
         totals,
+        status_totals,
     }
 }
 
@@ -237,6 +276,41 @@ mod tests {
         }
     }
 
+    /// On-hold: resta «chiuso» (stessa resa) ma ha il suo stato e il suo conteggio.
+    #[test]
+    fn status_totals_split_active_on_hold_closed() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let w = WeekId(20000);
+        let ps: Vec<_> = (0..4)
+            .map(|i| app.projects.add("x", Some(&format!("P{i}")), None))
+            .collect();
+        for p in &ps {
+            app.projects.add_dev(*p, fe);
+            app.projects.add_effort(*p, fe, w, mario, Effort(8));
+        }
+        app.projects.set_status(ps[1], ProjectStatus::OnHold);
+        app.projects.set_status(ps[2], ProjectStatus::OnHold);
+        app.projects.set_status(ps[3], ProjectStatus::Closed);
+        assert!(app.projects.is_closed(ps[1]), "on-hold si comporta da chiuso");
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let m = build(&app, &sel, 20000, 20006);
+        assert_eq!(m.totals, [4]);
+        assert_eq!(m.status_totals, [[1, 2, 1]]);
+        // Tutti senza categoria: un solo gruppo con la stessa suddivisione.
+        assert_eq!(m.summary_status, [vec![[1, 2, 1]]]);
+        let p1 = m.rows.iter().find(|r| r.proj == ps[1]).unwrap();
+        assert!(p1.closed);
+        assert_eq!(p1.status, ProjectStatus::OnHold);
+        // Riaprire toglie l'on-hold; chiudere «semplice» anche.
+        app.projects.set_status(ps[1], ProjectStatus::Active);
+        assert_eq!(app.projects.status(ps[1]), ProjectStatus::Active);
+        app.projects.set_status(ps[2], ProjectStatus::OnHold);
+        app.projects.set_closed(ps[2], true);
+        assert_eq!(app.projects.status(ps[2]), ProjectStatus::Closed);
+    }
+
     #[test]
     fn category_filter_limits_rows_and_totals() {
         let mut app = App::new();
@@ -319,5 +393,6 @@ mod tests {
         assert_eq!(m.summary[1][wi_mario], 1);
         assert_eq!(m.totals[wi_mario], 1);
         assert_eq!(m.totals[wi_anna], 1);
+        assert_eq!(m.status_totals[wi_mario], [1, 0, 0]);
     }
 }

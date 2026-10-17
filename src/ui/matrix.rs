@@ -261,6 +261,8 @@ const MX_LINE_H: f32 = 15.0;
 const MX_PAD: f32 = 4.0;
 const MX_SUM_GAP: f32 = 4.0;
 const MX_SUM_H: f32 = 20.0;
+/// Altezza delle sotto-righe per stato (Attivi / On-Hold / Closed).
+const MX_SUB_H: f32 = 16.0;
 const MX_YEARS_W: f32 = 180.0;
 
 fn mx_row_h(lines: usize) -> f32 {
@@ -331,7 +333,8 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         }
         body_h += mx_row_h(r.cells.iter().map(Vec::len).max().unwrap_or(0));
     }
-    let sum_h = MX_SUM_GAP + (m.categories.len() + 1) as f32 * MX_SUM_H;
+    // categorie + totale, ciascuno con le 3 sotto-righe per stato
+    let sum_h = MX_SUM_GAP + (m.categories.len() + 1) as f32 * (MX_SUM_H + 3.0 * MX_SUB_H);
     let height = MX_HEAD_H + groups as f32 * MX_GROUP_H + body_h + sum_h;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), Sense::hover());
     let p = ui.painter().clone();
@@ -421,14 +424,14 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
             p.text(
                 egui::pos2(x0 + MX_PAD + trip_w + 6.0, ty),
                 Align2::LEFT_CENTER,
-                "chiuso",
+                closed_tag(r.status),
                 font.clone(),
                 fg,
             );
         }
         let label_rect = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(MX_LABEL_W, h));
         let tip = if r.closed {
-            format!("{} (chiuso)\n{}", r.tripletta, r.name)
+            format!("{} ({})\n{}", r.tripletta, closed_tag(r.status), r.name)
         } else {
             format!("{}\n{}", r.tripletta, r.name)
         };
@@ -455,7 +458,33 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         y += h;
     }
 
-    // Riepilogo, fuori dalla matrice: progetti per categoria di ogni worker.
+    // Riepilogo, fuori dalla matrice: progetti per categoria di ogni worker,
+    // ciascuna seguita dalle sotto-righe per stato; poi il totale, idem.
+    let status_rows = |y: f32, counts: &dyn Fn(usize) -> [u32; 3]| -> f32 {
+        let mut y = y;
+        for (si, label) in STATUS_LABELS.iter().enumerate() {
+            p.text(
+                egui::pos2(x0 + MX_PAD + 12.0, y + MX_SUB_H / 2.0),
+                Align2::LEFT_CENTER,
+                *label,
+                font.clone(),
+                text_dim(),
+            );
+            for wi in 0..n {
+                p.text(
+                    egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUB_H / 2.0),
+                    Align2::CENTER_CENTER,
+                    counts(wi)[si].to_string(),
+                    font.clone(),
+                    text_dim(),
+                );
+            }
+            p.hline(x0..=x0 + width, y + MX_SUB_H, Stroke::new(0.5_f32, strip_border()));
+            vlines(y, y + MX_SUB_H);
+            y += MX_SUB_H;
+        }
+        y
+    };
     y += MX_SUM_GAP;
     for (ci, cat) in m.categories.iter().enumerate() {
         let lr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(MX_LABEL_W, MX_SUM_H));
@@ -486,6 +515,7 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         p.hline(x0..=x0 + width, y + MX_SUM_H, border);
         vlines(y, y + MX_SUM_H);
         y += MX_SUM_H;
+        y = status_rows(y, &|wi| m.summary_status[ci][wi]);
     }
     // Totale: progetti (tutte le categorie) in cui è coinvolto il worker.
     let tr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(width, MX_SUM_H));
@@ -508,6 +538,19 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     }
     p.hline(x0..=x0 + width, y + MX_SUM_H, border);
     vlines(y, y + MX_SUM_H);
+    y += MX_SUM_H;
+    status_rows(y, &|wi| m.status_totals[wi]);
+}
+
+/// Etichette delle sotto-righe per stato (ordine di `ProjectStatus::ALL`).
+const STATUS_LABELS: [&str; 3] = ["Attivi", "On-Hold", "Closed"];
+
+/// Etichetta accanto alla tripletta di un progetto chiuso nella matrice.
+fn closed_tag(status: ProjectStatus) -> &'static str {
+    match status {
+        ProjectStatus::OnHold => "on-hold",
+        _ => "chiuso",
+    }
 }
 
 /// Finestra della matrice progetti × worker: in alto l'intervallo (a sinistra

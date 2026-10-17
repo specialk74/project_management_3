@@ -2786,6 +2786,9 @@ const MATRIX_GROUP_H: f32 = 5.0;
 const MATRIX_LINE_H: f32 = 3.4;
 const MATRIX_FONT: f32 = 7.5;
 const MATRIX_SUM_H: f32 = 5.0;
+/// Sotto-righe per stato del riepilogo (Active / On-Hold / Closed).
+const MATRIX_SUB_H: f32 = 4.0;
+const MATRIX_SUB_FONT: f32 = 6.5;
 
 /// Etichetta data dell'intervallo: `10/17/2026`, con «(today)» se è oggi.
 fn matrix_date(day: i32, today: i32) -> String {
@@ -3000,7 +3003,11 @@ fn matrix_pages(
             shapes.extend(text_left(MATRIX_X0 + 1.5, base, &trip, MATRIX_FONT, true, fg));
             if r.closed {
                 let x = MATRIX_X0 + 1.5 + text_w_mm(&trip, MATRIX_FONT) * 1.15 + 2.0;
-                shapes.extend(text_left(x, base, "closed", MATRIX_FONT, false, fg));
+                let tag = match r.status {
+                    crate::project_utils::project::ProjectStatus::OnHold => "on-hold",
+                    _ => "closed",
+                };
+                shapes.extend(text_left(x, base, tag, MATRIX_FONT, false, fg));
             }
             for (i, &c) in cols.iter().enumerate() {
                 for (l, dev) in r.cells[c].iter().enumerate() {
@@ -3020,83 +3027,115 @@ fn matrix_pages(
             y -= rh;
         }
 
-        // Riepilogo: per ogni categoria, in quanti progetti è presente il worker.
-        let sum_h = 1.5 + (m.categories.len() + 1) as f32 * MATRIX_SUM_H;
-        if y - sum_h < MATRIX_BOT {
-            footer(&mut shapes);
-            pages.push(std::mem::take(&mut shapes));
-            // Su una pagina nuova serve l'intestazione coi nomi dei worker.
-            y = new_page(&mut shapes);
+        // Riepilogo: per ogni categoria, in quanti progetti è presente il worker,
+        // seguita dalle sotto-righe per stato; poi il totale, idem. Riga per riga,
+        // con salto pagina (intestazione dei worker ripetuta) se non c'è spazio.
+        enum SumRow {
+            Cat(usize),
+            CatStatus(usize, usize),
+            Total,
+            TotalStatus(usize),
         }
+        let mut sum_rows = Vec::new();
+        for ci in 0..m.categories.len() {
+            sum_rows.push(SumRow::Cat(ci));
+            sum_rows.extend((0..3).map(|si| SumRow::CatStatus(ci, si)));
+        }
+        sum_rows.push(SumRow::Total);
+        sum_rows.extend((0..3).map(SumRow::TotalStatus));
+        const STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
         y -= 1.5;
-        for (ci, cat) in m.categories.iter().enumerate() {
-            let color = u32_rgb(category_color(*cat));
-            shapes.extend(rect_fill(
-                MATRIX_X0,
-                y - MATRIX_SUM_H,
-                MATRIX_X0 + MATRIX_LABEL_W,
-                y,
-                color,
-            ));
-            let name = truncate_to_w(
-                &matrix_category_name(app, *cat),
-                MATRIX_FONT,
-                MATRIX_LABEL_W - 3.0,
-            );
-            shapes.extend(text_left(
-                MATRIX_X0 + 1.5,
-                y - 3.5,
-                &name,
-                MATRIX_FONT,
-                true,
-                BLACK,
-            ));
-            for (i, &c) in cols.iter().enumerate() {
-                let n = m.summary[ci][c];
-                if n > 0 {
-                    shapes.extend(text_center(
-                        col_x(i) + col_w / 2.0,
-                        y - 3.5,
-                        &n.to_string(),
+        for row in &sum_rows {
+            let h = match row {
+                SumRow::Cat(_) | SumRow::Total => MATRIX_SUM_H,
+                _ => MATRIX_SUB_H,
+            };
+            if y - h < MATRIX_BOT {
+                footer(&mut shapes);
+                pages.push(std::mem::take(&mut shapes));
+                y = new_page(&mut shapes);
+            }
+            let base = y - h / 2.0 - 1.0;
+            match row {
+                SumRow::Cat(ci) => {
+                    let cat = m.categories[*ci];
+                    shapes.extend(rect_fill(
+                        MATRIX_X0,
+                        y - h,
+                        MATRIX_X0 + MATRIX_LABEL_W,
+                        y,
+                        u32_rgb(category_color(cat)),
+                    ));
+                    let name = truncate_to_w(
+                        &matrix_category_name(app, cat),
+                        MATRIX_FONT,
+                        MATRIX_LABEL_W - 3.0,
+                    );
+                    shapes.extend(text_left(MATRIX_X0 + 1.5, base, &name, MATRIX_FONT, true, BLACK));
+                    for (i, &c) in cols.iter().enumerate() {
+                        let n = m.summary[*ci][c];
+                        if n > 0 {
+                            shapes.extend(text_center(
+                                col_x(i) + col_w / 2.0,
+                                base,
+                                &n.to_string(),
+                                MATRIX_FONT,
+                                true,
+                                BLACK,
+                            ));
+                        }
+                    }
+                }
+                SumRow::Total => {
+                    shapes.extend(rect_fill(MATRIX_X0, y - h, x1, y, GRAY_FOOTER));
+                    shapes.extend(text_left(
+                        MATRIX_X0 + 1.5,
+                        base,
+                        "Total projects",
                         MATRIX_FONT,
                         true,
                         BLACK,
                     ));
+                    for (i, &c) in cols.iter().enumerate() {
+                        shapes.extend(text_center(
+                            col_x(i) + col_w / 2.0,
+                            base,
+                            &m.totals[c].to_string(),
+                            MATRIX_FONT,
+                            true,
+                            BLACK,
+                        ));
+                    }
+                }
+                SumRow::CatStatus(_, si) | SumRow::TotalStatus(si) => {
+                    let counts = |c: usize| match row {
+                        SumRow::CatStatus(ci, _) => m.summary_status[*ci][c][*si],
+                        _ => m.status_totals[c][*si],
+                    };
+                    shapes.extend(text_left(
+                        MATRIX_X0 + 4.5,
+                        base,
+                        STATUS_EN[*si],
+                        MATRIX_SUB_FONT,
+                        false,
+                        TEXT_GRAY,
+                    ));
+                    for (i, &c) in cols.iter().enumerate() {
+                        shapes.extend(text_center(
+                            col_x(i) + col_w / 2.0,
+                            base,
+                            &counts(c).to_string(),
+                            MATRIX_SUB_FONT,
+                            false,
+                            TEXT_GRAY,
+                        ));
+                    }
                 }
             }
-            shapes.extend(line(
-                MATRIX_X0,
-                y - MATRIX_SUM_H,
-                x1,
-                y - MATRIX_SUM_H,
-                0.2,
-                GRAY_DK,
-            ));
-            vlines(&mut shapes, y - MATRIX_SUM_H, y);
-            y -= MATRIX_SUM_H;
+            shapes.extend(line(MATRIX_X0, y - h, x1, y - h, 0.2, GRAY_DK));
+            vlines(&mut shapes, y - h, y);
+            y -= h;
         }
-        // Totale: progetti (tutte le categorie) in cui è coinvolto il worker.
-        shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_SUM_H, x1, y, GRAY_FOOTER));
-        shapes.extend(text_left(
-            MATRIX_X0 + 1.5,
-            y - 3.5,
-            "Total projects",
-            MATRIX_FONT,
-            true,
-            BLACK,
-        ));
-        for (i, &c) in cols.iter().enumerate() {
-            shapes.extend(text_center(
-                col_x(i) + col_w / 2.0,
-                y - 3.5,
-                &m.totals[c].to_string(),
-                MATRIX_FONT,
-                true,
-                BLACK,
-            ));
-        }
-        shapes.extend(line(MATRIX_X0, y - MATRIX_SUM_H, x1, y - MATRIX_SUM_H, 0.2, GRAY_DK));
-        vlines(&mut shapes, y - MATRIX_SUM_H, y);
         footer(&mut shapes);
         pages.push(shapes);
     }
@@ -3152,6 +3191,40 @@ mod tests {
     /// Matrice progetti × worker: tanti worker (più blocchi di colonne) e tanti
     /// progetti (più pagine per blocco) → PDF valido con più pagine; senza
     /// progetti nell'intervallo → `None`.
+    /// Riepilogo lungo (molte categorie × 4 righe): continua sulle pagine
+    /// successive e nessuna riga della tabella scende sotto il margine.
+    #[test]
+    fn matrix_summary_breaks_across_pages() {
+        let mut app = App::new();
+        let fe = app.devs.add("Frontend");
+        let w = app.workers.add("Mario");
+        for i in 0..12 {
+            let cat = app.categories.add(&format!("Cat {i}"));
+            let p = app.projects.add("x", Some(&format!("P{i:02}")), None);
+            app.projects.set_category(p, Some(cat));
+            app.projects.add_dev(p, fe);
+            app.projects.add_effort(p, fe, WeekId(20000), w, Effort(1));
+        }
+        let sel = [w].into_iter().collect();
+        let m = crate::worker_matrix::build(&app, &sel, 20000, 20006);
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        assert!(pages.len() >= 2, "il riepilogo deve continuare: {}", pages.len());
+        for page in &pages {
+            for sh in page {
+                if let Shape::Line { y0, y1, .. } = sh {
+                    assert!(y0.min(*y1) >= MATRIX_BOT - 0.01, "riga sotto il margine");
+                }
+            }
+        }
+        // Tutte le sotto-righe di stato ci sono: 12 categorie + totale.
+        let actives = pages
+            .iter()
+            .flat_map(|pg| texts(pg))
+            .filter(|t| t == "Active")
+            .count();
+        assert_eq!(actives, 13);
+    }
+
     #[test]
     fn worker_matrix_pdf_paginates() {
         let mut app = App::new();

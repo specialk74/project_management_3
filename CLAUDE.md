@@ -262,7 +262,20 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   Restano finestre a sé: Milestone… (manager), Ghost worker… (`ghost_manager_window`:
   elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da
   hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost),
-  Closed…
+  Stato progetti… (`closed_filter_window`, voce rinominata da «Closed…»): una combo
+  per progetto **Attivo / On-Hold / Closed** → `Action::SetProjectStatus` →
+  `Projects::set_status`. **On-hold** = `ProjectStatus::OnHold` in
+  `project.rs`: salvato come `closed: Some(true)` **più** `on_hold: true`
+  (`#[serde(default, skip_serializing_if = "is_false")]`), quindi `is_closed()` è
+  vero e si comporta in tutto da chiuso (le versioni vecchie lo leggono chiuso);
+  `set_closed` azzera sempre `on_hold`, `status()`/`set_status()` lo gestiscono.
+  Cambia solo l'etichetta nella matrice («on-hold» invece di «chiuso»/«closed»).
+  **Gotcha**: la finestra si chiude col click fuori, ma il menu di una combo è un
+  livello a sé e la scelta di una voce chiude il menu **nello stesso frame**: il
+  controllo usa `Popup::is_any_open` **o** il flag del frame precedente
+  `closed_filter_popup_was_open` (test
+  `status_combo_sets_on_hold_and_keeps_the_window_open`, che con il solo controllo
+  sul frame corrente fallisce).
   - **Report** (`report_window` in `export.rs`, stato `ReportState { entries }`
     preselezionato con `body_projects`, → `Action::GenerateReport { projects }` →
     `pdf_export::build_report_pdf`): PDF di riepilogo, **una pagina (o più) per
@@ -304,7 +317,15 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   (`closed_colors`) + strisce (`hatch_segments`), condivisi GUI/PDF, e
   «chiuso»/«closed»; `summary[cat][worker]` = progetti per categoria (righe subito
   sotto la matrice, senza intestazione propria),
-  `totals[worker]` = progetti totali (riga «Totale progetti» / «Total projects»).
+  `totals[worker]` = progetti totali (riga «Totale progetti» / «Total projects»),
+  seguiti da `status_totals[worker]: [attivi, on-hold, closed]` (ordine
+  `ProjectStatus::ALL`); ogni categoria ha la stessa suddivisione in
+  `summary_status[cat][worker]`. Sotto-righe «Attivi/On-Hold/Closed» (GUI,
+  `STATUS_LABELS`, `MX_SUB_H`) / «Active/On-Hold/Closed» (PDF, `MATRIX_SUB_H`)
+  dopo ogni categoria e dopo il totale. Nel PDF il riepilogo è un elenco di
+  `SumRow` disegnate una per una con salto pagina (`new_page`, intestazione worker
+  ripetuta) — test `matrix_summary_breaks_across_pages`. `worker_matrix::build`
+  esiste solo nei test (`#[cfg(test)]`); il codice usa `build_filtered`.
   **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to, years }` (anni della
   combo, stampati nel sottotitolo da `matrix_subtitle`) →
   `pdf_export::build_matrix_pdf` (A4 orizzontale, inglese; colonne in blocchi da

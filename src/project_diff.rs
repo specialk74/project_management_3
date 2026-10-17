@@ -95,7 +95,7 @@ fn header_diff(off: &Project, par: &Project) -> Vec<HeaderField> {
     if off.get_category() != par.get_category() {
         out.push(HeaderField::Category);
     }
-    if off.is_closed() != par.is_closed() {
+    if off.status() != par.status() {
         out.push(HeaderField::Closed);
     }
     // Le milestone sono una mappa id→settimana: l'uguaglianza è indipendente

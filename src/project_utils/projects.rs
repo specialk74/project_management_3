@@ -8,7 +8,7 @@ use crate::{
     categories::CategoryId,
     dev_utils::dev::DevId,
     milestones::MilestoneId,
-    project_utils::project::{Enable, OverflowResolution, Project, ProjectId},
+    project_utils::project::{Enable, OverflowResolution, Project, ProjectId, ProjectStatus},
     single_dev_utils::single_dev::{SingleDev, WeekId},
     single_effort_utils::sinlge_effort::Effort,
     workers_utils::worker::WorkerId,
@@ -435,6 +435,18 @@ impl Projects {
     pub fn reset_enable_from_closed(&mut self) {
         for p in self.projects.values_mut() {
             p.set_enable(Enable(!p.is_closed()));
+        }
+    }
+
+    pub fn status(&self, project_id: ProjectId) -> ProjectStatus {
+        self.projects
+            .get(&project_id)
+            .map_or(ProjectStatus::Active, |p| p.status())
+    }
+
+    pub fn set_status(&mut self, project_id: ProjectId, status: ProjectStatus) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_status(status);
         }
     }
 

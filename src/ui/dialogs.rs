@@ -510,7 +510,7 @@ pub(crate) fn milestone_manager_window(
     let _ = (just_opened, clicked_outside);
 }
 
-// ── Filtro progetti chiusi (Closed ▼) ───────────────────────────────────────
+// ── Stato dei progetti (Filtri ▸ Stato progetti…) ───────────────────────────
 
 pub(crate) fn closed_filter_window(
     ctx: &egui::Context,
@@ -521,7 +521,9 @@ pub(crate) fn closed_filter_window(
     if !state.show_closed_filter {
         return;
     }
-    // tutti i progetti, ordinati alfabeticamente per etichetta; il check indica "chiuso"
+    // tutti i progetti, ordinati alfabeticamente per etichetta, ognuno con la
+    // combo del suo stato: Attivo / On-Hold / Closed (on-hold = chiuso con
+    // un'etichetta diversa)
     let mut projects: Vec<(ProjectId, String)> = app
         .projects
         .list_full()
@@ -538,7 +540,7 @@ pub(crate) fn closed_filter_window(
     let just_opened = state.closed_filter_just_opened;
     state.closed_filter_just_opened = false;
 
-    let mut window = egui::Window::new("Closed")
+    let mut window = egui::Window::new("Stato progetti")
         .collapsible(false)
         .resizable(false)
         .open(&mut open);
@@ -549,26 +551,56 @@ pub(crate) fn closed_filter_window(
     } else {
         window.default_pos(state.closed_btn_pos)
     };
+    #[cfg(test)]
+    {
+        state.status_combo_rects.clear();
+        state.status_item_rects.clear();
+    }
     let resp = window.show(ctx, |ui| {
-        let min_w = title_width(ui, "Closed");
+        let min_w = title_width(ui, "Stato progetti");
         egui::ScrollArea::vertical()
             .max_height(400.0)
             .show(ui, |ui| {
                 ui.set_min_width(min_w);
-                for (id, label) in &projects {
-                    let mut closed = app.projects.is_closed(*id);
-                    if ui.checkbox(&mut closed, label).changed() {
-                        actions.push(Action::SetProjectClosed { proj: *id, closed });
-                    }
-                }
+                egui::Grid::new("project_status_grid")
+                    .num_columns(2)
+                    .spacing(egui::vec2(12.0, 4.0))
+                    .show(ui, |ui| {
+                        for (id, label) in &projects {
+                            ui.label(label);
+                            let current = app.projects.status(*id);
+                            let mut status = current;
+                            let _combo = egui::ComboBox::from_id_salt(("project_status", id.0))
+                                .selected_text(status.label())
+                                .width(90.0)
+                                .show_ui(ui, |ui| {
+                                    for s in ProjectStatus::ALL {
+                                        let _r = ui.selectable_value(&mut status, s, s.label());
+                                        #[cfg(test)]
+                                        state.status_item_rects.push(_r.rect);
+                                    }
+                                });
+                            #[cfg(test)]
+                            state.status_combo_rects.push(_combo.response.rect);
+                            if status != current {
+                                actions.push(Action::SetProjectStatus { proj: *id, status });
+                            }
+                            ui.end_row();
+                        }
+                    });
             });
     });
 
-    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame
+    // dell'apertura). Il menu di una combo è un livello a sé: un click su una sua
+    // voce risulterebbe "fuori", quindi con un popup aperto non si chiude.
     let clicked_outside = resp
         .map(|r| r.response.clicked_elsewhere())
         .unwrap_or(false);
-    if !open || (!just_opened && clicked_outside) {
+    let popup_open = egui::Popup::is_any_open(ctx);
+    let popup_recent = popup_open || state.closed_filter_popup_was_open;
+    state.closed_filter_popup_was_open = popup_open;
+    if !open || (!just_opened && clicked_outside && !popup_recent) {
         state.show_closed_filter = false;
     }
 }
