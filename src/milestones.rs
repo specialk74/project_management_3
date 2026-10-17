@@ -99,40 +99,49 @@ impl MilestoneCategory {
 
 /// Ambito di stampa scelto nelle dialog di export: quali milestone finiscono nel
 /// PDF/SVG. Regola voluta dall'utente:
-/// - `Internal` → milestone **Internal + External** (cioè tutte);
-/// - `External` → **solo** le milestone marcate External.
+/// - `Internal` («Solo internal») → le milestone marcate **Internal** (anche
+///   Int/Ext; quelle senza categoria valgono Internal);
+/// - `External` («Solo external») → le milestone marcate **External** (anche
+///   Int/Ext);
+/// - `Mix` → **tutte**.
 ///
-/// Se entrambi gli ambiti sono scelti si generano due file distinti.
+/// Ogni ambito scelto produce un file a sé. `Mix` è il default del flag di
+/// rendering (nessuna restrizione).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum MilestoneScope {
-    #[default]
     Internal,
     External,
+    #[default]
+    Mix,
 }
 
 impl MilestoneScope {
     pub fn label(self) -> &'static str {
         match self {
-            MilestoneScope::Internal => "Internal",
-            MilestoneScope::External => "External",
+            MilestoneScope::Internal => "Solo internal",
+            MilestoneScope::External => "Solo external",
+            MilestoneScope::Mix => "Mix",
         }
     }
 
-    /// Suffisso aggiunto al nome file quando si esportano entrambi gli ambiti.
+    /// Suffisso aggiunto al nome file quando si esportano più ambiti.
     pub fn file_suffix(self) -> &'static str {
         match self {
             MilestoneScope::Internal => "internal",
             MilestoneScope::External => "external",
+            MilestoneScope::Mix => "mix",
         }
     }
 
-    /// Una milestone con queste categorie va stampata in questo ambito?
-    /// `Internal` prende tutto (Internal + External, elenco vuoto compreso);
-    /// `External` solo chi è esplicitamente External.
+    /// Una milestone con queste categorie (già «effettive»: vuoto = Internal)
+    /// va stampata in questo ambito?
     pub fn accepts(self, categories: &[MilestoneCategory]) -> bool {
         match self {
-            MilestoneScope::Internal => true,
+            MilestoneScope::Internal => {
+                categories.is_empty() || categories.contains(&MilestoneCategory::Internal)
+            }
             MilestoneScope::External => categories.contains(&MilestoneCategory::External),
+            MilestoneScope::Mix => true,
         }
     }
 }
@@ -506,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn internal_scope_prints_every_milestone_external_only_the_external_ones() {
+    fn scopes_select_internal_external_or_all() {
         let mut ms = Milestones::new();
         let int = ms.add("Interna");
         let ext = ms.add_with(
@@ -519,9 +528,15 @@ mod tests {
             MilestoneKind::Goal,
             vec![MilestoneCategory::Internal, MilestoneCategory::External],
         );
+        // Mix: tutte.
         for id in [int, ext, both] {
-            assert!(ms.in_scope(id, MilestoneScope::Internal));
+            assert!(ms.in_scope(id, MilestoneScope::Mix));
         }
+        // Solo internal: Internal e Int/Ext.
+        assert!(ms.in_scope(int, MilestoneScope::Internal));
+        assert!(!ms.in_scope(ext, MilestoneScope::Internal));
+        assert!(ms.in_scope(both, MilestoneScope::Internal));
+        // Solo external: External e Int/Ext.
         assert!(!ms.in_scope(int, MilestoneScope::External));
         assert!(ms.in_scope(ext, MilestoneScope::External));
         assert!(ms.in_scope(both, MilestoneScope::External));
@@ -632,8 +647,11 @@ mod tests {
         // Restano milestone del solo progetto, categorie a parte.
         for id in [ext, both, int] {
             assert_eq!(ms.owner(id), Some(p1));
-            assert!(ms.in_scope(id, MilestoneScope::Internal));
+            assert!(ms.in_scope(id, MilestoneScope::Mix));
         }
+        assert!(!ms.in_scope(ext, MilestoneScope::Internal));
+        assert!(ms.in_scope(both, MilestoneScope::Internal));
+        assert!(ms.in_scope(int, MilestoneScope::Internal));
         assert!(ms.in_scope(ext, MilestoneScope::External));
         assert!(ms.in_scope(both, MilestoneScope::External));
         assert!(!ms.in_scope(int, MilestoneScope::External));

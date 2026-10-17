@@ -582,12 +582,12 @@ appartenere a **una o a entrambe**. Servono **solo in fase di stampa**: decidono
 quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
 16). Nella griglia non cambiano nulla.
 
-- **Internal** — la milestone finisce nella stampa Internal.
-- **External** — la milestone finisce nella stampa External **e anche** in quella
-  Internal (la stampa Internal contiene Internal + External).
+- **Internal** — la milestone finisce nella stampa «Solo internal».
+- **External** — la milestone finisce nella stampa «Solo external».
+- **Internal + External** — finisce in **entrambe**.
 - Una milestone **senza categorie** — è il caso di tutte quelle create prima di
-  questa funzione — vale **Internal**: continua a comparire nella stampa Internal
-  come sempre e resta fuori da quella External.
+  questa funzione — vale **Internal**.
+- La stampa **«Mix»** contiene sempre **tutte** le milestone.
 - Una milestone ha **sempre almeno una categoria**: togliendo l'ultima spunta si
   ricade su Internal (la spunta rimasta da sola non è cliccabile).
 
@@ -1007,6 +1007,9 @@ una **finestra di selezione**:
 - **checkbox** per includere/escludere ciascun dev;
 - **trascinamento** per riordinare i dev (una linea arancione indica il punto di
   inserimento); il rilascio sposta il dev;
+- un **menu del formato barra** accanto a ogni dev (*Barra continua*,
+  *Segmentata*, *Segmentata + altezza %*, ciascuna segmentata anche nella variante
+  *date sotto*; vedi «Formato delle barre dei dev»);
 - sotto l'elenco dei dev, **«Milestone da includere»**: l'elenco delle milestone
   **collocate in questo progetto**, in ordine di settimana, con **Select All** in
   cima e una **checkbox** per ciascuna. Ogni riga mostra, nel colore della
@@ -1040,32 +1043,32 @@ progetto e **senza** la data in fondo. Usa la stessa selezione/ordine dei dev e 
 stessa selezione delle milestone.
 L'immagine è ritagliata al contenuto effettivo del grafico.
 
-### Milestone da stampare: Internal / External
+### Milestone da stampare: Solo internal / Solo external / Mix
 In tutte le finestre di export (PDF a più progetti, PDF del singolo progetto, SVG)
-c'è il riquadro **«Milestone da stampare»** con due caselle:
+c'è il riquadro **«Milestone da stampare»** con tre caselle:
 
-- **Internal (Internal + External)** — il file contiene **tutte** le milestone,
-  quelle Internal e quelle External (comprese quelle senza categoria, che valgono
-  Internal).
-- **External (solo External)** — il file contiene **solo** le milestone marcate
-  External.
+- **Solo internal** — il file contiene le milestone marcate **Internal** (comprese
+  quelle Internal + External e quelle senza categoria, che valgono Internal).
+- **Solo external** — il file contiene le milestone marcate **External** (comprese
+  quelle Internal + External).
+- **Mix** — il file contiene **tutte** le milestone.
 
-Le due caselle sono indipendenti:
+Le caselle sono indipendenti e **ognuna spuntata produce un file**:
 
 - **una sola spuntata** → viene creato **un file**, con il nome scelto nel dialog
   di salvataggio;
-- **tutte e due** → vengono creati **due file** con una sola scelta del nome: al
+- **più di una** → vengono creati **due o tre file** con una sola scelta del nome: al
   nome indicato viene aggiunto il suffisso dell'ambito, per esempio
-  `progetti_2026_07_13_internal.pdf` e `progetti_2026_07_13_external.pdf` (una
-  notifica per ciascun file salvato);
+  `progetti_2026_07_13_internal.pdf`, `progetti_2026_07_13_external.pdf` e
+  `progetti_2026_07_13_mix.pdf` (una notifica per ciascun file salvato);
 - **nessuna** → i pulsanti di export sono disattivati: non c'è niente da stampare.
 
 A cambiare è **solo** quali bandierine vengono disegnate: progetti, dev, barre,
-date e percentuali restano identici nei due file. Nella finestra del **singolo
+date e percentuali restano identici nei vari file. Nella finestra del **singolo
 progetto** questa scelta si somma a quella per singola milestone (vedi sopra):
 viene stampato solo ciò che passa **entrambi** i filtri. La scelta è ricordata tra un
-export e l'altro (non è salvata sul file); all'avvio parte da **solo Internal**,
-cioè il comportamento di prima delle categorie.
+export e l'altro (non è salvata sul file); all'avvio sono spuntate **tutte e
+tre**, quindi di default escono tre file.
 
 ### Worker ghost nella stampa
 In tutte le finestre di export c'è la casella **«Includi i worker ghost (anche a
@@ -1095,9 +1098,32 @@ Le scelte valgono sia per il PDF sia per l'SVG ed è ricordata tra un export e l
 sempre segnati sulle settimane in cui hanno ore.
 
 ### Formato delle barre dei dev
-In tutte le finestre di export c'è un selettore **Formato barre**, con una piccola
-**anteprima** per ciascuna opzione. Vale sia per il PDF sia per l'SVG e viene
-ricordato tra un export e l'altro (non è salvato sul file). Le tre opzioni:
+Il formato della barra si sceglie **per ogni dev** nell'export di un singolo
+progetto, e per tutti insieme nell'export con più progetti. Le scelte valgono sia
+per il PDF sia per l'SVG e sono ricordate finché il programma è aperto (non sono
+salvate sul file).
+
+- **Export di un singolo progetto** — accanto a ogni dev c'è un menu a tendina con
+  il suo formato. Più in basso, il selettore con le **anteprime** si chiama
+  **«Formato barre — applica a tutti i dev»**: un click su un'opzione la imposta su
+  **tutti** i dev, dopodiché puoi cambiare il singolo dev dal suo menu. Le scelte
+  sono ricordate **per progetto** (come spunte e ordine dei dev); un dev mai visto
+  prima parte dall'ultimo formato applicato a tutti.
+- **Export con più progetti** — resta un unico selettore **Formato barre** con le
+  anteprime, che vale per tutti i dev di tutti i progetti, più la casella **«Date
+  sotto ogni tratto»** (attiva solo con un formato segmentato).
+
+**Date sotto ogni tratto.** Con i due formati segmentati il menu del dev offre anche
+la variante **«…, date sotto»** (*Segmentata, date sotto* e *Segmentata + altezza %,
+date sotto*). Le date non vanno più a destra della barra ma **sotto ogni tratto**,
+centrate, su **due righe**: sopra l'inizio (lunedì della prima settimana del tratto),
+sotto la fine (venerdì dell'ultima). L'anno segue la stessa regola dell'etichetta a
+destra (solo sulla fine se le due date sono nello stesso anno). A destra della barra
+restano solo le **percentuali**, se attive. Le righe di questi dev sono un po' più
+alte per far posto alle date; se i dev sono tanti, tutte le righe si stringono
+insieme per stare nella pagina.
+
+Le tre opzioni:
 
 - **Barra continua** *(predefinito)* — un **unico rettangolo** dalla prima
   all'ultima settimana con effort; gli eventuali buchi interni non si vedono.

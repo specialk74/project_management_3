@@ -543,22 +543,24 @@ the footer date.
   (projects never seen start ticked). Global options (format, %, year, ghost,
   scopes) were already remembered.
 
-- **Milestone scope** (`MilestoneScope { Internal, External }` in `milestones.rs`;
-  `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`, like
-  `set_show_pct`, default `Internal`): which flags `project_shapes` draws.
-  `Internal` → **all** milestones (Internal + External, uncategorized included);
-  `External` → **only** those carrying `MilestoneCategory::External`
+- **Milestone scope** (`MilestoneScope { Internal, External, Mix }` in
+  `milestones.rs`; `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`,
+  like `set_show_pct`, default `Mix`): which flags `project_shapes` draws.
+  `Internal` («Solo internal») → those carrying `MilestoneCategory::Internal`
+  (uncategorized = Internal); `External` («Solo external») → those carrying
+  `External`; an Int/Ext milestone is in **both**; `Mix` → **all**
   (`Milestones::in_scope`). Chosen in **every** Gantt export dialog by
-  `milestone_scope_selector` (`src/ui/export.rs`) bound to
-  `UiState.export_scopes: ExportScopes { internal, external }` (default
-  `internal = true`, remembered across exports, not persisted; the export buttons
-  are disabled when neither is ticked). The list goes into
+  `milestone_scope_selector` (`src/ui/export.rs`, three checkboxes) bound to
+  `UiState.export_scopes: ExportScopes { internal, external, mix }` (default **all
+  three** ⇒ three files, remembered across exports, not persisted; the export
+  buttons are disabled when none is ticked). The list goes into
   `Action::ExportPdfSelected/ExportPdfProject/ExportSvgProject { …, scopes }`,
   whose handlers call `scoped_exports(&scopes, build)` (`mod.rs`): one `build_*`
   per scope, each tagged with `MilestoneScope::file_suffix()`, then the scope is
   reset to the default. Saving goes through `save_multi_export_dialog`: **one**
   rfd dialog, one file with the chosen name when a single scope was picked, and
-  `path_with_suffix` (`name_internal.pdf` / `name_external.pdf`) when both were
+  `path_with_suffix` (`name_internal.pdf` / `name_external.pdf` / `name_mix.pdf`)
+  when more than one was
   (`save_svg_dialog` is gone; SVG goes through the same path). The trend PDF has
   no milestones, so it is unaffected.
 - **Per-milestone selection** (single-project dialog only): `PdfExport.milestones:
@@ -622,10 +624,31 @@ the footer date.
   `proportional_ref(max_week)` — the dev's max weekly sum but never below
   `PROPORTIONAL_REF_MIN` (40h), so a 40h week is only full-height if the dev never
   works more elsewhere (busiest week reaches full `bar_hh`, same as the other two).
-  `Row` carries `weeks: Vec<(day, hours)>` + `max_week` for the last two. The choice
-  lives in `UiState.bar_format` (remembered across exports, **not** persisted) and is
-  picked in the export dialogs via `bar_format_selector` (live `draw_bar_format_preview`
-  thumbnails, no image assets).
+  `Row` carries `weeks: Vec<(day, hours)>` + `max_week` for the last two, and its own
+  **`fmt`**: the format is **per dev** (`page_shapes` reads `r.fmt`, it no longer takes
+  a format). `project_shapes(…, fmt)` is a wrapper giving every dev the same format
+  over `project_shapes_fmt(…, fmt_of: &dyn Fn(DevId) -> BarFormat)`; likewise
+  `build_pdf_project`/`build_svg_project` wrap `build_*_project_fmt(app, proj,
+  &[(DevId, BarFormat)])`, which `Action::ExportPdfProject/ExportSvgProject { devs:
+  Vec<(DevId, BarFormat)>, … }` call. Single-project dialog: a `dev_bar_format_combo`
+  per dev row (`PdfExport.formats`, remembered per project in
+  `ExportProjectMemory.formats`; unseen devs start from `UiState.bar_format`), and
+  `bar_format_selector(ui, title, &mut fmt) -> bool` (live
+  `draw_bar_format_preview` thumbnails) acts as **«applica a tutti»** — it returns
+  `true` on any click, even on the already-selected option. Multi-project dialog: the
+  same selector, one format for all (`UiState.bar_format`, remembered, **not**
+  persisted).
+  **Dates below the runs**: the per-dev choice is a `DevBar { fmt, dates_below }`
+  (`From<BarFormat>` = no dates; `dates_below()` is false for `Continuous`), so the
+  `*_fmt` builders take `&[(DevId, DevBar)]` and `fmt_of` returns `DevBar`;
+  `build_pdf`/`build_pdf_selected` take `impl Into<DevBar>`. The dev combo lists
+  `DEV_BAR_CHOICES` (5 entries); the multi dialog adds the checkbox
+  `UiState.export_dates_below`. `Row.dates_below` → in `page_shapes` each
+  `contiguous_runs` run gets start (Monday) / end (Friday, `+DEV_END_OFFSET`) on two
+  lines centred under it (`segment_dates`, `SEG_DATE_FONT`), and the right label
+  keeps only the percentages (nothing if they are off). Rows are **variable-height**:
+  dates rows add `SEG_DATES_H`, and everything scales down together when the page
+  would overflow.
 - `build_pdf(app, fmt)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
 - `build_pdf_selected(app, &[ProjectId], fmt)` — same as `build_pdf` but only the given

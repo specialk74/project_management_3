@@ -29,7 +29,7 @@ thread_local! {
     // quali bandierine finiscono nella pagina. Default: Internal (= tutte),
     // cioè il comportamento storico.
     static MS_SCOPE: std::cell::Cell<MilestoneScope> =
-        const { std::cell::Cell::new(MilestoneScope::Internal) };
+        const { std::cell::Cell::new(MilestoneScope::Mix) };
     // Milestone ammesse nell'export corrente, scelte una per una nella dialog
     // del singolo progetto. `None` = nessun filtro (tutte quelle collocate nel
     // progetto), che è il default e il caso dell'export multi-progetto.
@@ -83,8 +83,9 @@ fn show_year() -> bool {
     SHOW_YEAR.with(|c| c.get())
 }
 
-/// Imposta l'ambito milestone del prossimo `build_*`: `Internal` disegna tutte
-/// le milestone (Internal + External), `External` solo quelle External.
+/// Imposta l'ambito milestone del prossimo `build_*`: `Internal` disegna le
+/// milestone Internal, `External` quelle External (le Int/Ext in entrambi),
+/// `Mix` (default) tutte.
 pub fn set_milestone_scope(v: MilestoneScope) {
     MS_SCOPE.with(|c| c.set(v));
 }
@@ -272,6 +273,26 @@ fn add_months(d: NaiveDate, n: i32) -> NaiveDate {
         }
         day -= 1;
     }
+}
+
+/// Altezza in più (mm) di una riga dev con le date sotto i tratti: due righe di
+/// testo da `SEG_DATE_FONT` pt (inizio sopra, fine sotto).
+const SEG_DATES_H: f32 = 4.6;
+const SEG_DATE_FONT: f32 = 5.0;
+/// Passo verticale (mm) tra le due righe di date sotto un tratto.
+const SEG_DATE_LINE: f32 = 2.0;
+
+/// Le due righe di date sotto un tratto `[start, end]` (giorni): l'anno, se
+/// richiesto, segue la stessa regola dell'etichetta a destra — solo sulla fine
+/// se le due date sono nello stesso anno.
+fn segment_dates(start: i32, end: i32) -> (String, String) {
+    let same_year = day_to_date(start).year() == day_to_date(end).year();
+    let first = if same_year {
+        short_date(start)
+    } else {
+        dev_date(start)
+    };
+    (first, dev_date(end))
 }
 
 /// Giorni da aggiungere al lunedì dell'ultima settimana di effort per la data
@@ -727,7 +748,7 @@ fn wrap_multiline(text: &str, max_chars: usize) -> Vec<String> {
 // --- Dati della pagina ------------------------------------------------------
 
 /// Formato di disegno delle barre dei dev nell'export (scelto dall'utente).
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum BarFormat {
     /// Un unico rettangolo dalla prima all'ultima settimana con effort (default,
     /// storico): i buchi interni non si vedono.
@@ -740,6 +761,33 @@ pub enum BarFormat {
     /// al massimo settimanale del dev (la settimana più carica = altezza piena,
     /// pari a quella di `Continuous`/`Segmented`).
     Proportional,
+}
+
+/// Come disegnare la barra di **un** dev: la forma (`fmt`) e, per i formati
+/// segmentati, se scrivere le date **sotto ogni tratto** (inizio e fine su due
+/// righe) invece dell'intervallo complessivo a destra della barra.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct DevBar {
+    pub fmt: BarFormat,
+    pub dates_below: bool,
+}
+
+impl DevBar {
+    pub const fn new(fmt: BarFormat, dates_below: bool) -> Self {
+        Self { fmt, dates_below }
+    }
+
+    /// Le date sotto i tratti valgono solo per i formati segmentati: con la
+    /// barra continua il flag è ignorato.
+    pub fn dates_below(self) -> bool {
+        self.dates_below && self.fmt != BarFormat::Continuous
+    }
+}
+
+impl From<BarFormat> for DevBar {
+    fn from(fmt: BarFormat) -> Self {
+        Self::new(fmt, false)
+    }
 }
 
 /// Una riga del Gantt (un dev). Con effort: barra dalla prima all'ultima
@@ -763,6 +811,12 @@ struct Row {
     /// Giorni (settimane) in cui un worker "ghost" ha effort > 0: quei tratti
     /// della barra vengono ridisegnati in rosso, anche se in mezzo alla barra.
     ghost_weeks: Vec<i32>,
+    /// Formato della barra di **questo** dev (scelto per dev nella dialog del
+    /// singolo progetto; uguale per tutti nell'export multi-progetto).
+    fmt: BarFormat,
+    /// Date sotto ogni tratto (formati segmentati): la riga è più alta e a
+    /// destra della barra restano solo le eventuali percentuali.
+    dates_below: bool,
 }
 
 /// Una milestone (bandierina in alto).
@@ -856,7 +910,6 @@ fn page_shapes(
     today: i32,
     created: &str,
     chart_only: bool,
-    fmt: BarFormat,
     progress_pct: Option<u8>,
     presumed_pct: Option<u32>,
 ) -> Vec<Shape> {
@@ -1142,12 +1195,24 @@ fn page_shapes(
     }
 
     // --- Righe dev ----------------------------------------------------------
+    // Le righe con le date sotto i tratti sono più alte di `dates_h` (due righe
+    // di testo); se non ci sta tutto, righe e spazio date si riducono insieme.
     let n = rows.len().max(1);
-    let row_h = ((ROWS_TOP - ROWS_BOT) / n as f32).min(6.5);
+    let n_dates = rows.iter().filter(|r| r.dates_below && !r.no_effort).count();
+    let avail = ROWS_TOP - ROWS_BOT;
+    let want = n as f32 * 6.5 + n_dates as f32 * SEG_DATES_H;
+    let scale = (avail / want).min(1.0);
+    let row_h = 6.5 * scale;
+    let dates_h = SEG_DATES_H * scale;
     let bar_hh = (row_h * 0.22).min(1.7);
     let label_w = CHART_X0 - X_LABEL - 2.0;
+    let mut row_top = ROWS_TOP;
     for (i, r) in rows.iter().enumerate() {
-        let yc = ROWS_TOP - (i as f32 + 0.5) * row_h;
+        let yc = row_top - row_h / 2.0;
+        row_top -= row_h;
+        if r.dates_below && !r.no_effort {
+            row_top -= dates_h;
+        }
         // Etichetta a sinistra (nome dev), troncata se troppo lunga.
         let label = truncate_to_w(&r.label, 8.0, label_w);
         // Marcatura ghost: rosso, oppure il colore del dev se l'utente l'ha
@@ -1205,8 +1270,8 @@ fn page_shapes(
                 shapes.extend(dashed_hline(lead_x0, bx0 - 1.0, yc, 0.3, GRAY_DK));
             }
         }
-        // Disegno della/e barra/e secondo il formato scelto.
-        match fmt {
+        // Disegno della/e barra/e secondo il formato scelto per il dev.
+        match r.fmt {
             BarFormat::Continuous => {
                 // Un unico rettangolo dalla prima all'ultima settimana.
                 shapes.extend(rect_round(
@@ -1254,7 +1319,7 @@ fn page_shapes(
         // Overlay rosso sulle settimane con worker "ghost": quei rettangoli sono
         // sempre rossi, anche in mezzo alla barra del colore del dev.
         if !r.ghost_weeks.is_empty() {
-            if matches!(fmt, BarFormat::Proportional) {
+            if matches!(r.fmt, BarFormat::Proportional) {
                 // Formato proporzionale: l'altezza segue le ore della singola
                 // settimana, quindi ogni settimana resta un rettangolo a sé.
                 let denom = proportional_ref(r.max_week) as f32;
@@ -1299,14 +1364,39 @@ fn page_shapes(
         // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
         // La fine è il **venerdì** dell'ultima settimana (lunedì + 4): un dev
         // con effort in una sola settimana mostra «lun - ven» di quella settimana.
-        let mut lbl = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
-        if show_pct() {
-            let pct = match r.presumed_pct {
-                Some(p) => format!("({p}%/{}%)", r.declared_pct),
-                None => format!("(-/{}%)", r.declared_pct),
-            };
-            lbl = format!("{lbl}  {pct}");
-        }
+        let pct = show_pct().then(|| match r.presumed_pct {
+            Some(p) => format!("({p}%/{}%)", r.declared_pct),
+            None => format!("(-/{}%)", r.declared_pct),
+        });
+        let lbl = if r.dates_below {
+            // Date sotto ogni tratto (inizio sopra, fine sotto, centrate sul
+            // tratto); a destra della barra restano solo le percentuali.
+            for (s0, e0) in contiguous_runs(&r.weeks) {
+                let cx = (x_of(s0) + x_of(e0 + 7)) / 2.0;
+                let (d0, d1) = segment_dates(s0, e0 + DEV_END_OFFSET);
+                let y0 = yc - bar_hh - 0.6 - SEG_DATE_FONT * 0.352_778;
+                for (k, d) in [d0, d1].iter().enumerate() {
+                    shapes.extend(text_center(
+                        cx,
+                        y0 - k as f32 * SEG_DATE_LINE * scale,
+                        d,
+                        SEG_DATE_FONT,
+                        false,
+                        TEXT_GRAY,
+                    ));
+                }
+            }
+            match pct {
+                Some(p) => p,
+                None => continue,
+            }
+        } else {
+            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
+            match pct {
+                Some(p) => format!("{range}  {p}"),
+                None => range,
+            }
+        };
         let w = text_w_mm(&lbl, 7.0);
         if bx1 + 2.0 + w <= CHART_X1 {
             shapes.extend(text_left(bx1 + 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
@@ -1374,6 +1464,26 @@ fn project_shapes(
     order: Option<&[DevId]>,
     chart_only: bool,
     fmt: BarFormat,
+) -> Option<Vec<Shape>> {
+    let bar = DevBar::from(fmt);
+    project_shapes_fmt(
+        app, proj, name, dev_info, today, created, order, chart_only, &|_| bar,
+    )
+}
+
+/// Come `project_shapes`, ma con il formato barra scelto **per dev**
+/// (`fmt_of`).
+#[allow(clippy::too_many_arguments)]
+fn project_shapes_fmt(
+    app: &App,
+    proj: ProjectId,
+    name: &str,
+    dev_info: &DevInfo,
+    today: i32,
+    created: &str,
+    order: Option<&[DevId]>,
+    chart_only: bool,
+    fmt_of: &dyn Fn(DevId) -> DevBar,
 ) -> Option<Vec<Shape>> {
     let (Some(start_w), Some(end_w)) = (
         app.projects.get_project_start_week(proj),
@@ -1459,6 +1569,8 @@ fn project_shapes(
                             presumed_pct,
                             declared_pct,
                             ghost_weeks: gw,
+                            fmt: fmt_of(dev_id).fmt,
+                            dates_below: fmt_of(dev_id).dates_below(),
                         });
                     }
                     continue;
@@ -1476,6 +1588,8 @@ fn project_shapes(
                     presumed_pct,
                     declared_pct,
                     ghost_weeks: gw,
+                            fmt: fmt_of(dev_id).fmt,
+                            dates_below: fmt_of(dev_id).dates_below(),
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -1502,6 +1616,8 @@ fn project_shapes(
                             presumed_pct,
                             declared_pct,
                             ghost_weeks: ghost_weeks(dev_id),
+                            fmt: fmt_of(dev_id).fmt,
+                            dates_below: fmt_of(dev_id).dates_below(),
                         })
                     }
                     None => {
@@ -1519,6 +1635,8 @@ fn project_shapes(
                             // Anche senza ore il ghost va segnalato: nome in
                             // rosso e tratti rossi sulla riga sottile.
                             ghost_weeks: ghost_weeks(dev_id),
+                            fmt: fmt_of(dev_id).fmt,
+                            dates_below: fmt_of(dev_id).dates_below(),
                         })
                     }
                 }
@@ -1560,7 +1678,6 @@ fn project_shapes(
         today,
         created,
         chart_only,
-        fmt,
         progress_pct,
         presumed_pct,
     ))
@@ -1568,7 +1685,8 @@ fn project_shapes(
 
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
-pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
+pub fn build_pdf(app: &App, fmt: impl Into<DevBar>) -> Option<Vec<u8>> {
+    let bar: DevBar = fmt.into();
     let mut doc = PdfDocument::new("Projects");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
@@ -1586,7 +1704,17 @@ pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
             continue;
         }
         if let Some(shapes) =
-            project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
+            project_shapes_fmt(
+                app,
+                id,
+                &name,
+                &dev_info,
+                today,
+                &created,
+                None,
+                false,
+                &|_| bar,
+            )
         {
             pages.push(PdfPage::new(
                 Mm(PAGE_W),
@@ -1609,7 +1737,12 @@ pub fn build_pdf(app: &App, fmt: BarFormat) -> Option<Vec<u8>> {
 /// (una pagina Gantt ciascuno, nell'ordine di visualizzazione). Restano validi
 /// i vincoli per pagina: il progetto deve avere inizio E fine. `None` se nessun
 /// progetto selezionato produce una pagina.
-pub fn build_pdf_selected(app: &App, selected: &[ProjectId], fmt: BarFormat) -> Option<Vec<u8>> {
+pub fn build_pdf_selected(
+    app: &App,
+    selected: &[ProjectId],
+    fmt: impl Into<DevBar>,
+) -> Option<Vec<u8>> {
+    let bar: DevBar = fmt.into();
     let mut doc = PdfDocument::new("Projects");
     let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
     let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
@@ -1629,7 +1762,17 @@ pub fn build_pdf_selected(app: &App, selected: &[ProjectId], fmt: BarFormat) -> 
             continue;
         }
         if let Some(shapes) =
-            project_shapes(app, id, &name, &dev_info, today, &created, None, false, fmt)
+            project_shapes_fmt(
+                app,
+                id,
+                &name,
+                &dev_info,
+                today,
+                &created,
+                None,
+                false,
+                &|_| bar,
+            )
         {
             pages.push(PdfPage::new(
                 Mm(PAGE_W),
@@ -1659,20 +1802,43 @@ pub fn build_pdf_project(
     ordered_devs: &[DevId],
     fmt: BarFormat,
 ) -> Option<Vec<u8>> {
+    let devs: Vec<(DevId, DevBar)> = ordered_devs.iter().map(|&d| (d, fmt.into())).collect();
+    build_pdf_project_fmt(app, proj, &devs)
+}
+
+/// Lookup del formato per dev a partire dalla lista `(dev, formato)` della
+/// dialog; un dev assente (non dovrebbe capitare) usa il formato predefinito.
+fn fmt_lookup(devs: &[(DevId, DevBar)]) -> impl Fn(DevId) -> DevBar + '_ {
+    move |d| {
+        devs.iter()
+            .find(|(x, _)| *x == d)
+            .map(|(_, f)| *f)
+            .unwrap_or_default()
+    }
+}
+
+/// Come `build_pdf_project`, con il **formato barra scelto per ogni dev**
+/// (`devs` = dev nell'ordine scelto, ciascuno col suo formato).
+pub fn build_pdf_project_fmt(
+    app: &App,
+    proj: ProjectId,
+    devs: &[(DevId, DevBar)],
+) -> Option<Vec<u8>> {
     let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
-    let shapes = project_shapes(
+    let order: Vec<DevId> = devs.iter().map(|(d, _)| *d).collect();
+    let shapes = project_shapes_fmt(
         app,
         proj,
         &name,
         &dev_info,
         today,
         &created,
-        Some(ordered_devs),
+        Some(&order),
         false,
-        fmt,
+        &fmt_lookup(devs),
     )?;
 
     let mut doc = PdfDocument::new("Project");
@@ -1698,19 +1864,30 @@ pub fn build_svg_project(
     ordered_devs: &[DevId],
     fmt: BarFormat,
 ) -> Option<String> {
+    let devs: Vec<(DevId, DevBar)> = ordered_devs.iter().map(|&d| (d, fmt.into())).collect();
+    build_svg_project_fmt(app, proj, &devs)
+}
+
+/// Come `build_svg_project`, con il formato barra scelto per ogni dev.
+pub fn build_svg_project_fmt(
+    app: &App,
+    proj: ProjectId,
+    devs: &[(DevId, DevBar)],
+) -> Option<String> {
     let today = local_to_days(&chrono::Local::now().date_naive());
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
-    let shapes = project_shapes(
+    let order: Vec<DevId> = devs.iter().map(|(d, _)| *d).collect();
+    let shapes = project_shapes_fmt(
         app,
         proj,
         &name,
         &dev_info,
         today,
         "",
-        Some(ordered_devs),
+        Some(&order),
         true, // solo grafico
-        fmt,
+        &fmt_lookup(devs),
     )?;
     Some(render_svg(&shapes))
 }
@@ -3271,11 +3448,21 @@ mod tests {
         app.projects.add_project_milestone(pid, interna, WeekId(20021));
         app.projects.add_project_milestone(pid, esterna, WeekId(20035));
 
-        // Internal: tutte e due le bandierine.
-        set_milestone_scope(MilestoneScope::Internal);
+        // Mix: tutte e due le bandierine.
+        set_milestone_scope(MilestoneScope::Mix);
         let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
         assert!(svg.contains("SoloInterna"));
         assert!(svg.contains("AncheEsterna"));
+
+        // Solo internal: resta fuori quella marcata solo External.
+        set_milestone_scope(MilestoneScope::Internal);
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        assert!(svg.contains("SoloInterna"));
+        assert_eq!(
+            svg.contains("AncheEsterna"),
+            app.milestones
+                .has_category(esterna, MilestoneCategory::Internal),
+        );
 
         // External: solo quella External.
         set_milestone_scope(MilestoneScope::External);
@@ -3286,7 +3473,7 @@ mod tests {
         );
         assert!(svg.contains("AncheEsterna"));
 
-        set_milestone_scope(MilestoneScope::Internal);
+        set_milestone_scope(MilestoneScope::Mix);
     }
 
     /// Testi disegnati nella pagina (etichette dev, date, titoli…).
@@ -3618,7 +3805,7 @@ mod tests {
         assert!(svg.contains("Tenuta"));
 
         // Nessuna selezione = nessuna bandierina.
-        set_milestone_scope(MilestoneScope::Internal);
+        set_milestone_scope(MilestoneScope::Mix);
         set_milestone_allow(Some(Vec::new()));
         let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
         assert!(!svg.contains("Tenuta"));
@@ -3850,6 +4037,91 @@ mod tests {
         );
         assert!(contiguous_runs(&[]).is_empty());
         assert_eq!(contiguous_runs(&[(100, 5)]), vec![(100, 100)]);
+    }
+
+    /// «Date sotto»: ogni tratto ha inizio (lunedì) e fine (venerdì) sotto di
+    /// sé, l'intervallo complessivo a destra sparisce; con la barra continua il
+    /// flag è ignorato.
+    #[test]
+    fn segment_dates_go_below_each_run() {
+        let d = |m, dd| local_to_days(&NaiveDate::from_ymd_opt(2026, m, dd).unwrap());
+        let mut app = App::new();
+        let pid = app
+            .projects
+            .add("Prog", Some("ABC"), Some(WeekId(d(9, 7) as usize)));
+        app.projects
+            .set_project_end_week(pid, Some(WeekId(d(11, 30) as usize)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        // Tratto 1: settimane del 21/9 e 28/9; tratto 2: settimana del 19/10.
+        for (m, dd) in [(9, 21), (9, 28), (10, 19)] {
+            app.projects
+                .add_effort(pid, dev, WeekId(d(m, dd) as usize), WorkerId(0), Effort(8));
+        }
+        set_show_year(true);
+        set_show_pct(false);
+        let page = |bar: DevBar| {
+            texts(
+                &project_shapes_fmt(
+                    &app,
+                    pid,
+                    "Prog",
+                    &dev_info_map(&app),
+                    d(10, 1),
+                    "",
+                    Some(&[dev]),
+                    true,
+                    &|_| bar,
+                )
+                .unwrap(),
+            )
+        };
+        for fmt in [BarFormat::Segmented, BarFormat::Proportional] {
+            let t = page(DevBar::new(fmt, true));
+            for want in ["Sep 21", "Oct 2 '26", "Oct 19", "Oct 23 '26"] {
+                assert!(t.iter().any(|s| s == want), "manca «{want}»: {t:?}");
+            }
+            assert!(!t.iter().any(|s| s.contains(" - ")), "niente intervallo: {t:?}");
+        }
+        // Barra continua: il flag non ha effetto.
+        let cont = page(DevBar::new(BarFormat::Continuous, true));
+        assert!(cont.iter().any(|s| s == "Sep 21 - Oct 23 '26"), "{cont:?}");
+    }
+
+    /// Formato barra **per dev**: nella stessa pagina un dev segmentato e uno
+    /// continuo; il conteggio delle forme piene cambia solo per il dev scelto.
+    #[test]
+    fn bar_format_is_chosen_per_dev() {
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20070)));
+        let a = app.devs.add("Frontend");
+        let b = app.devs.add("Backend");
+        for d in [a, b] {
+            app.projects.add_dev(pid, d);
+            // Due tratti: 20007 e 20035 (buco in mezzo).
+            app.projects
+                .add_effort(pid, d, WeekId(20007), WorkerId(0), Effort(8));
+            app.projects
+                .add_effort(pid, d, WeekId(20035), WorkerId(0), Effort(8));
+        }
+        let fills = |devs: &[(DevId, DevBar)]| {
+            let svg = build_svg_project_fmt(&app, pid, devs).unwrap();
+            svg.matches("<rect").count() + svg.matches("<polygon").count()
+        };
+        let (c, sg) = (
+            DevBar::from(BarFormat::Continuous),
+            DevBar::from(BarFormat::Segmented),
+        );
+        let base = fills(&[(a, c), (b, c)]);
+        assert_eq!(fills(&[(a, sg), (b, c)]), base + 1, "solo A in 2 tratti");
+        assert_eq!(fills(&[(a, c), (b, sg)]), base + 1, "solo B in 2 tratti");
+        assert_eq!(fills(&[(a, sg), (b, sg)]), base + 2, "entrambi in 2 tratti");
+        // Il wrapper col formato unico equivale a darlo a tutti i dev.
+        assert_eq!(
+            build_svg_project(&app, pid, &[a, b], BarFormat::Segmented).unwrap(),
+            build_svg_project_fmt(&app, pid, &[(a, sg), (b, sg)]).unwrap()
+        );
     }
 
     #[test]

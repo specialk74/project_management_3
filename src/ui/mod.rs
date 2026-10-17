@@ -351,6 +351,8 @@ struct PdfExport {
     /// Milestone **collocate in questo progetto** con il flag di selezione, in
     /// ordine di settimana: solo quelle spuntate finiscono nel PDF/SVG.
     milestones: Vec<(MilestoneId, WeekId, bool)>,
+    /// Formato della barra scelto per ogni dev (riga della dialog).
+    formats: HashMap<DevId, crate::pdf_export::DevBar>,
 }
 
 /// Stato della dialog "Esporta PDF" con più progetti visibili: l'elenco dei
@@ -366,6 +368,7 @@ struct PdfMultiExport {
 struct ExportProjectMemory {
     devs: Vec<(DevId, bool)>,
     milestones: HashMap<MilestoneId, bool>,
+    formats: HashMap<DevId, crate::pdf_export::DevBar>,
 }
 
 /// Dev della dialog di export di un progetto a partire dalle scelte ricordate:
@@ -499,13 +502,16 @@ impl Default for ExportYear {
 pub(crate) struct ExportScopes {
     pub internal: bool,
     pub external: bool,
+    pub mix: bool,
 }
 
 impl Default for ExportScopes {
+    /// Tutte e tre spuntate: di default escono tre file.
     fn default() -> Self {
         Self {
             internal: true,
-            external: false,
+            external: true,
+            mix: true,
         }
     }
 }
@@ -520,12 +526,15 @@ impl ExportScopes {
         if self.external {
             v.push(MilestoneScope::External);
         }
+        if self.mix {
+            v.push(MilestoneScope::Mix);
+        }
         v
     }
 
     /// Nessun ambito spuntato: non c'è niente da esportare.
     pub fn is_empty(&self) -> bool {
-        !self.internal && !self.external
+        !self.internal && !self.external && !self.mix
     }
 }
 
@@ -636,6 +645,9 @@ pub struct UiState {
     // formato barre scelto per l'export PDF/SVG (ricordato tra un export e
     // l'altro, non persistito su file).
     bar_format: crate::pdf_export::BarFormat,
+    // export multi-progetto: date sotto ogni tratto per i formati segmentati
+    // (nel singolo progetto si sceglie per dev). Ricordato, non persistito.
+    export_dates_below: bool,
     // tema chiaro/scuro: Auto = segue il sistema, altrimenti forzato
     theme_pref: ThemePref,
     // dialog "Esporta PDF" del singolo progetto (aperta quando resta visibile
@@ -726,9 +738,9 @@ pub struct UiState {
     // spunta di ogni progetto (quelli mai visti partono spuntati).
     export_project_memory: HashMap<ProjectId, ExportProjectMemory>,
     export_multi_memory: HashMap<ProjectId, bool>,
-    // ambiti milestone scelti nelle dialog di export (Internal / External):
-    // uno spuntato = un file, entrambi = due file. Ricordato tra un export e
-    // l'altro, non persistito.
+    // ambiti milestone scelti nelle dialog di export (Solo internal / Solo
+    // external / Mix): ogni ambito spuntato = un file (default: tutti e tre).
+    // Ricordato tra un export e l'altro, non persistito.
     export_scopes: ExportScopes,
     // finestra "Confronta/Importa progetto…": presente quando un file parallelo è
     // stato caricato per il confronto. Mentre è aperta l'autosave è sospeso.
@@ -970,19 +982,20 @@ pub(crate) enum Action {
     ExportTrend,
     ExportPdfSelected {
         projects: Vec<ProjectId>,
-        /// Ambiti milestone da stampare: uno = un file, due = due file.
+        /// Ambiti milestone da stampare: uno per file.
         scopes: Vec<MilestoneScope>,
     },
     ExportPdfProject {
         proj: ProjectId,
-        devs: Vec<DevId>,
+        /// Dev nell'ordine scelto, ciascuno col proprio formato barra.
+        devs: Vec<(DevId, crate::pdf_export::DevBar)>,
         scopes: Vec<MilestoneScope>,
         /// Milestone spuntate nella dialog (le altre non vengono disegnate).
         milestones: Vec<MilestoneId>,
     },
     ExportSvgProject {
         proj: ProjectId,
-        devs: Vec<DevId>,
+        devs: Vec<(DevId, crate::pdf_export::DevBar)>,
         scopes: Vec<MilestoneScope>,
         milestones: Vec<MilestoneId>,
     },
@@ -2288,10 +2301,22 @@ impl PjmApp {
                             })
                             .collect();
                         milestones.sort_by_key(|(id, w, _)| (w.0, id.0));
+                        // Formato per dev: quello ricordato, altrimenti l'ultimo
+                        // formato scelto con «applica a tutti».
+                        let formats = entries
+                            .iter()
+                            .map(|(d, _)| {
+                                let f = mem
+                                    .and_then(|m| m.formats.get(d).copied())
+                                    .unwrap_or(self.ui.bar_format.into());
+                                (*d, f)
+                            })
+                            .collect();
                         self.ui.pdf_export = Some(PdfExport {
                             proj,
                             entries,
                             milestones,
+                            formats,
                         });
                     }
                     _ => {
@@ -2333,7 +2358,10 @@ impl PjmApp {
                     crate::pdf_export::build_pdf_selected(
                         &self.app,
                         &projects,
-                        self.ui.bar_format,
+                        crate::pdf_export::DevBar::new(
+                            self.ui.bar_format,
+                            self.ui.export_dates_below,
+                        ),
                     )
                 });
                 if items.is_empty() {
@@ -2362,12 +2390,7 @@ impl PjmApp {
                 crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
-                    crate::pdf_export::build_pdf_project(
-                        &self.app,
-                        proj,
-                        &devs,
-                        self.ui.bar_format,
-                    )
+                    crate::pdf_export::build_pdf_project_fmt(&self.app, proj, &devs)
                 });
                 if items.is_empty() {
                     self.ui
@@ -2394,12 +2417,7 @@ impl PjmApp {
                 crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
                 crate::pdf_export::set_milestone_allow(Some(milestones));
                 let items = scoped_exports(&scopes, |_| {
-                    crate::pdf_export::build_svg_project(
-                        &self.app,
-                        proj,
-                        &devs,
-                        self.ui.bar_format,
-                    )
+                    crate::pdf_export::build_svg_project_fmt(&self.app, proj, &devs)
                     .map(String::into_bytes)
                 });
                 if items.is_empty() {
@@ -3562,21 +3580,27 @@ mod tests {
     #[test]
     fn export_scopes_list_follows_the_checkboxes() {
         let dflt = ExportScopes::default();
-        assert_eq!(dflt.list(), vec![MilestoneScope::Internal]);
+        assert_eq!(
+            dflt.list(),
+            vec![
+                MilestoneScope::Internal,
+                MilestoneScope::External,
+                MilestoneScope::Mix
+            ]
+        );
         assert!(!dflt.is_empty());
 
-        let both = ExportScopes {
-            internal: true,
-            external: true,
+        let only_mix = ExportScopes {
+            internal: false,
+            external: false,
+            mix: true,
         };
-        assert_eq!(
-            both.list(),
-            vec![MilestoneScope::Internal, MilestoneScope::External]
-        );
+        assert_eq!(only_mix.list(), vec![MilestoneScope::Mix]);
 
         let none = ExportScopes {
             internal: false,
             external: false,
+            mix: false,
         };
         assert!(none.is_empty());
         assert!(none.list().is_empty());
@@ -3587,12 +3611,16 @@ mod tests {
     #[test]
     fn scoped_exports_builds_one_item_per_scope() {
         let items = scoped_exports(
-            &[MilestoneScope::Internal, MilestoneScope::External],
+            &[
+                MilestoneScope::Internal,
+                MilestoneScope::External,
+                MilestoneScope::Mix,
+            ],
             |sc| Some(sc.label().as_bytes().to_vec()),
         );
         let suffixes: Vec<String> = items.iter().map(|(s, _)| s.clone()).collect();
-        assert_eq!(suffixes, vec!["internal".to_string(), "external".to_string()]);
-        assert_eq!(items[1].1, b"External".to_vec());
+        assert_eq!(suffixes, ["internal", "external", "mix"]);
+        assert_eq!(items[1].1, b"Solo external".to_vec());
 
         assert!(scoped_exports(&[MilestoneScope::Internal], |_| None).is_empty());
     }
@@ -3644,6 +3672,7 @@ mod tests {
                 proj,
                 entries: vec![(dev, true)],
                 milestones: vec![(a, WeekId(20021), true), (b, WeekId(20035), true)],
+                formats: HashMap::new(),
             }),
             ..Default::default()
         };

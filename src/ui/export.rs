@@ -95,11 +95,18 @@ pub(crate) fn draw_bar_format_preview(
 /// opzioni sono **affiancate**, ognuna con anteprima + radio, così l'insieme
 /// resta compatto in altezza (adatto a schermi HD). Condiviso dai dialog di
 /// export. Scorre in orizzontale se la finestra è più stretta delle tre colonne.
-pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export::BarFormat) {
+/// Restituisce `true` se l'utente ha cliccato un formato (anche quello già
+/// scelto): la dialog del singolo progetto lo usa come «applica a tutti».
+pub(crate) fn bar_format_selector(
+    ui: &mut egui::Ui,
+    title: &str,
+    fmt: &mut crate::pdf_export::BarFormat,
+) -> bool {
     use crate::pdf_export::BarFormat;
     const COL_W: f32 = 196.0;
     const PREVIEW: egui::Vec2 = egui::vec2(190.0, 56.0);
-    ui.label(egui::RichText::new("Formato barre").strong());
+    let mut clicked = false;
+    ui.label(egui::RichText::new(title).strong());
     ui.add_space(4.0);
     egui::ScrollArea::horizontal()
         .id_salt("bar_format_row")
@@ -130,9 +137,12 @@ pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export
                             draw_bar_format_preview(ui, prect, val);
                             if presp.clicked() {
                                 *fmt = val;
+                                clicked = true;
                             }
                             ui.horizontal(|ui| {
-                                ui.radio_value(fmt, val, "");
+                                if ui.radio_value(fmt, val, "").clicked() {
+                                    clicked = true;
+                                }
                                 ui.label(egui::RichText::new(title).strong());
                             });
                             ui.label(egui::RichText::new(desc).small().color(text_dim()));
@@ -140,6 +150,52 @@ pub(crate) fn bar_format_selector(ui: &mut egui::Ui, fmt: &mut crate::pdf_export
                     );
                 }
             });
+        });
+    clicked
+}
+
+/// Voci del menu del formato barra di un dev: la forma e, per le segmentate,
+/// la variante con le date sotto ogni tratto.
+const DEV_BAR_CHOICES: [(crate::pdf_export::DevBar, &str); 5] = {
+    use crate::pdf_export::{BarFormat, DevBar};
+    [
+        (DevBar::new(BarFormat::Continuous, false), "Barra continua"),
+        (DevBar::new(BarFormat::Segmented, false), "Segmentata"),
+        (DevBar::new(BarFormat::Segmented, true), "Segmentata, date sotto"),
+        (
+            DevBar::new(BarFormat::Proportional, false),
+            "Segmentata + altezza %",
+        ),
+        (
+            DevBar::new(BarFormat::Proportional, true),
+            "Segmentata + altezza %, date sotto",
+        ),
+    ]
+};
+
+/// Etichetta di un formato barra di dev (per la combo).
+fn dev_bar_label(b: crate::pdf_export::DevBar) -> &'static str {
+    let b = crate::pdf_export::DevBar::new(b.fmt, b.dates_below());
+    DEV_BAR_CHOICES
+        .iter()
+        .find(|(c, _)| *c == b)
+        .map_or("?", |(_, l)| l)
+}
+
+/// Combo del formato barra di un singolo dev (dentro una finestra: qui la
+/// `ComboBox` va bene, vedi la nota sui menù della toolbar).
+fn dev_bar_format_combo(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash,
+    bar: &mut crate::pdf_export::DevBar,
+) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(dev_bar_label(*bar))
+        .width(220.0)
+        .show_ui(ui, |ui| {
+            for (c, label) in DEV_BAR_CHOICES {
+                ui.selectable_value(bar, c, label);
+            }
         });
 }
 
@@ -188,13 +244,21 @@ pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
 /// file (stesso nome + suffisso `_internal` / `_external`).
 pub(crate) fn milestone_scope_selector(ui: &mut egui::Ui, scopes: &mut ExportScopes) {
     ui.label(egui::RichText::new("Milestone da stampare").strong());
-    ui.checkbox(&mut scopes.internal, "Internal  (Internal + External)")
-        .on_hover_text("Un file con tutte le milestone: Internal ed External.");
-    ui.checkbox(&mut scopes.external, "External  (solo External)")
-        .on_hover_text("Un file con le sole milestone marcate External.");
-    if scopes.internal && scopes.external {
+    ui.checkbox(&mut scopes.internal, "Solo internal")
+        .on_hover_text("Un file con le milestone Internal (anche quelle Int/Ext).");
+    ui.checkbox(&mut scopes.external, "Solo external")
+        .on_hover_text("Un file con le milestone External (anche quelle Int/Ext).");
+    ui.checkbox(&mut scopes.mix, "Mix")
+        .on_hover_text("Un file con tutte le milestone, Internal ed External.");
+    let n = scopes.list().len();
+    if n > 1 {
+        let names: Vec<String> = scopes
+            .list()
+            .iter()
+            .map(|s| format!("…_{}", s.file_suffix()))
+            .collect();
         ui.label(
-            egui::RichText::new("Verranno creati due file: …_internal e …_external")
+            egui::RichText::new(format!("Verranno creati {n} file: {}", names.join(", ")))
                 .small()
                 .color(text_dim()),
         );
@@ -283,8 +347,11 @@ pub(crate) fn pdf_export_window(
                     for i in 0..px.entries.len() {
                         let dev = px.entries[i].0;
                         let mut sel = px.entries[i].1;
+                        let mut dfmt = px.formats.get(&dev).copied().unwrap_or(fmt.into());
                         let inner = ui.horizontal(|ui| {
                             ui.checkbox(&mut sel, "");
+                            // Formato della barra di questo dev.
+                            dev_bar_format_combo(ui, ("pdf_dev_fmt", proj.0, dev.0), &mut dfmt);
                             ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
                                 ui.add(
                                     egui::Label::new(
@@ -296,6 +363,7 @@ pub(crate) fn pdf_export_window(
                                 );
                             });
                         });
+                        px.formats.insert(dev, dfmt);
                         px.entries[i].1 = sel;
 
                         let resp = inner.response;
@@ -378,7 +446,13 @@ pub(crate) fn pdf_export_window(
             }
 
             ui.separator();
-            bar_format_selector(ui, &mut fmt);
+            // Click su un formato = lo applica a tutti i dev (poi ogni riga si
+            // può cambiare dalla sua combo).
+            if bar_format_selector(ui, "Formato barre — applica a tutti i dev", &mut fmt) {
+                for f in px.formats.values_mut() {
+                    *f = fmt.into();
+                }
+            }
 
             ui.separator();
             ui.checkbox(
@@ -426,6 +500,7 @@ pub(crate) fn pdf_export_window(
         ExportProjectMemory {
             devs: px.entries.clone(),
             milestones: px.milestones.iter().map(|(id, _, on)| (*id, *on)).collect(),
+            formats: px.formats.clone(),
         },
     );
 
@@ -434,7 +509,7 @@ pub(crate) fn pdf_export_window(
         px.entries
             .iter()
             .filter(|(_, s)| *s)
-            .map(|(d, _)| *d)
+            .map(|(d, _)| (*d, px.formats.get(d).copied().unwrap_or(fmt.into())))
             .collect::<Vec<_>>()
     });
 
@@ -506,7 +581,18 @@ pub(crate) fn pdf_multi_export_window(
         .show(ctx, |ui| {
             // Formato in alto (compatto e ad altezza fissa); sotto l'elenco
             // progetti, che scorre e riserva lo spazio per i pulsanti in fondo.
-            bar_format_selector(ui, &mut fmt);
+            bar_format_selector(ui, "Formato barre", &mut fmt);
+            ui.add_enabled(
+                fmt != crate::pdf_export::BarFormat::Continuous,
+                egui::Checkbox::new(
+                    &mut state.export_dates_below,
+                    "Date sotto ogni tratto (inizio e fine su due righe)",
+                ),
+            )
+            .on_hover_text(
+                "Solo per i formati segmentati: le date vanno sotto ogni tratto \
+                 invece che a destra della barra (a destra restano le percentuali).",
+            );
             ui.separator();
 
             ui.label("Seleziona i progetti da esportare:");
