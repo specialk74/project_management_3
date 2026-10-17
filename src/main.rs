@@ -12,6 +12,7 @@ mod single_effort_utils;
 mod sync_merge;
 mod ui;
 mod ui_style;
+mod worker_matrix;
 mod workers_utils;
 
 use app::{App, SAVE_PATH};

@@ -57,7 +57,8 @@ references; the UI lives entirely in the `src/ui/` module.
     `*_window` fns + `move`/`popup` helpers), `export.rs` (PDF/SVG/minuta dialogs +
     `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
     `saturation.rs` (worker-saturation dashboard), `filters.rs` (dialog unica dei
-    filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app).
+    filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app), `matrix.rs` (matrice
+    progetti × worker: `matrix_select_window` + `matrix_window`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
     a column lives in a **private** helper of `grid.rs` (not re-exported) —
     `draw_year_end_cell`, `milestones_in_group` + `draw_milestone_strip` (the milestone /
@@ -280,6 +281,26 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     entro il 31/12 conta nell'anno) e `dal_1_1 = mancante − fino_31_12` (negativo
     ⇒ rosso). Titoli dei gruppi rimpiccioliti se non entrano.
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
+  **Matrice progetti/worker…**: prima `matrix_select_window` (worker `show_in_find`,
+  ricerca + Select All → `UiState.matrix_workers`, **solo sessione**), poi
+  `matrix_window` (`UiState.matrix_from`/`matrix_to: Option<i32>` in giorni, `None` =
+  oggi; `DatePickerButton`). I dati vengono da `src/worker_matrix.rs`
+  (`build(app, &workers, from, to) -> MatrixData`, condiviso con l'export):
+  colonne = worker, righe = **tutti** i progetti (aperti e chiusi, ignora Vista e
+  filtri) in cui un worker è **assegnato, anche a effort 0**, in una settimana che
+  si **sovrappone** a `[from, to]` (`week_overlaps`: lunedì..domenica); cella =
+  nomi dei dev; righe raggruppate per categoria (per id, «Senza categoria» in
+  fondo) colorate con `category_color` (palette fissa per id, le categorie non
+  hanno un colore nel file); i progetti chiusi (`MatrixRow.closed`) restano nel
+  gruppo, riga con la tinta della categoria spenta verso il grigio
+  (`closed_colors`) + strisce (`hatch_segments`), condivisi GUI/PDF, e
+  «chiuso»/«closed»; `summary[cat][worker]` = progetti per categoria (righe subito
+  sotto la matrice, senza intestazione propria),
+  `totals[worker]` = progetti totali (riga «Totale progetti» / «Total projects»).
+  **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to }` →
+  `pdf_export::build_matrix_pdf` (A4 orizzontale, inglese; colonne in blocchi da
+  `MATRIX_COL_MIN`, in ogni blocco solo le righe dei suoi worker, righe paginate con
+  intestazione ripetuta, riepilogo in coda al blocco).
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
 ### Dialogs / windows

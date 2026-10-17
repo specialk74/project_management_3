@@ -28,6 +28,7 @@ mod filters;
 mod footer;
 mod grid;
 mod help;
+mod matrix;
 mod saturation;
 mod toasts;
 mod toolbar;
@@ -38,6 +39,7 @@ pub(crate) use filters::*;
 pub(crate) use footer::*;
 pub(crate) use grid::*;
 pub(crate) use help::*;
+pub(crate) use matrix::*;
 pub(crate) use saturation::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
@@ -636,6 +638,15 @@ pub struct UiState {
     // offset verticale condiviso tra colonna fissa (nome+Σ) e heatmap, così le
     // due parti scorrono insieme mentre la heatmap scorre in orizzontale
     sat_scroll_y: f32,
+    // Matrice progetti × worker (Vista ▸ Matrice progetti/worker…): dialog di
+    // scelta dei worker, finestra della matrice, worker scelti (ricordati per
+    // la sessione, non persistiti) e intervallo di date (`None` = oggi).
+    matrix_select_open: bool,
+    show_matrix: bool,
+    matrix_workers: HashSet<WorkerId>,
+    matrix_worker_search: String,
+    matrix_from: Option<i32>,
+    matrix_to: Option<i32>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -946,6 +957,12 @@ pub(crate) enum Action {
     },
     GenerateReport {
         projects: Vec<ProjectId>,
+    },
+    /// PDF della matrice progetti × worker (worker scelti in `UiState`)
+    /// sull'intervallo di giorni `[from, to]`.
+    ExportWorkerMatrix {
+        from: i32,
+        to: i32,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -1487,6 +1504,8 @@ impl eframe::App for PjmApp {
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
+            matrix_select_window(ui.ctx(), app, state);
+            matrix_window(ui.ctx(), app, state, &mut actions);
             compare_window(ui.ctx(), app, state, &mut actions);
             // Sopra a tutto: le notifiche in-app.
             toasts_layer(ui.ctx(), state);
@@ -2354,6 +2373,17 @@ impl PjmApp {
                         &dated_file_name("grafico", "svg"),
                         items,
                     );
+                }
+            }
+            Action::ExportWorkerMatrix { from, to } => {
+                let m = crate::worker_matrix::build(&self.app, &self.ui.matrix_workers, from, to);
+                match crate::pdf_export::build_matrix_pdf(&self.app, &m, from, to) {
+                    Some(bytes) => {
+                        save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("matrice", "pdf"))
+                    }
+                    None => self
+                        .ui
+                        .toast_warn("Nessun progetto da esportare: matrice non creata."),
                 }
             }
             Action::GenerateReport { projects } => {

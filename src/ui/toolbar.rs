@@ -349,6 +349,10 @@ pub(crate) fn toolbar(
                 state.show_saturation = true;
                 ui.close_menu();
             }
+            if ui.button("Matrice progetti/worker…").clicked() {
+                state.matrix_select_open = true;
+                ui.close_menu();
+            }
         });
 
         // ── Aiuto ────────────────────────────────────────────────────────────

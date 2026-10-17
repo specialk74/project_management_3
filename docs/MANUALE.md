@@ -330,6 +330,8 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
 - **Tema** — *Auto (sistema)* / *Chiaro* / *Scuro* (vedi §15).
 - **Zoom settimane** — *Normale* / *2 settimane* / *4 settimane* (vedi §15).
 - **Saturazione worker…** — cruscotto di sintesi del carico (vedi §15).
+- **Matrice progetti/worker…** — chi lavora su cosa in un intervallo di date, con
+  export PDF (vedi §15).
 
 ---
 
@@ -921,6 +923,42 @@ La finestra **non è ridimensionabile**: per vedere quale settimana è stata
 selezionata basta **spostarla**. Nota: **ferie/malattia non azzerano la capacità**
 (si possono fare pochi giorni di ferie e lavorare gli altri), quindi il conteggio
 ore resta quello reale.
+
+### Matrice progetti × worker (Vista ▸ Matrice progetti/worker…)
+Una tabella «chi lavora su cosa»: **una colonna per worker**, **una riga per
+progetto**.
+
+1. **Scelta dei worker** — si apre prima una finestra con l'elenco dei worker (quelli
+   con «mostra nella ricerca» attivo), un campo di ricerca e *Select All*. Spunta i
+   worker e premi **Mostra matrice**. La selezione resta **ricordata finché il
+   programma è aperto**: chiudendo e riaprendo la matrice ritrovi gli stessi worker
+   (al riavvio dell'app riparte vuota). Dalla matrice il pulsante **Worker…** riapre
+   la scelta.
+2. **Intervallo di date** — in alto, a sinistra **Da:** e a destra **A:**; ognuno può
+   essere **Oggi** oppure una **Data** scelta col calendario. Una settimana conta se
+   **si sovrappone anche di un solo giorno** all'intervallo. Se la data iniziale è
+   successiva alla finale compare un avviso e la matrice non viene mostrata.
+3. **Righe** — compaiono **tutti i progetti** (aperti e chiusi, indipendentemente da
+   Vista e filtri) in cui almeno un worker scelto è **assegnato** nell'intervallo,
+   **anche con effort 0**. I progetti sono **raggruppati per categoria**: ogni gruppo
+   ha un'intestazione col nome della categoria e righe colorate con la sua tinta
+   (colore automatico per categoria, grigio per «Senza categoria», che va in fondo).
+   Un **progetto chiuso** resta nel gruppo della sua categoria: la sua riga mantiene
+   il colore della categoria ma **spento verso il grigio e a strisce**, con
+   l'indicazione «chiuso» accanto alla tripletta; conta comunque nel riepilogo.
+4. **Celle** — all'incrocio progetto × worker ci sono i **dev** con cui il worker è
+   assegnato nell'intervallo, **uno per riga** se sono più d'uno.
+5. **Riepilogo** — subito sotto la matrice (allineato alle sue colonne), una riga per
+   categoria: per ogni worker, in quanti progetti di quella categoria è presente
+   (vuoto = nessuno), e
+   in ultima riga il **Totale progetti** in cui il worker è coinvolto (aperti e chiusi).
+
+**Esporta PDF…** crea subito il PDF (si sceglie solo dove salvarlo) con la matrice,
+il riepilogo e l'intervallo di date in testa. Come gli altri export è in inglese
+(date `mm/dd/yyyy`), su **A4 orizzontale**: se i worker non entrano in larghezza le
+colonne vengono divise in più blocchi (in ogni blocco solo i progetti dei suoi
+worker), e se le righe non entrano la tabella continua sulle pagine successive con
+l'intestazione ripetuta.
 
 ---
 

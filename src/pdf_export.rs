@@ -2576,6 +2576,345 @@ pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
     )
 }
 
+// --- Matrice progetti × worker -------------------------------------------------
+
+const MATRIX_X0: f32 = X_LABEL;
+const MATRIX_X1: f32 = PAGE_W - X_LABEL;
+const MATRIX_TOP: f32 = PAGE_H - 30.0;
+const MATRIX_BOT: f32 = FOOTER_TOP + 4.0;
+const MATRIX_LABEL_W: f32 = 40.5;
+const MATRIX_COL_MIN: f32 = 18.0;
+const MATRIX_COL_MAX: f32 = 24.0;
+const MATRIX_HEAD_H: f32 = 7.0;
+const MATRIX_GROUP_H: f32 = 5.0;
+const MATRIX_LINE_H: f32 = 3.4;
+const MATRIX_FONT: f32 = 7.5;
+const MATRIX_SUM_H: f32 = 5.0;
+
+/// Etichetta data dell'intervallo: `10/17/2026`, con «(today)» se è oggi.
+fn matrix_date(day: i32, today: i32) -> String {
+    let s = day_to_date(day).format(US_DATE).to_string();
+    if day == today {
+        format!("{s} (today)")
+    } else {
+        s
+    }
+}
+
+/// Nome inglese della categoria di un gruppo.
+fn matrix_category_name(app: &App, cat: Option<crate::categories::CategoryId>) -> String {
+    cat.and_then(|c| app.categories.get_name(c))
+        .map(str::to_string)
+        .unwrap_or_else(|| "No category".to_string())
+}
+
+/// Pagine della matrice: le colonne (worker) sono divise in blocchi che
+/// entrano in larghezza; per ogni blocco le righe vanno su quante pagine
+/// servono (titolo e intestazione ripetuti) e il riepilogo per categoria chiude
+/// l'ultima pagina del blocco (o ne apre una nuova se non c'è spazio).
+fn matrix_pages(
+    app: &App,
+    m: &crate::worker_matrix::MatrixData,
+    from: i32,
+    to: i32,
+    today: i32,
+    created: &str,
+) -> Vec<Vec<Shape>> {
+    use crate::worker_matrix::category_color;
+    let avail = MATRIX_X1 - MATRIX_X0 - MATRIX_LABEL_W;
+    let per_page = ((avail / MATRIX_COL_MIN).floor() as usize).max(1);
+    let subtitle = format!(
+        "From {} to {}",
+        matrix_date(from, today),
+        matrix_date(to, today)
+    );
+    let row_h = |r: &crate::worker_matrix::MatrixRow, cols: &[usize]| -> f32 {
+        let lines = cols
+            .iter()
+            .map(|&c| r.cells[c].len())
+            .max()
+            .unwrap_or(0)
+            .max(1);
+        lines as f32 * MATRIX_LINE_H + 1.6
+    };
+
+    let mut pages = Vec::new();
+    let chunks: Vec<Vec<usize>> = (0..m.workers.len())
+        .collect::<Vec<_>>()
+        .chunks(per_page)
+        .map(|c| c.to_vec())
+        .collect();
+    for cols in &chunks {
+        let col_w = (avail / cols.len() as f32).min(MATRIX_COL_MAX);
+        let x1 = MATRIX_X0 + MATRIX_LABEL_W + col_w * cols.len() as f32;
+        let col_x = |i: usize| MATRIX_X0 + MATRIX_LABEL_W + i as f32 * col_w;
+
+        // Titolo + sottotitolo con l'intervallo, in testa a ogni pagina.
+        let title = |shapes: &mut Vec<Shape>| {
+            shapes.extend(text_left(
+                MATRIX_X0,
+                PAGE_H - 14.0,
+                "Projects × workers",
+                16.0,
+                true,
+                BLACK,
+            ));
+            shapes.extend(text_left(
+                MATRIX_X0,
+                PAGE_H - 21.0,
+                &subtitle,
+                10.0,
+                false,
+                BLACK,
+            ));
+        };
+        // Intestazione delle colonne (etichetta a sinistra + nomi dei worker)
+        // con il bordo alto a `y`; restituisce la y sotto l'intestazione.
+        let header = |shapes: &mut Vec<Shape>, y: f32, label: &str| -> f32 {
+            shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_HEAD_H, x1, y, GRAY_FOOTER));
+            shapes.extend(text_left(MATRIX_X0 + 1.5, y - 4.6, label, 8.0, true, BLACK));
+            for (i, &c) in cols.iter().enumerate() {
+                let name = truncate_to_w(&m.workers[c].1, 8.0, col_w - 2.0);
+                shapes.extend(text_center(
+                    col_x(i) + col_w / 2.0,
+                    y - 4.6,
+                    &name,
+                    8.0,
+                    true,
+                    BLACK,
+                ));
+            }
+            y - MATRIX_HEAD_H
+        };
+        let new_page = |shapes: &mut Vec<Shape>| -> f32 {
+            title(shapes);
+            header(shapes, MATRIX_TOP, "Project")
+        };
+        let footer = |shapes: &mut Vec<Shape>| {
+            shapes.extend(rect_fill(
+                MATRIX_X0,
+                FOOTER_BOT,
+                MATRIX_X1,
+                FOOTER_TOP,
+                GRAY_FOOTER,
+            ));
+            shapes.extend(text_center(
+                (MATRIX_X0 + MATRIX_X1) / 2.0,
+                (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+                created,
+                8.0,
+                false,
+                TEXT_GRAY,
+            ));
+        };
+        // Bordi verticali della fascia [y_bot, y_top].
+        let vlines = |shapes: &mut Vec<Shape>, y_bot: f32, y_top: f32| {
+            for x in [MATRIX_X0, MATRIX_X0 + MATRIX_LABEL_W]
+                .into_iter()
+                .chain((1..=cols.len()).map(col_x))
+            {
+                shapes.extend(line(x, y_bot, x, y_top, 0.2, GRAY_DK));
+            }
+        };
+
+        let mut shapes = Vec::new();
+        let mut y = new_page(&mut shapes);
+        let mut prev_cat: Option<Option<crate::categories::CategoryId>> = None;
+        // Solo i progetti in cui compare almeno un worker di questo blocco.
+        let rows = m
+            .rows
+            .iter()
+            .filter(|r| cols.iter().any(|&c| !r.cells[c].is_empty()));
+        for r in rows {
+            let group = prev_cat != Some(r.category);
+            let h = row_h(r, cols) + if group { MATRIX_GROUP_H } else { 0.0 };
+            if y - h < MATRIX_BOT {
+                footer(&mut shapes);
+                pages.push(std::mem::take(&mut shapes));
+                y = new_page(&mut shapes);
+            }
+            let color = u32_rgb(category_color(r.category));
+            if group {
+                // Intestazione del gruppo: nome della categoria su tutta la riga.
+                shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_GROUP_H, x1, y, color));
+                shapes.extend(text_left(
+                    MATRIX_X0 + 1.5,
+                    y - 3.6,
+                    &matrix_category_name(app, r.category),
+                    8.0,
+                    true,
+                    BLACK,
+                ));
+                shapes.extend(line(
+                    MATRIX_X0,
+                    y - MATRIX_GROUP_H,
+                    x1,
+                    y - MATRIX_GROUP_H,
+                    0.2,
+                    GRAY_DK,
+                ));
+                y -= MATRIX_GROUP_H;
+                prev_cat = Some(r.category);
+            }
+            let rh = row_h(r, cols);
+            // Riga del progetto: tinta della categoria e solo la tripletta.
+            let light = (
+                1.0 - (1.0 - color.0) * 0.45,
+                1.0 - (1.0 - color.1) * 0.45,
+                1.0 - (1.0 - color.2) * 0.45,
+            );
+            // Progetto chiuso: tinta della categoria spenta verso il grigio, a
+            // strisce, testo grigio, «closed».
+            let fg = if r.closed {
+                let (fill, hatch) = crate::worker_matrix::closed_colors(r.category);
+                shapes.extend(rect_fill(MATRIX_X0, y - rh, x1, y, u32_rgb(fill)));
+                let segs = crate::worker_matrix::hatch_segments(MATRIX_X0, x1, y, y - rh, 2.5);
+                for (ax, ay, bx, by) in segs {
+                    shapes.extend(line(ax, ay, bx, by, 0.2, u32_rgb(hatch)));
+                }
+                TEXT_GRAY
+            } else {
+                shapes.extend(rect_fill(MATRIX_X0, y - rh, x1, y, light));
+                BLACK
+            };
+            let base = y - 2.9;
+            let trip = truncate_to_w(&r.tripletta, MATRIX_FONT, MATRIX_LABEL_W - if r.closed { 13.0 } else { 3.0 });
+            shapes.extend(text_left(MATRIX_X0 + 1.5, base, &trip, MATRIX_FONT, true, fg));
+            if r.closed {
+                let x = MATRIX_X0 + 1.5 + text_w_mm(&trip, MATRIX_FONT) * 1.15 + 2.0;
+                shapes.extend(text_left(x, base, "closed", MATRIX_FONT, false, fg));
+            }
+            for (i, &c) in cols.iter().enumerate() {
+                for (l, dev) in r.cells[c].iter().enumerate() {
+                    let s = truncate_to_w(dev, MATRIX_FONT, col_w - 2.0);
+                    shapes.extend(text_center(
+                        col_x(i) + col_w / 2.0,
+                        base - l as f32 * MATRIX_LINE_H,
+                        &s,
+                        MATRIX_FONT,
+                        false,
+                        fg,
+                    ));
+                }
+            }
+            shapes.extend(line(MATRIX_X0, y - rh, x1, y - rh, 0.2, GRAY_DK));
+            vlines(&mut shapes, y - rh, y);
+            y -= rh;
+        }
+
+        // Riepilogo: per ogni categoria, in quanti progetti è presente il worker.
+        let sum_h = 1.5 + (m.categories.len() + 1) as f32 * MATRIX_SUM_H;
+        if y - sum_h < MATRIX_BOT {
+            footer(&mut shapes);
+            pages.push(std::mem::take(&mut shapes));
+            // Su una pagina nuova serve l'intestazione coi nomi dei worker.
+            y = new_page(&mut shapes);
+        }
+        y -= 1.5;
+        for (ci, cat) in m.categories.iter().enumerate() {
+            let color = u32_rgb(category_color(*cat));
+            shapes.extend(rect_fill(
+                MATRIX_X0,
+                y - MATRIX_SUM_H,
+                MATRIX_X0 + MATRIX_LABEL_W,
+                y,
+                color,
+            ));
+            let name = truncate_to_w(
+                &matrix_category_name(app, *cat),
+                MATRIX_FONT,
+                MATRIX_LABEL_W - 3.0,
+            );
+            shapes.extend(text_left(
+                MATRIX_X0 + 1.5,
+                y - 3.5,
+                &name,
+                MATRIX_FONT,
+                true,
+                BLACK,
+            ));
+            for (i, &c) in cols.iter().enumerate() {
+                let n = m.summary[ci][c];
+                if n > 0 {
+                    shapes.extend(text_center(
+                        col_x(i) + col_w / 2.0,
+                        y - 3.5,
+                        &n.to_string(),
+                        MATRIX_FONT,
+                        true,
+                        BLACK,
+                    ));
+                }
+            }
+            shapes.extend(line(
+                MATRIX_X0,
+                y - MATRIX_SUM_H,
+                x1,
+                y - MATRIX_SUM_H,
+                0.2,
+                GRAY_DK,
+            ));
+            vlines(&mut shapes, y - MATRIX_SUM_H, y);
+            y -= MATRIX_SUM_H;
+        }
+        // Totale: progetti (tutte le categorie) in cui è coinvolto il worker.
+        shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_SUM_H, x1, y, GRAY_FOOTER));
+        shapes.extend(text_left(
+            MATRIX_X0 + 1.5,
+            y - 3.5,
+            "Total projects",
+            MATRIX_FONT,
+            true,
+            BLACK,
+        ));
+        for (i, &c) in cols.iter().enumerate() {
+            shapes.extend(text_center(
+                col_x(i) + col_w / 2.0,
+                y - 3.5,
+                &m.totals[c].to_string(),
+                MATRIX_FONT,
+                true,
+                BLACK,
+            ));
+        }
+        shapes.extend(line(MATRIX_X0, y - MATRIX_SUM_H, x1, y - MATRIX_SUM_H, 0.2, GRAY_DK));
+        vlines(&mut shapes, y - MATRIX_SUM_H, y);
+        footer(&mut shapes);
+        pages.push(shapes);
+    }
+    pages
+}
+
+/// PDF della matrice progetti × worker con l'intervallo `[from, to]` (giorni)
+/// in testa. `None` se non ci sono worker o progetti da mostrare.
+pub fn build_matrix_pdf(
+    app: &App,
+    m: &crate::worker_matrix::MatrixData,
+    from: i32,
+    to: i32,
+) -> Option<Vec<u8>> {
+    if m.workers.is_empty() || m.rows.is_empty() {
+        return None;
+    }
+    let mut doc = PdfDocument::new("Projects x workers");
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let created = chrono::Local::now().format(US_DATE).to_string();
+    let today = local_to_days(&chrono::Local::now().date_naive());
+    let pages: Vec<PdfPage> = matrix_pages(app, m, from, to, today, &created)
+        .into_iter()
+        .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
+        .collect();
+    Some(
+        doc.with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut Vec::new()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2583,6 +2922,39 @@ mod tests {
     use crate::single_dev_utils::single_dev::WeekId;
     use crate::single_effort_utils::sinlge_effort::Effort;
     use crate::workers_utils::worker::WorkerId;
+
+    /// Matrice progetti × worker: tanti worker (più blocchi di colonne) e tanti
+    /// progetti (più pagine per blocco) → PDF valido con più pagine; senza
+    /// progetti nell'intervallo → `None`.
+    #[test]
+    fn worker_matrix_pdf_paginates() {
+        let mut app = App::new();
+        let dev = app.devs.add("Frontend");
+        let cat = app.categories.add("Cat");
+        let workers: Vec<WorkerId> = (0..12).map(|i| app.workers.add(&format!("W{i}"))).collect();
+        for i in 0..60 {
+            let p = app
+                .projects
+                .add(&format!("Progetto {i}"), Some(&format!("P{i:02}")), None);
+            if i % 2 == 0 {
+                app.projects.set_category(p, Some(cat));
+            }
+            app.projects.add_dev(p, dev);
+            app.projects
+                .add_effort(p, dev, WeekId(20000), workers[i % 12], Effort(0));
+        }
+        let sel = workers.iter().copied().collect();
+        let m = crate::worker_matrix::build(&app, &sel, 20000, 20006);
+        assert_eq!(m.rows.len(), 60);
+        let pages = matrix_pages(&app, &m, 20000, 20006, 20000, "x");
+        // 12 worker stanno in un solo blocco di colonne; 60 progetti (più le
+        // intestazioni dei 2 gruppi e il riepilogo) vanno su 3 pagine.
+        assert_eq!(pages.len(), 3);
+        let bytes = build_matrix_pdf(&app, &m, 20000, 20006).expect("Some");
+        assert!(bytes.starts_with(b"%PDF"));
+        let empty = crate::worker_matrix::build(&app, &sel, 30000, 30006);
+        assert!(build_matrix_pdf(&app, &empty, 30000, 30006).is_none());
+    }
 
     #[test]
     fn no_eligible_projects_returns_none() {
