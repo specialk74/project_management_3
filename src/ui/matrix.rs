@@ -22,9 +22,65 @@ fn jiff_to_days(d: jiff::civil::Date) -> Option<i32> {
         .map(|n| local_to_days(&n))
 }
 
+/// Intervallo `[1 gennaio dell'anno più vecchio, 31 dicembre del più recente]`
+/// (giorni) degli anni scelti nella combo; `None` se nessun anno è scelto.
+fn years_range(years: &std::collections::BTreeSet<i32>) -> Option<(i32, i32)> {
+    let (first, last) = (years.first()?, years.last()?);
+    let from = chrono::NaiveDate::from_ymd_opt(*first, 1, 1)?;
+    let to = chrono::NaiveDate::from_ymd_opt(*last, 12, 31)?;
+    Some((local_to_days(&from), local_to_days(&to)))
+}
+
+/// Combo degli anni (anni di inizio/fine dei progetti, come il filtro Anni):
+/// scegliendone uno o più, Da/A diventano 1/1 del più vecchio → 31/12 del più
+/// recente. Ritorna `true` se la selezione è cambiata.
+fn years_combo(ui: &mut egui::Ui, app: &App, years: &mut std::collections::BTreeSet<i32>) -> bool {
+    let mut changed = false;
+    let text = if years.is_empty() {
+        "Anni: —".to_string()
+    } else {
+        let list: Vec<String> = years.iter().map(i32::to_string).collect();
+        format!("Anni: {}", list.join(", "))
+    };
+    egui::ComboBox::from_id_salt("matrix_years")
+        .selected_text(text)
+        .width(MX_YEARS_W)
+        .show_ui(ui, |ui| {
+            let all = available_years(app);
+            if all.is_empty() {
+                ui.label("Nessun progetto con date di inizio/fine.");
+            }
+            for y in all {
+                let mut on = years.contains(&y);
+                if ui.checkbox(&mut on, y.to_string()).changed() {
+                    if on {
+                        years.insert(y);
+                    } else {
+                        years.remove(&y);
+                    }
+                    changed = true;
+                }
+            }
+            if !years.is_empty() {
+                ui.separator();
+                if ui.button("Deseleziona tutti").clicked() {
+                    years.clear();
+                    changed = true;
+                }
+            }
+        })
+        .response
+        .on_hover_text(
+            "Imposta Da/A dal 1° gennaio dell'anno più vecchio scelto al 31 dicembre \
+             del più recente.",
+        );
+    changed
+}
+
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
-/// `value`: `None` = oggi.
-fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) {
+/// `value`: `None` = oggi. Ritorna `true` se l'utente l'ha cambiato.
+fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) -> bool {
+    let before = *value;
     ui.label(egui::RichText::new(label).strong());
     if ui.radio(value.is_none(), "Oggi").clicked() {
         *value = None;
@@ -45,6 +101,7 @@ fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option
             }
         }
     });
+    *value != before
 }
 
 /// Worker proponibili nella dialog di selezione: quelli con `show_in_find`
@@ -146,6 +203,7 @@ const MX_LINE_H: f32 = 15.0;
 const MX_PAD: f32 = 4.0;
 const MX_SUM_GAP: f32 = 4.0;
 const MX_SUM_H: f32 = 20.0;
+const MX_YEARS_W: f32 = 180.0;
 
 fn mx_row_h(lines: usize) -> f32 {
     lines.max(1) as f32 * MX_LINE_H + 2.0 * MX_PAD
@@ -419,18 +477,36 @@ pub(crate) fn matrix_window(
         .default_pos(egui::pos2(80.0, 60.0))
         .open(&mut open)
         .show(ctx, |ui| {
+            // Da/A cambiati a mano: la combo anni non descrive più l'intervallo.
+            let mut manual = false;
+            let mut years_changed = false;
             ui.horizontal(|ui| {
-                range_end_picker(ui, "Da:", "matrix_from", &mut state.matrix_from);
+                manual |= range_end_picker(ui, "Da:", "matrix_from", &mut state.matrix_from);
                 // Fine intervallo ancorata a destra: un blocco di larghezza fissa
                 // (disposto da sinistra a destra) in un layout destra→sinistra.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.allocate_ui_with_layout(
                         egui::vec2(280.0, ui.spacing().interact_size.y),
                         egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| range_end_picker(ui, "A:", "matrix_to", &mut state.matrix_to),
+                        |ui| {
+                            manual |=
+                                range_end_picker(ui, "A:", "matrix_to", &mut state.matrix_to)
+                        },
                     );
+                    // In mezzo: la combo degli anni, centrata nello spazio rimasto.
+                    let gap = ((ui.available_width() - MX_YEARS_W) / 2.0).max(0.0);
+                    ui.add_space(gap);
+                    years_changed = years_combo(ui, app, &mut state.matrix_years);
                 });
             });
+            if years_changed {
+                if let Some((f, t)) = years_range(&state.matrix_years) {
+                    state.matrix_from = Some(f);
+                    state.matrix_to = Some(t);
+                }
+            } else if manual {
+                state.matrix_years.clear();
+            }
             ui.horizontal(|ui| {
                 if ui.button("Worker…").clicked() {
                     state.matrix_select_open = true;
@@ -472,5 +548,23 @@ pub(crate) fn matrix_window(
         });
     if !open {
         state.show_matrix = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// Anni scelti → Da = 1/1 del più vecchio, A = 31/12 del più recente (anche
+    /// se in mezzo c'è un anno non scelto); nessun anno → nessun intervallo.
+    #[test]
+    fn years_range_spans_oldest_to_newest() {
+        let d = |y, m, dd| local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        assert_eq!(years_range(&BTreeSet::new()), None);
+        let one: BTreeSet<i32> = [2026].into();
+        assert_eq!(years_range(&one), Some((d(2026, 1, 1), d(2026, 12, 31))));
+        let gap: BTreeSet<i32> = [2027, 2024].into();
+        assert_eq!(years_range(&gap), Some((d(2024, 1, 1), d(2027, 12, 31))));
     }
 }

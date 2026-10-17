@@ -685,6 +685,9 @@ pub struct UiState {
     matrix_worker_search: String,
     matrix_from: Option<i32>,
     matrix_to: Option<i32>,
+    // anni scelti nella combo in alto: impostano Da/A (1/1 del più vecchio →
+    // 31/12 del più recente); svuotata se Da/A vengono cambiati a mano.
+    matrix_years: std::collections::BTreeSet<i32>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,

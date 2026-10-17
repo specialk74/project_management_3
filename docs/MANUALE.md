@@ -935,7 +935,12 @@ progetto**.
    (al riavvio dell'app riparte vuota). Dalla matrice il pulsante **Worker…** riapre
    la scelta.
 2. **Intervallo di date** — in alto, a sinistra **Da:** e a destra **A:**; ognuno può
-   essere **Oggi** oppure una **Data** scelta col calendario. Una settimana conta se
+   essere **Oggi** oppure una **Data** scelta col calendario. **In mezzo** c'è la
+   combo **«Anni»**, con gli anni di inizio/fine dei progetti (come il filtro Anni,
+   `Cmd/Ctrl+Y`): spuntando uno o più anni, **Da** diventa il **1° gennaio dell'anno
+   più vecchio** e **A** il **31 dicembre del più recente** (con 2024 e 2026
+   l'intervallo copre anche il 2025). Da e A restano modificabili: se li cambi a mano
+   la combo si svuota. Una settimana conta se
    **si sovrappone anche di un solo giorno** all'intervallo. Se la data iniziale è
    successiva alla finale compare un avviso e la matrice non viene mostrata.
 3. **Righe** — compaiono **tutti i progetti** (aperti e chiusi, indipendentemente da

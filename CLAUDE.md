@@ -284,7 +284,11 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   **Matrice progetti/worker…**: prima `matrix_select_window` (worker `show_in_find`,
   ricerca + Select All → `UiState.matrix_workers`, **solo sessione**), poi
   `matrix_window` (`UiState.matrix_from`/`matrix_to: Option<i32>` in giorni, `None` =
-  oggi; `DatePickerButton`). I dati vengono da `src/worker_matrix.rs`
+  oggi; `DatePickerButton`). In mezzo alla barra la combo anni (`years_combo`,
+  anni da `available_years`, stato `UiState.matrix_years: BTreeSet<i32>`, solo
+  sessione) imposta Da/A con `years_range` (1/1 del più vecchio → 31/12 del più
+  recente); un cambio manuale di Da/A (`range_end_picker` → `bool`) la svuota.
+  I dati vengono da `src/worker_matrix.rs`
   (`build(app, &workers, from, to) -> MatrixData`, condiviso con l'export):
   colonne = worker, righe = **tutti** i progetti (aperti e chiusi, ignora Vista e
   filtri) in cui un worker è **assegnato, anche a effort 0**, in una settimana che
