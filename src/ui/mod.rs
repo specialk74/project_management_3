@@ -359,6 +359,32 @@ struct PdfMultiExport {
     entries: Vec<(ProjectId, bool)>,
 }
 
+/// Ultime scelte della dialog "Esporta PDF" di **un** progetto, ricordate per la
+/// sessione (non persistite): dev nell'ordine scelto con la spunta, e spunta
+/// di ogni milestone.
+#[derive(Default)]
+struct ExportProjectMemory {
+    devs: Vec<(DevId, bool)>,
+    milestones: HashMap<MilestoneId, bool>,
+}
+
+/// Dev della dialog di export di un progetto a partire dalle scelte ricordate:
+/// quelli ancora presenti tengono ordine e spunta; i dev nuovi (o tutti, senza
+/// memoria) vanno in fondo, spuntati, nell'ordine del progetto.
+fn restore_dev_entries(current: &[DevId], remembered: &[(DevId, bool)]) -> Vec<(DevId, bool)> {
+    let mut out: Vec<(DevId, bool)> = remembered
+        .iter()
+        .filter(|(d, _)| current.contains(d))
+        .copied()
+        .collect();
+    for d in current {
+        if !out.iter().any(|(x, _)| x == d) {
+            out.push((*d, true));
+        }
+    }
+    out
+}
+
 /// Stato della dialog "Minuta": progetti non chiusi con flag di selezione e la
 /// scelta se includere solo le note della settimana corrente oppure tutte.
 struct MinutaState {
@@ -695,6 +721,11 @@ pub struct UiState {
     // effort 0); scelta chiesta nelle dialog di export, ricordata tra un export
     // e l'altro, non persistita.
     export_ghost: ExportGhost,
+    // ultime scelte delle dialog di export PDF/SVG, solo per la sessione:
+    // per progetto (dev, ordine, milestone) e, nell'export multi-progetto, la
+    // spunta di ogni progetto (quelli mai visti partono spuntati).
+    export_project_memory: HashMap<ProjectId, ExportProjectMemory>,
+    export_multi_memory: HashMap<ProjectId, bool>,
     // ambiti milestone scelti nelle dialog di export (Internal / External):
     // uno spuntato = un file, entrambi = due file. Ricordato tra un export e
     // l'altro, non persistito.
@@ -2235,21 +2266,26 @@ impl PjmApp {
                         .ui
                         .toast_warn("Nessun progetto visibile: PDF non creato."),
                     [proj] => {
-                        let entries = self
-                            .app
-                            .projects
-                            .list_devs(proj)
-                            .into_iter()
-                            .map(|d| (d, true))
-                            .collect();
-                        // Milestone del progetto, in ordine di settimana e tutte
-                        // pre-selezionate (a parità di settimana, per id).
+                        // Ripropone le ultime scelte fatte per questo progetto
+                        // (in memoria); dev e milestone nuovi partono spuntati.
+                        let mem = self.ui.export_project_memory.get(&proj);
+                        let entries = restore_dev_entries(
+                            &self.app.projects.list_devs(proj),
+                            mem.map_or(&[][..], |m| &m.devs[..]),
+                        );
+                        // Milestone del progetto, in ordine di settimana (a parità
+                        // di settimana, per id).
                         let mut milestones: Vec<(MilestoneId, WeekId, bool)> = self
                             .app
                             .projects
                             .list_project_milestones(proj)
                             .into_iter()
-                            .map(|(id, w)| (id, w, true))
+                            .map(|(id, w)| {
+                                let on = mem
+                                    .and_then(|m| m.milestones.get(&id).copied())
+                                    .unwrap_or(true);
+                                (id, w, on)
+                            })
                             .collect();
                         milestones.sort_by_key(|(id, w, _)| (w.0, id.0));
                         self.ui.pdf_export = Some(PdfExport {
@@ -2259,7 +2295,11 @@ impl PjmApp {
                         });
                     }
                     _ => {
-                        let entries = eligible.into_iter().map(|id| (id, true)).collect();
+                        let mem = &self.ui.export_multi_memory;
+                        let entries = eligible
+                            .into_iter()
+                            .map(|id| (id, mem.get(&id).copied().unwrap_or(true)))
+                            .collect();
                         self.ui.pdf_multi_export = Some(PdfMultiExport { entries });
                     }
                 }
@@ -3256,6 +3296,22 @@ fn dev_name(app: &App, dev: DevId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restore_dev_entries_keeps_order_and_flags() {
+        let (a, b, c, d) = (DevId(0), DevId(1), DevId(2), DevId(3));
+        // Nessuna memoria: tutti spuntati nell'ordine del progetto.
+        assert_eq!(
+            restore_dev_entries(&[a, b], &[]),
+            vec![(a, true), (b, true)]
+        );
+        // Memoria: c, a (a tolto); b è stato rimosso dal progetto, d è nuovo.
+        let mem = [(c, true), (b, true), (a, false)];
+        assert_eq!(
+            restore_dev_entries(&[a, c, d], &mem),
+            vec![(c, true), (a, false), (d, true)]
+        );
+    }
     use std::cell::Cell;
 
     /// Renderizza `project_checklist` con `n` progetti dentro una finestra grande

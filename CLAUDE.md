@@ -529,6 +529,19 @@ the footer date.
   newtype like `ExportGhost` so it starts **on**; remembered, not persisted) of both Gantt dialogs. `dev_date(days)` = `short_date` + ` 'YY`
   (`"Sep 22 '26"`) and is used **only** for the date label after each dev bar;
   milestone flag dates keep `short_date`.
+  The label is `dev_range(start, end)` with end = **Friday** of the last effort week
+  (`r.end_day + DEV_END_OFFSET`, 4 days after its Monday), so a one-week dev reads
+  `Mon - Fri` of that week; with the year on, a same-year range shows it only on the
+  end (`Sep 21 - Oct 9 '26`), a cross-year one on both. Only the label: the bar already spans to `end_day + 7`.
+- **Remembered dialog choices** (in memory only, lost on exit): the single-project
+  dialog stores, **per project**, dev ticks + order and milestone ticks in
+  `UiState.export_project_memory: HashMap<ProjectId, ExportProjectMemory>`
+  (written every frame by `pdf_export_window`, also on Annulla); `Action::ExportPdf`
+  rebuilds the lists with `restore_dev_entries` (remembered devs keep order/tick,
+  new ones appended ticked) and `milestones.get(id).unwrap_or(true)`. The
+  multi-project dialog keeps `UiState.export_multi_memory: HashMap<ProjectId, bool>`
+  (projects never seen start ticked). Global options (format, %, year, ghost,
+  scopes) were already remembered.
 
 - **Milestone scope** (`MilestoneScope { Internal, External }` in `milestones.rs`;
   `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`, like
@@ -550,8 +563,8 @@ the footer date.
   no milestones, so it is unaffected.
 - **Per-milestone selection** (single-project dialog only): `PdfExport.milestones:
   Vec<(MilestoneId, WeekId, bool)>` is filled when `Action::ExportPdf` opens
-  `pdf_export_window` (from `list_project_milestones`, sorted by week then id, all
-  ticked). The dialog draws a «Milestone da includere» checklist (Select All +
+  `pdf_export_window` (from `list_project_milestones`, sorted by week then id,
+  ticked unless remembered otherwise — see **Remembered dialog choices**). The dialog draws a «Milestone da includere» checklist (Select All +
   one checkbox per milestone, labelled `icon nome — yy-mm-dd [Int/Ext]` in the
   milestone color) under the dev list; the ticked ids ride along in
   `Action::ExportPdfProject/ExportSvgProject { …, milestones }` and become

@@ -984,10 +984,12 @@ quanto, lo decide `corner_pct` nel file dati (vedi capitolo 2).
 **File ▸ Esporta…** con più progetti visibili apre una **finestra di selezione dei
 progetti**:
 
-- elenca i **progetti visibili** (abilitati e non chiusi), tutti pre-selezionati,
-  identificati dalla **tripletta** (o dalla descrizione se assente);
+- elenca i **progetti visibili** (abilitati e non chiusi), identificati dalla **tripletta** (o dalla descrizione se assente);
 - **Select All** in cima per selezionare/deselezionare tutti;
-- **checkbox** per includere/escludere ciascun progetto;
+- **checkbox** per includere/escludere ciascun progetto. Le spunte sono **ricordate
+  finché il programma è aperto**: riaprendo la finestra ritrovi le scelte
+  dell'ultima volta; un progetto mai comparso prima nell'elenco parte spuntato. Alla
+  chiusura del programma le scelte si perdono;
 - **Esporta PDF…** genera un PDF con una pagina per ogni progetto **selezionato e
   idoneo** (uno o due file, secondo le categorie milestone scelte); **Annulla**
   chiude senza esportare.
@@ -999,8 +1001,8 @@ senza effort non compaiono.
 Se hai **filtrato fino a un solo progetto visibile**, **File ▸ Esporta PDF…** apre
 una **finestra di selezione**:
 
-- elenca **tutti i dev del progetto**, anche quelli **senza effort**, tutti
-  pre-selezionati e nell'ordine della lista dev;
+- elenca **tutti i dev del progetto**, anche quelli **senza effort**; la prima
+  volta sono tutti spuntati e nell'ordine della lista dev;
 - **Select All** in cima per selezionare/deselezionare tutti;
 - **checkbox** per includere/escludere ciascun dev;
 - **trascinamento** per riordinare i dev (una linea arancione indica il punto di
@@ -1012,6 +1014,11 @@ una **finestra di selezione**:
   fra parentesi quadre (`[Int]`, `[Int/Ext]`, `[Ext]`). Vengono disegnate **solo
   le milestone spuntate**; se il progetto non ne ha nessuna compare una scritta
   al posto dell'elenco;
+- **memoria delle scelte**: spunte dei dev, loro **ordine** e spunte delle
+  milestone sono ricordate **per progetto** finché il programma è aperto (anche se
+  chiudi con Annulla): riaprendo l'export dello stesso progetto ritrovi tutto come
+  l'avevi lasciato. Dev o milestone aggiunti nel frattempo compaiono spuntati (i dev
+  in fondo). Alla chiusura del programma le scelte si perdono;
 - **Esporta…** genera il PDF con i dev selezionati, nell'ordine scelto; **Annulla**
   chiude.
 
@@ -1123,10 +1130,18 @@ file).
 ### Anno nelle date dei dev
 Sempre nelle finestre di export, la casella **«Includi l'anno nelle date dei dev
 ('26)»** aggiunge l'**anno abbreviato** all'etichetta delle date a fine barra, nello
-stile americano con l'apostrofo: `Sep 22 '26 - Oct 5 '26` invece di `Sep 22 - Oct 5`.
-Utile per i progetti che durano più di un anno. Le date delle bandierine delle
+stile americano con l'apostrofo. Con la casella attiva l'anno compare **sempre**,
+anche per i progetti che stanno dentro un solo anno solare: se inizio e fine del dev
+sono nello **stesso anno** è scritto una volta sola, dopo la fine
+(`Sep 21 - Oct 9 '26`); se sono in anni diversi compare in entrambe
+(`Dec 14 '26 - Jan 8 '27`). Senza casella: `Sep 21 - Oct 9`. Le date delle bandierine delle
 milestone non cambiano. È **attiva** per impostazione predefinita, vale per PDF e
 SVG ed è ricordata tra un export e l'altro (non è salvata sul file).
+
+La **prima data** è il lunedì della prima settimana con effort; l'**ultima** è il
+**venerdì** dell'ultima settimana con effort (lunedì + 4 giorni). Un dev con effort in
+una sola settimana mostra quindi lunedì e venerdì di quella settimana, ad esempio
+`Sep 21 - Sep 25 '26`.
 
 ### Andamento nel tempo (PDF)
 **File ▸ Andamento…** esporta un PDF con l'**andamento nel tempo** delle percentuali

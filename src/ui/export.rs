@@ -420,6 +420,14 @@ pub(crate) fn pdf_export_window(
     state.export_show_year = show_year;
     state.export_scopes = scopes;
     state.export_ghost = ghost;
+    // Ricorda dev (ordine + spunta) e milestone spuntate di questo progetto.
+    state.export_project_memory.insert(
+        px.proj,
+        ExportProjectMemory {
+            devs: px.entries.clone(),
+            milestones: px.milestones.iter().map(|(id, _, on)| (*id, *on)).collect(),
+        },
+    );
 
     // Raccolgo i dev selezionati (prestito di `px`) prima di modificare lo stato.
     let devs_if_export = (do_export || do_export_svg).then(|| {
@@ -535,6 +543,10 @@ pub(crate) fn pdf_multi_export_window(
     state.export_show_year = show_year;
     state.export_scopes = scopes;
     state.export_ghost = ghost;
+    // Ricorda la spunta di ogni progetto elencato.
+    for (p, on) in &px.entries {
+        state.export_multi_memory.insert(*p, *on);
+    }
 
     if do_export {
         let projects: Vec<ProjectId> = px

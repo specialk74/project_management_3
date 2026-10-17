@@ -274,6 +274,10 @@ fn add_months(d: NaiveDate, n: i32) -> NaiveDate {
     }
 }
 
+/// Giorni da aggiungere al lunedì dell'ultima settimana di effort per la data
+/// di fine nell'etichetta del dev: 4 = venerdì (fine settimana lavorativa).
+const DEV_END_OFFSET: i32 = 4;
+
 /// Etichetta data breve, all'americana: "Sep 22".
 fn short_date(days: i32) -> String {
     let d = day_to_date(days);
@@ -289,6 +293,19 @@ fn dev_date(days: i32) -> String {
     } else {
         short_date(days)
     }
+}
+
+/// Etichetta «inizio - fine» del dev. Con l'anno attivo, se le due date cadono
+/// nello stesso anno l'anno compare solo nella fine («Sep 21 - Oct 9 '26»),
+/// altrimenti in entrambe («Dec 14 '26 - Jan 8 '27»).
+fn dev_range(start: i32, end: i32) -> String {
+    let same_year = day_to_date(start).year() == day_to_date(end).year();
+    let from = if same_year {
+        short_date(start)
+    } else {
+        dev_date(start)
+    };
+    format!("{from} - {}", dev_date(end))
 }
 
 // --- Helper testo/disegno ---------------------------------------------------
@@ -1280,7 +1297,9 @@ fn page_shapes(
         // richiesto, le percentuali (presunta/dichiarata) la seguono, tutto a
         // destra e con lo **stesso font delle date** (7.0). Le righe senza effort
         // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
-        let mut lbl = format!("{} - {}", dev_date(r.start_day), dev_date(r.end_day));
+        // La fine è il **venerdì** dell'ultima settimana (lunedì + 4): un dev
+        // con effort in una sola settimana mostra «lun - ven» di quella settimana.
+        let mut lbl = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
         if show_pct() {
             let pct = match r.presumed_pct {
                 Some(p) => format!("({p}%/{}%)", r.declared_pct),
@@ -3643,8 +3662,53 @@ mod tests {
         set_show_pct(false);
     }
 
-    /// La spunta «anno» aggiunge `'AA` a entrambe le date del dev (e solo a
-    /// quelle: il resto della pagina non cambia).
+    /// La spunta «anno» aggiunge `'AA` alle date del dev (solo alla fine se
+    /// inizio e fine sono nello stesso anno) e a nient'altro nella pagina.
+    /// Inizio e fine in anni diversi: l'anno compare in entrambe le date.
+    #[test]
+    fn dev_range_shows_both_years_across_new_year() {
+        let d = |y, m, dd| local_to_days(&NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        set_show_year(true);
+        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8)), "Dec 14 '26 - Jan 8 '27");
+        assert_eq!(dev_range(d(2026, 9, 21), d(2026, 10, 9)), "Sep 21 - Oct 9 '26");
+        set_show_year(false);
+        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8)), "Dec 14 - Jan 8");
+        set_show_year(true);
+    }
+
+    /// Etichetta del dev: la fine è il venerdì dell'ultima settimana di effort,
+    /// quindi un effort in una sola settimana mostra «lunedì - venerdì».
+    #[test]
+    fn dev_label_ends_on_friday_of_last_week() {
+        let monday = local_to_days(&NaiveDate::from_ymd_opt(2026, 9, 21).unwrap());
+        let mut app = App::new();
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(monday as usize - 14)));
+        app.projects
+            .set_project_end_week(pid, Some(WeekId(monday as usize + 28)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(monday as usize), WorkerId(0), Effort(8));
+        set_show_year(true);
+        let shapes = project_shapes(
+            &app,
+            pid,
+            &project_name(&app, pid),
+            &dev_info_map(&app),
+            monday,
+            "",
+            Some(&[dev]),
+            true,
+            BarFormat::Continuous,
+        )
+        .unwrap();
+        let t = texts(&shapes);
+        assert!(
+            t.iter().any(|s| s == "Sep 21 - Sep 25 '26"),
+            "attesa «Sep 21 - Sep 25 '26»: {t:?}"
+        );
+    }
+
     #[test]
     fn show_year_adds_short_year_to_dev_dates() {
         let mut app = App::new();
@@ -3679,10 +3743,11 @@ mod tests {
         assert_eq!(dated.len(), 1, "una sola etichetta date: {on:?}");
         assert_eq!(
             dated[0].matches(&y).count(),
-            2,
-            "anno abbreviato dopo entrambe le date: {}",
+            1,
+            "stesso anno: anno abbreviato solo dopo la fine: {}",
             dated[0]
         );
+        assert!(dated[0].ends_with(&y), "{}", dated[0]);
         assert!(!off.iter().any(|t| t.contains(&y)), "senza spunta niente anno");
         assert_eq!(on.len(), off.len(), "nessun altro testo cambia");
         set_show_year(true);
