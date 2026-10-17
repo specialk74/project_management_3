@@ -688,6 +688,9 @@ pub struct UiState {
     // anni scelti nella combo in alto: impostano Da/A (1/1 del più vecchio →
     // 31/12 del più recente); svuotata se Da/A vengono cambiati a mano.
     matrix_years: std::collections::BTreeSet<i32>,
+    // categorie scelte nella combo in alto (`None` = «Senza categoria»); vuoto =
+    // tutte. Solo sessione.
+    matrix_categories: std::collections::BTreeSet<Option<CategoryId>>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -1010,6 +1013,8 @@ pub(crate) enum Action {
     ExportWorkerMatrix {
         from: i32,
         to: i32,
+        /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo.
+        years: Vec<i32>,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -2436,9 +2441,24 @@ impl PjmApp {
                     );
                 }
             }
-            Action::ExportWorkerMatrix { from, to } => {
-                let m = crate::worker_matrix::build(&self.app, &self.ui.matrix_workers, from, to);
-                match crate::pdf_export::build_matrix_pdf(&self.app, &m, from, to) {
+            Action::ExportWorkerMatrix { from, to, years } => {
+                let m = crate::worker_matrix::build_filtered(
+                    &self.app,
+                    &self.ui.matrix_workers,
+                    from,
+                    to,
+                    &self.ui.matrix_categories,
+                );
+                let categories: Vec<Option<CategoryId>> =
+                    self.ui.matrix_categories.iter().copied().collect();
+                match crate::pdf_export::build_matrix_pdf(
+                    &self.app,
+                    &m,
+                    from,
+                    to,
+                    &years,
+                    &categories,
+                ) {
                     Some(bytes) => {
                         save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("matrice", "pdf"))
                     }

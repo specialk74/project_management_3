@@ -288,6 +288,10 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   anni da `available_years`, stato `UiState.matrix_years: BTreeSet<i32>`, solo
   sessione) imposta Da/A con `years_range` (1/1 del più vecchio → 31/12 del più
   recente); un cambio manuale di Da/A (`range_end_picker` → `bool`) la svuota.
+  Accanto, `categories_combo` → `UiState.matrix_categories:
+  BTreeSet<Option<CategoryId>>` (vuoto = tutte, `None` = «Senza categoria»,
+  solo sessione), applicato da `worker_matrix::build_filtered` (righe, riepilogo e
+  totali; `build` = senza filtro) e stampato nel sottotitolo del PDF.
   I dati vengono da `src/worker_matrix.rs`
   (`build(app, &workers, from, to) -> MatrixData`, condiviso con l'export):
   colonne = worker, righe = **tutti** i progetti (aperti e chiusi, ignora Vista e
@@ -301,7 +305,8 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   «chiuso»/«closed»; `summary[cat][worker]` = progetti per categoria (righe subito
   sotto la matrice, senza intestazione propria),
   `totals[worker]` = progetti totali (riga «Totale progetti» / «Total projects»).
-  **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to }` →
+  **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to, years }` (anni della
+  combo, stampati nel sottotitolo da `matrix_subtitle`) →
   `pdf_export::build_matrix_pdf` (A4 orizzontale, inglese; colonne in blocchi da
   `MATRIX_COL_MIN`, in ogni blocco solo le righe dei suoi worker, righe paginate con
   intestazione ripetuta, riepilogo in coda al blocco).

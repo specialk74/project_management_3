@@ -77,6 +77,64 @@ fn years_combo(ui: &mut egui::Ui, app: &App, years: &mut std::collections::BTree
     changed
 }
 
+/// Combo delle categorie (prima «Senza categoria», poi le categorie per id):
+/// con almeno una scelta la matrice mostra solo i progetti di quelle categorie.
+fn categories_combo(
+    ui: &mut egui::Ui,
+    app: &App,
+    cats: &mut std::collections::BTreeSet<Option<CategoryId>>,
+) {
+    let all: Vec<(Option<CategoryId>, String)> = std::iter::once((None, category_name(app, None)))
+        .chain(
+            app.categories
+                .list()
+                .into_iter()
+                .map(|(id, n)| (Some(id), n)),
+        )
+        .collect();
+    let text = if cats.is_empty() {
+        "Categorie: tutte".to_string()
+    } else {
+        let names: Vec<&str> = all
+            .iter()
+            .filter(|(c, _)| cats.contains(c))
+            .map(|(_, n)| n.as_str())
+            .collect();
+        format!("Categorie: {}", names.join(", "))
+    };
+    egui::ComboBox::from_id_salt("matrix_categories")
+        .selected_text(text)
+        .width(MX_YEARS_W)
+        .show_ui(ui, |ui| {
+            for (c, name) in &all {
+                let mut on = cats.contains(c);
+                if ui
+                    .checkbox(
+                        &mut on,
+                        egui::RichText::new(name)
+                            .background_color(category_fill(*c, false))
+                            .color(Color32::BLACK),
+                    )
+                    .changed()
+                {
+                    if on {
+                        cats.insert(*c);
+                    } else {
+                        cats.remove(c);
+                    }
+                }
+            }
+            if !cats.is_empty() {
+                ui.separator();
+                if ui.button("Tutte").clicked() {
+                    cats.clear();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Nessuna scelta = tutte le categorie.");
+}
+
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
 /// `value`: `None` = oggi. Ritorna `true` se l'utente l'ha cambiato.
 fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) -> bool {
@@ -467,7 +525,13 @@ pub(crate) fn matrix_window(
     let from = state.matrix_from.unwrap_or(today);
     let to = state.matrix_to.unwrap_or(today);
     let valid = from <= to;
-    let m = crate::worker_matrix::build(app, &state.matrix_workers, from, to);
+    let m = crate::worker_matrix::build_filtered(
+        app,
+        &state.matrix_workers,
+        from,
+        to,
+        &state.matrix_categories,
+    );
 
     let mut open = true;
     egui::Window::new("Matrice progetti × worker")
@@ -493,9 +557,12 @@ pub(crate) fn matrix_window(
                                 range_end_picker(ui, "A:", "matrix_to", &mut state.matrix_to)
                         },
                     );
-                    // In mezzo: la combo degli anni, centrata nello spazio rimasto.
-                    let gap = ((ui.available_width() - MX_YEARS_W) / 2.0).max(0.0);
+                    // In mezzo: le combo di anni e categorie, centrate nello spazio
+                    // rimasto (layout destra→sinistra: categorie prima, a destra).
+                    let both = 2.0 * MX_YEARS_W + 3.0 * ui.spacing().item_spacing.x + 40.0;
+                    let gap = ((ui.available_width() - both) / 2.0).max(0.0);
                     ui.add_space(gap);
+                    categories_combo(ui, app, &mut state.matrix_categories);
                     years_changed = years_combo(ui, app, &mut state.matrix_years);
                 });
             });
@@ -516,7 +583,11 @@ pub(crate) fn matrix_window(
                     .add_enabled(can_export, egui::Button::new("Esporta PDF…"))
                     .clicked()
                 {
-                    actions.push(Action::ExportWorkerMatrix { from, to });
+                    actions.push(Action::ExportWorkerMatrix {
+                        from,
+                        to,
+                        years: state.matrix_years.iter().copied().collect(),
+                    });
                 }
                 ui.label(
                     egui::RichText::new(format!(

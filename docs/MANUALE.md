@@ -940,7 +940,10 @@ progetto**.
    `Cmd/Ctrl+Y`): spuntando uno o più anni, **Da** diventa il **1° gennaio dell'anno
    più vecchio** e **A** il **31 dicembre del più recente** (con 2024 e 2026
    l'intervallo copre anche il 2025). Da e A restano modificabili: se li cambi a mano
-   la combo si svuota. Una settimana conta se
+   la combo si svuota. Accanto c'è la combo **«Categorie»** (prima «Senza
+   categoria», poi le categorie): spuntandone una o più la matrice mostra **solo i
+   progetti di quelle categorie**, e riepilogo per categoria e «Totale progetti»
+   contano solo quelli; nessuna spunta = tutte le categorie. Una settimana conta se
    **si sovrappone anche di un solo giorno** all'intervallo. Se la data iniziale è
    successiva alla finale compare un avviso e la matrice non viene mostrata.
 3. **Righe** — compaiono **tutti i progetti** (aperti e chiusi, indipendentemente da
@@ -959,7 +962,9 @@ progetto**.
    in ultima riga il **Totale progetti** in cui il worker è coinvolto (aperti e chiusi).
 
 **Esporta PDF…** crea subito il PDF (si sceglie solo dove salvarlo) con la matrice,
-il riepilogo e l'intervallo di date in testa. Come gli altri export è in inglese
+il riepilogo e l'intervallo di date in testa; se nella combo «Anni» hai scelto degli
+anni o delle categorie, il sottotitolo li riporta dopo l'intervallo (es. `From
+01/01/2024 to 12/31/2026  ·  Years: 2024, 2026  ·  Categories: Cliente A`). Come gli altri export è in inglese
 (date `mm/dd/yyyy`), su **A4 orizzontale**: se i worker non entrano in larghezza le
 colonne vengono divise in più blocchi (in ogni blocco solo i progetti dei suoi
 worker), e se le righe non entrano la tabella continua sulle pagine successive con

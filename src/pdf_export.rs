@@ -2808,22 +2808,44 @@ fn matrix_category_name(app: &App, cat: Option<crate::categories::CategoryId>) -
 /// entrano in larghezza; per ogni blocco le righe vanno su quante pagine
 /// servono (titolo e intestazione ripetuti) e il riepilogo per categoria chiude
 /// l'ultima pagina del blocco (o ne apre una nuova se non c'è spazio).
+/// Sottotitolo della matrice: l'intervallo e, se scelti nella combo, gli anni
+/// («From 01/01/2024 to 12/31/2026  ·  Years: 2024, 2026»).
+fn matrix_subtitle(from: i32, to: i32, today: i32, years: &[i32], categories: &[String]) -> String {
+    let mut out = format!(
+        "From {} to {}",
+        matrix_date(from, today),
+        matrix_date(to, today)
+    );
+    if !years.is_empty() {
+        let list: Vec<String> = years.iter().map(i32::to_string).collect();
+        let label = if years.len() == 1 { "Year" } else { "Years" };
+        out = format!("{out}  ·  {label}: {}", list.join(", "));
+    }
+    if !categories.is_empty() {
+        let label = if categories.len() == 1 {
+            "Category"
+        } else {
+            "Categories"
+        };
+        out = format!("{out}  ·  {label}: {}", categories.join(", "));
+    }
+    out
+}
+
 fn matrix_pages(
     app: &App,
     m: &crate::worker_matrix::MatrixData,
     from: i32,
     to: i32,
+    years: &[i32],
+    categories: &[String],
     today: i32,
     created: &str,
 ) -> Vec<Vec<Shape>> {
     use crate::worker_matrix::category_color;
     let avail = MATRIX_X1 - MATRIX_X0 - MATRIX_LABEL_W;
     let per_page = ((avail / MATRIX_COL_MIN).floor() as usize).max(1);
-    let subtitle = format!(
-        "From {} to {}",
-        matrix_date(from, today),
-        matrix_date(to, today)
-    );
+    let subtitle = matrix_subtitle(from, to, today, years, categories);
     let row_h = |r: &crate::worker_matrix::MatrixRow, cols: &[usize]| -> f32 {
         let lines = cols
             .iter()
@@ -3081,14 +3103,22 @@ fn matrix_pages(
     pages
 }
 
-/// PDF della matrice progetti × worker con l'intervallo `[from, to]` (giorni)
-/// in testa. `None` se non ci sono worker o progetti da mostrare.
+/// PDF della matrice progetti × worker con l'intervallo `[from, to]` (giorni),
+/// gli anni (`years`) e le categorie (`categories`, `None` = senza categoria)
+/// scelti nelle combo in testa (vuoti = nessun filtro). `None` se non ci sono
+/// worker o progetti da mostrare.
 pub fn build_matrix_pdf(
     app: &App,
     m: &crate::worker_matrix::MatrixData,
     from: i32,
     to: i32,
+    years: &[i32],
+    categories: &[Option<crate::categories::CategoryId>],
 ) -> Option<Vec<u8>> {
+    let categories: Vec<String> = categories
+        .iter()
+        .map(|c| matrix_category_name(app, *c))
+        .collect();
     if m.workers.is_empty() || m.rows.is_empty() {
         return None;
     }
@@ -3101,7 +3131,7 @@ pub fn build_matrix_pdf(
     };
     let created = chrono::Local::now().format(US_DATE).to_string();
     let today = local_to_days(&chrono::Local::now().date_naive());
-    let pages: Vec<PdfPage> = matrix_pages(app, m, from, to, today, &created)
+    let pages: Vec<PdfPage> = matrix_pages(app, m, from, to, years, &categories, today, &created)
         .into_iter()
         .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
         .collect();
@@ -3142,14 +3172,39 @@ mod tests {
         let sel = workers.iter().copied().collect();
         let m = crate::worker_matrix::build(&app, &sel, 20000, 20006);
         assert_eq!(m.rows.len(), 60);
-        let pages = matrix_pages(&app, &m, 20000, 20006, 20000, "x");
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
         // 12 worker stanno in un solo blocco di colonne; 60 progetti (più le
         // intestazioni dei 2 gruppi e il riepilogo) vanno su 3 pagine.
         assert_eq!(pages.len(), 3);
-        let bytes = build_matrix_pdf(&app, &m, 20000, 20006).expect("Some");
+        let bytes =
+            build_matrix_pdf(&app, &m, 20000, 20006, &[2024], &[Some(cat), None]).expect("Some");
         assert!(bytes.starts_with(b"%PDF"));
         let empty = crate::worker_matrix::build(&app, &sel, 30000, 30006);
-        assert!(build_matrix_pdf(&app, &empty, 30000, 30006).is_none());
+        assert!(build_matrix_pdf(&app, &empty, 30000, 30006, &[], &[]).is_none());
+    }
+
+    /// Sottotitolo: gli anni scelti seguono l'intervallo; senza anni solo
+    /// l'intervallo.
+    #[test]
+    fn matrix_subtitle_lists_selected_years() {
+        let d = |y, m, dd| local_to_days(&NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        let (from, to, today) = (d(2024, 1, 1), d(2026, 12, 31), d(2026, 10, 17));
+        assert_eq!(
+            matrix_subtitle(from, to, today, &[], &[]),
+            "From 01/01/2024 to 12/31/2026"
+        );
+        assert_eq!(
+            matrix_subtitle(from, to, today, &[2024, 2026], &[]),
+            "From 01/01/2024 to 12/31/2026  ·  Years: 2024, 2026"
+        );
+        assert_eq!(
+            matrix_subtitle(d(2026, 1, 1), to, today, &[2026], &["Cliente A".into()]),
+            "From 01/01/2026 to 12/31/2026  ·  Year: 2026  ·  Category: Cliente A"
+        );
+        assert_eq!(
+            matrix_subtitle(from, to, today, &[], &["A".into(), "No category".into()]),
+            "From 01/01/2024 to 12/31/2026  ·  Categories: A, No category"
+        );
     }
 
     #[test]

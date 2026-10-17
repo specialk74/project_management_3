@@ -8,7 +8,7 @@
 //! assegnato nell'intervallo. In fondo, per worker, il numero di progetti per
 //! categoria.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::app::App;
 use crate::categories::CategoryId;
@@ -54,6 +54,19 @@ pub fn week_overlaps(week_start: i32, from: i32, to: i32) -> bool {
 /// Costruisce la matrice per i worker `selected` (ordinati come `workers.list()`)
 /// nell'intervallo di giorni `[from, to]`.
 pub fn build(app: &App, selected: &HashSet<WorkerId>, from: i32, to: i32) -> MatrixData {
+    build_filtered(app, selected, from, to, &BTreeSet::new())
+}
+
+/// Come `build`, limitata ai progetti delle categorie in `cats` (`None` nel set
+/// = «Senza categoria»; set vuoto = tutte). Riepilogo e totali contano solo i
+/// progetti rimasti.
+pub fn build_filtered(
+    app: &App,
+    selected: &HashSet<WorkerId>,
+    from: i32,
+    to: i32,
+    cats: &BTreeSet<Option<CategoryId>>,
+) -> MatrixData {
     let workers: Vec<(WorkerId, String)> = app
         .workers
         .list()
@@ -64,6 +77,9 @@ pub fn build(app: &App, selected: &HashSet<WorkerId>, from: i32, to: i32) -> Mat
 
     let mut rows: Vec<MatrixRow> = Vec::new();
     for (proj, _) in app.projects.list() {
+        if !cats.is_empty() && !cats.contains(&app.projects.get_category(proj)) {
+            continue;
+        }
         let mut cells: Vec<Vec<String>> = vec![Vec::new(); workers.len()];
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
@@ -219,6 +235,35 @@ mod tests {
                 assert!(((ax - bx).abs() - (ay - by).abs()).abs() < 1e-3);
             }
         }
+    }
+
+    #[test]
+    fn category_filter_limits_rows_and_totals() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let cat_a = app.categories.add("A");
+        let w = WeekId(20000);
+        let p1 = app.projects.add("Uno", Some("P1"), None);
+        let p2 = app.projects.add("Due", Some("P2"), None);
+        app.projects.set_category(p1, Some(cat_a));
+        for p in [p1, p2] {
+            app.projects.add_dev(p, fe);
+            app.projects.add_effort(p, fe, w, mario, Effort(8));
+        }
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let all = build_filtered(&app, &sel, 20000, 20006, &BTreeSet::new());
+        assert_eq!(all.rows.len(), 2);
+        assert_eq!(all.totals, [2]);
+        let only_a: BTreeSet<_> = [Some(cat_a)].into();
+        let m = build_filtered(&app, &sel, 20000, 20006, &only_a);
+        let trip: Vec<_> = m.rows.iter().map(|r| r.tripletta.as_str()).collect();
+        assert_eq!(trip, ["P1"]);
+        assert_eq!(m.totals, [1]);
+        let none: BTreeSet<_> = [None].into();
+        let m = build_filtered(&app, &sel, 20000, 20006, &none);
+        assert_eq!(m.rows.len(), 1);
+        assert_eq!(m.rows[0].tripletta, "P2");
     }
 
     #[test]
