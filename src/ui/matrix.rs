@@ -135,6 +135,50 @@ fn categories_combo(
         .on_hover_text("Nessuna scelta = tutte le categorie.");
 }
 
+/// Combo degli stati dei progetti (Attivi / On-Hold / Closed): con almeno una
+/// scelta la matrice mostra solo i progetti in quegli stati, e il riepilogo
+/// conta solo quelli (vuoto = tutti).
+fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<ProjectStatus>) {
+    let text = if statuses.is_empty() || statuses.len() == ProjectStatus::ALL.len() {
+        "Stato: tutti".to_string()
+    } else {
+        let names: Vec<&str> = ProjectStatus::ALL
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| statuses.contains(s))
+            .map(|(i, _)| STATUS_LABELS[i])
+            .collect();
+        format!("Stato: {}", names.join(", "))
+    };
+    egui::ComboBox::from_id_salt("matrix_statuses")
+        .selected_text(text)
+        .width(MX_STATUS_W)
+        .show_ui(ui, |ui| {
+            for (i, s) in ProjectStatus::ALL.iter().enumerate() {
+                let mut on = statuses.contains(s);
+                if ui.checkbox(&mut on, STATUS_LABELS[i]).changed() {
+                    if on {
+                        statuses.insert(*s);
+                    } else {
+                        statuses.remove(s);
+                    }
+                }
+            }
+            // Tutti spuntati = nessun filtro.
+            if statuses.len() == ProjectStatus::ALL.len() {
+                statuses.clear();
+            }
+            if !statuses.is_empty() {
+                ui.separator();
+                if ui.button("Tutti").clicked() {
+                    statuses.clear();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Nessuna scelta = tutti gli stati.");
+}
+
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
 /// `value`: `None` = oggi. Ritorna `true` se l'utente l'ha cambiato.
 fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) -> bool {
@@ -264,6 +308,7 @@ const MX_SUM_H: f32 = 20.0;
 /// Altezza delle sotto-righe per stato (Attivi / On-Hold / Closed).
 const MX_SUB_H: f32 = 16.0;
 const MX_YEARS_W: f32 = 180.0;
+const MX_STATUS_W: f32 = 150.0;
 
 fn mx_row_h(lines: usize) -> f32 {
     lines.max(1) as f32 * MX_LINE_H + 2.0 * MX_PAD
@@ -318,6 +363,58 @@ fn category_fill(cat: Option<CategoryId>, light: bool) -> Color32 {
     g(Color32::from_rgb(mix(r), mix(gr), mix(b)))
 }
 
+/// Cosa c'è sotto il puntatore nella matrice: `row` = indice in `rows` (righe
+/// progetto e di riepilogo, `(top, altezza)`; le intestazioni di categoria non
+/// contano), `col` = indice del worker. Sopra la riga dei worker (`head_bottom`,
+/// fissa in cima) c'è solo la colonna; sulla colonna etichette solo la riga.
+#[derive(Debug, Default, PartialEq)]
+struct MxHit {
+    row: Option<usize>,
+    col: Option<usize>,
+}
+
+fn mx_hit(pos: egui::Pos2, x0: f32, n: usize, head_bottom: f32, rows: &[(f32, f32)]) -> MxHit {
+    let rel = pos.x - x0 - MX_LABEL_W;
+    let col = (rel >= 0.0 && rel < n as f32 * MX_COL_W).then(|| (rel / MX_COL_W) as usize);
+    if pos.y < head_bottom {
+        return MxHit { row: None, col };
+    }
+    let row = rows.iter().position(|(top, h)| pos.y >= *top && pos.y < top + h);
+    match row {
+        // Fuori da ogni riga (intestazione di categoria, spazio fra matrice e
+        // riepilogo): niente.
+        None => MxHit::default(),
+        Some(_) => MxHit { row, col },
+    }
+}
+
+/// Velo dell'evidenziazione al passaggio del mouse (cella, etichetta della
+/// riga e colonna del worker). Sulla cella si somma a quello della colonna,
+/// quindi risulta più marcata. Scuro nel tema chiaro, chiaro nel tema scuro;
+/// va **sotto** i testi (vedi gli slot in `draw_matrix`), così non li spegne.
+fn mx_veil() -> Color32 {
+    if is_dark() {
+        Color32::from_white_alpha(40)
+    } else {
+        Color32::from_black_alpha(36)
+    }
+}
+
+/// Etichetta (tripletta o intestazione del riepilogo) e valore del riepilogo
+/// evidenziati: scritta gialla su fondo scuro, uguale nei due temi (le righe
+/// dei progetti hanno lo sfondo pastello anche col tema scuro, e il giallo su
+/// fondo chiaro non si leggerebbe).
+fn mx_hi_bg() -> Color32 {
+    g(Color32::from_gray(40))
+}
+
+fn mx_hi_text() -> Color32 {
+    g(Color32::from_rgb(255, 221, 0))
+}
+
+/// Scarto della seconda passata del grassetto simulato dei testi evidenziati.
+const MX_BOLD_DX: f32 = 0.7;
+
 /// Disegna la matrice (righe progetto raggruppate per categoria) e, sotto, il
 /// riepilogo dei progetti per categoria di ogni worker.
 fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
@@ -334,7 +431,8 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         body_h += mx_row_h(r.cells.iter().map(Vec::len).max().unwrap_or(0));
     }
     // categorie + totale, ciascuno con le 3 sotto-righe per stato
-    let sum_h = MX_SUM_GAP + (m.categories.len() + 1) as f32 * (MX_SUM_H + 3.0 * MX_SUB_H);
+    let subs = m.statuses.len() as f32;
+    let sum_h = MX_SUM_GAP + (m.categories.len() + 1) as f32 * (MX_SUM_H + subs * MX_SUB_H);
     let height = MX_HEAD_H + groups as f32 * MX_GROUP_H + body_h + sum_h;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), Sense::hover());
     let p = ui.painter().clone();
@@ -371,9 +469,61 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         }
     };
 
+    // Evidenziazione al passaggio del mouse: per ogni fascia orizzontale si
+    // riserva uno slot nella lista delle forme **dopo** lo sfondo e **prima**
+    // dei testi; a fine disegno, noto cosa è puntato, lo slot riceve il velo
+    // (o il fondo scuro dell'evidenziazione). Le intestazioni di categoria
+    // (`Group`) non sono puntabili ma la colonna le attraversa.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Band {
+        Group,
+        Project,
+        Summary,
+    }
+    let slots = std::cell::RefCell::new(Vec::<(egui::layers::ShapeIdx, f32, f32, Band)>::new());
+    let reserve = |top: f32, h: f32, kind: Band| -> usize {
+        let mut v = slots.borrow_mut();
+        v.push((p.add(egui::Shape::Noop), top, h, kind));
+        v.len() - 1
+    };
+    // Testi che cambiano colore se evidenziati: anche loro uno slot, riempito
+    // a fine disegno. `col` = None per l'etichetta a sinistra della fascia.
+    struct HiText {
+        idx: egui::layers::ShapeIdx,
+        band: usize,
+        col: Option<usize>,
+        pos: egui::Pos2,
+        align: Align2,
+        text: String,
+        font: egui::FontId,
+        color: Color32,
+    }
+    let texts = std::cell::RefCell::new(Vec::<HiText>::new());
+    // Restituisce la larghezza del testo (per posizionare ciò che lo segue).
+    let put = |band: usize,
+               col: Option<usize>,
+               pos: egui::Pos2,
+               align: Align2,
+               text: String,
+               font: &egui::FontId,
+               color: Color32|
+     -> f32 {
+        let w = p.layout_no_wrap(text.clone(), font.clone(), color).size().x;
+        texts.borrow_mut().push(HiText {
+            idx: p.add(egui::Shape::Noop),
+            band,
+            col,
+            pos,
+            align,
+            text,
+            font: font.clone(),
+            color,
+        });
+        w
+    };
     let mut y = rect.top();
-    header(y, "Progetto");
-    vlines(y, y + MX_HEAD_H);
+    // L'intestazione dei worker si ridisegna in fondo, fissa in cima all'area
+    // visibile; qui serve solo a riservarne lo spazio.
     y += MX_HEAD_H;
 
     let mut prev: Option<Option<CategoryId>> = None;
@@ -382,6 +532,7 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
             prev = Some(r.category);
             let gr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(width, MX_GROUP_H));
             p.rect_filled(gr, 0.0, category_fill(r.category, false));
+            reserve(y, MX_GROUP_H, Band::Group);
             p.text(
                 egui::pos2(x0 + MX_PAD, y + MX_GROUP_H / 2.0),
                 Align2::LEFT_CENTER,
@@ -408,24 +559,28 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
             p.rect_filled(rr, 0.0, category_fill(r.category, true));
             Color32::BLACK
         };
+        let band = reserve(y, h, Band::Project);
 
         // Etichetta: solo la tripletta (il nome è nel tooltip), più «chiuso».
         let ty = y + MX_PAD + MX_LINE_H / 2.0;
-        let trip_w = p
-            .text(
-                egui::pos2(x0 + MX_PAD, ty),
-                Align2::LEFT_CENTER,
-                fit_text(ui, &r.tripletta, &bold, MX_LABEL_W - 2.0 * MX_PAD - if r.closed { 50.0 } else { 0.0 }),
-                bold.clone(),
-                fg,
-            )
-            .width();
+        let trip_max = MX_LABEL_W - 2.0 * MX_PAD - if r.closed { 50.0 } else { 0.0 };
+        let trip_w = put(
+            band,
+            None,
+            egui::pos2(x0 + MX_PAD, ty),
+            Align2::LEFT_CENTER,
+            fit_text(ui, &r.tripletta, &bold, trip_max),
+            &bold,
+            fg,
+        );
         if r.closed {
-            p.text(
+            put(
+                band,
+                None,
                 egui::pos2(x0 + MX_PAD + trip_w + 6.0, ty),
                 Align2::LEFT_CENTER,
-                closed_tag(r.status),
-                font.clone(),
+                closed_tag(r.status).to_string(),
+                &font,
                 fg,
             );
         }
@@ -444,11 +599,13 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
 
         for (i, devs) in r.cells.iter().enumerate() {
             for (l, dev) in devs.iter().enumerate() {
-                p.text(
+                put(
+                    band,
+                    Some(i),
                     egui::pos2(col_x(i) + MX_COL_W / 2.0, ty + l as f32 * MX_LINE_H),
                     Align2::CENTER_CENTER,
                     fit_text(ui, dev, &font, MX_COL_W - 2.0 * MX_PAD),
-                    font.clone(),
+                    &font,
                     fg,
                 );
             }
@@ -462,21 +619,28 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     // ciascuna seguita dalle sotto-righe per stato; poi il totale, idem.
     let status_rows = |y: f32, counts: &dyn Fn(usize) -> [u32; 3]| -> f32 {
         let mut y = y;
-        for (si, label) in STATUS_LABELS.iter().enumerate() {
-            p.text(
+        // Solo gli stati mostrati (filtro «Stato»).
+        for &si in &m.statuses {
+            let label = STATUS_LABELS[si];
+            let band = reserve(y, MX_SUB_H, Band::Summary);
+            put(
+                band,
+                None,
                 egui::pos2(x0 + MX_PAD + 12.0, y + MX_SUB_H / 2.0),
                 Align2::LEFT_CENTER,
-                *label,
-                font.clone(),
-                text_dim(),
+                label.to_string(),
+                &font,
+                text(),
             );
             for wi in 0..n {
-                p.text(
+                put(
+                    band,
+                    Some(wi),
                     egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUB_H / 2.0),
                     Align2::CENTER_CENTER,
                     counts(wi)[si].to_string(),
-                    font.clone(),
-                    text_dim(),
+                    &font,
+                    text(),
                 );
             }
             p.hline(x0..=x0 + width, y + MX_SUB_H, Stroke::new(0.5_f32, strip_border()));
@@ -489,25 +653,25 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     for (ci, cat) in m.categories.iter().enumerate() {
         let lr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(MX_LABEL_W, MX_SUM_H));
         p.rect_filled(lr, 0.0, category_fill(*cat, false));
-        p.text(
+        let band = reserve(y, MX_SUM_H, Band::Summary);
+        put(
+            band,
+            None,
             egui::pos2(x0 + MX_PAD, y + MX_SUM_H / 2.0),
             Align2::LEFT_CENTER,
-            fit_text(
-                ui,
-                &category_name(app, *cat),
-                &bold,
-                MX_LABEL_W - 2.0 * MX_PAD,
-            ),
-            bold.clone(),
+            fit_text(ui, &category_name(app, *cat), &bold, MX_LABEL_W - 2.0 * MX_PAD),
+            &bold,
             Color32::BLACK,
         );
         for (wi, cnt) in m.summary[ci].iter().enumerate() {
             if *cnt > 0 {
-                p.text(
+                put(
+                    band,
+                    Some(wi),
                     egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUM_H / 2.0),
                     Align2::CENTER_CENTER,
                     cnt.to_string(),
-                    bold.clone(),
+                    &bold,
                     text(),
                 );
             }
@@ -520,19 +684,24 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     // Totale: progetti (tutte le categorie) in cui è coinvolto il worker.
     let tr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(width, MX_SUM_H));
     p.rect_filled(tr, 0.0, strip_bg(false));
-    p.text(
+    let band = reserve(y, MX_SUM_H, Band::Summary);
+    put(
+        band,
+        None,
         egui::pos2(x0 + MX_PAD, y + MX_SUM_H / 2.0),
         Align2::LEFT_CENTER,
-        "Totale progetti",
-        bold.clone(),
+        "Totale progetti".to_string(),
+        &bold,
         text(),
     );
     for (wi, cnt) in m.totals.iter().enumerate() {
-        p.text(
+        put(
+            band,
+            Some(wi),
             egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUM_H / 2.0),
             Align2::CENTER_CENTER,
             cnt.to_string(),
-            bold.clone(),
+            &bold,
             text(),
         );
     }
@@ -540,6 +709,81 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     vlines(y, y + MX_SUM_H);
     y += MX_SUM_H;
     status_rows(y, &|wi| m.status_totals[wi]);
+
+    // Riga dei worker sempre visibile: in cima all'area visibile (o al suo
+    // posto, se la matrice non è scorsa). Scorre in orizzontale con le colonne.
+    let head_y = ui.clip_rect().top().max(rect.top());
+    let head_bottom = head_y + MX_HEAD_H;
+
+    // Evidenziazione: velo su tutta la colonna del worker; etichetta della
+    // riga (tripletta o intestazione del riepilogo) e contenuto della cella
+    // puntata (dev o valore) in giallo grassetto su fondo scuro.
+    let slots = slots.into_inner();
+    let pointable: Vec<usize> = (0..slots.len()).filter(|&i| slots[i].3 != Band::Group).collect();
+    let rows: Vec<(f32, f32)> = pointable.iter().map(|&i| (slots[i].1, slots[i].2)).collect();
+    let visible = ui.clip_rect().intersect(rect);
+    let hit = ui
+        .input(|i| i.pointer.hover_pos())
+        .filter(|_| ui.rect_contains_pointer(visible))
+        .map(|pos| mx_hit(pos, x0, n, head_bottom, &rows))
+        .unwrap_or_default();
+    let veil = mx_veil();
+    let hit_band = hit.row.map(|r| pointable[r]);
+    for (bi, (idx, top, h, _)) in slots.iter().enumerate() {
+        let mut fills = Vec::new();
+        let cell_of = |c: usize| {
+            Rect::from_min_size(egui::pos2(col_x(c), *top), egui::vec2(MX_COL_W, *h))
+        };
+        if let Some(c) = hit.col {
+            fills.push(egui::Shape::rect_filled(cell_of(c), 0.0, veil));
+        }
+        if hit_band == Some(bi) {
+            let lr = Rect::from_min_size(egui::pos2(x0, *top), egui::vec2(MX_LABEL_W, *h));
+            fills.push(egui::Shape::rect_filled(lr, 0.0, mx_hi_bg()));
+            if let Some(c) = hit.col {
+                // Il contenuto della cella (dev o valore) diventa giallo: serve
+                // il fondo scuro.
+                fills.push(egui::Shape::rect_filled(cell_of(c), 0.0, mx_hi_bg()));
+            }
+        }
+        if !fills.is_empty() {
+            p.set(*idx, egui::Shape::Vec(fills));
+        }
+    }
+    for t in texts.into_inner() {
+        let lit = hit_band == Some(t.band) && (t.col.is_none() || t.col == hit.col);
+        let color = if lit { mx_hi_text() } else { t.color };
+        let galley = p.layout_no_wrap(t.text, t.font, color);
+        let at = t.align.anchor_size(t.pos, galley.size()).min;
+        let shape = if lit {
+            // Grassetto: l'app ha un solo peso di font, quindi la scritta è
+            // ripetuta con un piccolo scarto orizzontale.
+            egui::Shape::Vec(vec![
+                egui::Shape::galley(at, galley.clone(), color),
+                egui::Shape::galley(at + egui::vec2(MX_BOLD_DX, 0.0), galley, color),
+            ])
+        } else {
+            egui::Shape::galley(at, galley, color)
+        };
+        p.set(t.idx, shape);
+    }
+
+    header(head_y, "Progetto");
+    vlines(head_y, head_bottom);
+    // Il nome del worker puntato: lo sfondo della riga è già grigio e un velo
+    // leggero non si nota, quindi colori invertiti (fondo del colore del
+    // testo, nome del colore dello sfondo): spicca in entrambi i temi.
+    if let Some(c) = hit.col {
+        let hr = Rect::from_min_size(egui::pos2(col_x(c), head_y), egui::vec2(MX_COL_W, MX_HEAD_H));
+        p.rect_filled(hr, 0.0, text());
+        p.text(
+            hr.center(),
+            Align2::CENTER_CENTER,
+            fit_text(ui, &m.workers[c].1, &bold, MX_COL_W - 2.0 * MX_PAD),
+            bold.clone(),
+            bg(),
+        );
+    }
 }
 
 /// Etichette delle sotto-righe per stato (ordine di `ProjectStatus::ALL`).
@@ -574,6 +818,7 @@ pub(crate) fn matrix_window(
         from,
         to,
         &state.matrix_categories,
+        &state.matrix_statuses,
     );
 
     let mut open = true;
@@ -602,9 +847,13 @@ pub(crate) fn matrix_window(
                     );
                     // In mezzo: le combo di anni e categorie, centrate nello spazio
                     // rimasto (layout destra→sinistra: categorie prima, a destra).
-                    let both = 2.0 * MX_YEARS_W + 3.0 * ui.spacing().item_spacing.x + 40.0;
-                    let gap = ((ui.available_width() - both) / 2.0).max(0.0);
+                    let combos = 2.0 * MX_YEARS_W
+                        + MX_STATUS_W
+                        + 5.0 * ui.spacing().item_spacing.x
+                        + 60.0;
+                    let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
+                    statuses_combo(ui, &mut state.matrix_statuses);
                     categories_combo(ui, app, &mut state.matrix_categories);
                     years_changed = years_combo(ui, app, &mut state.matrix_years);
                 });
@@ -680,5 +929,183 @@ mod tests {
         assert_eq!(years_range(&one), Some((d(2026, 1, 1), d(2026, 12, 31))));
         let gap: BTreeSet<i32> = [2027, 2024].into();
         assert_eq!(years_range(&gap), Some((d(2024, 1, 1), d(2027, 12, 31))));
+    }
+
+    /// Cella → riga + colonna; tripletta → solo riga; nome worker (riga fissa
+    /// in cima) → solo colonna; intestazione di categoria → niente.
+    #[test]
+    fn hover_hit_finds_row_and_column() {
+        let x0 = 10.0;
+        let rows = [(50.0, 20.0), (90.0, 20.0)]; // in mezzo (70..90) un gruppo
+        let cell_x = x0 + MX_LABEL_W + MX_COL_W * 1.5; // worker 1
+        let at = |x, y| mx_hit(egui::pos2(x, y), x0, 3, 34.0, &rows);
+        assert_eq!(at(cell_x, 95.0), MxHit { row: Some(1), col: Some(1) });
+        assert_eq!(at(x0 + 5.0, 55.0), MxHit { row: Some(0), col: None });
+        assert_eq!(at(cell_x, 20.0), MxHit { row: None, col: Some(1) });
+        assert_eq!(at(cell_x, 75.0), MxHit::default());
+        // Oltre l'ultima colonna: solo la riga.
+        let past = x0 + MX_LABEL_W + MX_COL_W * 3.0 + 1.0;
+        assert_eq!(at(past, 55.0), MxHit { row: Some(0), col: None });
+    }
+
+    /// Tema scuro, mouse su una cella della sotto-riga «Attivi»: etichetta e
+    /// valore della cella in giallo su fondo scuro (fondo disegnato **prima**
+    /// della scritta), colonna col velo, nome del worker a colori invertiti;
+    /// tolto il mouse, la scritta torna del colore di sistema.
+    #[test]
+    fn hover_highlight_is_yellow_on_dark_in_dark_theme() {
+        crate::ui_style::set_dark_theme(true);
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("P", Some("T01"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(8));
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let frame = |input: egui::RawInput| {
+            let cs = ctx
+                .run_ui(input, |ui| {
+                    crate::ui_style::set_dark_theme(true);
+                    draw_matrix(ui, &app, &m);
+                })
+                .shapes;
+            // Appiattisce le forme (gli slot sono `Shape::Vec`), in ordine di disegno.
+            fn flat(s: &egui::Shape, out: &mut Vec<egui::Shape>) {
+                match s {
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| flat(s, out)),
+                    s => out.push(s.clone()),
+                }
+            }
+            let mut out = Vec::new();
+            cs.iter().for_each(|c| flat(&c.shape, &mut out));
+            out
+        };
+        // Primo testo `t` dall'alto (indice di disegno + forma).
+        let find = |v: &[egui::Shape], t: &str| {
+            v.iter().enumerate().find_map(|(i, s)| match s {
+                egui::Shape::Text(x) if x.galley.text() == t => Some((i, x.clone())),
+                _ => None,
+            })
+        };
+        let first = frame(input.clone());
+        let (_, attivi) = find(&first, "Attivi").expect("Attivi");
+        assert_eq!(attivi.fallback_color, text(), "senza mouse: colore di sistema");
+        let label = attivi.visual_bounding_rect();
+        // Cella del worker 0 sulla stessa riga.
+        let x0 = label.left() - MX_PAD - 12.0;
+        let pos = egui::pos2(x0 + MX_LABEL_W + MX_COL_W / 2.0, label.center().y);
+        let mut hover = input.clone();
+        hover.events.push(egui::Event::PointerMoved(pos));
+        frame(hover);
+        let v = frame(input.clone());
+        let fill_at = |fill: Color32, at: egui::Pos2| {
+            v.iter().position(|s| {
+                matches!(s, egui::Shape::Rect(r) if r.fill == fill && r.rect.contains(at))
+            })
+        };
+        let (ai, attivi) = find(&v, "Attivi").unwrap();
+        assert_eq!(attivi.fallback_color, mx_hi_text(), "etichetta non gialla");
+        let copies = v
+            .iter()
+            .filter(|s| matches!(s, egui::Shape::Text(t) if t.galley.text() == "Attivi"))
+            .count();
+        // Due righe «Attivi» (categoria + totale); quella puntata ha 2 passate.
+        assert_eq!(copies, 3, "«Attivi» evidenziato non in grassetto");
+        let bg_i = fill_at(mx_hi_bg(), label.center()).expect("fondo scuro sull'etichetta");
+        assert!(bg_i < ai, "il fondo copre la scritta «Attivi»");
+        // Valore della cella puntata: giallo su fondo scuro.
+        let value = v.iter().enumerate().find_map(|(i, s)| match s {
+            egui::Shape::Text(t) if t.visual_bounding_rect().contains(pos) => Some((i, t.clone())),
+            _ => None,
+        });
+        let (vi, value) = value.expect("valore della cella");
+        assert_eq!(value.fallback_color, mx_hi_text(), "valore non giallo");
+        assert!(fill_at(mx_hi_bg(), pos).is_some_and(|i| i < vi));
+        // Nome del worker: fondo `text()` e scritta `bg()`.
+        let name = v
+            .iter()
+            .rev()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.text() == "Mario" => Some(t.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(name.fallback_color, bg());
+        assert!(fill_at(text(), name.visual_bounding_rect().center()).is_some());
+
+        // Cella di un progetto: il dev diventa giallo su fondo scuro, come la
+        // tripletta della riga.
+        let (_, dev) = find(&v, "Frontend").expect("dev nella cella");
+        assert_eq!(dev.fallback_color, Color32::BLACK, "dev non puntato: nero");
+        let mut hover = input.clone();
+        hover.events.push(egui::Event::PointerMoved(dev.visual_bounding_rect().center()));
+        frame(hover);
+        let v = frame(input.clone());
+        let (_, dev) = find(&v, "Frontend").unwrap();
+        assert_eq!(dev.fallback_color, mx_hi_text(), "dev non giallo");
+        let (_, trip) = find(&v, "T01").unwrap();
+        assert_eq!(trip.fallback_color, mx_hi_text(), "tripletta non gialla");
+    }
+
+    /// Scorrendo la matrice in verticale, i nomi dei worker restano in cima
+    /// all'area visibile.
+    #[test]
+    fn worker_header_stays_visible_when_scrolled() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        for i in 0..60 {
+            let p = app.projects.add("P", Some(&format!("T{i:02}")), None);
+            app.projects.add_dev(p, fe);
+            app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(8));
+        }
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        assert_eq!(m.rows.len(), 60);
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0)));
+        let mut view_top = 0.0;
+        let mut name_y = None;
+        for _ in 0..2 {
+            let out = ctx.run_ui(input.clone(), |ui| {
+                let sa = egui::ScrollArea::both()
+                    .vertical_scroll_offset(500.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| draw_matrix(ui, &app, &m));
+                view_top = sa.inner_rect.top();
+            });
+            name_y = out.shapes.iter().find_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == "Mario" => {
+                    Some(t.visual_bounding_rect().center().y)
+                }
+                _ => None,
+            });
+        }
+        let y = name_y.expect("nome del worker non disegnato");
+        assert!(
+            y >= view_top && y <= view_top + MX_HEAD_H,
+            "intestazione non in cima: y={y}, area da {view_top}"
+        );
     }
 }

@@ -703,6 +703,9 @@ pub struct UiState {
     // categorie scelte nella combo in alto (`None` = «Senza categoria»); vuoto =
     // tutte. Solo sessione.
     matrix_categories: std::collections::BTreeSet<Option<CategoryId>>,
+    // matrice: stati mostrati (Attivi / On-Hold / Closed; vuoto = tutti),
+    // solo sessione
+    matrix_statuses: std::collections::BTreeSet<ProjectStatus>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -2462,6 +2465,7 @@ impl PjmApp {
                     from,
                     to,
                     &self.ui.matrix_categories,
+                    &self.ui.matrix_statuses,
                 );
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.matrix_categories.iter().copied().collect();

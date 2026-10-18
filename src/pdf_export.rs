@@ -2835,6 +2835,9 @@ fn matrix_subtitle(from: i32, to: i32, today: i32, years: &[i32], categories: &[
     out
 }
 
+/// Nomi degli stati nel PDF della matrice (ordine di `ProjectStatus::ALL`).
+const MATRIX_STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
+
 fn matrix_pages(
     app: &App,
     m: &crate::worker_matrix::MatrixData,
@@ -2848,7 +2851,12 @@ fn matrix_pages(
     use crate::worker_matrix::category_color;
     let avail = MATRIX_X1 - MATRIX_X0 - MATRIX_LABEL_W;
     let per_page = ((avail / MATRIX_COL_MIN).floor() as usize).max(1);
-    let subtitle = matrix_subtitle(from, to, today, years, categories);
+    let mut subtitle = matrix_subtitle(from, to, today, years, categories);
+    // Filtro «Stato»: riportato solo se non sono mostrati tutti gli stati.
+    if m.statuses.len() < MATRIX_STATUS_EN.len() {
+        let names: Vec<&str> = m.statuses.iter().map(|&i| MATRIX_STATUS_EN[i]).collect();
+        subtitle = format!("{subtitle}  ·  Status: {}", names.join(", "));
+    }
     let row_h = |r: &crate::worker_matrix::MatrixRow, cols: &[usize]| -> f32 {
         let lines = cols
             .iter()
@@ -3039,11 +3047,10 @@ fn matrix_pages(
         let mut sum_rows = Vec::new();
         for ci in 0..m.categories.len() {
             sum_rows.push(SumRow::Cat(ci));
-            sum_rows.extend((0..3).map(|si| SumRow::CatStatus(ci, si)));
+            sum_rows.extend(m.statuses.iter().map(|&si| SumRow::CatStatus(ci, si)));
         }
         sum_rows.push(SumRow::Total);
-        sum_rows.extend((0..3).map(SumRow::TotalStatus));
-        const STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
+        sum_rows.extend(m.statuses.iter().map(|&si| SumRow::TotalStatus(si)));
         y -= 1.5;
         for row in &sum_rows {
             let h = match row {
@@ -3115,7 +3122,7 @@ fn matrix_pages(
                     shapes.extend(text_left(
                         MATRIX_X0 + 4.5,
                         base,
-                        STATUS_EN[*si],
+                        MATRIX_STATUS_EN[*si],
                         MATRIX_SUB_FONT,
                         false,
                         TEXT_GRAY,
@@ -3223,6 +3230,40 @@ mod tests {
             .filter(|t| t == "Active")
             .count();
         assert_eq!(actives, 13);
+    }
+
+    /// Filtro «Stato» nel PDF: sotto-righe solo per gli stati scelti e stato
+    /// riportato nel sottotitolo.
+    #[test]
+    fn matrix_pdf_follows_the_status_filter() {
+        use crate::project_utils::project::ProjectStatus;
+        let mut app = App::new();
+        let fe = app.devs.add("Frontend");
+        let w = app.workers.add("Mario");
+        for i in 0..3 {
+            let p = app.projects.add("x", Some(&format!("P{i}")), None);
+            app.projects.add_dev(p, fe);
+            app.projects.add_effort(p, fe, WeekId(20000), w, Effort(1));
+            app.projects.set_status(p, ProjectStatus::ALL[i]);
+        }
+        let sel = [w].into_iter().collect();
+        let pick = [ProjectStatus::OnHold].into();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &Default::default(),
+            &pick,
+        );
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        let all: Vec<String> = pages.iter().flat_map(|pg| texts(pg)).collect();
+        let count = |t: &str| all.iter().filter(|x| *x == t).count();
+        assert_eq!(count("On-Hold"), 2, "categoria + totale");
+        assert_eq!(count("Active"), 0);
+        assert_eq!(count("Closed"), 0);
+        assert!(all.iter().any(|t| t.ends_with("Status: On-Hold")), "sottotitolo");
+        assert!(!all.iter().any(|t| t == "P0" || t == "P2"), "solo il progetto on-hold");
     }
 
     #[test]

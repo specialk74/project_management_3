@@ -304,7 +304,14 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   Accanto, `categories_combo` → `UiState.matrix_categories:
   BTreeSet<Option<CategoryId>>` (vuoto = tutte, `None` = «Senza categoria»,
   solo sessione), applicato da `worker_matrix::build_filtered` (righe, riepilogo e
-  totali; `build` = senza filtro) e stampato nel sottotitolo del PDF.
+  totali; `build` = senza filtro) e stampato nel sottotitolo del PDF. Idem
+  `statuses_combo` → `UiState.matrix_statuses: BTreeSet<ProjectStatus>` (vuoto o
+  tutti e tre = nessun filtro, solo sessione), ultimo argomento di
+  `build_filtered`: filtra righe/riepilogo/totali e riempie `MatrixData.statuses`
+  (indici in `ProjectStatus::ALL`), l'elenco delle sotto-righe per stato da
+  disegnare in GUI e PDF; nel PDF «Status: …» nel sottotitolo se non sono tutti
+  (`MATRIX_STATUS_EN`). Test `status_filter_limits_rows_summary_and_sub_rows`,
+  `matrix_pdf_follows_the_status_filter`.
   I dati vengono da `src/worker_matrix.rs`
   (`build(app, &workers, from, to) -> MatrixData`, condiviso con l'export):
   colonne = worker, righe = **tutti** i progetti (aperti e chiusi, ignora Vista e
@@ -324,7 +331,24 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   `STATUS_LABELS`, `MX_SUB_H`) / «Active/On-Hold/Closed» (PDF, `MATRIX_SUB_H`)
   dopo ogni categoria e dopo il totale. Nel PDF il riepilogo è un elenco di
   `SumRow` disegnate una per una con salto pagina (`new_page`, intestazione worker
-  ripetuta) — test `matrix_summary_breaks_across_pages`. `worker_matrix::build`
+  ripetuta) — test `matrix_summary_breaks_across_pages`.
+  GUI: `draw_matrix` ridisegna la riga dei worker **in fondo**, a
+  `clip_rect().top().max(rect.top())`, così resta fissa in cima scorrendo
+  (test `worker_header_stays_visible_when_scrolled`). Hover: `mx_hit(pos, …,
+  rows)` → `MxHit { row, col }` (righe progetto + riepilogo raccolte in `rows`,
+  le intestazioni di categoria escluse); velo `mx_veil()` (nero nel tema chiaro,
+  bianco nel tema scuro) su tutta la colonna (non la riga intera); etichetta
+  della riga e contenuto della cella puntata (dev, o valore nel riepilogo) **gialli
+  in grassetto su fondo scuro** (`mx_hi_text()`/`mx_hi_bg()`; grassetto simulato
+  con una seconda passata a `MX_BOLD_DX`, l'app ha un solo peso di font;
+  uguali nei due temi: le righe
+  progetto sono pastello anche col tema scuro). Tutto va **sotto/al posto dei
+  testi** senza conoscere l'hover in anticipo: per ogni fascia (`Band { Group,
+  Project, Summary }`) si riserva uno slot `p.add(Shape::Noop)` dopo lo sfondo,
+  e ogni testo evidenziabile è a sua volta uno slot (`HiText`, via `put`);
+  a fine disegno, calcolato `mx_hit`, si riempiono con `p.set` (test
+  `hover_highlight_is_yellow_on_dark_in_dark_theme`).
+  Nome del worker puntato a colori invertiti (fondo `text()`, nome `bg()`). `worker_matrix::build`
   esiste solo nei test (`#[cfg(test)]`); il codice usa `build_filtered`.
   **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to, years }` (anni della
   combo, stampati nel sottotitolo da `matrix_subtitle`) →

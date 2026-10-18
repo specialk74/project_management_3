@@ -961,7 +961,11 @@ progetto**.
    la combo si svuota. Accanto c'è la combo **«Categorie»** (prima «Senza
    categoria», poi le categorie): spuntandone una o più la matrice mostra **solo i
    progetti di quelle categorie**, e riepilogo per categoria e «Totale progetti»
-   contano solo quelli; nessuna spunta = tutte le categorie. Una settimana conta se
+   contano solo quelli; nessuna spunta = tutte le categorie. Ancora accanto, la
+   combo **«Stato»** (**Attivi**, **On-Hold**, **Closed**): per default mostra
+   **tutti** gli stati; spuntandone uno o più la matrice mostra solo i progetti in
+   quegli stati, e il **riepilogo** si adegua: conta solo quei progetti e ha le
+   sotto-righe solo per gli stati scelti. Una settimana conta se
    **si sovrappone anche di un solo giorno** all'intervallo. Se la data iniziale è
    successiva alla finale compare un avviso e la matrice non viene mostrata.
 3. **Righe** — compaiono **tutti i progetti** (aperti e chiusi, indipendentemente da
@@ -981,10 +985,21 @@ progetto**.
    **Attivi**, **On-Hold** e **Closed**; in fondo il **Totale progetti** in cui il
    worker è coinvolto, con la stessa suddivisione. Nel PDF, se il riepilogo non
    entra nella pagina, continua sulla successiva con l'intestazione dei worker.
+6. **Lettura** — la riga con i **nomi dei worker resta sempre visibile** in cima
+   mentre scorri la matrice in verticale. Passando col mouse su una **cella**:
+   - **tutta la colonna** del worker, riepilogo compreso, ha un velo leggero
+     (scuro col tema chiaro, chiaro col tema scuro);
+   - la **tripletta** della riga (o l'intestazione a sinistra, nelle righe del
+     riepilogo) e il contenuto della cella puntata (i **dev**, o il **valore**
+     nel riepilogo) diventano **gialli in grassetto su fondo scuro**;
+   - il **nome del worker** è a colori invertiti.
+
+   Tolto il mouse, le scritte tornano del colore normale. Sulla tripletta si
+   evidenzia solo lei, sul nome del worker solo la colonna.
 
 **Esporta PDF…** crea subito il PDF (si sceglie solo dove salvarlo) con la matrice,
 il riepilogo e l'intervallo di date in testa; se nella combo «Anni» hai scelto degli
-anni o delle categorie, il sottotitolo li riporta dopo l'intervallo (es. `From
+anni, delle categorie o degli stati, il sottotitolo li riporta dopo l'intervallo (es. `From
 01/01/2024 to 12/31/2026  ·  Years: 2024, 2026  ·  Categories: Cliente A`). Come gli altri export è in inglese
 (date `mm/dd/yyyy`), su **A4 orizzontale**: se i worker non entrano in larghezza le
 colonne vengono divise in più blocchi (in ogni blocco solo i progetti dei suoi

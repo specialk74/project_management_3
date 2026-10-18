@@ -181,7 +181,7 @@ pub fn hex_rgb_string(rgb: u32) -> String {
 }
 
 #[inline]
-fn is_dark() -> bool {
+pub fn is_dark() -> bool {
     DARK_THEME.with(|b| b.get())
 }
 
