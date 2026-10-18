@@ -231,6 +231,11 @@ La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna
 All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
 `Cmd/Ctrl+T` la riporta lì, centrandola nella parte visibile.
 
+**Elenchi di progetti nelle finestre** (Esporta, Minuta, Report, Filtri ▸
+Progetti, Stato progetti, Confronta): mostrano **al massimo 15 progetti**, gli
+altri si raggiungono scorrendo l'elenco. Così anche su uno schermo piccolo i
+bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
+
 ---
 
 ## 5. Barra dei menù
@@ -1025,11 +1030,13 @@ senza effort non compaiono.
 
 ### Esportazione di un singolo progetto
 Se hai **filtrato fino a un solo progetto visibile**, **File ▸ Esporta PDF…** apre
-una **finestra di selezione**:
+una **finestra di selezione**, intitolata **«Esporta PDF/SVG»** seguito dalla
+tripletta del progetto:
 
 - elenca **tutti i dev del progetto**, anche quelli **senza effort**; la prima
   volta sono tutti spuntati e nell'ordine della lista dev;
-- **Select All** in cima per selezionare/deselezionare tutti;
+- **Select All** in cima all'elenco dei dev (scorre insieme a loro) per
+  selezionare/deselezionare tutti;
 - **checkbox** per includere/escludere ciascun dev;
 - **trascinamento** per riordinare i dev (una linea arancione indica il punto di
   inserimento); il rilascio sposta il dev;
@@ -1043,6 +1050,8 @@ una **finestra di selezione**:
   fra parentesi quadre (`[Int]`, `[Int/Ext]`, `[Ext]`). Vengono disegnate **solo
   le milestone spuntate**; se il progetto non ne ha nessuna compare una scritta
   al posto dell'elenco;
+- l'elenco dei dev e quello delle milestone mostrano **al massimo 10 righe**
+  ciascuno: se sono di più, l'elenco **scorre**;
 - **memoria delle scelte**: spunte dei dev, loro **ordine** e spunte delle
   milestone sono ricordate **per progetto** finché il programma è aperto (anche se
   chiudi con Annulla): riaprendo l'export dello stesso progetto ritrovi tutto come

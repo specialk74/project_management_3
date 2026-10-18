@@ -262,9 +262,10 @@ pub(crate) fn filters_window(
                     }
                     let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     ui.separator();
+                    let rows_key = egui::Id::new("filters_projects_rows");
                     egui::ScrollArea::vertical()
                         .id_salt("filters_projects")
-                        .max_height(400.0)
+                        .max_height(project_list_max_height(ui, rows_key))
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             let currently_all =
@@ -277,6 +278,7 @@ pub(crate) fn filters_window(
                                     });
                                 }
                             }
+                            let top = ui.cursor().top();
                             for (id, en, label) in &projects {
                                 ui.horizontal(|ui| {
                                     let mut on = en.0;
@@ -296,6 +298,7 @@ pub(crate) fn filters_window(
                                     }
                                 });
                             }
+                            remember_project_rows(ui, rows_key, top, projects.len());
                             // Invio → salta al primo risultato.
                             if enter {
                                 if let Some((id, _, _)) = projects.first() {

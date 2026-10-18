@@ -335,6 +335,21 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 ### Dialogs / windows
 
+**Project lists show at most 15 rows** (`MAX_VISIBLE_PROJECTS`), then scroll: every
+project list's `ScrollArea` uses `project_list_max_height(ui, key)` = 15 × the row
+pitch measured on the previous frame by `remember_project_rows(ui, key, top, rows)`
+(the pitch depends on the row widget — checkbox, combo — and the font). Applied to
+`project_checklist` (Esporta multi, Minuta, Report), Filtri ▸ Progetti, Stato
+progetti and Confronta. `project_checklist` also leaves room for the controls
+**below** it, measured by `checklist_dialog_end(ui)` (call it last in the dialog's
+content, same `ui`), so on a small screen «Esporta PDF…» stays on screen (tests
+`project_checklist_shows_at_most_15_projects`,
+`multi_export_button_stays_on_a_small_screen`). New project lists should follow it.
+The same mechanism, via `rows_max_height(ui, key, rows)`, caps the dev and milestone
+lists of the single-project `pdf_export_window` at `MAX_VISIBLE_EXPORT_ROWS` (10)
+each (still also capped at 30% of the screen; test
+`pdf_export_window_lists_show_at_most_10_rows`).
+
 Each modeless window is a `fn xxx_window(ctx, …)` guarded by a `UiState` field and
 called from the windows block in `ui()`. Examples: `dev_manage_window`
 (`state.dev_manage`), `pdf_export_window` (`state.pdf_export`), `help_window`

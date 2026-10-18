@@ -143,12 +143,15 @@ fn compare_select_stage(ui: &mut egui::Ui, cmp: &mut CompareState) {
     });
     ui.add_space(4.0);
 
+    let rows_key = egui::Id::new("compare_pairs_rows");
     egui::ScrollArea::vertical()
-        .max_height(360.0)
+        .max_height(project_list_max_height(ui, rows_key))
         .show(ui, |ui| {
+            let top = ui.cursor().top();
             for p in cmp.pairs.iter_mut() {
                 ui.checkbox(&mut p.selected, &p.tripletta);
             }
+            remember_project_rows(ui, rows_key, top, cmp.pairs.len());
         });
 
     ui.add_space(6.0);

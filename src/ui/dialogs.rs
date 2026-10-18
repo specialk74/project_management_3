@@ -561,10 +561,12 @@ pub(crate) fn closed_filter_window(
     }
     let resp = window.show(ctx, |ui| {
         let min_w = title_width(ui, "Stato progetti");
+        let rows_key = egui::Id::new("project_status_rows");
         egui::ScrollArea::vertical()
-            .max_height(400.0)
+            .max_height(project_list_max_height(ui, rows_key))
             .show(ui, |ui| {
                 ui.set_min_width(min_w);
+                let top = ui.cursor().top();
                 egui::Grid::new("project_status_grid")
                     .num_columns(2)
                     .spacing(egui::vec2(12.0, 4.0))
@@ -591,6 +593,7 @@ pub(crate) fn closed_filter_window(
                             ui.end_row();
                         }
                     });
+                remember_project_rows(ui, rows_key, top, projects.len());
             });
     });
 

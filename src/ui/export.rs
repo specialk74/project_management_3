@@ -161,7 +161,10 @@ const DEV_BAR_CHOICES: [(crate::pdf_export::DevBar, &str); 5] = {
     [
         (DevBar::new(BarFormat::Continuous, false), "Barra continua"),
         (DevBar::new(BarFormat::Segmented, false), "Segmentata"),
-        (DevBar::new(BarFormat::Segmented, true), "Segmentata, date sotto"),
+        (
+            DevBar::new(BarFormat::Segmented, true),
+            "Segmentata, date sotto",
+        ),
         (
             DevBar::new(BarFormat::Proportional, false),
             "Segmentata + altezza %",
@@ -239,36 +242,42 @@ pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
 }
 
 /// Selettore degli **ambiti milestone** da stampare, condiviso dalle dialog di
-/// export. `Internal` produce un file con le milestone Internal **e** External,
-/// `External` uno con le sole External; spuntandoli entrambi si ottengono due
-/// file (stesso nome + suffisso `_internal` / `_external`).
+/// export. «Solo internal» produce un file con le milestone Internal, «Solo
+/// external» uno con le External, «Mix» uno con tutte; spuntandone più d'uno si
+/// ottiene un file per ambito (stesso nome + `_internal` / `_external` / `_mix`).
 pub(crate) fn milestone_scope_selector(ui: &mut egui::Ui, scopes: &mut ExportScopes) {
-    ui.label(egui::RichText::new("Milestone da stampare").strong());
-    ui.checkbox(&mut scopes.internal, "Solo internal")
-        .on_hover_text("Un file con le milestone Internal (anche quelle Int/Ext).");
-    ui.checkbox(&mut scopes.external, "Solo external")
-        .on_hover_text("Un file con le milestone External (anche quelle Int/Ext).");
-    ui.checkbox(&mut scopes.mix, "Mix")
-        .on_hover_text("Un file con tutte le milestone, Internal ed External.");
-    let n = scopes.list().len();
-    if n > 1 {
-        let names: Vec<String> = scopes
-            .list()
-            .iter()
-            .map(|s| format!("…_{}", s.file_suffix()))
-            .collect();
-        ui.label(
-            egui::RichText::new(format!("Verranno creati {n} file: {}", names.join(", ")))
-                .small()
-                .color(text_dim()),
-        );
-    } else if scopes.is_empty() {
-        ui.label(
-            egui::RichText::new("Seleziona almeno un ambito per esportare.")
-                .small()
-                .color(warn_amber()),
-        );
-    }
+    // Titolo con accanto l'esito (quanti file / avviso), poi le tre voci su
+    // una riga sola.
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Milestone da stampare").strong());
+        let n = scopes.list().len();
+        if n > 1 {
+            let names: Vec<String> = scopes
+                .list()
+                .iter()
+                .map(|s| format!("…_{}", s.file_suffix()))
+                .collect();
+            ui.label(
+                egui::RichText::new(format!("Verranno creati {n} file: {}", names.join(", ")))
+                    .small()
+                    .color(text_dim()),
+            );
+        } else if scopes.is_empty() {
+            ui.label(
+                egui::RichText::new("Seleziona almeno un ambito per esportare.")
+                    .small()
+                    .color(warn_amber()),
+            );
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut scopes.internal, "Solo internal")
+            .on_hover_text("Un file con le milestone Internal (anche quelle Int/Ext).");
+        ui.checkbox(&mut scopes.external, "Solo external")
+            .on_hover_text("Un file con le milestone External (anche quelle Int/Ext).");
+        ui.checkbox(&mut scopes.mix, "Mix")
+            .on_hover_text("Un file con tutte le milestone, Internal ed External.");
+    });
 }
 
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
@@ -296,9 +305,9 @@ pub(crate) fn pdf_export_window(
     let proj = px.proj;
     let trip = app.projects.get_tripletta(proj);
     let title = if trip.is_empty() {
-        "Esporta PDF progetto".to_string()
+        "Esporta PDF/SVG".to_string()
     } else {
-        format!("Esporta PDF: {trip}")
+        format!("Esporta PDF/SVG - {trip}")
     };
 
     let mut open = true;
@@ -306,34 +315,29 @@ pub(crate) fn pdf_export_window(
     let mut do_export_svg = false;
     let mut cancel = false;
 
-    // Altezza massima della finestra e dell'elenco dev, in base allo schermo,
-    // così su monitor HD la dialog resta gestibile (contenuti scrollabili).
+    // Altezza massima della finestra e degli elenchi dev/milestone, in base
+    // allo schermo, così su monitor HD la dialog resta gestibile (contenuti
+    // scrollabili). Gli elenchi mostrano comunque al massimo
+    // `MAX_VISIBLE_EXPORT_ROWS` righe ciascuno, poi scorrono.
     let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
     let list_max = (ctx.screen_rect().height() * 0.30).max(110.0);
-    // L'elenco milestone sta sotto quello dei dev: più basso, sempre scorrevole.
-    let ms_max = (ctx.screen_rect().height() * 0.18).max(80.0);
+    let dev_rows = egui::Id::new("pdf_dev_list_rows");
+    let ms_rows = egui::Id::new("pdf_milestone_list_rows");
 
-    egui::Window::new("Esporta PDF")
+    // Id fisso: il titolo cambia col progetto, la posizione/dimensione no.
+    egui::Window::new(&title)
+        .id(egui::Id::new("pdf_export_window"))
         .collapsible(false)
         .resizable(true)
         .default_width(640.0)
         .max_height(maxh)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        // Centrata all'apertura ma trascinabile (con `anchor` non si muove).
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.label(egui::RichText::new(&title).strong());
-            ui.add_space(4.0);
             ui.label("Seleziona i dev; trascinali per riordinarli:");
             ui.add_space(4.0);
-
-            // Select All in cima.
-            let currently_all = !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
-            if let Some(v) = select_all_checkbox(ui, currently_all) {
-                for e in px.entries.iter_mut() {
-                    e.1 = v;
-                }
-            }
-            ui.separator();
 
             // Elenco dev con riordino drag & drop (payload = indice di partenza),
             // in un'area scorrevole per non far crescere la finestra oltre lo schermo.
@@ -341,9 +345,23 @@ pub(crate) fn pdf_export_window(
             let mut to: Option<usize> = None;
             egui::ScrollArea::vertical()
                 .id_salt("pdf_dev_list")
-                .max_height(list_max)
+                // +1: anche la riga del Select All sta nell'area scorrevole.
+                .max_height(list_max.min(rows_max_height(
+                    ui,
+                    dev_rows,
+                    MAX_VISIBLE_EXPORT_ROWS + 1,
+                )))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
+                    let top = ui.cursor().top();
+                    // Select All in cima, dentro lo scroll dei dev.
+                    let currently_all =
+                        !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+                    if let Some(v) = select_all_checkbox(ui, currently_all) {
+                        for e in px.entries.iter_mut() {
+                            e.1 = v;
+                        }
+                    }
                     for i in 0..px.entries.len() {
                         let dev = px.entries[i].0;
                         let mut sel = px.entries[i].1;
@@ -389,6 +407,7 @@ pub(crate) fn pdf_export_window(
                             to = Some(if after { i + 1 } else { i });
                         }
                     }
+                    remember_project_rows(ui, dev_rows, top, px.entries.len() + 1);
                 });
             // Applica lo spostamento a fine passata.
             if let (Some(f), Some(t)) = (from, to) {
@@ -417,9 +436,11 @@ pub(crate) fn pdf_export_window(
                 }
                 egui::ScrollArea::vertical()
                     .id_salt("pdf_milestone_list")
-                    .max_height(ms_max)
+                    .max_height(list_max.min(rows_max_height(ui, ms_rows, MAX_VISIBLE_EXPORT_ROWS)))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
+                        let top = ui.cursor().top();
+                        let rows = px.milestones.len();
                         for (id, week, sel) in px.milestones.iter_mut() {
                             let name = app.milestones.get_name(*id).unwrap_or("?");
                             let kind = app.milestones.get_kind(*id);
@@ -442,6 +463,7 @@ pub(crate) fn pdf_export_window(
                                 )),
                             );
                         }
+                        remember_project_rows(ui, ms_rows, top, rows);
                     });
             }
 
@@ -576,7 +598,9 @@ pub(crate) fn pdf_multi_export_window(
         .resizable(true)
         .default_width(640.0)
         .max_height(maxh)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        // Centrata all'apertura ma trascinabile (con `anchor` non si muove).
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
             // Formato in alto (compatto e ad altezza fissa); sotto l'elenco
@@ -622,6 +646,7 @@ pub(crate) fn pdf_multi_export_window(
                     cancel = true;
                 }
             });
+            checklist_dialog_end(ui);
         });
 
     state.bar_format = fmt;
@@ -672,7 +697,9 @@ pub(crate) fn minuta_window(
     egui::Window::new("Minuta")
         .collapsible(false)
         .resizable(true)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        // Centrata all'apertura ma trascinabile (con `anchor` non si muove).
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
             ui.label("Progetti da includere nella minuta:");
@@ -711,6 +738,7 @@ pub(crate) fn minuta_window(
                     cancel = true;
                 }
             });
+            checklist_dialog_end(ui);
         });
 
     if generate {
@@ -750,7 +778,9 @@ pub(crate) fn report_window(
     egui::Window::new("Report")
         .collapsible(false)
         .resizable(true)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        // Centrata all'apertura ma trascinabile (con `anchor` non si muove).
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
             ui.label("Progetti da includere nel report:");
@@ -759,13 +789,17 @@ pub(crate) fn report_window(
             ui.separator();
             let any = r.entries.iter().any(|(_, s)| *s);
             ui.horizontal(|ui| {
-                if ui.add_enabled(any, egui::Button::new("Genera Report…")).clicked() {
+                if ui
+                    .add_enabled(any, egui::Button::new("Genera Report…"))
+                    .clicked()
+                {
                     generate = true;
                 }
                 if ui.button("Annulla").clicked() {
                     cancel = true;
                 }
             });
+            checklist_dialog_end(ui);
         });
 
     if generate {

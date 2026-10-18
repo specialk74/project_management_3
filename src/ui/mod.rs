@@ -3239,6 +3239,43 @@ pub(crate) fn milestone_categories_toggles(
 /// che la tendina cambi larghezza tra le due voci.
 const MILESTONE_KIND_COMBO_W: f32 = 78.0;
 
+/// Regola generale degli elenchi di progetti: se ne vedono al massimo 15,
+/// oltre si scorre (altrimenti su schermi piccoli la finestra cresce e i
+/// bottoni in fondo, es. «Esporta…», escono dallo schermo).
+pub(crate) const MAX_VISIBLE_PROJECTS: usize = 15;
+
+/// Altezza massima di un elenco di progetti: `MAX_VISIBLE_PROJECTS` righe.
+/// Il passo di riga è quello misurato al frame precedente da
+/// `remember_project_rows` (stessa `key`), perché dipende dal widget della
+/// riga (checkbox, combo…) e dal font; al primo frame una stima.
+pub(crate) fn project_list_max_height(ui: &egui::Ui, key: egui::Id) -> f32 {
+    rows_max_height(ui, key, MAX_VISIBLE_PROJECTS)
+}
+
+/// Come `project_list_max_height`, ma per `rows` righe: altezza massima di un
+/// elenco che oltre quel numero di righe deve scorrere.
+pub(crate) fn rows_max_height(ui: &egui::Ui, key: egui::Id, rows: usize) -> f32 {
+    let pitch = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(key.with("row_pitch")))
+        .unwrap_or_else(|| ui.spacing().interact_size.y + ui.spacing().item_spacing.y);
+    rows as f32 * pitch
+}
+
+/// Righe visibili degli elenchi dev e milestone della dialog «Esporta PDF» di
+/// un solo progetto: oltre si scorre.
+pub(crate) const MAX_VISIBLE_EXPORT_ROWS: usize = 10;
+
+/// Da chiamare dopo aver disegnato le `rows` righe di un elenco di progetti
+/// iniziato all'altezza `top`: ne ricorda il passo per `project_list_max_height`.
+pub(crate) fn remember_project_rows(ui: &egui::Ui, key: egui::Id, top: f32, rows: usize) {
+    if rows > 0 {
+        let pitch = (ui.cursor().top() - top) / rows as f32;
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(key.with("row_pitch"), pitch));
+    }
+}
+
 /// "Select All" + elenco scrollabile di progetti con checkbox, condiviso dai
 /// dialog che selezionano un sottoinsieme di progetti. `entries` sono coppie
 /// `(progetto, selezionato)` mutate in place.
@@ -3252,20 +3289,45 @@ fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bo
     }
     ui.separator();
 
-    // La lista usa lo spazio effettivamente disponibile nella finestra, meno un
-    // margine per i controlli che restano SOTTO (separatore + bottoni, e nella
-    // minuta i radio delle note). Con pochi progetti si restringe al contenuto
-    // (`auto_shrink` verticale) evitando un riquadro vuoto.
-    const BOTTOM_RESERVE: f32 = 140.0;
-    let max_h = (ui.available_height() - BOTTOM_RESERVE).max(120.0);
+    // Al massimo `MAX_VISIBLE_PROJECTS` righe, poi si scorre; e comunque non
+    // più dello spazio disponibile nella finestra, meno quello dei controlli
+    // che restano SOTTO (opzioni + bottoni): misurato al frame precedente da
+    // `checklist_dialog_end`, con 140 px di partenza. Con pochi progetti si
+    // restringe al contenuto (`auto_shrink` verticale) evitando un riquadro vuoto.
+    let key = ui.id().with("project_checklist");
+    let reserve = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(key.with("reserve")))
+        .unwrap_or(140.0);
+    let max_h = (ui.available_height() - reserve)
+        .max(120.0)
+        .min(project_list_max_height(ui, key));
     egui::ScrollArea::vertical()
         .max_height(max_h)
         .auto_shrink([false, true])
         .show(ui, |ui| {
+            let top = ui.cursor().top();
             for (proj, sel) in entries.iter_mut() {
                 ui.checkbox(sel, minuta_project_label(app, *proj));
             }
+            remember_project_rows(ui, key, top, entries.len());
         });
+    let bottom = ui.cursor().top();
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(key.with("bottom"), bottom));
+}
+
+/// Da chiamare in fondo al contenuto di un dialog che usa `project_checklist`
+/// (stesso `ui`): misura quanto spazio occupano i controlli sotto l'elenco,
+/// così al frame dopo l'elenco lo lascia libero e i bottoni restano a schermo.
+pub(crate) fn checklist_dialog_end(ui: &egui::Ui) {
+    let key = ui.id().with("project_checklist");
+    let ctx = ui.ctx();
+    if let Some(bottom) = ctx.data(|d| d.get_temp::<f32>(key.with("bottom"))) {
+        let below = ui.min_rect().bottom() - bottom;
+        let margin = ui.spacing().window_margin.bottom as f32 + ui.spacing().item_spacing.y;
+        ctx.data_mut(|d| d.insert_temp(key.with("reserve"), (below + margin).max(0.0)));
+    }
 }
 
 /// Testo del manuale d'uso, incorporato a compile-time da `docs/MANUALE.md`.
@@ -3418,6 +3480,89 @@ mod tests {
         // Con zero progetti la lista è comunque disegnata (Select All + area),
         // quindi non nulla ma piccola.
         assert!(h_empty > 0.0 && h_empty <= h_one + 40.0, "vuota: {h_empty}");
+    }
+
+    #[test]
+    fn project_checklist_shows_at_most_15_projects() {
+        // Schermo alto: il limite è quello delle 15 righe, non lo spazio.
+        let mut app = App::new();
+        let mut entries = Vec::new();
+        for i in 0..50 {
+            let trip = format!("Q{i:02}");
+            entries.push((app.projects.add("Progetto", Some(&trip), None), false));
+        }
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 2000.0),
+        ));
+        let mut visible = 0;
+        for _ in 0..3 {
+            let out = ctx.run_ui(input.clone(), |ui| {
+                // Finestra alta quanto lo schermo: lo spazio non fa da limite.
+                egui::Window::new("test")
+                    .resizable(false)
+                    .min_height(1800.0)
+                    .show(ui.ctx(), |ui| {
+                        project_checklist(ui, &app, &mut entries);
+                    });
+            });
+            // Righe interamente visibili (non tagliate dal clip dell'elenco).
+            visible = out
+                .shapes
+                .iter()
+                .filter(|cs| match &cs.shape {
+                    egui::epaint::Shape::Text(t) => {
+                        t.galley.text().starts_with('Q')
+                            && cs.clip_rect.contains_rect(t.visual_bounding_rect())
+                    }
+                    _ => false,
+                })
+                .count();
+        }
+        assert_eq!(visible, MAX_VISIBLE_PROJECTS);
+    }
+
+    /// Esporta multi-progetto su uno schermo basso con tanti progetti: il
+    /// bottone «Esporta PDF…» deve restare dentro lo schermo (l'elenco scorre).
+    #[test]
+    fn multi_export_button_stays_on_a_small_screen() {
+        let screen = egui::vec2(1000.0, 600.0);
+        let mut app = App::new();
+        let mut entries = Vec::new();
+        for i in 0..40 {
+            let trip = format!("P{i:02}");
+            entries.push((app.projects.add("Progetto", Some(&trip), None), true));
+        }
+        let mut state = UiState {
+            pdf_multi_export: Some(PdfMultiExport { entries }),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen));
+        let mut button: Option<egui::Rect> = None;
+        for _ in 0..5 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                pdf_multi_export_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            button = None;
+            for cs in &out.shapes {
+                if let egui::epaint::Shape::Text(t) = &cs.shape
+                    && t.galley.text() == "Esporta PDF…"
+                {
+                    let r = t.visual_bounding_rect();
+                    // Visibile solo se non tagliato dal clip della finestra.
+                    if cs.clip_rect.contains_rect(r) {
+                        button = Some(r);
+                    }
+                }
+            }
+        }
+        let r = button.expect("bottone «Esporta PDF…» non visibile");
+        assert!(r.bottom() <= screen.y, "bottone fuori schermo: {r:?}");
     }
 
     /// L'inserimento multiplo (tasto destro su cella vuota) scrive a tutti i
@@ -3682,6 +3827,66 @@ mod tests {
 
     /// Smoke test della dialog di export a singolo progetto con l'elenco
     /// milestone: si disegna senza panic (id delle due liste distinti) e la
+    /// «Esporta PDF» di un solo progetto con 20 dev e 20 milestone: ciascun
+    /// elenco mostra al massimo `MAX_VISIBLE_EXPORT_ROWS` righe, il resto scorre.
+    #[test]
+    fn pdf_export_window_lists_show_at_most_10_rows() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        // Schermo alto: il limite è quello delle righe, non lo spazio.
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 2000.0),
+        ));
+        let mut app = App::new();
+        let proj = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(proj, Some(WeekId(20700)));
+        let mut entries = Vec::new();
+        let mut milestones = Vec::new();
+        for i in 0..20 {
+            let dev = app.devs.add(&format!("Dev{i:02}"));
+            app.projects.add_dev(proj, dev);
+            entries.push((dev, true));
+            let ms = app.milestones.add(&format!("Ms{i:02}"));
+            let week = WeekId(20000 + 7 * i);
+            app.projects.add_project_milestone(proj, ms, week);
+            milestones.push((ms, week, true));
+        }
+        let mut state = UiState {
+            pdf_export: Some(PdfExport {
+                proj,
+                entries,
+                milestones,
+                formats: HashMap::new(),
+            }),
+            ..Default::default()
+        };
+        let (mut devs, mut mss) = (0, 0);
+        for _ in 0..3 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                pdf_export_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            // Righe interamente visibili (non tagliate dal clip dell'elenco).
+            let visible = |pat: &str| {
+                out.shapes
+                    .iter()
+                    .filter(|cs| match &cs.shape {
+                        egui::epaint::Shape::Text(t) => {
+                            t.galley.text().contains(pat)
+                                && cs.clip_rect.contains_rect(t.visual_bounding_rect())
+                        }
+                        _ => false,
+                    })
+                    .count()
+            };
+            devs = visible("≡  Dev");
+            mss = visible(" Ms");
+        }
+        assert_eq!(devs, MAX_VISIBLE_EXPORT_ROWS, "righe dev visibili");
+        assert_eq!(mss, MAX_VISIBLE_EXPORT_ROWS, "righe milestone visibili");
+    }
+
     /// selezione iniziale — tutte spuntate — resta tale finché non si clicca.
     #[test]
     fn pdf_export_window_draws_the_milestone_checklist() {
