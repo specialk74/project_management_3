@@ -439,64 +439,67 @@ pub(crate) fn milestone_manager_window(
             egui::ScrollArea::vertical()
                 .max_height(400.0)
                 .show(ui, |ui| {
-                    for (id, name, color) in &milestones {
-                        ui.horizontal(|ui| {
-                            let mut col = u32_to_color(*color);
-                            if ui.color_edit_button_srgba(&mut col).changed() {
-                                actions.push(Action::SetMilestoneColor {
-                                    milestone: *id,
-                                    color: color_to_u32(col),
+                    // Griglia: ogni colonna è larga quanto il suo contenuto più
+                    // lungo, così i nomi lunghi spostano Int/Ext/tipo/🗑 a destra
+                    // per tutte le righe invece di finirci sotto.
+                    egui::Grid::new("milestone_manager_grid")
+                        .num_columns(5)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            for (id, name, color) in &milestones {
+                                let mut col = u32_to_color(*color);
+                                if ui.color_edit_button_srgba(&mut col).changed() {
+                                    actions.push(Action::SetMilestoneColor {
+                                        milestone: *id,
+                                        color: color_to_u32(col),
+                                    });
+                                }
+                                ui.horizontal(|ui| {
+                                    ui.label(name);
+                                    // Milestone personalizzata: accanto al nome il
+                                    // progetto a cui appartiene (non compare altrove).
+                                    if let Some(owner) = app.milestones.owner(*id) {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "· {}",
+                                                project_label(app, owner)
+                                            ))
+                                            .small()
+                                            .color(text_dim()),
+                                        )
+                                        .on_hover_text(
+                                            "Milestone disponibile solo in questo progetto",
+                                        );
+                                    }
                                 });
+                                // Categorie di stampa (Int / Ext): decidono
+                                // in quale PDF la milestone viene disegnata.
+                                let cats = app.milestones.get_categories(*id);
+                                if let Some((category, on)) =
+                                    milestone_categories_toggles(ui, &cats)
+                                {
+                                    actions.push(Action::SetMilestoneCategory {
+                                        milestone: *id,
+                                        category,
+                                        on,
+                                    });
+                                }
+                                // Tipo modificabile anche dopo l'inserimento:
+                                // il tipo è della milestone, quindi il cambio
+                                // vale in tutti i progetti in cui è collocata.
+                                let mut kind = app.milestones.get_kind(*id);
+                                if milestone_kind_combo(ui, "", id.0, &mut kind) {
+                                    actions.push(Action::SetMilestoneKind {
+                                        milestone: *id,
+                                        kind,
+                                    });
+                                }
+                                if ui.button("🗑").on_hover_text("Elimina milestone").clicked() {
+                                    actions.push(Action::DeleteMilestone { milestone: *id });
+                                }
+                                ui.end_row();
                             }
-                            ui.label(name);
-                            // Milestone personalizzata: accanto al nome il
-                            // progetto a cui appartiene (non compare altrove).
-                            if let Some(owner) = app.milestones.owner(*id) {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "· {}",
-                                        project_label(app, owner)
-                                    ))
-                                    .small()
-                                    .color(text_dim()),
-                                )
-                                .on_hover_text(
-                                    "Milestone disponibile solo in questo progetto",
-                                );
-                            }
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.button("🗑").on_hover_text("Elimina milestone").clicked()
-                                    {
-                                        actions.push(Action::DeleteMilestone { milestone: *id });
-                                    }
-                                    // Tipo modificabile anche dopo l'inserimento:
-                                    // il tipo è della milestone, quindi il cambio
-                                    // vale in tutti i progetti in cui è collocata.
-                                    let mut kind = app.milestones.get_kind(*id);
-                                    if milestone_kind_combo(ui, "", id.0, &mut kind) {
-                                        actions.push(Action::SetMilestoneKind {
-                                            milestone: *id,
-                                            kind,
-                                        });
-                                    }
-                                    // Categorie di stampa (Int / Ext): decidono
-                                    // in quale PDF la milestone viene disegnata.
-                                    let cats = app.milestones.get_categories(*id);
-                                    if let Some((category, on)) =
-                                        milestone_categories_toggles(ui, &cats)
-                                    {
-                                        actions.push(Action::SetMilestoneCategory {
-                                            milestone: *id,
-                                            category,
-                                            on,
-                                        });
-                                    }
-                                },
-                            );
                         });
-                    }
                 });
         });
 

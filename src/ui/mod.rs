@@ -3168,10 +3168,8 @@ fn milestone_category_items(
         let resp = ui
             .add_enabled(!last, egui::SelectableLabel::new(on, text))
             .on_hover_text(match c {
-                MilestoneCategory::Internal => "Stampata nel PDF Internal",
-                MilestoneCategory::External => {
-                    "Stampata nel PDF External (e anche in quello Internal)"
-                }
+                MilestoneCategory::Internal => "Stampata nel PDF Internal (e nel Mix)",
+                MilestoneCategory::External => "Stampata nel PDF External (e nel Mix)",
             })
             .on_disabled_hover_text("Una milestone deve avere almeno una categoria.");
         if resp.clicked() {
