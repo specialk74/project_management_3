@@ -229,9 +229,9 @@ pub(crate) fn toolbar(
                 state.milestone_manager_just_opened = state.show_milestone_manager;
                 ui.close_menu();
             }
-            if ui.button("Ghost worker…").clicked() {
-                state.show_ghost_manager = !state.show_ghost_manager;
-                state.ghost_manager_just_opened = state.show_ghost_manager;
+            if ui.button("Worker (visibilità e ghost)…").clicked() {
+                state.show_worker_visibility = !state.show_worker_visibility;
+                state.worker_visibility_just_opened = state.show_worker_visibility;
                 ui.close_menu();
             }
             if ui.button("Dev nei totali…").clicked() {

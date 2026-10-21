@@ -325,6 +325,17 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
   finiscono o stanno tutti negli anni selezionati. Scorciatoia `Cmd/Ctrl+Y`.
 - **Milestone…** — gestione milestone: elenco con selettore colore e cestino per
   eliminarle.
+- **Worker (visibilità e ghost)…** — finestra con **tutti** i worker (campo di
+  ricerca per nome) e tre spunte per ciascuno, salvate nel file:
+  - **Footer** — la riga del worker nel footer (nome e ore per settimana). Tolta,
+    la riga sparisce e nella griglia le sue celle diventano grigie;
+  - **Elenchi** — il worker compare negli elenchi di scelta: colonna Workers dei
+    filtri, matrice progetti/worker, inserimento multiplo, saturazione;
+  - **Ghost** — il worker è un'anomalia (vedi «Worker "ghost"» nel capitolo 8).
+
+  Per **Footer** ed **Elenchi** la spunta nell'intestazione è il **Select All** di
+  quella colonna e vale per i worker **elencati** (rispetta la ricerca); **Ghost**
+  non ce l'ha: i ghost si marcano uno per uno.
 - **Stato progetti…** — finestra con lo **stato** di ogni progetto: **Attivo**,
   **On-Hold** o **Closed** (vedi «Stato dei progetti» nel capitolo 14). Un progetto
   on-hold o closed sparisce dagli elenchi "attivi" e dall'export.
@@ -565,9 +576,9 @@ anomala: quando un worker ghost viene inserito nell'effort di un dev,
    il problema anche in mezzo alla linea del colore del dev.
 
 **Come marcare un worker come ghost:**
-- **Filtri ▸ Ghost worker…** — finestra che elenca **tutti** i worker (anche
-  quelli nascosti nel footer o esclusi dal filtro Ctrl+F) con una spunta Ghost
-  ciascuno. È il modo sempre disponibile.
+- **Filtri ▸ Worker (visibilità e ghost)…** — finestra che elenca **tutti** i
+  worker (anche quelli nascosti nel footer o esclusi dal filtro Ctrl+F): la
+  colonna **Ghost** ha una spunta per ciascuno. È il modo sempre disponibile.
 - In alternativa, **tasto destro sul nome del worker nel footer ▸ Ghost** (comodo,
   ma solo per i worker visibili nel footer).
 
@@ -827,8 +838,9 @@ già aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+F` **deseleziona
 tutti** i worker.
 
 Nell'elenco compaiono solo i worker con la proprietà **`show_in_find`** attiva
-(impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — al
-momento impostabile modificando il file `.ron` — non appare in questa lista.
+(impostazione predefinita: attiva). Un worker con `show_in_find` disattivato — si
+imposta con la spunta **Elenchi** di **Filtri ▸ Visibilità worker…** — non appare
+in questa lista.
 
 Accanto a ogni nome è indicato **in quanti progetti si trova** il worker (dove ha
 effort assegnato), suddiviso in aperti e chiusi nel formato **`N/Aperti - M/Chiuso`**.
@@ -914,10 +926,11 @@ aperta** fa il **toggle di "Select All"**; `Shift+Cmd/Ctrl+Y` **deseleziona tutt
 anni. Con **tutti gli anni spuntati** il filtro è considerato **spento**, qualunque sia
 il criterio. Né la selezione né il criterio sono salvati sul file.
 
-### Ghost worker (Filtri ▸ Ghost worker…)
+### Worker: visibilità e ghost (Filtri ▸ Worker (visibilità e ghost)…)
 Finestra che elenca **tutti** i worker (anche quelli nascosti nel footer o esclusi
-dal filtro Ctrl+F) con una spunta **Ghost** ciascuno. È il modo sempre raggiungibile
-per associare/togliere il ghost. Vedi §8, «Worker "ghost"».
+dal filtro Ctrl+F), con ricerca per nome e tre spunte per ciascuno: **Footer**,
+**Elenchi** (vedi «Filtri» nel capitolo 3) e **Ghost**. È il modo sempre
+raggiungibile per associare/togliere il ghost. Vedi §8, «Worker "ghost"».
 
 ### Stato dei progetti (Filtri ▸ Stato progetti…)
 Finestra con tutti i progetti in ordine alfabetico e, accanto a ciascuno, una

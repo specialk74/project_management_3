@@ -125,6 +125,30 @@ impl Workers {
         self.worker_id.get(&id).map_or(false, |w| w.is_ghost())
     }
 
+    /// Nasconde/mostra la riga del worker nel footer. Ritorna `true` se il
+    /// valore è cambiato.
+    pub fn set_hidden_in_footer(&mut self, id: WorkerId, hidden: bool) -> bool {
+        match self.worker_id.get_mut(&id) {
+            Some(w) if w.is_hidden_in_footer() != hidden => {
+                w.set_hidden_in_footer(hidden);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Fa comparire o no il worker negli elenchi di scelta (filtri, matrice,
+    /// inserimento multiplo, saturazione). Ritorna `true` se è cambiato.
+    pub fn set_shown_in_find(&mut self, id: WorkerId, shown: bool) -> bool {
+        match self.worker_id.get_mut(&id) {
+            Some(w) if w.is_shown_in_find() != shown => {
+                w.set_shown_in_find(shown);
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn set_ghost(&mut self, id: WorkerId, ghost: bool) {
         if let Some(w) = self.worker_id.get_mut(&id) {
             w.set_ghost(ghost);

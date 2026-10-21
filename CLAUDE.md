@@ -271,9 +271,17 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     `body_projects(app, view, &pf)`: agisce sul progetto intero (header completo,
     fuori da `filter_active`). Non persistiti.
 
-  Restano finestre a sé: Milestone… (manager), Ghost worker… (`ghost_manager_window`:
-  elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da
-  hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost),
+  Restano finestre a sé: Milestone… (manager),
+  Worker (visibilità e ghost)… (`worker_visibility_window`, titolo «Worker»,
+  `UiState.show_worker_visibility` + `worker_visibility_search`; ha assorbito la
+  vecchia «Ghost worker…»: **tutti** i worker, indipendente da
+  hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il
+  ghost —, ricerca, tre colonne di spunte; Select All in intestazione sui worker
+  elencati solo per Footer ed Elenchi; **Ghost** → `Action::SetWorkerGhost`; **Footer** →
+  `Action::SetWorkerHiddenInFooter` → `Workers::set_hidden_in_footer` (scrive
+  `hide_in_footer: None` quando visibile) ed **Elenchi** →
+  `Action::SetWorkerShownInFind` → `Workers::set_shown_in_find`; entrambi
+  ritornano `bool` e marcano il file solo se cambiano),
   Dev nei totali… (`dev_totals_window`, `UiState.show_dev_totals`: **tutti** i dev con
   spunta + Select All → `Action::SetDevHiddenInTotals` → `Devs::set_hidden_in_totals`;
   `Dev.hide_in_totals`, `#[serde(default, skip_serializing_if = "is_false")]`,
@@ -434,7 +442,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
 
 - **Ghost worker** (`Worker.ghost`, `#[serde(default, skip_serializing_if)]`): a
   worker flagged as an anomaly — its effective max is treated as 0. Toggle via
-  **Filtri ▸ Ghost worker…** (all workers) or right-click the footer worker name
+  **Filtri ▸ Worker (visibilità e ghost)…** (all workers, «Ghost» column) or right-click the footer worker name
   (`Action::SetWorkerGhost`). Detection helpers on `SingleDev`:
   `has_worker_matching(pred)` / `weeks_with_worker(pred)` (effort>0 only). Effects
   when a ghost has effort in a dev: (1) the dev **name blinks** normal↔purple in

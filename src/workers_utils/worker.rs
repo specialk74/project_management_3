@@ -130,6 +130,11 @@ impl Worker {
         self.hide_in_footer.unwrap_or(false)
     }
 
+    /// `false` torna a `None`, così il file resta pulito per i worker visibili.
+    pub fn set_hidden_in_footer(&mut self, hidden: bool) {
+        self.hide_in_footer = hidden.then_some(true);
+    }
+
     /// True se il worker va mostrato nella lista del filtro (Ctrl+F).
     pub fn is_shown_in_find(&self) -> bool {
         self.show_in_find

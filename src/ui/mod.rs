@@ -875,12 +875,12 @@ pub struct UiState {
     // finestra di gestione milestone (elenco, colore, tipo, elimina)
     show_milestone_manager: bool,
     milestone_manager_just_opened: bool,
-    // finestra di gestione "ghost": elenca TUTTI i worker (anche nascosti nel
-    // footer o filtrati) con una spunta Ghost ciascuno.
-    show_ghost_manager: bool,
-    ghost_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
+    // finestra «Worker» (Filtri ▸ Worker (visibilità e ghost)…): ricerca
+    show_worker_visibility: bool,
+    worker_visibility_just_opened: bool,
+    worker_visibility_search: String,
     // Data e worker da evidenziare in intestazione e footer: `grid_hl` è quello
     // del frame precedente (letto da header/footer, disegnati PRIMA della
     // griglia), `grid_hl_next` quello raccolto dalla griglia nel frame corrente.
@@ -1137,6 +1137,16 @@ pub(crate) enum Action {
     SetWorkerGhost {
         worker: WorkerId,
         ghost: bool,
+    },
+    /// Nasconde (o mostra) la riga del worker nel footer (`hide_in_footer`).
+    SetWorkerHiddenInFooter {
+        worker: WorkerId,
+        hidden: bool,
+    },
+    /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
+    SetWorkerShownInFind {
+        worker: WorkerId,
+        shown: bool,
     },
     /// Esclude (o rimette) un dev dai totali in basso a sinistra del footer.
     SetDevHiddenInTotals {
@@ -1744,8 +1754,8 @@ impl eframe::App for PjmApp {
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             filters_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
-            ghost_manager_window(ui.ctx(), app, state, &mut actions);
             dev_totals_window(ui.ctx(), app, state, &mut actions);
+            worker_visibility_window(ui.ctx(), app, state, &mut actions);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -2445,6 +2455,16 @@ impl PjmApp {
             Action::SetWorkerGhost { worker, ghost } => {
                 self.app.workers.set_ghost(worker, ghost);
                 self.mark_changed();
+            }
+            Action::SetWorkerHiddenInFooter { worker, hidden } => {
+                if self.app.workers.set_hidden_in_footer(worker, hidden) {
+                    self.mark_changed();
+                }
+            }
+            Action::SetWorkerShownInFind { worker, shown } => {
+                if self.app.workers.set_shown_in_find(worker, shown) {
+                    self.mark_changed();
+                }
             }
             Action::SetDevHiddenInTotals { dev, hidden } => {
                 if self.app.devs.set_hidden_in_totals(dev, hidden) {
@@ -4551,6 +4571,80 @@ mod tests {
             .filter(|t| **t != date && *t != "Alice")
             .collect();
         assert_eq!(others.len(), 2, "solo la cella Alice × settimana: {others:?}");
+    }
+
+    /// Le due visibilità del worker: footer (`hide_in_footer`) ed elenchi
+    /// (`show_in_find`). Cambiano solo se diverse, finiscono nel file solo
+    /// quando non sono il default e la riga sparisce dal footer.
+    #[test]
+    fn worker_visibility_setters_footer_and_ron() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let plain = app.to_ron_string();
+
+        assert!(app.workers.set_hidden_in_footer(bob, true));
+        assert!(!app.workers.set_hidden_in_footer(bob, true), "già nascosto");
+        assert!(app.workers.set_shown_in_find(bob, false));
+        assert!(!app.workers.set_shown_in_find(bob, false));
+        let names: Vec<String> = footer_workers(&app, &Filter::default())
+            .into_iter()
+            .map(|(_, n)| n)
+            .collect();
+        assert_eq!(names, vec!["Alice".to_string()]);
+
+        let back = App::from_ron_str(&app.to_ron_string()).unwrap();
+        assert!(back.workers.is_hidden_in_footer(bob) && !back.workers.is_shown_in_find(bob));
+        assert!(!back.workers.is_hidden_in_footer(alice) && back.workers.is_shown_in_find(alice));
+
+        // Rimesso visibile: il file torna identico a prima.
+        app.workers.set_hidden_in_footer(bob, false);
+        app.workers.set_shown_in_find(bob, true);
+        assert_eq!(app.to_ron_string(), plain);
+    }
+
+    /// La finestra elenca tutti i worker (anche nascosti) con la ricerca e
+    /// resta aperta senza click.
+    #[test]
+    fn worker_visibility_window_lists_and_searches_workers() {
+        let mut app = App::new();
+        app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        app.workers.set_hidden_in_footer(bob, true);
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            show_worker_visibility: true,
+            worker_visibility_just_opened: true,
+            ..Default::default()
+        };
+        let texts = |state: &mut UiState| -> Vec<String> {
+            let mut out_texts = Vec::new();
+            for _ in 0..2 {
+                let mut actions = Vec::new();
+                let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    worker_visibility_window(ui.ctx(), &app, state, &mut actions);
+                });
+                assert!(actions.is_empty());
+                out_texts = out
+                    .shapes
+                    .iter()
+                    .filter_map(|cs| match &cs.shape {
+                        egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()),
+                        _ => None,
+                    })
+                    .collect();
+            }
+            out_texts
+        };
+        let all = texts(&mut state);
+        assert!(all.contains(&"Alice".to_string()) && all.contains(&"Bob".to_string()));
+        for col in ["Footer", "Elenchi", "Ghost"] {
+            assert!(all.contains(&col.to_string()), "colonna {col}: {all:?}");
+        }
+        state.worker_visibility_search = "bo".to_string();
+        let some = texts(&mut state);
+        assert!(some.contains(&"Bob".to_string()) && !some.contains(&"Alice".to_string()));
+        assert!(state.show_worker_visibility);
     }
 
     #[test]

@@ -715,68 +715,6 @@ pub(crate) fn closed_filter_window(
     }
 }
 
-// ── Gestione "ghost" (Filtri ▸ Ghost worker…) ───────────────────────────────
-
-/// Elenca **tutti** i worker (escluso solo il worker "zero"), a prescindere da
-/// `hide_in_footer`, `show_in_find` o dal filtro attivo, ognuno con una spunta
-/// **Ghost**. È l'unico punto sempre raggiungibile per associare/togliere il
-/// ghost anche a worker non visibili nel footer.
-pub(crate) fn ghost_manager_window(
-    ctx: &egui::Context,
-    app: &App,
-    state: &mut UiState,
-    actions: &mut Vec<Action>,
-) {
-    if !state.show_ghost_manager {
-        return;
-    }
-    let workers = app.workers.list(); // (WorkerId, nome), ordinati per nome, senza lo zero
-    let mut open = true;
-    let just_opened = state.ghost_manager_just_opened;
-    state.ghost_manager_just_opened = false;
-
-    let resp = egui::Window::new("Ghost worker")
-        .collapsible(false)
-        .resizable(false)
-        .default_pos(egui::pos2(160.0, 40.0))
-        .open(&mut open)
-        .show(ctx, |ui| {
-            ui.set_min_width(title_width(ui, "Ghost worker").max(240.0));
-            ui.label(
-                "Spunta i worker \"ghost\": se inseriti nell'effort di un dev vengono \
-                 evidenziati come anomalia (cella rossa, nome dev lampeggiante, barra/linea \
-                 rossa negli export).",
-            );
-            ui.add_space(4.0);
-            ui.separator();
-            if workers.is_empty() {
-                ui.label("Nessun worker.");
-            }
-            egui::ScrollArea::vertical()
-                .max_height(400.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    for (id, name) in &workers {
-                        let mut on = app.workers.is_ghost(*id);
-                        if ui.checkbox(&mut on, name).changed() {
-                            actions.push(Action::SetWorkerGhost {
-                                worker: *id,
-                                ghost: on,
-                            });
-                        }
-                    }
-                });
-        });
-
-    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
-    let clicked_outside = resp
-        .map(|r| r.response.clicked_elsewhere())
-        .unwrap_or(false);
-    if !open || (!just_opened && clicked_outside) {
-        state.show_ghost_manager = false;
-    }
-}
-
 // ── Clona progetto (Aggiungi ▸ Clona progetto…) ─────────────────────────────
 
 /// Finestra «Clona progetto»: elenco di **tutti** i progetti (anche chiusi),
@@ -935,6 +873,137 @@ pub(crate) fn dev_totals_window(
         .unwrap_or(false);
     if !open || (!just_opened && clicked_outside) {
         state.show_dev_totals = false;
+    }
+}
+
+// ── Worker: visibilità e ghost (Filtri ▸ Worker (visibilità e ghost)…) ──────
+
+/// Elenca **tutti** i worker con tre spunte: **Footer** (la riga nel footer,
+/// `hide_in_footer`), **Elenchi** (la presenza negli elenchi di scelta —
+/// filtri, matrice, inserimento multiplo, saturazione —, `show_in_find`) e
+/// **Ghost** (`Worker.ghost`, anomalia). Ricerca per nome; Footer ed Elenchi
+/// hanno il loro Select All sui worker elencati, Ghost no (marcare tutti come
+/// anomalia non ha senso). È l'unico punto sempre raggiungibile per il ghost,
+/// anche per i worker nascosti nel footer. Le scelte sono salvate nel file.
+pub(crate) fn worker_visibility_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_worker_visibility {
+        return;
+    }
+    let mut open = true;
+    let just_opened = state.worker_visibility_just_opened;
+    state.worker_visibility_just_opened = false;
+    let q = state.worker_visibility_search.trim().to_lowercase();
+    let listed: Vec<(WorkerId, String)> = app
+        .workers
+        .list()
+        .into_iter()
+        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .collect();
+
+    let resp = egui::Window::new("Worker")
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(160.0, 40.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            ui.label(
+                "Footer: la riga del worker in fondo alla finestra. Elenchi: il \
+                 worker compare nei filtri, nella matrice, nell'inserimento \
+                 multiplo e nella saturazione. Ghost: se inserito negli effort di \
+                 un dev viene evidenziato come anomalia (cella viola, nome dev \
+                 lampeggiante, barra/linea rossa negli export).",
+            );
+            ui.add_space(4.0);
+            let sf = ui.add(
+                egui::TextEdit::singleline(&mut state.worker_visibility_search)
+                    .hint_text("Cerca worker…")
+                    .desired_width(240.0),
+            );
+            if just_opened {
+                sf.request_focus();
+            }
+            ui.separator();
+            if listed.is_empty() {
+                ui.label("(nessun worker)");
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Grid::new("worker_visibility_grid")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            // Intestazione: Select All per Footer ed Elenchi.
+                            ui.label(egui::RichText::new("Worker").strong());
+                            let all_footer = listed
+                                .iter()
+                                .all(|(id, _)| !app.workers.is_hidden_in_footer(*id));
+                            let mut f = all_footer;
+                            if ui.checkbox(&mut f, "Footer").changed() {
+                                for (id, _) in &listed {
+                                    actions.push(Action::SetWorkerHiddenInFooter {
+                                        worker: *id,
+                                        hidden: !f,
+                                    });
+                                }
+                            }
+                            let all_lists =
+                                listed.iter().all(|(id, _)| app.workers.is_shown_in_find(*id));
+                            let mut l = all_lists;
+                            if ui.checkbox(&mut l, "Elenchi").changed() {
+                                for (id, _) in &listed {
+                                    actions.push(Action::SetWorkerShownInFind {
+                                        worker: *id,
+                                        shown: l,
+                                    });
+                                }
+                            }
+                            ui.label(egui::RichText::new("Ghost").strong());
+                            ui.end_row();
+
+                            for (id, name) in &listed {
+                                ui.label(name);
+                                let mut in_footer = !app.workers.is_hidden_in_footer(*id);
+                                if ui.checkbox(&mut in_footer, "").changed() {
+                                    actions.push(Action::SetWorkerHiddenInFooter {
+                                        worker: *id,
+                                        hidden: !in_footer,
+                                    });
+                                }
+                                let mut in_lists = app.workers.is_shown_in_find(*id);
+                                if ui.checkbox(&mut in_lists, "").changed() {
+                                    actions.push(Action::SetWorkerShownInFind {
+                                        worker: *id,
+                                        shown: in_lists,
+                                    });
+                                }
+                                let mut ghost = app.workers.is_ghost(*id);
+                                if ui.checkbox(&mut ghost, "").changed() {
+                                    actions.push(Action::SetWorkerGhost {
+                                        worker: *id,
+                                        ghost,
+                                    });
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+        });
+
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
+        state.show_worker_visibility = false;
+        state.worker_visibility_search.clear();
     }
 }
 
