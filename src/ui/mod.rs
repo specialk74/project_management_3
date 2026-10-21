@@ -385,6 +385,9 @@ struct PdfExport {
     milestones: Vec<(MilestoneId, WeekId, bool)>,
     /// Formato della barra scelto per ogni dev (riga della dialog).
     formats: HashMap<DevId, crate::pdf_export::DevBar>,
+    /// Periodo disegnato («Da», «A»), in giorni: alla prima apertura inizio e
+    /// fine del progetto, poi quello ricordato per il progetto.
+    range: (i32, i32),
 }
 
 /// Stato della dialog "Esporta PDF" con più progetti visibili: l'elenco dei
@@ -401,6 +404,26 @@ struct ExportProjectMemory {
     devs: Vec<(DevId, bool)>,
     milestones: HashMap<MilestoneId, bool>,
     formats: HashMap<DevId, crate::pdf_export::DevBar>,
+    /// Periodo «Da»/«A» scelto per il progetto (`None` = mai aperto).
+    range: Option<(i32, i32)>,
+}
+
+/// Periodo proposto alla prima apertura della dialog di export di un progetto:
+/// le sue date di inizio e fine. Se ne manca una, 12 settimane dall'altra (o da
+/// oggi): l'export comunque richiede entrambe le date.
+pub(crate) fn project_export_range(app: &App, proj: ProjectId) -> (i32, i32) {
+    const SPAN: i32 = 12 * WEEK_STEP as i32;
+    let start = app.projects.get_project_start_week(proj).map(|w| w.0 as i32);
+    let end = app.projects.get_project_end_week(proj).map(|w| w.0 as i32);
+    match (start, end) {
+        (Some(s), Some(e)) => (s, e),
+        (Some(s), None) => (s, s + SPAN),
+        (None, Some(e)) => (e - SPAN, e),
+        (None, None) => {
+            let today = local_to_days(&chrono::Local::now().date_naive());
+            (today, today + SPAN)
+        }
+    }
 }
 
 /// Dev della dialog di export di un progetto a partire dalle scelte ricordate:
@@ -1054,12 +1077,15 @@ pub(crate) enum Action {
         scopes: Vec<MilestoneScope>,
         /// Milestone spuntate nella dialog (le altre non vengono disegnate).
         milestones: Vec<MilestoneId>,
+        /// Periodo disegnato («Da», «A»), in giorni.
+        range: (i32, i32),
     },
     ExportSvgProject {
         proj: ProjectId,
         devs: Vec<(DevId, crate::pdf_export::DevBar)>,
         scopes: Vec<MilestoneScope>,
         milestones: Vec<MilestoneId>,
+        range: (i32, i32),
     },
     GenerateReport {
         projects: Vec<ProjectId>,
@@ -1329,9 +1355,9 @@ fn save_multi_export_dialog(
 
 /// Costruisce un export per ogni ambito milestone richiesto: imposta l'ambito
 /// (`set_milestone_scope`), chiama `build`, e restituisce le coppie
-/// `(suffisso file, byte)` degli export riusciti. Alla fine rimette ambito e
-/// filtro milestone ai valori di default, così i `build_*` successivi partono
-/// da Internal e senza restrizioni.
+/// `(suffisso file, byte)` degli export riusciti. Alla fine rimette ambito,
+/// filtro milestone e periodo ai valori di default, così i `build_*`
+/// successivi partono da Internal, senza restrizioni e con l'asse automatico.
 fn scoped_exports(
     scopes: &[MilestoneScope],
     mut build: impl FnMut(MilestoneScope) -> Option<Vec<u8>>,
@@ -1345,6 +1371,7 @@ fn scoped_exports(
     }
     crate::pdf_export::set_milestone_scope(MilestoneScope::default());
     crate::pdf_export::set_milestone_allow(None);
+    crate::pdf_export::set_export_range(None);
     items
 }
 
@@ -2382,11 +2409,17 @@ impl PjmApp {
                                 (*d, f)
                             })
                             .collect();
+                        // Periodo: quello ricordato, altrimenti inizio/fine
+                        // del progetto (poi non viene più toccato).
+                        let range = mem
+                            .and_then(|m| m.range)
+                            .unwrap_or_else(|| project_export_range(&self.app, proj));
                         self.ui.pdf_export = Some(PdfExport {
                             proj,
                             entries,
                             milestones,
                             formats,
+                            range,
                         });
                     }
                     _ => {
@@ -2453,7 +2486,9 @@ impl PjmApp {
                 devs,
                 scopes,
                 milestones,
+                range,
             } => {
+                crate::pdf_export::set_export_range(Some(range));
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
                 crate::pdf_export::set_show_year(self.ui.export_show_year.0);
                 crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
@@ -2480,7 +2515,9 @@ impl PjmApp {
                 devs,
                 scopes,
                 milestones,
+                range,
             } => {
+                crate::pdf_export::set_export_range(Some(range));
                 crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
                 crate::pdf_export::set_show_year(self.ui.export_show_year.0);
                 crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
@@ -3945,6 +3982,58 @@ mod tests {
         assert!(state.bound_move.is_some(), "la conferma deve restare aperta");
     }
 
+    /// Periodo dell'export di un progetto: alla prima apertura inizio/fine
+    /// del progetto, poi resta quello scelto (anche se le date del progetto
+    /// cambiano); ogni progetto ha il suo.
+    #[test]
+    fn export_range_starts_from_project_dates_and_is_remembered_per_project() {
+        let mut app = App::new();
+        let a = app.projects.add("A", Some("AAA"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(a, Some(WeekId(20140)));
+        let b = app.projects.add("B", Some("BBB"), Some(WeekId(20210)));
+        app.projects.set_project_end_week(b, Some(WeekId(20350)));
+        let mut pjm = PjmApp {
+            app,
+            ui: UiState::default(),
+        };
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1536.0, 864.0),
+        ));
+        // Mostra solo `p` (l'export di un solo progetto apre la sua dialog),
+        // la apre, ci disegna sopra un frame e la chiude.
+        let open = |pjm: &mut PjmApp, p: ProjectId, other: ProjectId| {
+            pjm.app.projects.set_enable(p, Enable(true));
+            pjm.app.projects.set_enable(other, Enable(false));
+            pjm.apply(Action::ExportPdf);
+            pjm.ui.pdf_export.as_ref().expect("dialog del progetto").range
+        };
+        let frame = |pjm: &mut PjmApp| {
+            let mut actions = Vec::new();
+            ctx.run_ui(input.clone(), |ui| {
+                pdf_export_window(ui.ctx(), &pjm.app, &mut pjm.ui, &mut actions);
+            });
+            pjm.ui.pdf_export = None;
+        };
+
+        assert_eq!(open(&mut pjm, a, b), (20000, 20140));
+        pjm.ui.pdf_export.as_mut().unwrap().range = (20063, 20105);
+        frame(&mut pjm);
+
+        // Le date del progetto cambiano: il periodo scelto non si tocca.
+        pjm.app.projects.set_project_end_week(a, Some(WeekId(20203)));
+        assert_eq!(open(&mut pjm, a, b), (20063, 20105));
+        frame(&mut pjm);
+
+        // Un altro progetto parte dalle sue date…
+        assert_eq!(open(&mut pjm, b, a), (20210, 20350));
+        frame(&mut pjm);
+        // …e tornando al primo si ritrova il suo periodo.
+        assert_eq!(open(&mut pjm, a, b), (20063, 20105));
+    }
+
     #[test]
     fn manual_version_is_dynamic_and_toc_parses() {
         // Il file usa il segnaposto, non un numero fisso, così non invecchia.
@@ -4118,6 +4207,7 @@ mod tests {
                 entries: vec![(dev, true)],
                 milestones: Vec::new(),
                 formats: HashMap::new(),
+                range: project_export_range(&app, proj),
             }),
             ..Default::default()
         };
@@ -4163,6 +4253,7 @@ mod tests {
                 entries,
                 milestones,
                 formats: HashMap::new(),
+                range: project_export_range(&app, proj),
             }),
             ..Default::default()
         };
@@ -4218,6 +4309,7 @@ mod tests {
                 entries: vec![(dev, true)],
                 milestones: vec![(a, WeekId(20021), true), (b, WeekId(20035), true)],
                 formats: HashMap::new(),
+                range: project_export_range(&app, proj),
             }),
             ..Default::default()
         };

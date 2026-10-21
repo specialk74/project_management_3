@@ -1079,6 +1079,28 @@ Se hai **filtrato fino a un solo progetto visibile**, **File ▸ Esporta PDF…*
 una **finestra di selezione**, intitolata **«Esporta PDF/SVG»** seguito dalla
 tripletta del progetto:
 
+- in cima, **«Periodo da disegnare»**: due date, **Da** e **A**, scelte con il
+  calendario. Nel PDF/SVG viene disegnata **solo questa parte** del grafico:
+  - l'asse dei mesi parte da **Da** e finisce con **A** (i mesi agli estremi
+    possono restare tagliati); ogni data vale per **l'intera settimana** che la
+    contiene;
+  - le barre dei dev che escono dal periodo vengono **tagliate ai bordi**, ma la
+    data accanto alla barra resta quella **reale** del dev;
+  - un dev selezionato che ha effort **solo fuori dal periodo** non ha né barra
+    né linea: compaiono solo le sue **date reali** (e le percentuali, se
+    richieste) — al **bordo sinistro** del grafico se ha **già finito**, al
+    **bordo destro** se **deve ancora iniziare**, **al centro** se lavora prima e
+    dopo il periodo (il periodo cade in una sua pausa);
+  - un dev **senza alcun effort** resta la solita **riga sottile**;
+  - le **milestone fuori dal periodo** non vengono disegnate, anche se spuntate.
+
+  La **prima volta** che apri l'export di un progetto le date sono il suo
+  **inizio** e la sua **fine**; da lì in poi il programma **ricorda** il periodo
+  scelto **per quel progetto** (fino alla chiusura del programma) e non lo cambia
+  più, nemmeno se sposti inizio o fine del progetto. Ogni progetto ha il suo
+  periodo. Il pulsante **Inizio/fine progetto** rimette le date attuali del
+  progetto. Le date possono anche uscire dal periodo del progetto. Se **Da** è
+  dopo **A** compare un avviso e i pulsanti di export sono disattivati;
 - elenca **tutti i dev del progetto**, anche quelli **senza effort**; la prima
   volta sono tutti spuntati e nell'ordine della lista dev;
 - **Select All** in cima all'elenco dei dev (scorre insieme a loro) per

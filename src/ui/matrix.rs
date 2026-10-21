@@ -11,13 +11,13 @@ fn today_days() -> i32 {
     local_to_days(&chrono::Local::now().date_naive())
 }
 
-fn days_to_jiff(days: i32) -> jiff::civil::Date {
+pub(crate) fn days_to_jiff(days: i32) -> jiff::civil::Date {
     let d = days_to_local(days);
     jiff::civil::Date::new(d.year() as i16, d.month() as i8, d.day() as i8)
         .unwrap_or_else(|_| today_jiff())
 }
 
-fn jiff_to_days(d: jiff::civil::Date) -> Option<i32> {
+pub(crate) fn jiff_to_days(d: jiff::civil::Date) -> Option<i32> {
     chrono::NaiveDate::from_ymd_opt(d.year() as i32, d.month() as u32, d.day() as u32)
         .map(|n| local_to_days(&n))
 }

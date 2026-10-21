@@ -620,6 +620,28 @@ the footer date.
   multi-project dialog keeps `UiState.export_multi_memory: HashMap<ProjectId, bool>`
   (projects never seen start ticked). Global options (format, %, year, ghost,
   scopes) were already remembered.
+- **Export period** (single-project dialog only): `period_row` (`export.rs`, top
+  row, two `DatePickerButton`s + «Inizio/fine progetto») edits `PdfExport.range:
+  (i32, i32)` (days). First opening = `project_export_range(app, proj)`
+  (start/end of the project); then it is remembered **per project** in
+  `ExportProjectMemory.range` and never touched again, even if the project's dates
+  change. Rides in `Action::ExportPdfProject/ExportSvgProject { …, range }` →
+  `pdf_export::set_export_range(Some(range))` (thread-local, reset by
+  `scoped_exports`). `export_window()` snaps it to whole weeks `[Monday(from),
+  Monday(to)+7)`; `project_shapes_fmt` drops effort weeks, ghost weeks and
+  milestones outside it (`in_window`; a dev with effort **only outside** gets
+  `Row.off = Some(OffWindow::{Ended, NotStarted, Gap})` (`OffWindow::of`) and
+  `page_shapes` draws no bar/line, just `dev_range` + `pct_label` at the chart's
+  left edge / right edge / centre — test
+  `devs_outside_the_export_range_show_their_dates_at_the_edges`; a dev with no
+  effort at all stays a `no_effort` thin row; `max_week` stays the all-weeks max so `Proportional`
+  heights don't change), and `page_shapes(…, window)` uses it as the exact axis
+  instead of the month-snapped auto range (+2 months). Bars are clipped by
+  `x_of`'s clamp while the date label keeps the dev's real `start_day/end_day`;
+  when the label fits neither right nor left of a bar clipped at both edges it
+  goes above the bar, right-aligned. `from > to` disables the export buttons.
+  Tests `export_range_limits_axis_milestones_and_devs`,
+  `export_range_starts_from_project_dates_and_is_remembered_per_project`.
 
 - **Milestone scope** (`MilestoneScope { Internal, External, Mix }` in
   `milestones.rs`; `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`,

@@ -280,6 +280,56 @@ pub(crate) fn milestone_scope_selector(ui: &mut egui::Ui, scopes: &mut ExportSco
     });
 }
 
+/// Riga «Periodo da disegnare: Da [data] A [data] [Inizio/fine progetto]»
+/// della dialog di export di un progetto. Ogni data vale per l'intera
+/// settimana che la contiene (vedi `pdf_export::set_export_range`). Ritorna
+/// `false` se «Da» è dopo «A» (export disabilitato, con avviso).
+fn period_row(ui: &mut egui::Ui, app: &App, proj: ProjectId, range: &mut (i32, i32)) -> bool {
+    let picker = |ui: &mut egui::Ui, id: &str, day: &mut i32| {
+        let mut date = days_to_jiff(*day);
+        let r = ui.add(
+            egui_extras::DatePickerButton::new(&mut date)
+                .id_salt(id)
+                .format("%Y-%m-%d"),
+        );
+        if r.changed() {
+            if let Some(d) = jiff_to_days(date) {
+                *day = d;
+            }
+        }
+    };
+    let valid = range.0 <= range.1;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Periodo da disegnare").strong());
+        ui.label("Da");
+        picker(ui, "pdf_range_from", &mut range.0);
+        ui.label("A");
+        picker(ui, "pdf_range_to", &mut range.1);
+        let proj_range = project_export_range(app, proj);
+        if ui
+            .add_enabled(*range != proj_range, egui::Button::new("Inizio/fine progetto"))
+            .on_hover_text("Rimette le date di inizio e fine del progetto.")
+            .clicked()
+        {
+            *range = proj_range;
+        }
+        if !valid {
+            ui.label(
+                egui::RichText::new("«Da» è dopo «A».")
+                    .small()
+                    .color(warn_amber()),
+            );
+        }
+    })
+    .response
+    .on_hover_text(
+        "Solo questa parte del grafico viene disegnata: barre tagliate ai bordi \
+         (le date accanto restano quelle reali), milestone fuori periodo omesse. \
+         Ogni data vale per l'intera settimana che la contiene.",
+    );
+    range.0 <= range.1
+}
+
 /// Dialog "Esporta PDF" per singolo progetto: elenco di TUTTI i dev del progetto
 /// (anche senza effort) con checkbox di selezione e frecce ▲▼ per riordinarli.
 /// Alla conferma lancia `Action::ExportPdfProject` con i dev selezionati, in ordine.
@@ -336,6 +386,10 @@ pub(crate) fn pdf_export_window(
         .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
+            // Periodo da disegnare: una riga sola, in cima.
+            let valid_range = period_row(ui, app, proj, &mut px.range);
+            ui.separator();
+
             // Elenchi dev e milestone **affiancati**: su schermi HD con
             // ingrandimento (1920×1080 al 125%) impilati rendevano la dialog
             // troppo alta.
@@ -530,7 +584,7 @@ pub(crate) fn pdf_export_window(
             });
 
             ui.separator();
-            let can_export = !scopes.is_empty();
+            let can_export = !scopes.is_empty() && valid_range;
             ui.horizontal(|ui| {
                 // Esportabile anche con zero dev: esce comunque il resto (milestone…).
                 if ui
@@ -565,6 +619,7 @@ pub(crate) fn pdf_export_window(
             devs: px.entries.clone(),
             milestones: px.milestones.iter().map(|(id, _, on)| (*id, *on)).collect(),
             formats: px.formats.clone(),
+            range: Some(px.range),
         },
     );
 
@@ -589,12 +644,14 @@ pub(crate) fn pdf_export_window(
     if let Some(devs) = devs_if_export {
         let scopes = scopes.list();
         let milestones = milestones_if_export.unwrap_or_default();
+        let range = px.range;
         if do_export_svg {
             actions.push(Action::ExportSvgProject {
                 proj,
                 devs,
                 scopes,
                 milestones,
+                range,
             });
         } else {
             actions.push(Action::ExportPdfProject {
@@ -602,6 +659,7 @@ pub(crate) fn pdf_export_window(
                 devs,
                 scopes,
                 milestones,
+                range,
             });
         }
         state.pdf_export = None;

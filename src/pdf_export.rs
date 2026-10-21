@@ -49,6 +49,26 @@ thread_local! {
     // lato corto → estremi semicircolari). Viene dal file .ron (`App.corner_pct`)
     // e la imposta `project_shapes` a ogni pagina.
     static CORNER_PCT: std::cell::Cell<i32> = const { std::cell::Cell::new(CORNER_PCT_DEFAULT) };
+    // Periodo del grafico Gantt scelto nella dialog del singolo progetto
+    // («Da»/«A», giorni). `None` = asse automatico (comportamento storico).
+    static EXPORT_RANGE: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Limita il grafico Gantt dei prossimi export al periodo `(da, a)` in giorni.
+/// Ciascun estremo vale per l'**intera settimana** che lo contiene (da lunedì
+/// a domenica), così le date di inizio/fine progetto (lunedì) mostrano la loro
+/// settimana per intero. `None` = asse automatico.
+pub fn set_export_range(r: Option<(i32, i32)>) {
+    EXPORT_RANGE.with(|c| c.set(r));
+}
+
+/// Finestra dell'asse `[inizio, fine)` in giorni derivata da `set_export_range`:
+/// lunedì della settimana di «Da» → lunedì successivo alla settimana di «A».
+fn export_window() -> Option<(i32, i32)> {
+    let monday = |d: i32| local_to_days(&primo_giorno_settimana_corrente(&day_to_date(d)));
+    EXPORT_RANGE
+        .with(|c| c.get())
+        .map(|(a, b)| (monday(a.min(b)), monday(a.max(b)) + 7))
 }
 
 /// Smussatura predefinita degli angoli, in percentuale del raggio massimo.
@@ -817,6 +837,36 @@ struct Row {
     /// Date sotto ogni tratto (formati segmentati): la riga è più alta e a
     /// destra della barra restano solo le eventuali percentuali.
     dates_below: bool,
+    /// Dev con effort ma **nessuno nel periodo** scelto per l'export: niente
+    /// barra né linea, solo le sue date reali (e le %) al bordo che indica
+    /// dove sta il suo lavoro. `None` = riga normale.
+    off: Option<OffWindow>,
+}
+
+/// Dove cade il lavoro di un dev rispetto al periodo dell'export, quando nel
+/// periodo non ha effort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OffWindow {
+    /// Già finito prima del periodo: date al bordo **sinistro** del grafico.
+    Ended,
+    /// Inizia dopo il periodo: date al bordo **destro**.
+    NotStarted,
+    /// Lavora prima e dopo, il periodo cade in un suo buco: date **al centro**.
+    Gap,
+}
+
+impl OffWindow {
+    /// Classifica lo span `[first, last]` (lunedì delle settimane con effort)
+    /// rispetto alla finestra `[start, end)` in giorni.
+    fn of(window: (i32, i32), first: i32, last: i32) -> Self {
+        if last + 7 <= window.0 {
+            OffWindow::Ended
+        } else if first >= window.1 {
+            OffWindow::NotStarted
+        } else {
+            OffWindow::Gap
+        }
+    }
 }
 
 /// Una milestone (bandierina in alto).
@@ -899,6 +949,15 @@ fn contiguous_runs(weeks: &[(i32, u32)]) -> Vec<(i32, i32)> {
     runs
 }
 
+/// Percentuali «(presunta%/dichiarata%)» accanto alle date di un dev, se la
+/// stampa delle percentuali è attiva.
+fn pct_label(r: &Row) -> Option<String> {
+    show_pct().then(|| match r.presumed_pct {
+        Some(p) => format!("({p}%/{}%)", r.declared_pct),
+        None => format!("(-/{}%)", r.declared_pct),
+    })
+}
+
 /// Genera gli `Op` di una pagina Gantt per un progetto.
 fn page_shapes(
     tripletta: &str,
@@ -912,6 +971,7 @@ fn page_shapes(
     chart_only: bool,
     progress_pct: Option<u8>,
     presumed_pct: Option<u32>,
+    window: Option<(i32, i32)>,
 ) -> Vec<Shape> {
     let mut shapes: Vec<Shape> = Vec::new();
 
@@ -933,8 +993,15 @@ fn page_shapes(
 
     // Snap ai confini di mese: inizio = primo del mese di min; fine (esclusiva)
     // = primo del mese successivo a max, così l'ultimo mese è mostrato intero.
-    let axis_start = local_to_days(&month_start(day_to_date(min_day)));
-    let axis_end = local_to_days(&add_months(month_start(day_to_date(max_day)), 1));
+    // Con un periodo scelto dall'utente l'asse è **esattamente** quel periodo:
+    // i mesi agli estremi restano tagliati e le barre si fermano ai bordi
+    // (`x_of` limita già al riquadro del grafico).
+    let (axis_start, axis_end) = window.unwrap_or_else(|| {
+        (
+            local_to_days(&month_start(day_to_date(min_day))),
+            local_to_days(&add_months(month_start(day_to_date(max_day)), 1)),
+        )
+    });
     let span = (axis_end - axis_start).max(1) as f32;
 
     let x_of = |days: i32| -> f32 {
@@ -1227,6 +1294,28 @@ fn page_shapes(
         shapes.extend(text_left(X_LABEL, yc - 1.3, &label, 8.0, false, label_col));
         let lead_x0 = X_LABEL + text_w_mm(&label, 8.0) + 2.0;
 
+        // Dev con effort solo fuori dal periodo dell'export: niente barra né
+        // linea, solo le date reali (+ % se richieste) al bordo sinistro (già
+        // finito), destro (deve iniziare) o al centro (periodo in un buco).
+        if let Some(off) = r.off {
+            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
+            let lbl = match pct_label(r) {
+                Some(p) => format!("{range}  {p}"),
+                None => range,
+            };
+            let y = yc - 1.2;
+            shapes.extend(match off {
+                OffWindow::Ended => text_left(CHART_X0 + 1.0, y, &lbl, 7.0, false, TEXT_GRAY),
+                OffWindow::NotStarted => {
+                    text_right(CHART_X1 - 1.0, y, &lbl, 7.0, false, TEXT_GRAY)
+                }
+                OffWindow::Gap => {
+                    text_center((CHART_X0 + CHART_X1) / 2.0, y, &lbl, 7.0, false, TEXT_GRAY)
+                }
+            });
+            continue;
+        }
+
         // Dev senza effort: riga sottile del colore del dev che copre tutta la
         // larghezza del calendario (dall'inizio alla fine dell'asse dei mesi).
         if r.no_effort {
@@ -1364,10 +1453,7 @@ fn page_shapes(
         // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
         // La fine è il **venerdì** dell'ultima settimana (lunedì + 4): un dev
         // con effort in una sola settimana mostra «lun - ven» di quella settimana.
-        let pct = show_pct().then(|| match r.presumed_pct {
-            Some(p) => format!("({p}%/{}%)", r.declared_pct),
-            None => format!("(-/{}%)", r.declared_pct),
-        });
+        let pct = pct_label(r);
         let lbl = if r.dates_below {
             // Date sotto ogni tratto (inizio sopra, fine sotto, centrate sul
             // tratto); a destra della barra restano solo le percentuali.
@@ -1400,8 +1486,19 @@ fn page_shapes(
         let w = text_w_mm(&lbl, 7.0);
         if bx1 + 2.0 + w <= CHART_X1 {
             shapes.extend(text_left(bx1 + 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
-        } else {
+        } else if bx0 - 2.0 - w >= lead_x0 {
             shapes.extend(text_right(bx0 - 2.0, yc - 1.2, &lbl, 7.0, false, TEXT_GRAY));
+        } else {
+            // Né a destra né a sinistra (barra tagliata ai due bordi da un
+            // periodo più corto del dev): sopra la barra, allineata a destra.
+            shapes.extend(text_right(
+                CHART_X1 - 1.0,
+                yc + bar_hh + 0.4,
+                &lbl,
+                7.0,
+                false,
+                TEXT_GRAY,
+            ));
         }
     }
 
@@ -1496,6 +1593,10 @@ fn project_shapes_fmt(
     // Smussatura degli angoli: impostazione del file .ron, letta a ogni pagina
     // (così vale anche per chi chiama `project_shapes` direttamente, test inclusi).
     set_corner_pct(app.corner_pct);
+    // Periodo scelto (dialog del singolo progetto): fuori restano settimane
+    // di effort, settimane ghost e milestone.
+    let window = export_window();
+    let in_window = |day: i32| window.is_none_or(|(s, e)| day + 7 > s && day < e);
     let color_of = |dev_id: &DevId| {
         dev_info
             .get(dev_id)
@@ -1512,7 +1613,10 @@ fn project_shapes_fmt(
             .into_iter()
             .map(|w| (w.0 as i32, sd.get_effort_by_week(w).0 as u32))
             .collect();
+        // Massimo su tutte le settimane, non solo quelle del periodo: le
+        // altezze `Proportional` restano le stesse dell'export completo.
         let max = weeks.iter().map(|(_, h)| *h).max().unwrap_or(0);
+        let weeks = weeks.into_iter().filter(|(d, _)| in_window(*d)).collect();
         (weeks, max)
     };
     // Settimane (giorni) del dev in cui un worker "ghost" è assegnato, **anche
@@ -1528,6 +1632,7 @@ fn project_shapes_fmt(
         sd.weeks_with_worker_assigned(|wid| app.workers.is_ghost(wid))
             .into_iter()
             .map(|w| w.0 as i32)
+            .filter(|d| in_window(*d))
             .collect()
     };
     // % presunta (usato fino a oggi / pianificato) e % dichiarata dal dev.
@@ -1552,7 +1657,9 @@ fn project_shapes_fmt(
                 };
                 let (label, color) = color_of(&dev_id);
                 let gw = ghost_weeks(dev_id);
-                let Some((first, last)) = sd.effort_span() else {
+                // Senza effort nel periodo scelto conta come «senza ore».
+                let span = sd.effort_span().filter(|_| !week_data(dev_id).0.is_empty());
+                let Some((first, last)) = span else {
                     // Niente ore: di norma il dev non si stampa, ma se ci è
                     // assegnato un ghost (a effort 0) e la stampa dei ghost è
                     // attiva, la riga esce comunque — è l'anomalia da vedere.
@@ -1571,6 +1678,7 @@ fn project_shapes_fmt(
                             ghost_weeks: gw,
                             fmt: fmt_of(dev_id).fmt,
                             dates_below: fmt_of(dev_id).dates_below(),
+                            off: None,
                         });
                     }
                     continue;
@@ -1590,6 +1698,7 @@ fn project_shapes_fmt(
                     ghost_weeks: gw,
                             fmt: fmt_of(dev_id).fmt,
                             dates_below: fmt_of(dev_id).dates_below(),
+                            off: None,
                 });
             }
             rows.sort_by_key(|r| (r.start_day, r.end_day));
@@ -1597,13 +1706,23 @@ fn project_shapes_fmt(
         Some(devs) => {
             for &dev_id in devs {
                 let (label, color) = color_of(&dev_id);
-                match app
+                // Con effort nel periodo: barra tagliata ai bordi, etichetta con
+                // le date reali. Con effort solo fuori dal periodo: niente barra,
+                // le date reali al bordo dove sta il lavoro (`OffWindow`).
+                // Senza effort: riga sottile.
+                let span = app
                     .projects
                     .get_single_dev(proj, dev_id)
-                    .and_then(|sd| sd.effort_span())
-                {
+                    .and_then(|sd| sd.effort_span());
+                let (weeks, max_week) = week_data(dev_id);
+                let off = match (span, window) {
+                    (Some((f, l)), Some(w)) if weeks.is_empty() => {
+                        Some(OffWindow::of(w, f.0 as i32, l.0 as i32))
+                    }
+                    _ => None,
+                };
+                match span {
                     Some((first, last)) => {
-                        let (weeks, max_week) = week_data(dev_id);
                         let (presumed_pct, declared_pct) = pct_data(dev_id);
                         rows.push(Row {
                             label,
@@ -1617,7 +1736,10 @@ fn project_shapes_fmt(
                             declared_pct,
                             ghost_weeks: ghost_weeks(dev_id),
                             fmt: fmt_of(dev_id).fmt,
-                            dates_below: fmt_of(dev_id).dates_below(),
+                            // Fuori periodo non ci sono tratti sotto cui
+                            // scrivere: riga di altezza normale.
+                            dates_below: off.is_none() && fmt_of(dev_id).dates_below(),
+                            off,
                         })
                     }
                     None => {
@@ -1637,6 +1759,7 @@ fn project_shapes_fmt(
                             ghost_weeks: ghost_weeks(dev_id),
                             fmt: fmt_of(dev_id).fmt,
                             dates_below: fmt_of(dev_id).dates_below(),
+                            off: None,
                         })
                     }
                 }
@@ -1649,7 +1772,10 @@ fn project_shapes_fmt(
     for (mid, week) in app.projects.list_project_milestones(proj) {
         // Fuori ambito (es. milestone solo Internal in una stampa External) o
         // non spuntata nella dialog: la bandierina non viene disegnata.
-        if !milestone_allowed(mid) || !app.milestones.in_scope(mid, scope) {
+        if !milestone_allowed(mid)
+            || !app.milestones.in_scope(mid, scope)
+            || !in_window(week.0 as i32)
+        {
             continue;
         }
         let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
@@ -1680,6 +1806,7 @@ fn project_shapes_fmt(
         chart_only,
         progress_pct,
         presumed_pct,
+        window,
     ))
 }
 
@@ -3643,6 +3770,130 @@ mod tests {
         assert!(svg.contains("AncheEsterna"));
 
         set_milestone_scope(MilestoneScope::Mix);
+    }
+
+    /// Periodo scelto nella dialog del singolo progetto: l'asse copre solo
+    /// quello, le milestone fuori non si vedono, un dev senza effort nel
+    /// periodo diventa la riga sottile (niente date) e un dev tagliato al
+    /// bordo mantiene nell'etichetta le sue date reali.
+    #[test]
+    fn export_range_limits_axis_milestones_and_devs() {
+        let mut app = App::new();
+        // 20000 = 4 ottobre 2024, 20140 = 21 febbraio 2025.
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20140)));
+        let solo_ottobre = app.devs.add("SoloOttobre");
+        let a_cavallo = app.devs.add("ACavallo");
+        for d in [solo_ottobre, a_cavallo] {
+            app.projects.add_dev(pid, d);
+        }
+        for w in [20000, 20007] {
+            app.projects
+                .add_effort(pid, solo_ottobre, WeekId(w), WorkerId(0), Effort(8));
+        }
+        // 6 dicembre e 3 gennaio: il periodo parte dal 20 dicembre.
+        for w in [20063, 20091] {
+            app.projects
+                .add_effort(pid, a_cavallo, WeekId(w), WorkerId(0), Effort(8));
+        }
+        let inizio = app.milestones.add("Kickoff");
+        let rilascio = app.milestones.add("Rilascio");
+        app.projects.add_project_milestone(pid, inizio, WeekId(20007));
+        app.projects.add_project_milestone(pid, rilascio, WeekId(20098));
+        let devs = [solo_ottobre, a_cavallo];
+
+        // Senza periodo: tutto il progetto, ottobre compreso.
+        let full = build_svg_project(&app, pid, &devs, BarFormat::Continuous).unwrap();
+        assert!(full.contains(">Oct<") && full.contains("Kickoff"));
+        assert!(full.contains("Oct 4"), "date del dev di ottobre");
+
+        set_export_range(Some((20077, 20140)));
+        let svg = build_svg_project(&app, pid, &devs, BarFormat::Continuous).unwrap();
+        set_export_range(None);
+        assert!(!svg.contains(">Oct<"), "ottobre è fuori dall'asse");
+        assert!(svg.contains(">Jan<"));
+        assert!(!svg.contains("Kickoff"), "milestone fuori periodo omessa");
+        assert!(svg.contains("Rilascio"));
+        assert!(svg.contains("SoloOttobre"));
+        // Dev tagliato al bordo sinistro: date reali (dal 6 dicembre).
+        assert!(svg.contains("Dec 6"), "date reali del dev tagliato");
+    }
+
+    /// Dev con effort solo fuori dal periodo scelto: niente barra né linea
+    /// sottile, solo le sue date reali — a sinistra se ha già finito, a destra
+    /// se deve ancora iniziare, al centro se il periodo cade in un suo buco.
+    #[test]
+    fn devs_outside_the_export_range_show_their_dates_at_the_edges() {
+        let mut app = App::new();
+        // 20000 = 4 ottobre 2024 … 20210 = 2 maggio 2025.
+        let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(pid, Some(WeekId(20210)));
+        let finito = app.devs.add("Finito");
+        let futuro = app.devs.add("Futuro");
+        let buco = app.devs.add("ConBuco");
+        let dentro = app.devs.add("Dentro");
+        let mut add = |dev, ws: &[usize]| {
+            app.projects.add_dev(pid, dev);
+            for w in ws {
+                app.projects
+                    .add_effort(pid, dev, WeekId(*w), WorkerId(0), Effort(8));
+            }
+        };
+        add(finito, &[20000, 20007]); // ottobre
+        add(futuro, &[20161]); // 14 marzo
+        add(buco, &[20000, 20161]);
+        add(dentro, &[20091]); // 3 gennaio
+        let order = [finito, futuro, buco, dentro];
+
+        // Periodo: 20 dicembre 2024 → settimana del 21 febbraio 2025.
+        set_export_range(Some((20077, 20140)));
+        let shapes = project_shapes_fmt(
+            &app,
+            pid,
+            "Prog",
+            &dev_info_map(&app),
+            20091,
+            "",
+            Some(&order),
+            true,
+            &|_| DevBar::from(BarFormat::Continuous),
+        )
+        .unwrap();
+        set_export_range(None);
+
+        // (x iniziale, larghezza) del testo che contiene `pat`.
+        let at = |pat: &str| -> (f32, f32) {
+            shapes
+                .iter()
+                .find_map(|sh| match sh {
+                    Shape::Text { x, s, size, .. } if s.contains(pat) => {
+                        Some((*x, text_w_mm(s, *size)))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("manca il testo {pat:?}: {:?}", texts(&shapes)))
+        };
+        let (x, _) = at("Oct 4 - Oct 15");
+        assert!((x - (CHART_X0 + 1.0)).abs() < 0.01, "già finito: a sinistra ({x})");
+        let (x, w) = at("Mar 14 - Mar 18");
+        assert!(
+            (x + w - (CHART_X1 - 1.0)).abs() < 0.01,
+            "deve iniziare: a destra ({x}+{w})"
+        );
+        let (x, w) = at("Oct 4 '24 - Mar 18");
+        let mid = (CHART_X0 + CHART_X1) / 2.0;
+        assert!((x + w / 2.0 - mid).abs() < 0.01, "buco: al centro ({x}+{w})");
+
+        // Nessuna linea sottile a tutta larghezza: il solo dev con effort nel
+        // periodo ha la sua barra, gli altri tre solo il testo.
+        let full_width = shapes
+            .iter()
+            .filter(|sh| {
+                matches!(sh, Shape::Rect { x0, x1, .. }
+                    if (*x0 - CHART_X0).abs() < 0.01 && (*x1 - CHART_X1).abs() < 0.01)
+            })
+            .count();
+        assert_eq!(full_width, 0, "niente riga sottile per i dev fuori periodo");
     }
 
     /// Testi disegnati nella pagina (etichette dev, date, titoli…).
