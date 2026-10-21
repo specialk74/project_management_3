@@ -730,7 +730,21 @@ fn draw_milestone_strip(
         resp = resp.on_hover_text(names());
     }
     let week_id = WeekId(w as usize);
+    // Fuori dal periodo del progetto il menù ha solo «Sposta inizio» (prima
+    // dell'inizio) o «Sposta fine» (dopo la fine): niente milestone né Sposta.
+    let outside = app
+        .projects
+        .get_project_start_week(proj)
+        .is_some_and(|s| week_id < s)
+        || app
+            .projects
+            .get_project_end_week(proj)
+            .is_some_and(|e| week_id > e);
     resp.context_menu(|ui| {
+        if outside {
+            bound_menu(ui, app, state, actions, proj, week_id);
+            return;
+        }
         // ── Sottomenù: Aggiungi milestone qui (+ rimozione) ──
         // Sottomenù configurato `CloseOnClickOutside`: dentro c'è un campo di
         // testo e con la chiusura al primo click (default dei menù contestuali)
@@ -850,7 +864,43 @@ fn draw_milestone_strip(
                 ui.close();
             }
         });
+
+        ui.separator();
+        bound_menu(ui, app, state, actions, proj, week_id);
     });
+}
+
+/// Voci «Sposta/Imposta inizio|fine progetto qua» del menù della fascia
+/// milestone (vedi `bound_menu_items`). Se nel nuovo periodo non entrerebbe
+/// qualcosa di già inserito, apre la conferma invece di spostare subito.
+fn bound_menu(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    proj: ProjectId,
+    week_id: WeekId,
+) {
+    for (bound, label, enabled) in bound_menu_items(app, proj, week_id) {
+        if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+            let loss = bound_move_loss(app, proj, bound, week_id);
+            if loss.is_empty() {
+                actions.push(Action::MoveProjectBound {
+                    proj,
+                    bound,
+                    week: week_id,
+                });
+            } else {
+                state.bound_move = Some(BoundMove {
+                    proj,
+                    bound,
+                    week: week_id,
+                    loss,
+                });
+            }
+            ui.close();
+        }
+    }
 }
 
 /// Vista compatta: barra in fondo alla colonna con altezza ∝ effort della

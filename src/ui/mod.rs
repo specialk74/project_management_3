@@ -177,6 +177,36 @@ pub(crate) struct BulkFill {
     pub weeks_text: String,
 }
 
+/// Estremo del progetto spostato dal menù della griglia.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProjectBound {
+    Start,
+    End,
+}
+
+/// Cosa si perde spostando inizio/fine: le celle (anche a effort 0) e le
+/// milestone che finirebbero fuori dal nuovo periodo del progetto.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct BoundLoss {
+    pub efforts: Vec<(DevId, WeekId)>,
+    pub milestones: Vec<(MilestoneId, WeekId)>,
+}
+
+impl BoundLoss {
+    pub fn is_empty(&self) -> bool {
+        self.efforts.is_empty() && self.milestones.is_empty()
+    }
+}
+
+/// Spostamento di inizio/fine in attesa di conferma (`bound_move_window`):
+/// c'è qualcosa da cancellare, l'utente deve dire sì o annullare.
+pub(crate) struct BoundMove {
+    pub proj: ProjectId,
+    pub bound: ProjectBound,
+    pub week: WeekId,
+    pub loss: BoundLoss,
+}
+
 /// Conflitto in sospeso: il file su disco è cambiato mentre c'erano modifiche
 /// locali che toccano gli stessi progetti/dev. L'utente sceglie via dialog.
 struct PendingReload {
@@ -576,6 +606,8 @@ pub struct UiState {
     // inserimento multiplo (tasto destro su cella vuota): worker + ore + settimane
     bulk_fill: Option<BulkFill>,
     bulk_fill_was_open: bool,
+    // conferma «Sposta inizio/fine progetto qua» quando si perdono effort/milestone
+    bound_move: Option<BoundMove>,
     dev_manage: Option<ProjectId>,
     confirm_del_dev: Option<(ProjectId, DevId)>,
     // flusso "Sposta" (blocco / devs) aperto dal menù contestuale milestone
@@ -939,6 +971,13 @@ pub(crate) enum Action {
     SetProjectEndWeek {
         proj: ProjectId,
         date: String,
+    },
+    /// Sposta inizio o fine del progetto alla settimana `week` (menù della
+    /// griglia), cancellando effort e milestone che finiscono fuori dal periodo.
+    MoveProjectBound {
+        proj: ProjectId,
+        bound: ProjectBound,
+        week: WeekId,
     },
     SetProjectCategory {
         proj: ProjectId,
@@ -1560,6 +1599,7 @@ impl eframe::App for PjmApp {
             note_editor_window(ui.ctx(), state, &mut actions);
             popup_window(ui.ctx(), app, state, &mut actions);
             bulk_fill_window(ui.ctx(), app, state, &mut actions);
+            bound_move_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
             pdf_multi_export_window(ui.ctx(), app, state, &mut actions);
@@ -2210,6 +2250,11 @@ impl PjmApp {
                     .projects
                     .set_project_end_week(proj, week_from_date_str(&date));
                 self.mark_changed();
+            }
+            Action::MoveProjectBound { proj, bound, week } => {
+                if move_project_bound(&mut self.app, proj, bound, week) {
+                    self.mark_changed();
+                }
             }
             Action::SetProjectCategory { proj, cat } => {
                 self.app.projects.set_category(proj, cat);
@@ -3371,6 +3416,94 @@ fn dev_text_color(app: &App, dev: DevId) -> Color32 {
         .unwrap_or(text())
 }
 
+/// Voci «Sposta/Imposta inizio|fine progetto qua» del menù della griglia per la
+/// settimana `week`: `(estremo, etichetta, abilitata)`. Dentro il periodo ci
+/// sono entrambe, prima dell'inizio solo l'inizio, dopo la fine solo la fine;
+/// una data mancante diventa «Imposta …». La voce che non cambierebbe nulla
+/// (inizio già lì) resta visibile ma disabilitata.
+pub(crate) fn bound_menu_items(
+    app: &App,
+    proj: ProjectId,
+    week: WeekId,
+) -> Vec<(ProjectBound, &'static str, bool)> {
+    let start = app.projects.get_project_start_week(proj);
+    let end = app.projects.get_project_end_week(proj);
+    let mut v = Vec::new();
+    if end.is_none_or(|e| week <= e) {
+        let label = if start.is_some() {
+            "Sposta inizio progetto qua"
+        } else {
+            "Imposta inizio progetto qua"
+        };
+        v.push((ProjectBound::Start, label, start != Some(week)));
+    }
+    if start.is_none_or(|s| week >= s) {
+        let label = if end.is_some() {
+            "Sposta fine progetto qua"
+        } else {
+            "Imposta fine progetto qua"
+        };
+        v.push((ProjectBound::End, label, end != Some(week)));
+    }
+    v
+}
+
+/// Effort (celle, anche a 0) e milestone del progetto che resterebbero fuori
+/// dal periodo se `bound` andasse a `week`. Riguarda tutti i dev.
+pub(crate) fn bound_move_loss(
+    app: &App,
+    proj: ProjectId,
+    bound: ProjectBound,
+    week: WeekId,
+) -> BoundLoss {
+    let (start, end) = match bound {
+        ProjectBound::Start => (Some(week), app.projects.get_project_end_week(proj)),
+        ProjectBound::End => (app.projects.get_project_start_week(proj), Some(week)),
+    };
+    let outside = |w: WeekId| start.is_some_and(|s| w < s) || end.is_some_and(|e| w > e);
+    let mut loss = BoundLoss::default();
+    for dev in app.projects.list_devs(proj) {
+        if let Some(sd) = app.projects.get_single_dev(proj, dev) {
+            loss.efforts.extend(
+                sd.get_weeks()
+                    .into_iter()
+                    .filter(|w| outside(*w))
+                    .map(|w| (dev, w)),
+            );
+        }
+    }
+    let mut ms: Vec<_> = app
+        .projects
+        .list_project_milestones(proj)
+        .into_iter()
+        .filter(|(_, w)| outside(*w))
+        .collect();
+    ms.sort_by_key(|(id, w)| (*w, id.0));
+    loss.milestones = ms;
+    loss
+}
+
+/// Sposta `bound` del progetto a `week`, cancellando prima quanto resterebbe
+/// fuori (vedi `bound_move_loss`). Ritorna `true` se ha cambiato qualcosa.
+fn move_project_bound(app: &mut App, proj: ProjectId, bound: ProjectBound, week: WeekId) -> bool {
+    let loss = bound_move_loss(app, proj, bound, week);
+    for (dev, w) in &loss.efforts {
+        app.projects.reset_effort(proj, *dev, *w);
+    }
+    for (m, _) in &loss.milestones {
+        app.projects.remove_project_milestone(proj, *m);
+    }
+    let old = match bound {
+        ProjectBound::Start => app.projects.get_project_start_week(proj),
+        ProjectBound::End => app.projects.get_project_end_week(proj),
+    };
+    match bound {
+        ProjectBound::Start => app.projects.set_project_start_week(proj, Some(week)),
+        ProjectBound::End => app.projects.set_project_end_week(proj, Some(week)),
+    }
+    old != Some(week) || !loss.is_empty()
+}
+
 /// Scrive `effort` per ognuno dei `workers` in `weeks` settimane consecutive a
 /// partire da `start` (inclusa), andando in avanti. Sovrascrive il valore già
 /// presente per quel worker e si ferma alla fine della griglia (`end_week`).
@@ -3680,6 +3813,136 @@ mod tests {
             );
         }
         assert!(state.bulk_fill.is_some(), "la dialog deve restare aperta");
+    }
+
+    /// Progetto 20000..=20070 (11 settimane) con un dev e un worker, per i
+    /// test di «Sposta inizio/fine progetto qua».
+    fn bound_fixture() -> (App, ProjectId, DevId, WorkerId) {
+        let mut app = App::new();
+        let proj = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(proj, Some(WeekId(20070)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(proj, dev);
+        let w = app.workers.add("Alice");
+        (app, proj, dev, w)
+    }
+
+    #[test]
+    fn bound_menu_items_follow_the_click_position() {
+        let (mut app, proj, _, _) = bound_fixture();
+        let kinds = |app: &App, w: usize| -> Vec<(ProjectBound, bool)> {
+            bound_menu_items(app, proj, WeekId(w))
+                .into_iter()
+                .map(|(b, _, on)| (b, on))
+                .collect()
+        };
+        use ProjectBound::{End, Start};
+        // Prima dell'inizio: solo l'inizio; dopo la fine: solo la fine.
+        assert_eq!(kinds(&app, 19993), vec![(Start, true)]);
+        assert_eq!(kinds(&app, 20077), vec![(End, true)]);
+        // Dentro: entrambe; sull'inizio/sulla fine quella voce è disabilitata.
+        assert_eq!(kinds(&app, 20035), vec![(Start, true), (End, true)]);
+        assert_eq!(kinds(&app, 20000), vec![(Start, false), (End, true)]);
+        assert_eq!(kinds(&app, 20070), vec![(Start, true), (End, false)]);
+        // Fine mancante: «Imposta fine» ovunque dopo l'inizio, «Sposta inizio» ovunque.
+        app.projects.set_project_end_week(proj, None);
+        let items = bound_menu_items(&app, proj, WeekId(20100));
+        assert_eq!(
+            items.iter().map(|(_, l, _)| *l).collect::<Vec<_>>(),
+            vec!["Sposta inizio progetto qua", "Imposta fine progetto qua"]
+        );
+    }
+
+    #[test]
+    fn moving_a_bound_inward_reports_and_deletes_what_falls_outside() {
+        let (mut app, proj, dev, w) = bound_fixture();
+        for wk in [20000, 20007, 20014, 20063, 20070] {
+            app.projects.add_effort(proj, dev, WeekId(wk), w, Effort(8));
+        }
+        // Anche un'assegnazione a effort 0 conta come dato inserito.
+        app.projects.add_effort(proj, dev, WeekId(20021), w, Effort(0));
+        let ms = app.milestones.add("Kickoff");
+        app.projects.add_project_milestone(proj, ms, WeekId(20007));
+        let keep = app.milestones.add("Demo");
+        app.projects.add_project_milestone(proj, keep, WeekId(20035));
+
+        let loss = bound_move_loss(&app, proj, ProjectBound::Start, WeekId(20028));
+        assert_eq!(
+            loss.efforts,
+            [20000, 20007, 20014, 20021]
+                .iter()
+                .map(|w| (dev, WeekId(*w)))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(loss.milestones, vec![(ms, WeekId(20007))]);
+
+        assert!(move_project_bound(&mut app, proj, ProjectBound::Start, WeekId(20028)));
+        assert_eq!(app.projects.get_project_start_week(proj), Some(WeekId(20028)));
+        let sd = app.projects.get_single_dev(proj, dev).unwrap();
+        assert_eq!(sd.get_weeks(), vec![WeekId(20063), WeekId(20070)]);
+        assert_eq!(
+            app.projects.list_project_milestones(proj),
+            vec![(keep, WeekId(20035))]
+        );
+
+        // Fine anticipata: cadono gli effort dopo la nuova fine.
+        let loss = bound_move_loss(&app, proj, ProjectBound::End, WeekId(20063));
+        assert_eq!(loss.efforts, vec![(dev, WeekId(20070))]);
+        assert!(loss.milestones.is_empty());
+    }
+
+    #[test]
+    fn moving_a_bound_outward_loses_nothing() {
+        let (mut app, proj, dev, w) = bound_fixture();
+        app.projects.add_effort(proj, dev, WeekId(20000), w, Effort(8));
+        app.projects.add_effort(proj, dev, WeekId(20070), w, Effort(8));
+        assert!(bound_move_loss(&app, proj, ProjectBound::Start, WeekId(19972)).is_empty());
+        assert!(bound_move_loss(&app, proj, ProjectBound::End, WeekId(20140)).is_empty());
+        assert!(move_project_bound(&mut app, proj, ProjectBound::End, WeekId(20140)));
+        assert_eq!(app.projects.get_project_end_week(proj), Some(WeekId(20140)));
+        // Già lì: nessun cambiamento (il file non va marcato modificato).
+        assert!(!move_project_bound(&mut app, proj, ProjectBound::End, WeekId(20140)));
+    }
+
+    #[test]
+    fn bound_move_window_confirms_or_cancels() {
+        let (mut app, proj, dev, w) = bound_fixture();
+        app.projects.add_effort(proj, dev, WeekId(20000), w, Effort(8));
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 800.0),
+        ));
+        let loss = bound_move_loss(&app, proj, ProjectBound::Start, WeekId(20014));
+        let mut state = UiState {
+            bound_move: Some(BoundMove {
+                proj,
+                bound: ProjectBound::Start,
+                week: WeekId(20014),
+                loss,
+            }),
+            ..Default::default()
+        };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                bound_move_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            assert!(actions.is_empty(), "nessuna azione senza click");
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+        }
+        assert!(texts.iter().any(|t| t.contains("Frontend: 1 settimana, 8 h")), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "Cancella e sposta"));
+        assert!(state.bound_move.is_some(), "la conferma deve restare aperta");
     }
 
     #[test]

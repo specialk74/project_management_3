@@ -478,7 +478,16 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   discarded (history starts empty). `declared_history()` exposes the series for the
   planned dev/project progress **trend PDF** (to be built next).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
-  milestone qui** and **Sposta** (blocco / devs). Several **different** milestones
+  milestone qui** and **Sposta** (blocco / devs). Below them, **Sposta/Imposta inizio|fine
+  progetto qua** (`bound_menu_items(app, proj, week)` in `mod.rs`: inside the period
+  both, before the start only the start, after the end only the end; «Imposta» when
+  the date is missing; the no-op one disabled). `bound_move_loss` lists the cells
+  (any dev, effort 0 included) and milestone placements that would fall outside the
+  new period: empty ⇒ `Action::MoveProjectBound` at once, otherwise
+  `UiState.bound_move: Option<BoundMove>` → `bound_move_window` (`dialogs.rs`,
+  «Cancella e sposta» / «Annulla»). The handler's `move_project_bound` deletes only
+  those and sets the date. **Outside** the period the context menu holds only that
+  item (`bound_menu`, no milestone/Sposta submenus). No menu on merged (zoom) columns. Several **different** milestones
   can share a week (`Project.milestones` is keyed by `MilestoneId`, so it's the
   *same* milestone that can't repeat within a project); the grid paints the week
   column as **N equal vertical bands**, one per milestone, ordered by id

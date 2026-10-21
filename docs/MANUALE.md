@@ -564,6 +564,37 @@ milestone), sottomenù **Sposta**:
 - **Sposta devs** — permette di scegliere più dev del progetto (con effort) e
   spostarli insieme.
 
+### Spostare inizio e fine del progetto
+
+Nello stesso menù, sotto **Sposta**, ci sono le voci per spostare l'inizio o la
+fine del **progetto** alla settimana cliccata. Il menù compare anche **fuori dal
+periodo del progetto**:
+
+- **dentro il periodo** — **Sposta inizio progetto qua** e **Sposta fine progetto
+  qua** (sulla settimana che è già l'inizio, o già la fine, la voce corrispondente
+  è disattivata);
+- **prima dell'inizio** — il menù contiene **solo** **Sposta inizio progetto
+  qua** (niente milestone né Sposta): il progetto si allunga all'indietro;
+- **dopo la fine** — il menù contiene **solo** **Sposta fine progetto qua**: il
+  progetto si allunga in avanti.
+
+Se il progetto non ha ancora la data di inizio (o di fine), la voce si chiama
+**Imposta inizio progetto qua** (o **Imposta fine progetto qua**).
+
+Se con la nuova data restano **fuori dal progetto** degli effort già inseriti
+(di **qualunque dev**, anche le celle con un worker assegnato a 0 ore) o delle
+milestone collocate, compare la finestra **Conferma spostamento**. Elenca gli
+effort per dev (settimane, ore e intervallo) e le milestone coinvolte:
+
+- **Cancella e sposta** — cancella **solo** quegli effort (con le loro note) e
+  toglie dal progetto quelle milestone, poi sposta la data;
+- **Annulla** (o la chiusura della finestra) — non cambia niente.
+
+Gli effort e le milestone che restano dentro il nuovo periodo non vengono toccati.
+Allungare il progetto (inizio prima, fine dopo) non chiede mai conferma.
+
+Sulle colonne unite dallo **Zoom settimane** il menù non c'è: torna a Normale.
+
 ---
 
 ## 11. Milestone

@@ -381,6 +381,110 @@ pub(crate) fn confirm_del_dev_window(
     }
 }
 
+/// Conferma di «Sposta inizio/fine progetto qua» quando nel nuovo periodo non
+/// entrerebbero effort o milestone già inseriti: li elenca e chiede se
+/// cancellarli. «Annulla» (o la chiusura) lascia tutto com'era.
+pub(crate) fn bound_move_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(bm) = state.bound_move.as_ref() else {
+        return;
+    };
+    let mut open = true;
+    let mut close = false;
+    let fmt = |w: WeekId| days_to_local(w.0 as i32).format("%y-%m-%d").to_string();
+    let what = match bm.bound {
+        ProjectBound::Start => "l'inizio",
+        ProjectBound::End => "la fine",
+    };
+
+    // Effort raggruppati per dev: settimane, ore e intervallo.
+    let mut per_dev: Vec<(DevId, Vec<WeekId>)> = Vec::new();
+    for (dev, w) in &bm.loss.efforts {
+        match per_dev.iter_mut().find(|(d, _)| d == dev) {
+            Some((_, ws)) => ws.push(*w),
+            None => per_dev.push((*dev, vec![*w])),
+        }
+    }
+
+    egui::Window::new("Conferma spostamento")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(format!(
+                "Spostando {what} di {} alla settimana {} resterebbero fuori dal \
+                 progetto i dati qui sotto.",
+                project_label(app, bm.proj),
+                fmt(bm.week)
+            ));
+            ui.label("Vuoi cancellarli e spostare la data?");
+            ui.separator();
+            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                if !per_dev.is_empty() {
+                    ui.label(egui::RichText::new("Effort").strong());
+                    for (dev, ws) in &per_dev {
+                        let hours: usize = app
+                            .projects
+                            .get_single_dev(bm.proj, *dev)
+                            .map(|sd| ws.iter().map(|w| sd.get_effort_by_week(*w).0).sum())
+                            .unwrap_or(0);
+                        let first = ws.iter().min().copied().unwrap_or(bm.week);
+                        let last = ws.iter().max().copied().unwrap_or(bm.week);
+                        let range = if first == last {
+                            fmt(first)
+                        } else {
+                            format!("{} … {}", fmt(first), fmt(last))
+                        };
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "≡  {}: {} settiman{}, {hours} h ({range})",
+                                dev_name(app, *dev),
+                                ws.len(),
+                                if ws.len() == 1 { "a" } else { "e" },
+                            ))
+                            .color(dev_color(app, *dev)),
+                        );
+                    }
+                }
+                if !bm.loss.milestones.is_empty() {
+                    ui.label(egui::RichText::new("Milestone").strong());
+                    for (id, w) in &bm.loss.milestones {
+                        let name = app.milestones.get_name(*id).unwrap_or("?");
+                        let icon = app.milestones.get_kind(*id).icon();
+                        ui.label(
+                            egui::RichText::new(format!("{icon} {name}  —  {}", fmt(*w))).color(
+                                u32_to_color(app.milestones.get_color(*id).unwrap_or(0x808080)),
+                            ),
+                        );
+                    }
+                }
+            });
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Cancella e sposta").clicked() {
+                    actions.push(Action::MoveProjectBound {
+                        proj: bm.proj,
+                        bound: bm.bound,
+                        week: bm.week,
+                    });
+                    close = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    close = true;
+                }
+            });
+        });
+
+    if close || !open {
+        state.bound_move = None;
+    }
+}
+
 // ── Utility comuni alle finestre ────────────────────────────────────────────
 
 /// Larghezza (in punti) del titolo della finestra, più lo spazio per il
