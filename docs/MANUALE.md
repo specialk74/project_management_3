@@ -517,7 +517,7 @@ anomala: quando un worker ghost viene inserito nell'effort di un dev,
    export (attiva per impostazione predefinita): con la spunta sono segnate anche
    le settimane in cui il ghost è **assegnato senza ore** (effort 0) e un dev che
    ha **solo** un ghost a zero viene stampato lo stesso; senza spunta il PDF/SVG
-   non li evidenzia affatto. Con la sotto-opzione **Colore ghost: Colore del
+   non li evidenzia affatto. Con la sotto-opzione **colore: Colore del
    dev** le stesse settimane sono disegnate nel colore del dev e il nome resta
    nero (vedi capitolo 16);
 4. nel **PDF degli andamenti** il tratto di linea (presunta) che sale in quella
@@ -1058,7 +1058,7 @@ tripletta del progetto:
 - un **menu del formato barra** accanto a ogni dev (*Barra continua*,
   *Segmentata*, *Segmentata + altezza %*, ciascuna segmentata anche nella variante
   *date sotto*; vedi «Formato delle barre dei dev»);
-- sotto l'elenco dei dev, **«Milestone da includere»**: l'elenco delle milestone
+- accanto all'elenco dei dev (a destra), **«Milestone da includere»**: l'elenco delle milestone
   **collocate in questo progetto**, in ordine di settimana, con **Select All** in
   cima e una **checkbox** per ciascuna. Ogni riga mostra, nel colore della
   milestone, l'icona del tipo (**⚑**/**⚡**), il nome, la settimana e le categorie
@@ -1133,7 +1133,7 @@ effort 0)»**, **attiva** per impostazione predefinita:
 - **disattiva** — la stampa ignora del tutto i ghost: nessun rosso, e i dev senza
   ore restano fuori come prima.
 
-Sotto la casella, attiva solo quando è spuntata, c'è la scelta **Colore ghost**:
+Sulla stessa riga della casella, attiva solo quando è spuntata, c'è la scelta del **colore**:
 
 - **Rosso** (predefinito) — come descritto sopra: settimane ghost e nome del dev
   in rosso;
@@ -1154,7 +1154,7 @@ per il PDF sia per l'SVG e sono ricordate finché il programma è aperto (non so
 salvate sul file).
 
 - **Export di un singolo progetto** — accanto a ogni dev c'è un menu a tendina con
-  il suo formato. Più in basso, il selettore con le **anteprime** si chiama
+  il suo formato. Sotto gli elenchi, a sinistra (a destra ci sono le opzioni di stampa), il selettore con le **anteprime** si chiama
   **«Formato barre — applica a tutti i dev»**: un click su un'opzione la imposta su
   **tutti** i dev, dopodiché puoi cambiare il singolo dev dal suo menu. Le scelte
   sono ricordate **per progetto** (come spunte e ordine dei dev); un dev mai visto

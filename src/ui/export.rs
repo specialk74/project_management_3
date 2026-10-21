@@ -218,18 +218,18 @@ pub(crate) fn year_checkbox(ui: &mut egui::Ui, show_year: &mut bool) {
 /// (`ExportGhost.red`): rosso con nome dev rosso, oppure colore del dev con
 /// nome nero.
 pub(crate) fn ghost_checkbox(ui: &mut egui::Ui, ghost: &mut ExportGhost) {
-    ui.checkbox(&mut ghost.show, "Includi i worker ghost (anche a effort 0)")
-        .on_hover_text(
-            "Con la spunta i worker ghost sono segnati (in rosso o nel colore del \
-             dev) anche nelle settimane in cui sono assegnati senza ore, e il dev \
-             che ha solo un ghost compare comunque. Senza spunta il PDF non li \
-             evidenzia.",
-        );
-    // Sotto-opzione: colore della marcatura, attiva solo con la spunta.
-    ui.add_enabled_ui(ghost.show, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(18.0);
-            ui.label("Colore ghost:");
+    // Tutto su una riga: spunta + sotto-opzione del colore, attiva solo con la
+    // spunta (risparmia una riga nelle dialog).
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut ghost.show, "Includi i worker ghost (anche a effort 0)")
+            .on_hover_text(
+                "Con la spunta i worker ghost sono segnati (in rosso o nel colore del \
+                 dev) anche nelle settimane in cui sono assegnati senza ore, e il dev \
+                 che ha solo un ghost compare comunque. Senza spunta il PDF non li \
+                 evidenzia.",
+            );
+        ui.add_enabled_ui(ghost.show, |ui| {
+            ui.label("— colore:");
             ui.radio_value(&mut ghost.red, true, "Rosso")
                 .on_hover_text("Settimane ghost e nome del dev in rosso.");
             ui.radio_value(&mut ghost.red, false, "Colore del dev")
@@ -329,118 +329,134 @@ pub(crate) fn pdf_export_window(
         .id(egui::Id::new("pdf_export_window"))
         .collapsible(false)
         .resizable(true)
-        .default_width(640.0)
+        .default_width(1120.0)
         .max_height(maxh)
         // Centrata all'apertura ma trascinabile (con `anchor` non si muove).
         .pivot(Align2::CENTER_CENTER)
         .default_pos(ctx.content_rect().center())
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.label("Seleziona i dev; trascinali per riordinarli:");
-            ui.add_space(4.0);
-
-            // Elenco dev con riordino drag & drop (payload = indice di partenza),
-            // in un'area scorrevole per non far crescere la finestra oltre lo schermo.
+            // Elenchi dev e milestone **affiancati**: su schermi HD con
+            // ingrandimento (1920×1080 al 125%) impilati rendevano la dialog
+            // troppo alta.
             let mut from: Option<usize> = None;
             let mut to: Option<usize> = None;
-            egui::ScrollArea::vertical()
-                .id_salt("pdf_dev_list")
-                // +1: anche la riga del Select All sta nell'area scorrevole.
-                .max_height(list_max.min(rows_max_height(
-                    ui,
-                    dev_rows,
-                    MAX_VISIBLE_EXPORT_ROWS + 1,
-                )))
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let top = ui.cursor().top();
-                    // Select All in cima, dentro lo scroll dei dev.
-                    let currently_all =
-                        !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
-                    if let Some(v) = select_all_checkbox(ui, currently_all) {
-                        for e in px.entries.iter_mut() {
-                            e.1 = v;
-                        }
-                    }
-                    for i in 0..px.entries.len() {
-                        let dev = px.entries[i].0;
-                        let mut sel = px.entries[i].1;
-                        let mut dfmt = px.formats.get(&dev).copied().unwrap_or(fmt.into());
-                        let inner = ui.horizontal(|ui| {
-                            ui.checkbox(&mut sel, "");
-                            // Formato della barra di questo dev.
-                            dev_bar_format_combo(ui, ("pdf_dev_fmt", proj.0, dev.0), &mut dfmt);
-                            ui.dnd_drag_source(egui::Id::new(("pdf_drag", proj.0, i)), i, |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(format!("≡  {}", dev_name(app, dev)))
-                                            .monospace()
-                                            .color(dev_color(app, dev)),
-                                    )
-                                    .selectable(false),
-                                );
-                            });
-                        });
-                        px.formats.insert(dev, dfmt);
-                        px.entries[i].1 = sel;
-
-                        let resp = inner.response;
-                        let ptr = ui.input(|i| i.pointer.interact_pos());
-                        // Indicatore di inserimento mentre si trascina sopra la riga.
-                        if resp.dnd_hover_payload::<usize>().is_some() {
-                            if let Some(p) = ptr {
-                                let y = if p.y > resp.rect.center().y {
-                                    resp.rect.bottom()
-                                } else {
-                                    resp.rect.top()
-                                };
-                                ui.painter().hline(
-                                    resp.rect.x_range(),
-                                    y,
-                                    Stroke::new(2.0, g(EFFORT_ORANGE)),
-                                );
-                            }
-                        }
-                        if let Some(payload) = resp.dnd_release_payload::<usize>() {
-                            from = Some(*payload);
-                            let after = ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
-                            to = Some(if after { i + 1 } else { i });
-                        }
-                    }
-                    remember_project_rows(ui, dev_rows, top, px.entries.len() + 1);
-                });
-            // Applica lo spostamento a fine passata.
-            if let (Some(f), Some(t)) = (from, to) {
-                if f != t {
-                    let item = px.entries.remove(f);
-                    let insert = if f < t { t - 1 } else { t };
-                    px.entries.insert(insert.min(px.entries.len()), item);
-                }
-            }
-
-            ui.separator();
-            // Milestone del progetto: si sceglie una per una quali disegnare.
-            ui.label(egui::RichText::new("Milestone da includere").strong());
-            if px.milestones.is_empty() {
-                ui.label(
-                    egui::RichText::new("Nessuna milestone collocata in questo progetto.")
-                        .small()
-                        .color(text_dim()),
-                );
-            } else {
-                let all_ms = px.milestones.iter().all(|(_, _, s)| *s);
-                if let Some(v) = select_all_checkbox(ui, all_ms) {
-                    for m in px.milestones.iter_mut() {
-                        m.2 = v;
-                    }
-                }
+            ui.columns(2, |cols| {
+                let ui = &mut cols[0];
+                ui.label(egui::RichText::new("Dev — trascinali per riordinarli").strong());
+                ui.add_space(4.0);
+                // Elenco dev con riordino drag & drop (payload = indice di
+                // partenza), in un'area scorrevole.
                 egui::ScrollArea::vertical()
-                    .id_salt("pdf_milestone_list")
-                    .max_height(list_max.min(rows_max_height(ui, ms_rows, MAX_VISIBLE_EXPORT_ROWS)))
+                    .id_salt("pdf_dev_list")
+                    // +1: anche la riga del Select All sta nell'area scorrevole.
+                    .max_height(list_max.min(rows_max_height(
+                        ui,
+                        dev_rows,
+                        MAX_VISIBLE_EXPORT_ROWS + 1,
+                    )))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         let top = ui.cursor().top();
-                        let rows = px.milestones.len();
+                        // Select All in cima, dentro lo scroll dei dev.
+                        let currently_all =
+                            !px.entries.is_empty() && px.entries.iter().all(|(_, s)| *s);
+                        if let Some(v) = select_all_checkbox(ui, currently_all) {
+                            for e in px.entries.iter_mut() {
+                                e.1 = v;
+                            }
+                        }
+                        for i in 0..px.entries.len() {
+                            let dev = px.entries[i].0;
+                            let mut sel = px.entries[i].1;
+                            let mut dfmt = px.formats.get(&dev).copied().unwrap_or(fmt.into());
+                            let inner = ui.horizontal(|ui| {
+                                ui.checkbox(&mut sel, "");
+                                // Formato della barra di questo dev.
+                                dev_bar_format_combo(
+                                    ui,
+                                    ("pdf_dev_fmt", proj.0, dev.0),
+                                    &mut dfmt,
+                                );
+                                ui.dnd_drag_source(
+                                    egui::Id::new(("pdf_drag", proj.0, i)),
+                                    i,
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(format!(
+                                                    "≡  {}",
+                                                    dev_name(app, dev)
+                                                ))
+                                                .monospace()
+                                                .color(dev_color(app, dev)),
+                                            )
+                                            .selectable(false),
+                                        );
+                                    },
+                                );
+                            });
+                            px.formats.insert(dev, dfmt);
+                            px.entries[i].1 = sel;
+
+                            let resp = inner.response;
+                            let ptr = ui.input(|i| i.pointer.interact_pos());
+                            // Indicatore di inserimento mentre si trascina sopra la riga.
+                            if resp.dnd_hover_payload::<usize>().is_some() {
+                                if let Some(p) = ptr {
+                                    let y = if p.y > resp.rect.center().y {
+                                        resp.rect.bottom()
+                                    } else {
+                                        resp.rect.top()
+                                    };
+                                    ui.painter().hline(
+                                        resp.rect.x_range(),
+                                        y,
+                                        Stroke::new(2.0, g(EFFORT_ORANGE)),
+                                    );
+                                }
+                            }
+                            if let Some(payload) = resp.dnd_release_payload::<usize>() {
+                                from = Some(*payload);
+                                let after =
+                                    ptr.map(|p| p.y > resp.rect.center().y).unwrap_or(false);
+                                to = Some(if after { i + 1 } else { i });
+                            }
+                        }
+                        remember_project_rows(ui, dev_rows, top, px.entries.len() + 1);
+                    });
+
+                // Milestone del progetto: si sceglie una per una quali disegnare.
+                let ui = &mut cols[1];
+                ui.label(egui::RichText::new("Milestone da includere").strong());
+                ui.add_space(4.0);
+                if px.milestones.is_empty() {
+                    ui.label(
+                        egui::RichText::new("Nessuna milestone collocata in questo progetto.")
+                            .small()
+                            .color(text_dim()),
+                    );
+                    return;
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("pdf_milestone_list")
+                    // +1 come per i dev: Select All dentro lo scroll, così le
+                    // due colonne restano allineate riga per riga.
+                    .max_height(list_max.min(rows_max_height(
+                        ui,
+                        ms_rows,
+                        MAX_VISIBLE_EXPORT_ROWS + 1,
+                    )))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        let top = ui.cursor().top();
+                        let all_ms = px.milestones.iter().all(|(_, _, s)| *s);
+                        if let Some(v) = select_all_checkbox(ui, all_ms) {
+                            for m in px.milestones.iter_mut() {
+                                m.2 = v;
+                            }
+                        }
+                        let rows = px.milestones.len() + 1;
                         for (id, week, sel) in px.milestones.iter_mut() {
                             let name = app.milestones.get_name(*id).unwrap_or("?");
                             let kind = app.milestones.get_kind(*id);
@@ -465,27 +481,53 @@ pub(crate) fn pdf_export_window(
                         }
                         remember_project_rows(ui, ms_rows, top, rows);
                     });
-            }
-
-            ui.separator();
-            // Click su un formato = lo applica a tutti i dev (poi ogni riga si
-            // può cambiare dalla sua combo).
-            if bar_format_selector(ui, "Formato barre — applica a tutti i dev", &mut fmt) {
-                for f in px.formats.values_mut() {
-                    *f = fmt.into();
+            });
+            // Applica lo spostamento a fine passata.
+            if let (Some(f), Some(t)) = (from, to) {
+                if f != t {
+                    let item = px.entries.remove(f);
+                    let insert = if f < t { t - 1 } else { t };
+                    px.entries.insert(insert.min(px.entries.len()), item);
                 }
             }
 
             ui.separator();
-            ui.checkbox(
-                &mut show_pct,
-                "Includi percentuali di avanzamento (presunta/dichiarata)",
-            );
-            year_checkbox(ui, &mut show_year.0);
-            ghost_checkbox(ui, &mut ghost);
-
-            ui.separator();
-            milestone_scope_selector(ui, &mut scopes);
+            // Formato barre a sinistra, opzioni a destra: affiancati per tenere
+            // bassa la dialog (vedi nota sugli elenchi qui sopra).
+            ui.horizontal_top(|ui| {
+                let left = ui.vertical(|ui| {
+                    // Click su un formato = lo applica a tutti i dev (poi ogni
+                    // riga si può cambiare dalla sua combo).
+                    if bar_format_selector(ui, "Formato barre — applica a tutti i dev", &mut fmt)
+                    {
+                        for f in px.formats.values_mut() {
+                            *f = fmt.into();
+                        }
+                    }
+                });
+                // Linea divisoria disegnata a mano, alta quanto il contenuto:
+                // un `ui.separator()` verticale prenderebbe tutta l'altezza
+                // disponibile e allungherebbe la finestra fino a `max_height`.
+                let sep_x = left.response.rect.right() + ui.spacing().item_spacing.x;
+                ui.add_space(2.0 * ui.spacing().item_spacing.x);
+                let right = ui.vertical(|ui| {
+                    ui.checkbox(
+                        &mut show_pct,
+                        "Includi percentuali di avanzamento (presunta/dichiarata)",
+                    );
+                    year_checkbox(ui, &mut show_year.0);
+                    ghost_checkbox(ui, &mut ghost);
+                    ui.add_space(4.0);
+                    milestone_scope_selector(ui, &mut scopes);
+                });
+                let top = left.response.rect.top();
+                let bottom = left.response.rect.bottom().max(right.response.rect.bottom());
+                ui.painter().vline(
+                    sep_x,
+                    top..=bottom,
+                    ui.visuals().widgets.noninteractive.bg_stroke,
+                );
+            });
 
             ui.separator();
             let can_export = !scopes.is_empty();

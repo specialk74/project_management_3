@@ -637,7 +637,7 @@ the footer date.
   `pdf_export_window` (from `list_project_milestones`, sorted by week then id,
   ticked unless remembered otherwise — see **Remembered dialog choices**). The dialog draws a «Milestone da includere» checklist (Select All +
   one checkbox per milestone, labelled `icon nome — yy-mm-dd [Int/Ext]` in the
-  milestone color) under the dev list; the ticked ids ride along in
+  milestone color) **beside** the dev list (two `ui.columns`, so the dialog stays short on 1920×1080 @125%); the ticked ids ride along in
   `Action::ExportPdfProject/ExportSvgProject { …, milestones }` and become
   `set_milestone_allow(Some(ids))` — another `pdf_export.rs` thread-local
   (`None` = no restriction, what the multi-project export sets). `project_shapes`
@@ -649,7 +649,7 @@ the footer date.
   bound to `UiState.export_ghost: ExportGhost` — a newtype because `UiState`
   derives `Default` and this one starts **on**; remembered across exports, not
   persisted). `ExportGhost { show, red }`: `show` is the checkbox, `red` a
-  sub-option (radio «Colore ghost: Rosso / Colore del dev», enabled only when
+  sub-option (radio «— colore: Rosso / Colore del dev» on the same row as the checkbox, enabled only when
   `show`, default red). The three export handlers call
   `set_show_ghost(export_ghost.show)` + `set_ghost_red(export_ghost.red)` next to
   `set_show_pct`. In `page_shapes` the overlays use `ghost_col` = `RED` or the

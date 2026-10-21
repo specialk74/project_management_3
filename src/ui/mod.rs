@@ -3833,6 +3833,44 @@ mod tests {
     /// milestone: si disegna senza panic (id delle due liste distinti) e la
     /// «Esporta PDF» di un solo progetto con 20 dev e 20 milestone: ciascun
     /// elenco mostra al massimo `MAX_VISIBLE_EXPORT_ROWS` righe, il resto scorre.
+    /// La dialog di export del singolo progetto si adatta al contenuto: con un
+    /// solo dev non deve allungarsi fino all'altezza dello schermo (lo faceva
+    /// un `ui.separator()` verticale tra formato barre e opzioni).
+    #[test]
+    fn pdf_export_window_does_not_stretch_to_screen_height() {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1536.0, 2000.0),
+        ));
+        let mut app = App::new();
+        let proj = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(proj, Some(WeekId(20700)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(proj, dev);
+        let mut state = UiState {
+            pdf_export: Some(PdfExport {
+                proj,
+                entries: vec![(dev, true)],
+                milestones: Vec::new(),
+                formats: HashMap::new(),
+            }),
+            ..Default::default()
+        };
+        // Più frame: col difetto la finestra cresceva un po' a ogni frame.
+        for _ in 0..20 {
+            let mut actions = Vec::new();
+            ctx.run_ui(input.clone(), |ui| {
+                pdf_export_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+        }
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("pdf_export_window")))
+            .expect("finestra disegnata");
+        assert!(rect.height() < 500.0, "finestra alta {}", rect.height());
+    }
+
     #[test]
     fn pdf_export_window_lists_show_at_most_10_rows() {
         let ctx = egui::Context::default();
