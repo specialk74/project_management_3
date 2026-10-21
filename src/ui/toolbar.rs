@@ -461,9 +461,16 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 let mut resp = ui
                     .interact(cell, egui::Id::new(("hdr", w)), Sense::click())
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
+                // Colonna sotto il cursore (o in modifica) nella griglia.
+                let hl = state.grid_hl.week == Some(w);
                 if compact {
                     // colonne troppo strette per il testo → la data nel tooltip
+                    if hl {
+                        ui.painter().rect_filled(cell, 0.0, hi_bg());
+                    }
                     resp = resp.on_hover_text(txt.clone());
+                } else if hl {
+                    paint_highlight(ui, cell, &txt);
                 } else {
                     ui.painter().text(
                         cell.center(),

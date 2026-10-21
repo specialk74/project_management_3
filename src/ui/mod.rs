@@ -177,6 +177,44 @@ pub(crate) struct BulkFill {
     pub weeks_text: String,
 }
 
+/// Colonna (prima settimana del gruppo, come `Col::Weeks(ws)[0]`) e worker
+/// sotto il cursore nella griglia — o della cella in modifica, che ha la
+/// precedenza. Header e footer evidenziano la data della colonna e, nel footer,
+/// il nome del worker e la sua cella di quella settimana.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub(crate) struct GridHighlight {
+    pub week: Option<i32>,
+    pub worker: Option<WorkerId>,
+}
+
+/// Fondo e testo delle evidenziazioni (data/worker puntati, matrice): giallo
+/// in grassetto su fondo scuro, uguali nei due temi.
+pub(crate) fn hi_bg() -> Color32 {
+    g(Color32::from_gray(40))
+}
+
+pub(crate) fn hi_text() -> Color32 {
+    g(Color32::from_rgb(255, 221, 0))
+}
+
+/// Scarto della seconda passata del grassetto simulato (un solo peso di font).
+pub(crate) const HI_BOLD_DX: f32 = 0.7;
+
+/// Cella evidenziata: fondo `hi_bg`, testo `hi_text` in grassetto simulato,
+/// centrato.
+pub(crate) fn paint_highlight(ui: &egui::Ui, cell: Rect, text: &str) {
+    ui.painter().rect_filled(cell, 0.0, hi_bg());
+    for dx in [0.0, HI_BOLD_DX] {
+        ui.painter().text(
+            cell.center() + Vec2::new(dx, 0.0),
+            Align2::CENTER_CENTER,
+            text,
+            cell_font(),
+            hi_text(),
+        );
+    }
+}
+
 /// Stato della finestra «Clona progetto»: progetto scelto e ricerca
 /// sull'elenco.
 #[derive(Default)]
@@ -843,6 +881,11 @@ pub struct UiState {
     ghost_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
+    // Data e worker da evidenziare in intestazione e footer: `grid_hl` è quello
+    // del frame precedente (letto da header/footer, disegnati PRIMA della
+    // griglia), `grid_hl_next` quello raccolto dalla griglia nel frame corrente.
+    grid_hl: GridHighlight,
+    grid_hl_next: GridHighlight,
     // finestra «Dev nei totali»: TUTTI i dev con la spunta di inclusione nei
     // totali del footer (unico punto da cui rimettere un dev nascosto).
     show_dev_totals: bool,
@@ -1654,6 +1697,9 @@ impl eframe::App for PjmApp {
                 }
             }
 
+            // Evidenziazione data/worker: la griglia la raccoglie da zero.
+            state.grid_hl_next = GridHighlight::default();
+
             egui::TopBottomPanel::top("toolbar")
                 .show_inside(ui, |ui| toolbar(ui, app, state, &mut actions));
 
@@ -1709,6 +1755,14 @@ impl eframe::App for PjmApp {
             compare_window(ui.ctx(), app, state, &mut actions);
             // Sopra a tutto: le notifiche in-app.
             toasts_layer(ui.ctx(), state);
+
+            // Header e footer sono già stati disegnati con l'evidenziazione del
+            // frame prima: se la griglia ne ha trovata un'altra, la si pubblica
+            // e si ridisegna subito, così il ritardo non si vede.
+            if state.grid_hl_next != state.grid_hl {
+                state.grid_hl = state.grid_hl_next;
+                ui.ctx().request_repaint();
+            }
         }
 
         for a in actions {
@@ -4296,6 +4350,207 @@ mod tests {
         assert!(texts.iter().any(|t| t == "BBB"));
         assert!(!texts.iter().any(|t| t.contains("Alfa") || t.contains("chiuso")));
         assert!(state.clone_project.is_some());
+    }
+
+    /// Progetto sull'intera griglia con un effort di Alice nella prima
+    /// colonna; ritorna anche la settimana (giorno) di quella colonna.
+    fn highlight_fixture() -> (App, WorkerId, i32) {
+        let mut app = App::new();
+        let week = match &columns_vec(&app, 0)[0] {
+            Col::Weeks(ws) => ws[0],
+            Col::YearEnd(_) => panic!("prima colonna di confine"),
+        };
+        let proj = app
+            .projects
+            .add("Prog", Some("ABC"), Some(WeekId(week as usize)));
+        app.projects.set_project_end_week(proj, Some(app.end_week));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(proj, dev);
+        let alice = app.workers.add("Alice");
+        app.projects
+            .add_effort(proj, dev, WeekId(week as usize), alice, Effort(8));
+        (app, alice, week)
+    }
+
+    /// Col cursore sulla griglia si raccolgono la colonna e, sulle celle con
+    /// un worker, il worker; con una cella in modifica vince quella.
+    #[test]
+    fn grid_hover_records_column_and_worker_to_highlight() {
+        let (app, alice, week) = highlight_fixture();
+        let ctx = egui::Context::default();
+        let mut state = UiState::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        let origin = Cell::new(egui::Pos2::ZERO);
+        let mut frame = |state: &mut UiState, pos: Option<egui::Pos2>| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            if let Some(p) = pos {
+                input.events.push(egui::Event::PointerMoved(p));
+            }
+            state.grid_hl_next = GridHighlight::default();
+            let mut actions = Vec::new();
+            ctx.run_ui(input, |ui| {
+                origin.set(ui.cursor().min);
+                grid(ui, &app, state, &mut actions, &Filter::default(), &None);
+            });
+        };
+        frame(&mut state, None);
+        let x = origin.get().x + COL_W / 2.0;
+
+        // Sulla striscia in cima alla griglia: solo la data.
+        let top = origin.get().y + 1.0;
+        frame(&mut state, Some(egui::pos2(x, top)));
+        frame(&mut state, Some(egui::pos2(x, top)));
+        assert_eq!(state.grid_hl_next, GridHighlight { week: Some(week), worker: None });
+
+        // Scendendo nella colonna si incontra la cella di Alice.
+        let mut found = None;
+        for i in 0..80 {
+            let p = egui::pos2(x, origin.get().y + i as f32 * 2.0);
+            frame(&mut state, Some(p));
+            frame(&mut state, Some(p));
+            if state.grid_hl_next.worker.is_some() {
+                found = Some(state.grid_hl_next);
+                break;
+            }
+        }
+        assert_eq!(found, Some(GridHighlight { week: Some(week), worker: Some(alice) }));
+
+        // Cursore fuori dalla griglia: niente.
+        frame(&mut state, Some(egui::pos2(x, 890.0)));
+        frame(&mut state, Some(egui::pos2(x, 890.0)));
+        assert_eq!(state.grid_hl_next, GridHighlight::default());
+
+        // Cella in modifica: vince sul cursore, il worker segue il nome digitato.
+        let (proj, dev) = (ProjectId(0), app.devs.list()[0].0);
+        state.editing = Some(Editing {
+            proj,
+            dev,
+            week: week + 7,
+            row: 0,
+            buf: "Alice|4".to_string(),
+            typed: "Alice|4".to_string(),
+            // Appena aperta: prende il focus (con `had_focus` senza focus reale
+            // l'editor si chiuderebbe confermando).
+            just_opened: true,
+            had_focus: false,
+            paste_note: None,
+            orig_worker: String::new(),
+            orig_note: String::new(),
+        });
+        frame(&mut state, Some(egui::pos2(x, 890.0)));
+        assert!(state.editing.is_some(), "l'editor deve restare aperto");
+        assert_eq!(
+            state.grid_hl_next,
+            GridHighlight { week: Some(week + 7), worker: Some(alice) }
+        );
+    }
+
+    /// Col cursore sul footer: riga delle date → solo la data; cella di un
+    /// worker → data + worker; nome del worker (parte sinistra) → solo il worker.
+    #[test]
+    fn footer_hover_records_column_and_worker_to_highlight() {
+        let (app, alice, week) = highlight_fixture();
+        let workers = footer_workers(&app, &Filter::default());
+        let row = workers.iter().position(|(w, _)| *w == alice).unwrap();
+        let cols = columns_vec(&app, 0);
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            selected_year: 0,
+            ..Default::default()
+        };
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3000.0, 900.0));
+        // Footer sinistro a (0,0), footer destro subito a destra.
+        let left = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(LEFT_W, 400.0));
+        let right = egui::Rect::from_min_size(
+            egui::pos2(LEFT_W, 0.0),
+            egui::vec2(cols_width(&cols, COL_W), 400.0),
+        );
+        let mut frame = |state: &mut UiState, p: egui::Pos2| {
+            state.grid_hl_next = GridHighlight::default();
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    events: vec![egui::Event::PointerMoved(p)],
+                    ..Default::default()
+                };
+                state.grid_hl_next = GridHighlight::default();
+                let mut actions = Vec::new();
+                ctx.run_ui(input, |ui| {
+                    draw_left_footer(ui, left, &app, state, &workers, &mut actions);
+                    draw_right_footer(ui, right, &app, state, &workers, &cols, &mut actions);
+                });
+            }
+            state.grid_hl_next
+        };
+        let x = right.left() + COL_W / 2.0;
+        let y_row = (row as f32 + 1.5) * ROW_H;
+        assert_eq!(
+            frame(&mut state, egui::pos2(x, ROW_H / 2.0)),
+            GridHighlight { week: Some(week), worker: None }
+        );
+        assert_eq!(
+            frame(&mut state, egui::pos2(x, y_row)),
+            GridHighlight { week: Some(week), worker: Some(alice) }
+        );
+        // Nome nel footer sinistro: colonna dei worker a `DEV_NAME_W + DEV_TOTAL_W + 5`.
+        let name_x = DEV_NAME_W + DEV_TOTAL_W + 5.0 + COL_W / 2.0;
+        assert_eq!(
+            frame(&mut state, egui::pos2(name_x, y_row)),
+            GridHighlight { week: None, worker: Some(alice) }
+        );
+    }
+
+    /// Con un'evidenziazione attiva, intestazione e footer disegnano in giallo
+    /// la data della colonna, il nome del worker e la sua cella di quella
+    /// settimana — e nient'altro.
+    #[test]
+    fn header_and_footer_paint_the_highlighted_date_and_worker() {
+        let (mut app, alice, week) = highlight_fixture();
+        // Un secondo worker, che non va evidenziato.
+        app.workers.add("Bob");
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            grid_hl: GridHighlight { week: Some(week), worker: Some(alice) },
+            ..Default::default()
+        };
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let out = ctx.run_ui(input, |ui| {
+            header(ui, &app, &mut state);
+            footer(ui, &app, &mut state, &mut actions);
+        });
+        let yellow: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) if t.fallback_color == hi_text() => {
+                    Some(t.galley.text().to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        let date = primo_giorno_settimana_corrente(&days_to_local(week))
+            .format("%y-%m-%d")
+            .to_string();
+        // Data: in alto e nel footer, due passate (grassetto) ciascuna.
+        assert_eq!(yellow.iter().filter(|t| **t == date).count(), 4, "{yellow:?}");
+        assert_eq!(yellow.iter().filter(|t| *t == "Alice").count(), 2, "{yellow:?}");
+        assert!(!yellow.iter().any(|t| t == "Bob"));
+        // La cella Alice × settimana (valore) e nient'altro.
+        let others: Vec<&String> = yellow
+            .iter()
+            .filter(|t| **t != date && *t != "Alice")
+            .collect();
+        assert_eq!(others.len(), 2, "solo la cella Alice × settimana: {others:?}");
     }
 
     #[test]

@@ -405,15 +405,15 @@ fn mx_veil() -> Color32 {
 /// dei progetti hanno lo sfondo pastello anche col tema scuro, e il giallo su
 /// fondo chiaro non si leggerebbe).
 fn mx_hi_bg() -> Color32 {
-    g(Color32::from_gray(40))
+    hi_bg()
 }
 
 fn mx_hi_text() -> Color32 {
-    g(Color32::from_rgb(255, 221, 0))
+    hi_text()
 }
 
 /// Scarto della seconda passata del grassetto simulato dei testi evidenziati.
-const MX_BOLD_DX: f32 = 0.7;
+const MX_BOLD_DX: f32 = HI_BOLD_DX;
 
 /// Disegna la matrice (righe progetto raggruppate per categoria) e, sotto, il
 /// riepilogo dei progetti per categoria di ogni worker.

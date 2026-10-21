@@ -450,6 +450,22 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   trova la colonna che contiene `current_week_id()` e imposta `UiState.pending_scroll_x`
   con `centered_scroll_x(cols, idx, cw, ui.available_width() - LEFT_W)` — lo stesso
   helper usato per lo scroll iniziale in `PjmApp::new`.
+- **Date/worker highlight** (`GridHighlight { week, worker }` in `mod.rs`): the
+  header and the footer are drawn **before** the grid, so the grid writes
+  `UiState.grid_hl_next` (reset at the top of `ui()`) and they read
+  `grid_hl` (previous frame); at the end of `ui()` a change is published and
+  `request_repaint()`ed. `grid()` sets `week` = first week of the `Col::Weeks`
+  under the pointer (`rect_contains_pointer`, YearEnd ignored);
+  `draw_cell_static` adds the hovered cell's `worker`; the footer does the
+  same (`draw_right_footer`: column under the pointer → `week`, worker row →
+  `worker`; `draw_left_footer`: hovered worker name → `worker` only); an open
+  `Editing` overrides all of them (week of the cell, worker parsed from `buf`). Painted with the
+  shared `hi_bg()`/`hi_text()`/`HI_BOLD_DX`/`paint_highlight` (the matrix's
+  `mx_hi_*` now delegate to them): header date (compact: background only),
+  footer date row, footer worker name and the worker × week cell. Tests
+  `grid_hover_records_column_and_worker_to_highlight`,
+  `header_and_footer_paint_the_highlighted_date_and_worker`,
+  `footer_hover_records_column_and_worker_to_highlight`.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).

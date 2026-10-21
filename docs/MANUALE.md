@@ -475,6 +475,21 @@ Nella griglia, ogni dev ha:
 ### Formato della cella
 Ogni cella worker ha il formato **`NomeWorker|ore`** (es. `rossi|8`).
 
+### Chi e quando: evidenziazione di data e worker
+Passando con il mouse sulla griglia, la **data della colonna** sotto il cursore
+viene evidenziata (testo **giallo in grassetto su fondo scuro**, come nella
+matrice progetti/worker) sia nell'**intestazione in alto** sia nella **riga delle
+date del footer**. Se il cursore è su una cella con un worker, nel footer si
+evidenziano anche il **nome del worker** e la sua **cella di quella settimana**
+(il suo carico in quella data), così si vede subito chi e quando si sta per
+modificare. Mentre una cella è **in modifica** l'evidenziazione resta su quella
+cella anche spostando il mouse, e il worker segue il nome che stai digitando. Le
+colonne di confine d'anno non vengono evidenziate.
+
+Lo stesso vale passando sul **footer**: sulla riga delle date si evidenzia la data
+(anche in alto); su una cella worker × settimana la data, il nome del worker e la
+cella stessa; sul **nome di un worker** (parte sinistra del footer) il solo worker.
+
 ### Modificare una cella
 1. **Click** sulla cella: entra in modalità modifica (sfondo evidenziato, cursore).
 2. Digita il nome del worker: parte l'**autocompletamento** (suggerisce i worker

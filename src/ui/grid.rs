@@ -383,6 +383,24 @@ pub(crate) fn grid(
     let left = rect.left();
     let mut y = rect.top();
 
+    // Colonna sotto il cursore → data evidenziata in intestazione e footer
+    // (il worker lo aggiunge `draw_cell_static`). Le colonne di fine anno no.
+    if ui.rect_contains_pointer(rect) {
+        if let Some(p) = ui.ctx().pointer_hover_pos() {
+            let mut x = left;
+            for c in &cols {
+                let colw = col_width(c, cw);
+                if p.x >= x && p.x < x + colw {
+                    if let Col::Weeks(ws) = c {
+                        state.grid_hl_next.week = ws.first().copied();
+                    }
+                    break;
+                }
+                x += colw;
+            }
+        }
+    }
+
     paint_hstrip(ui, left, content_w, y, g(START_STOP));
     y += DEV_BORDER;
 
@@ -460,6 +478,16 @@ pub(crate) fn grid(
     }
     // Ripristina il B/N globale dopo l'eventuale grigio dei progetti chiusi.
     set_bw_mode(state.bw_mode);
+
+    // Cella in modifica: ha la precedenza sul cursore. Il worker segue il nome
+    // mentre lo si digita (nessuno finché non corrisponde a un worker).
+    if let Some(e) = &state.editing {
+        let wname = e.buf.split('|').next().unwrap_or("").trim();
+        state.grid_hl_next = GridHighlight {
+            week: Some(e.week),
+            worker: app.workers.get_id_by_name(wname),
+        };
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1164,6 +1192,11 @@ fn draw_cell_static(
     let hovered = resp.hovered();
     let clicked = resp.clicked();
     let secondary = resp.secondary_clicked();
+    // Cella con un worker sotto il cursore: anche il worker va evidenziato.
+    if hovered && !text.is_empty() {
+        let wname = text.split('|').next().unwrap_or("").trim();
+        state.grid_hl_next.worker = app.workers.get_id_by_name(wname);
+    }
 
     if hovered {
         ui.painter()

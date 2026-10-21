@@ -328,16 +328,28 @@ pub(crate) fn draw_left_footer(
         if idx % 2 == 0 {
             ui.painter().rect_filled(cell, 0.0, BETWEEN_PROJECTS);
         }
+        // Cursore sul nome: si evidenzia il worker (nessuna data).
+        if ui.rect_contains_pointer(cell) {
+            state.grid_hl_next.worker = Some(*wid);
+        }
+        // Worker della cella puntata (o in modifica) nella griglia o nel footer.
+        let hl = state.grid_hl.worker == Some(*wid);
+        if hl {
+            ui.painter().rect_filled(cell, 0.0, hi_bg());
+        }
         if app.workers.get_max_hours(*wid) < DEFAULT_MAX_HOURS {
             draw_corner_triangle_left(ui, cell);
         }
-        ui.painter().text(
-            cell.center(),
-            Align2::CENTER_CENTER,
-            name,
-            cell_font(),
-            text(),
-        );
+        let passes: &[f32] = if hl { &[0.0, HI_BOLD_DX] } else { &[0.0] };
+        for dx in passes {
+            ui.painter().text(
+                cell.center() + Vec2::new(*dx, 0.0),
+                Align2::CENTER_CENTER,
+                name,
+                cell_font(),
+                if hl { hi_text() } else { text() },
+            );
+        }
 
         // Ore rimanenti dell'anno selezionato, nello spazio a destra del nome.
         // Su "Tot" (year == 0) la cella resta vuota.
@@ -405,6 +417,32 @@ pub(crate) fn draw_right_footer(
     actions: &mut Vec<Action>,
 ) {
     let lightgreen = g(ok_green());
+
+    // Cursore sul footer: come sulla griglia, si evidenziano la data della
+    // colonna e, sulle righe worker, il worker (nome + cella della settimana).
+    if ui.rect_contains_pointer(rect) {
+        if let Some(p) = ui.ctx().pointer_hover_pos() {
+            let mut x = rect.left();
+            for c in cols {
+                let colw = col_width(c, COL_W);
+                if p.x >= x && p.x < x + colw {
+                    if let Col::Weeks(ws) = c {
+                        state.grid_hl_next.week = ws.first().copied();
+                        // Riga 0 = date, poi una riga per worker.
+                        let row = ((p.y - rect.top()) / ROW_H).floor() as i64 - 1;
+                        if row >= 0 {
+                            if let Some((wid, _)) = workers.get(row as usize) {
+                                state.grid_hl_next.worker = Some(*wid);
+                            }
+                        }
+                    }
+                    break;
+                }
+                x += colw;
+            }
+        }
+    }
+
     let mut next_x = rect.left();
     for c in cols.iter() {
         let colw = col_width(c, COL_W);
@@ -443,17 +481,22 @@ pub(crate) fn draw_right_footer(
             hdr_bg = blend(hdr_bg, wk);
         }
 
-        // header: data settimana
+        // header: data settimana (evidenziata se la colonna è puntata nella griglia)
         let date = primo_giorno_settimana_corrente(&days_to_local(w))
             .format("%y-%m-%d")
             .to_string();
-        ui.painter().text(
-            hdr.center(),
-            Align2::CENTER_CENTER,
-            date,
-            cell_font(),
-            contrast_text(hdr_bg),
-        );
+        let hl_week = state.grid_hl.week == Some(w);
+        if hl_week {
+            paint_highlight(ui, hdr, &date);
+        } else {
+            ui.painter().text(
+                hdr.center(),
+                Align2::CENTER_CENTER,
+                date,
+                cell_font(),
+                contrast_text(hdr_bg),
+            );
+        }
 
         // celle sovra per worker
         for (idx, (wid, name)) in workers.iter().enumerate() {
@@ -468,6 +511,11 @@ pub(crate) fn draw_right_footer(
             if is_this_week {
                 ui.painter()
                     .rect_filled(cell, 0.0, g(this_week()).gamma_multiply(0.18));
+            }
+            // Incrocio worker × settimana della cella puntata (o in modifica).
+            let hl_cell = hl_week && state.grid_hl.worker == Some(*wid);
+            if hl_cell {
+                ui.painter().rect_filled(cell, 0.0, hi_bg());
             }
 
             // Somma su tutte le settimane del gruppo (una sola al livello zoom 0).
@@ -538,13 +586,21 @@ pub(crate) fn draw_right_footer(
             } else {
                 value.to_string()
             };
-            ui.painter().text(
-                cell.center(),
-                Align2::CENTER_CENTER,
-                txt,
-                cell_font(),
-                color,
-            );
+            // Evidenziata: giallo in grassetto (simulato) sul fondo scuro.
+            let (color, passes): (Color32, &[f32]) = if hl_cell {
+                (hi_text(), &[0.0, HI_BOLD_DX])
+            } else {
+                (color, &[0.0])
+            };
+            for dx in passes {
+                ui.painter().text(
+                    cell.center() + Vec2::new(*dx, 0.0),
+                    Align2::CENTER_CENTER,
+                    &txt,
+                    cell_font(),
+                    color,
+                );
+            }
 
             // Colonna mergiata (zoom): sola lettura, niente interazioni per-settimana.
             if merged {
