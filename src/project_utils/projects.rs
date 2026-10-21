@@ -73,6 +73,27 @@ impl Projects {
         }
     }
 
+    /// Copia **completa** del progetto `src` (dev con effort e note, note dev,
+    /// % dichiarate, date, categoria, milestone, note settimanali) con nuovi
+    /// `info` e `tripletta`. La copia è sempre **attiva** e va **subito sotto**
+    /// l'originale. Le milestone personalizzate restano quelle dell'originale:
+    /// a duplicarle ci pensa il chiamante (servono le `Milestones`).
+    pub fn clone_project(&mut self, src: ProjectId, info: &str, tripletta: &str) -> Option<ProjectId> {
+        let mut p = self.projects.get(&src)?.clone();
+        p.set_info(info);
+        p.set_tripletta(tripletta);
+        p.set_status(ProjectStatus::Active);
+        p.set_enable(Enable(true));
+        let id = self.last_id;
+        self.last_id.0 += 1;
+        self.projects.insert(id, p);
+        let mut ids: Vec<ProjectId> = self.ordered_ids().into_iter().filter(|x| *x != id).collect();
+        let pos = ids.iter().position(|x| *x == src).map_or(ids.len(), |i| i + 1);
+        ids.insert(pos, id);
+        self.reindex(&ids);
+        Some(id)
+    }
+
     /// Sposta il progetto di una posizione verso il basso. Ritorna `true` se ha
     /// effettivamente cambiato l'ordine (no-op se già in fondo).
     pub fn move_down(&mut self, id: ProjectId) -> bool {

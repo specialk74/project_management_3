@@ -777,6 +777,92 @@ pub(crate) fn ghost_manager_window(
     }
 }
 
+// ── Clona progetto (Aggiungi ▸ Clona progetto…) ─────────────────────────────
+
+/// Finestra «Clona progetto»: elenco di **tutti** i progetti (anche chiusi),
+/// mostrati con la sola tripletta, con ricerca. «Clona» lancia
+/// `Action::CloneProject`: la copia prende la tripletta dell'originale più
+/// «Copia» (vedi `clone_tripletta`) e lo stesso nome.
+pub(crate) fn clone_project_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(cp) = state.clone_project.as_mut() else {
+        return;
+    };
+    let q = cp.search.trim().to_lowercase();
+    let listed: Vec<ProjectId> = app
+        .projects
+        .list_full()
+        .into_iter()
+        .map(|(id, _, _)| id)
+        .filter(|id| q.is_empty() || project_label(app, *id).to_lowercase().contains(&q))
+        .collect();
+    let rows_key = egui::Id::new("clone_project_rows");
+    let mut open = true;
+    let mut confirm = false;
+    let mut cancel = false;
+
+    egui::Window::new("Clona progetto")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_max_width(420.0);
+            ui.label(
+                "Scegli il progetto da copiare: la copia include dev, effort, note, \
+                 % dichiarate, date, categoria e milestone, ed è sempre attiva.",
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut cp.search)
+                    .hint_text("Cerca tripletta…")
+                    .desired_width(320.0),
+            );
+            egui::ScrollArea::vertical()
+                .max_height(project_list_max_height(ui, rows_key))
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    let top = ui.cursor().top();
+                    if listed.is_empty() {
+                        ui.label("(nessun progetto)");
+                    }
+                    for id in &listed {
+                        // Solo la tripletta (senza tripletta: il nome, per non
+                        // lasciare una riga vuota).
+                        let text = project_label(app, *id);
+                        if ui.selectable_label(cp.src == Some(*id), text).clicked() {
+                            cp.src = Some(*id);
+                        }
+                    }
+                    remember_project_rows(ui, rows_key, top, listed.len());
+                });
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(cp.src.is_some(), egui::Button::new("Clona"))
+                    .clicked()
+                {
+                    confirm = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+
+    if confirm {
+        if let Some(src) = cp.src {
+            actions.push(Action::CloneProject { src });
+        }
+    }
+    if confirm || cancel || !open {
+        state.clone_project = None;
+    }
+}
+
 // ── Dev nei totali del footer (Filtri ▸ Dev nei totali…) ────────────────────
 
 /// Elenca **tutti** i dev con una spunta: tolta, il dev sparisce dai totali in

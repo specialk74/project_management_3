@@ -202,7 +202,19 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     con **solo** note di cella compare lo stesso, e quelle note contano anche per il
     filtro «Solo progetti con note». Le note **Dev** (`SingleDev.note`) e quelle
     **worker/settimana del footer** (`Worker.week_notes`) restano fuori dalla minuta.
-- **Aggiungi**: + Progetto, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
+- **Aggiungi**: + Progetto, **Clona progetto…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
+  - **Clona progetto…** → `UiState.clone_project: Option<CloneProject>` →
+    `clone_project_window` (`dialogs.rs`: all projects incl. closed, listed and
+    searched by tripletta only — `project_label`, name as fallback —, no fields)
+    → `Action::CloneProject { src }` → free fn `clone_project(app, src)` (`mod.rs`;
+    same name, tripletta = `clone_tripletta(orig)` = «ABC Copia», or «Copia»):
+    `Projects::clone_project` deep-clones the `Project` (everything), forces
+    `Active` + enabled and re-indexes the order to put it **right after** the
+    source; then each placement of a milestone **owned by the source** is swapped
+    for a new owned milestone of the copy (same name/color/kind/categories/week),
+    globals stay shared — so `App::validate` stays clean. The handler jumps to the
+    copy and toasts. Test
+    `clone_project_copies_everything_and_duplicates_own_milestones`.
 - **Filtri**: le prime sei voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
   Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`, Categorie…
   `Cmd/Ctrl+K`, Anni… `Cmd/Ctrl+Y`) aprono **un'unica dialog** `filters_window`

@@ -128,6 +128,10 @@ pub(crate) fn toolbar(
                     actions.push(Action::NewProject);
                     ui.close_menu();
                 }
+                if ui.button("Clona progetto…").clicked() {
+                    state.clone_project = Some(CloneProject::default());
+                    ui.close_menu();
+                }
                 ui.separator();
 
                 add_field(

@@ -294,6 +294,8 @@ bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 
 ### Aggiungi
 - **+ Progetto** — crea un nuovo progetto vuoto.
+- **Clona progetto…** — crea una copia completa di un progetto esistente (vedi
+  «Clonare un progetto»).
 - **Worker** — campo di testo + `+ Worker`: aggiunge una persona. Premi Invio o
   il bottone; il campo resta aperto per inserimenti multipli.
 - **Dev** — aggiunge un nuovo ruolo/disciplina.
@@ -349,6 +351,29 @@ griglia.
 ### Creare un progetto
 **Aggiungi ▸ + Progetto**. Il nuovo progetto compare vuoto; poi si impostano
 tripletta, nome, inizio, fine, categoria e dev.
+
+### Clonare un progetto
+**Aggiungi ▸ Clona progetto…** apre una finestra con l'elenco di **tutti** i
+progetti (anche chiusi e on-hold), indicati dalla sola **tripletta** (il nome
+solo per i progetti che non ne hanno una), e un campo di ricerca sulla tripletta.
+Scegli un progetto e premi **Clona**; **Annulla** chiude senza fare nulla. La
+copia ha lo **stesso nome** e la tripletta dell'originale seguita da **«Copia»**
+(es. `ABC` → `ABC Copia`; solo `Copia` se l'originale non ha tripletta): si
+possono poi cambiare dalla griglia come per ogni progetto.
+
+La copia è **completa**: dev con effort, note di cella e note dev, percentuali
+dichiarate, date di inizio e fine, categoria, note settimanali del progetto e
+milestone. In più:
+
+- la copia è **sempre attiva**, anche se l'originale è chiuso o on-hold;
+- compare **subito sotto l'originale** e la griglia vi si sposta;
+- le milestone **di sistema** vengono ricollocate nelle stesse settimane (sono
+  le stesse milestone, condivise);
+- le milestone **personalizzate** dell'originale vengono **duplicate** come
+  milestone personalizzate della copia (stesso nome, colore, tipo e categorie,
+  stesse settimane): modificarle in un progetto non tocca l'altro.
+
+Da lì in poi i due progetti sono indipendenti.
 
 ### Campi del progetto (colonna sinistra)
 - **Tripletta**: prima riga. Se vuota mostra un `—` tenue. **Tasto sinistro** per

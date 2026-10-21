@@ -177,6 +177,53 @@ pub(crate) struct BulkFill {
     pub weeks_text: String,
 }
 
+/// Stato della finestra «Clona progetto»: progetto scelto e ricerca
+/// sull'elenco.
+#[derive(Default)]
+pub(crate) struct CloneProject {
+    pub src: Option<ProjectId>,
+    pub search: String,
+}
+
+/// Tripletta della copia: quella dell'originale più «Copia» (solo «Copia» se
+/// l'originale non ne ha una).
+pub(crate) fn clone_tripletta(original: &str) -> String {
+    let t = original.trim();
+    if t.is_empty() {
+        "Copia".to_string()
+    } else {
+        format!("{t} Copia")
+    }
+}
+
+/// Clona completamente `src` (vedi `Projects::clone_project`) e duplica le
+/// sue milestone **personalizzate** come milestone della copia (stesso nome,
+/// colore, tipo e categorie, stesse settimane), così modificarle in un
+/// progetto non tocca l'altro. Quelle di sistema restano condivise. La copia
+/// ha lo stesso nome e la tripletta di `clone_tripletta`.
+pub(crate) fn clone_project(app: &mut App, src: ProjectId) -> Option<ProjectId> {
+    let tripletta = clone_tripletta(&app.projects.get_tripletta(src));
+    let name = app.projects.get_info(src);
+    let new = app.projects.clone_project(src, &name, &tripletta)?;
+    for (mid, week) in app.projects.list_project_milestones(new) {
+        if app.milestones.owner(mid) != Some(src) {
+            continue;
+        }
+        let copy = app.milestones.add_owned(
+            app.milestones.get_name(mid).unwrap_or("?").to_string().as_str(),
+            app.milestones.get_kind(mid),
+            app.milestones.get_categories(mid),
+            Some(new),
+        );
+        if let Some(c) = app.milestones.get_color(mid) {
+            app.milestones.set_color(copy, c);
+        }
+        app.projects.remove_project_milestone(new, mid);
+        app.projects.add_project_milestone(new, copy, week);
+    }
+    Some(new)
+}
+
 /// Estremo del progetto spostato dal menù della griglia.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ProjectBound {
@@ -794,6 +841,8 @@ pub struct UiState {
     // footer o filtrati) con una spunta Ghost ciascuno.
     show_ghost_manager: bool,
     ghost_manager_just_opened: bool,
+    // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
+    clone_project: Option<CloneProject>,
     // finestra «Dev nei totali»: TUTTI i dev con la spunta di inclusione nei
     // totali del footer (unico punto da cui rimettere un dev nascosto).
     show_dev_totals: bool,
@@ -932,6 +981,10 @@ pub(crate) enum Action {
         to_official: bool,
     },
     NewProject,
+    /// Clona completamente un progetto (Aggiungi ▸ Clona progetto…).
+    CloneProject {
+        src: ProjectId,
+    },
     AddWorker(String),
     AddDev(String),
     AddCategory(String),
@@ -1647,6 +1700,7 @@ impl eframe::App for PjmApp {
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             ghost_manager_window(ui.ctx(), app, state, &mut actions);
             dev_totals_window(ui.ctx(), app, state, &mut actions);
+            clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
@@ -2169,6 +2223,14 @@ impl PjmApp {
                 .map(|d| WeekId(d as usize));
                 self.app.projects.add("Nuovo Progetto", None, start);
                 self.mark_changed();
+            }
+            Action::CloneProject { src } => {
+                if let Some(new) = clone_project(&mut self.app, src) {
+                    self.mark_changed();
+                    self.ui.jump_to_project = Some(new);
+                    let label = project_label(&self.app, new);
+                    self.ui.toast_ok(format!("Progetto clonato: {label}"));
+                }
             }
             Action::AddWorker(name) => {
                 if !name.is_empty() {
@@ -4122,6 +4184,118 @@ mod tests {
         assert_eq!(back.devs.list_in_totals(), vec![(a, "Frontend".to_string())]);
         let old = App::from_ron_str(&plain).unwrap();
         assert_eq!(old.devs.list_in_totals().len(), 2);
+    }
+
+    /// La copia contiene tutto il progetto, è attiva, sta subito sotto
+    /// l'originale, ha le sue milestone personalizzate (le globali restano
+    /// condivise) ed è indipendente dall'originale.
+    #[test]
+    fn clone_project_copies_everything_and_duplicates_own_milestones() {
+        let mut app = App::new();
+        let a = app.projects.add("Alfa", Some("AAA"), Some(WeekId(20000)));
+        app.projects.set_project_end_week(a, Some(WeekId(20070)));
+        let b = app.projects.add("Beta", Some("BBB"), Some(WeekId(20000)));
+        let dev = app.devs.add("Frontend");
+        let w = app.workers.add("Alice");
+        app.projects.add_dev(a, dev);
+        app.projects.add_effort(a, dev, WeekId(20007), w, Effort(16));
+        app.projects.set_dev_note(a, dev, "nota dev");
+        app.projects
+            .set_notes(a, HashMap::from([(WeekId(20007), "diario".to_string())]));
+        let cat = app.categories.add("Cat");
+        app.projects.set_category(a, Some(cat));
+        let global = app.milestones.add("Globale");
+        app.projects.add_project_milestone(a, global, WeekId(20014));
+        let own = app.milestones.add_owned(
+            "Privata",
+            MilestoneKind::Trigger,
+            vec![MilestoneCategory::External],
+            Some(a),
+        );
+        app.milestones.set_color(own, 0x123456);
+        app.projects.add_project_milestone(a, own, WeekId(20021));
+        app.projects.set_closed(a, true);
+
+        let c = clone_project(&mut app, a).unwrap();
+
+        // Stesso nome, tripletta + «Copia», stato attivo, subito sotto l'originale.
+        assert_eq!(app.projects.get_tripletta(c), "AAA Copia");
+        assert_eq!(app.projects.get_info(c), "Alfa");
+        assert_eq!(clone_tripletta(""), "Copia");
+        assert!(!app.projects.is_closed(c) && app.projects.is_closed(a));
+        let order: Vec<ProjectId> =
+            app.projects.list_full().into_iter().map(|(id, _, _)| id).collect();
+        assert_eq!(order, vec![a, c, b]);
+        // Contenuto.
+        assert_eq!(app.projects.get_project_start_week(c), Some(WeekId(20000)));
+        assert_eq!(app.projects.get_project_end_week(c), Some(WeekId(20070)));
+        assert!(app.projects.get_category(c) == Some(cat));
+        assert_eq!(app.projects.get_notes(c), app.projects.get_notes(a));
+        let sd = app.projects.get_single_dev(c, dev).unwrap();
+        assert_eq!(sd.get_effort_by_week(WeekId(20007)), Effort(16));
+        assert_eq!(sd.get_note(), "nota dev");
+        // Milestone: globale condivisa, personalizzata duplicata per la copia.
+        let ms: HashMap<MilestoneId, WeekId> =
+            app.projects.list_project_milestones(c).into_iter().collect();
+        assert_eq!(ms.get(&global), Some(&WeekId(20014)));
+        assert!(!ms.contains_key(&own));
+        let (&copy, &week) = ms.iter().find(|(id, _)| **id != global).unwrap();
+        assert_eq!(week, WeekId(20021));
+        assert_eq!(app.milestones.owner(copy), Some(c));
+        assert_eq!(app.milestones.get_name(copy), Some("Privata"));
+        assert_eq!(app.milestones.get_color(copy), Some(0x123456));
+        assert!(app.milestones.get_kind(copy) == MilestoneKind::Trigger);
+        assert_eq!(
+            app.milestones.get_categories(copy),
+            vec![MilestoneCategory::External]
+        );
+        // L'originale non cambia e la copia è indipendente.
+        assert!(app.projects.list_project_milestones(a).contains(&(own, WeekId(20021))));
+        app.projects.add_effort(c, dev, WeekId(20007), w, Effort(40));
+        assert_eq!(
+            app.projects
+                .get_single_dev(a, dev)
+                .unwrap()
+                .get_effort_by_week(WeekId(20007)),
+            Effort(16)
+        );
+        assert!(app.validate().is_empty(), "{:?}", app.validate());
+        // Progetto inesistente: nessuna copia.
+        assert!(clone_project(&mut app, ProjectId(999)).is_none());
+    }
+
+    #[test]
+    fn clone_project_window_lists_all_projects() {
+        let mut app = App::new();
+        let a = app.projects.add("Alfa", Some("AAA"), None);
+        app.projects.add("Beta", Some("BBB"), None);
+        app.projects.set_closed(a, true);
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            clone_project: Some(CloneProject::default()),
+            ..Default::default()
+        };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                clone_project_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            assert!(actions.is_empty());
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+        }
+        // Solo la tripletta: niente nome né stato.
+        assert!(texts.iter().any(|t| t == "AAA"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "BBB"));
+        assert!(!texts.iter().any(|t| t.contains("Alfa") || t.contains("chiuso")));
+        assert!(state.clone_project.is_some());
     }
 
     #[test]
