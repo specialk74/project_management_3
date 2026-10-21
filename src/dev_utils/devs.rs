@@ -39,6 +39,30 @@ impl Devs {
         items
     }
 
+    /// Dev mostrati nei totali del footer (esclusi quelli con `hide_in_totals`),
+    /// ordinati per id come `list`.
+    pub fn list_in_totals(&self) -> Vec<(DevId, String)> {
+        self.list()
+            .into_iter()
+            .filter(|(id, _)| !self.is_hidden_in_totals(*id))
+            .collect()
+    }
+
+    pub fn is_hidden_in_totals(&self, id: DevId) -> bool {
+        self.dev_id.get(&id).is_some_and(|d| d.is_hidden_in_totals())
+    }
+
+    /// Ritorna `true` se il valore è cambiato.
+    pub fn set_hidden_in_totals(&mut self, id: DevId, hide: bool) -> bool {
+        match self.dev_id.get_mut(&id) {
+            Some(d) if d.is_hidden_in_totals() != hide => {
+                d.set_hidden_in_totals(hide);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Returns (id, name, bg_color_packed, font_color_packed)
     pub fn list_full(&self) -> Vec<(DevId, String, usize, usize)> {
         let mut items: Vec<(DevId, String, usize, usize)> = self

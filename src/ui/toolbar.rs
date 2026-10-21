@@ -230,6 +230,11 @@ pub(crate) fn toolbar(
                 state.ghost_manager_just_opened = state.show_ghost_manager;
                 ui.close_menu();
             }
+            if ui.button("Dev nei totali…").clicked() {
+                state.show_dev_totals = !state.show_dev_totals;
+                state.dev_totals_just_opened = state.show_dev_totals;
+                ui.close_menu();
+            }
             let closed_btn = ui.button("Stato progetti…");
             // La finestra "Stato progetti" si ancora sotto questa voce di menù.
             state.closed_btn_pos = closed_btn.rect.left_bottom();

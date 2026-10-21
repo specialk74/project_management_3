@@ -694,6 +694,14 @@ Il footer si può nascondere/mostrare con la maniglia (triangolino) sul bordo.
   ("Tot"/"—" per nessuno).
 - **Totali per dev**: per ogni dev il totale ore nell'anno/categoria selezionati.
 - **Riga "Totale"**: somma dei totali-dev.
+- **Dev esclusi dai totali**: un dev può essere tolto da questo riquadro — la sua
+  riga sparisce e le sue ore **non entrano nel "Totale"** — restando visibile in
+  tutto il resto del programma (griglia, menù, filtri, export). Per escluderlo:
+  **tasto destro sul nome del dev nel footer ▸ Nascondi dai totali**, oppure
+  **Filtri ▸ Dev nei totali…**, la finestra che elenca **tutti** i dev con una
+  spunta ciascuno (più **Select All**): togli la spunta per escludere, rimettila
+  per far tornare il dev. È l'unico punto da cui si può rimettere un dev già
+  nascosto. La scelta è **salvata nel file**.
 - **Ore rimanenti per worker**: a destra di ogni riga worker, le ore ancora
   disponibili (colore verde).
 

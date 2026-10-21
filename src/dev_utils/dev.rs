@@ -30,6 +30,10 @@ fn color_for_idx(idx: DevId) -> (usize, usize) {
     (bg, font)
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Dev {
     name: String,
@@ -37,6 +41,10 @@ pub struct Dev {
     bg_color: Option<usize>,
     #[serde(default)]
     font_color: Option<usize>,
+    /// Escluso dai totali in basso a sinistra del footer (riga e somma
+    /// «Totale»); resta visibile ovunque altrove. Omesso dal file quando falso.
+    #[serde(default, skip_serializing_if = "is_false")]
+    hide_in_totals: bool,
 }
 
 impl Dev {
@@ -46,7 +54,16 @@ impl Dev {
             name: name.to_string(),
             bg_color: Some(bg),
             font_color: Some(font),
+            hide_in_totals: false,
         }
+    }
+
+    pub fn is_hidden_in_totals(&self) -> bool {
+        self.hide_in_totals
+    }
+
+    pub fn set_hidden_in_totals(&mut self, hide: bool) {
+        self.hide_in_totals = hide;
     }
 
     pub fn get_name(&self) -> String {

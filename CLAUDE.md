@@ -89,7 +89,7 @@ App (workers.ron)
 ├── month_tint_pct: i32              — month tint strength 0..100 (default 60, file-only)
 ├── corner_pct: i32                  — PDF/SVG corner rounding 0..100 (default 40, file-only)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
-├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color
+├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color + hide_in_totals
 ├── categories: Categories
 ├── milestones: Milestones           — name + color + kind + categorie di stampa (Internal/External), shared across projects
 ├── sovra     : HashMap<(WeekId, WorkerId), Effort>  — per-week per-worker allocation
@@ -262,6 +262,14 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   Restano finestre a sé: Milestone… (manager), Ghost worker… (`ghost_manager_window`:
   elenca **tutti** i worker con spunta `Worker.ghost`, indipendente da
   hide_in_footer/show_in_find/filtro — unico punto sempre raggiungibile per il ghost),
+  Dev nei totali… (`dev_totals_window`, `UiState.show_dev_totals`: **tutti** i dev con
+  spunta + Select All → `Action::SetDevHiddenInTotals` → `Devs::set_hidden_in_totals`;
+  `Dev.hide_in_totals`, `#[serde(default, skip_serializing_if = "is_false")]`,
+  persistito: il dev sparisce **solo** dal riquadro in basso a sinistra del footer —
+  riga e somma «Totale», via `Devs::list_in_totals` usato sia per l'altezza in
+  `footer` sia in `draw_left_footer` — e resta ovunque altrove; anche tasto destro
+  sul nome dev nel footer ▸ «Nascondi dai totali»; unico punto per rimetterlo è la
+  finestra),
   Stato progetti… (`closed_filter_window`, voce rinominata da «Closed…»): una combo
   per progetto **Attivo / On-Hold / Closed** → `Action::SetProjectStatus` →
   `Projects::set_status`. **On-hold** = `ProjectStatus::OnHold` in

@@ -794,6 +794,10 @@ pub struct UiState {
     // footer o filtrati) con una spunta Ghost ciascuno.
     show_ghost_manager: bool,
     ghost_manager_just_opened: bool,
+    // finestra «Dev nei totali»: TUTTI i dev con la spunta di inclusione nei
+    // totali del footer (unico punto da cui rimettere un dev nascosto).
+    show_dev_totals: bool,
+    dev_totals_just_opened: bool,
     // buffer di editing per nomi progetto ed effort dev
     name_buffers: HashMap<usize, String>,
     effort_buffers: HashMap<(usize, usize), String>,
@@ -1037,6 +1041,11 @@ pub(crate) enum Action {
     SetWorkerGhost {
         worker: WorkerId,
         ghost: bool,
+    },
+    /// Esclude (o rimette) un dev dai totali in basso a sinistra del footer.
+    SetDevHiddenInTotals {
+        dev: DevId,
+        hidden: bool,
     },
     SetWorkerWeekOverride {
         worker: WorkerId,
@@ -1637,6 +1646,7 @@ impl eframe::App for PjmApp {
             filters_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             ghost_manager_window(ui.ctx(), app, state, &mut actions);
+            dev_totals_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state);
@@ -2319,6 +2329,11 @@ impl PjmApp {
             Action::SetWorkerGhost { worker, ghost } => {
                 self.app.workers.set_ghost(worker, ghost);
                 self.mark_changed();
+            }
+            Action::SetDevHiddenInTotals { dev, hidden } => {
+                if self.app.devs.set_hidden_in_totals(dev, hidden) {
+                    self.mark_changed();
+                }
             }
             Action::SetWorkerWeekOverride {
                 worker,
@@ -4032,6 +4047,81 @@ mod tests {
         frame(&mut pjm);
         // …e tornando al primo si ritrova il suo periodo.
         assert_eq!(open(&mut pjm, a, b), (20063, 20105));
+    }
+
+    /// Un dev escluso dai totali sparisce dal riquadro in basso a sinistra
+    /// del footer e le sue ore non entrano nel «Totale»; gli altri restano.
+    #[test]
+    fn dev_hidden_in_totals_leaves_footer_row_and_grand_total() {
+        let mut app = App::new();
+        let proj = app.projects.add("Prog", Some("ABC"), Some(WeekId(20100)));
+        let front = app.devs.add("Frontend");
+        let back = app.devs.add("Backend");
+        let w = app.workers.add("Alice");
+        for (dev, h) in [(front, 10), (back, 32)] {
+            app.projects.add_dev(proj, dev);
+            // 20100 = 12 gennaio 2025.
+            app.projects.add_effort(proj, dev, WeekId(20100), w, Effort(h));
+        }
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1200.0, 800.0),
+        ));
+        let texts = |app: &App| -> Vec<String> {
+            let mut state = UiState {
+                selected_year: 2025,
+                ..Default::default()
+            };
+            let workers = footer_workers(app, &Filter::default());
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(LEFT_W, 400.0), Sense::hover());
+                draw_left_footer(ui, rect, app, &mut state, &workers, &mut actions);
+            });
+            out.shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let all = texts(&app);
+        assert!(all.contains(&"Backend".to_string()));
+        assert!(all.contains(&"42".to_string()), "totale con entrambi: {all:?}");
+
+        assert!(app.devs.set_hidden_in_totals(back, true));
+        assert!(!app.devs.set_hidden_in_totals(back, true), "già nascosto");
+        let some = texts(&app);
+        assert!(!some.contains(&"Backend".to_string()), "riga del dev nascosto");
+        assert!(some.contains(&"Frontend".to_string()));
+        assert!(!some.contains(&"42".to_string()) && !some.contains(&"32".to_string()));
+        // «Totale» = solo le 10 ore del dev rimasto (riga dev + riga Totale).
+        assert_eq!(some.iter().filter(|t| *t == "10").count(), 2, "{some:?}");
+    }
+
+    /// `hide_in_totals` finisce nel file solo quando è vero; i file vecchi
+    /// (senza il campo) si caricano con tutti i dev nei totali.
+    #[test]
+    fn dev_hidden_in_totals_round_trips_through_ron() {
+        let mut app = App::new();
+        let a = app.devs.add("Frontend");
+        let b = app.devs.add("Backend");
+        let plain = app.to_ron_string();
+        assert!(!plain.contains("hide_in_totals"), "omesso quando falso");
+        app.devs.set_hidden_in_totals(b, true);
+        let ron = app.to_ron_string();
+        assert!(ron.contains("hide_in_totals"));
+        let back = App::from_ron_str(&ron).unwrap();
+        assert!(back.devs.is_hidden_in_totals(b));
+        assert!(!back.devs.is_hidden_in_totals(a));
+        assert_eq!(back.devs.list_in_totals(), vec![(a, "Frontend".to_string())]);
+        let old = App::from_ron_str(&plain).unwrap();
+        assert_eq!(old.devs.list_in_totals().len(), 2);
     }
 
     #[test]

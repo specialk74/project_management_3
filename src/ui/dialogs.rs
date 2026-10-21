@@ -777,6 +777,81 @@ pub(crate) fn ghost_manager_window(
     }
 }
 
+// ── Dev nei totali del footer (Filtri ▸ Dev nei totali…) ────────────────────
+
+/// Elenca **tutti** i dev con una spunta: tolta, il dev sparisce dai totali in
+/// basso a sinistra del footer (riga e somma «Totale») ma resta ovunque
+/// altrove. È l'unico punto da cui rimettere un dev già nascosto.
+pub(crate) fn dev_totals_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_dev_totals {
+        return;
+    }
+    let devs = app.devs.list();
+    let mut open = true;
+    let just_opened = state.dev_totals_just_opened;
+    state.dev_totals_just_opened = false;
+
+    let resp = egui::Window::new("Dev nei totali")
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(160.0, 40.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.set_min_width(title_width(ui, "Dev nei totali").max(240.0));
+            ui.label(
+                "Togli la spunta per escludere un dev dai totali in basso a sinistra \
+                 del footer: la sua riga sparisce e le sue ore non entrano nel \
+                 «Totale». Resta visibile in tutto il resto del programma.",
+            );
+            ui.add_space(4.0);
+            ui.separator();
+            if devs.is_empty() {
+                ui.label("Nessun dev.");
+            }
+            let currently_all = devs
+                .iter()
+                .all(|(id, _)| !app.devs.is_hidden_in_totals(*id));
+            if !devs.is_empty() {
+                if let Some(all) = select_all_checkbox(ui, currently_all) {
+                    for (id, _) in &devs {
+                        actions.push(Action::SetDevHiddenInTotals {
+                            dev: *id,
+                            hidden: !all,
+                        });
+                    }
+                }
+            }
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for (id, name) in &devs {
+                        let mut on = !app.devs.is_hidden_in_totals(*id);
+                        let text = egui::RichText::new(name).color(dev_color(app, *id));
+                        if ui.checkbox(&mut on, text).changed() {
+                            actions.push(Action::SetDevHiddenInTotals {
+                                dev: *id,
+                                hidden: !on,
+                            });
+                        }
+                    }
+                });
+        });
+
+    // click fuori dalla finestra → chiudi (ma non nello stesso frame dell'apertura)
+    let clicked_outside = resp
+        .map(|r| r.response.clicked_elsewhere())
+        .unwrap_or(false);
+    if !open || (!just_opened && clicked_outside) {
+        state.show_dev_totals = false;
+    }
+}
+
 // ── Flusso "Sposta" effort (blocco / devs) ──────────────────────────────────
 
 /// Intervallo [min, max] di settimana coperto da un insieme di spostamenti.

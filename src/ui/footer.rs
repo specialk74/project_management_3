@@ -84,7 +84,8 @@ pub(crate) fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions:
     alloc_strip(ui, full_w, DEV_BORDER, g(START_STOP));
 
     // 1 riga header + una riga per worker o per dev (il più alto dei due)
-    let n_devs = app.devs.list().len();
+    // Solo i dev inclusi nei totali (vedi `Dev.hide_in_totals`).
+    let n_devs = app.devs.list_in_totals().len();
     // +2 righe dev: una riga vuota di separazione + la riga "Totale" sotto l'elenco dev.
     let footer_h = (workers.len().max(n_devs + 2) as f32 + 1.0) * ROW_H;
 
@@ -245,7 +246,9 @@ pub(crate) fn draw_left_footer(
     // ── Sezione dev: nome + totale-anno ──
     // `grand_total` si accumula qui per evitare un secondo passaggio nella riga "Totale".
     // `projects` è costruita una volta sola e condivisa da tutte le chiamate a `dev_year_total`.
-    let devs = app.devs.list();
+    // I dev esclusi dai totali (`hide_in_totals`) non hanno riga e non
+    // entrano in `grand_total`.
+    let devs = app.devs.list_in_totals();
     let projects = app.projects.list();
     let mut grand_total = 0i32;
     for (di, (dev, dname)) in devs.iter().enumerate() {
@@ -261,6 +264,18 @@ pub(crate) fn draw_left_footer(
             cell_font(),
             tcol,
         );
+        // Tasto destro sul nome: esclude il dev dai totali (si rimette da
+        // «Filtri ▸ Dev nei totali…»).
+        ui.interact(nrect, egui::Id::new(("footer_dev", dev.0)), Sense::click())
+            .context_menu(|ui| {
+                if ui.button("Nascondi dai totali").clicked() {
+                    actions.push(Action::SetDevHiddenInTotals {
+                        dev: *dev,
+                        hidden: true,
+                    });
+                    ui.close();
+                }
+            });
         let dev_total = dev_year_total(app, &projects, *dev, year, cat);
         grand_total += dev_total;
         let trect = Rect::from_min_size(egui::pos2(total_x, y), Vec2::new(DEV_TOTAL_W, ROW_H));
