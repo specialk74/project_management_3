@@ -211,6 +211,14 @@ impl Projects {
         }
     }
 
+    /// Toglie dal progetto tutte le milestone collocate (le definizioni, anche
+    /// quelle proprie del progetto, restano). Ritorna `true` se è cambiato qualcosa.
+    pub fn clear_project_milestones(&mut self, id: ProjectId) -> bool {
+        self.projects
+            .get_mut(&id)
+            .is_some_and(|p| p.clear_milestones())
+    }
+
     /// Rimuove la milestone da tutti i progetti (chiamata quando viene eliminata
     /// globalmente).
     pub fn purge_milestone(&mut self, mid: MilestoneId) {
@@ -313,6 +321,14 @@ impl Projects {
         if let Some(p) = self.projects.get_mut(&id_project) {
             p.set_note(id_dev, week, id_worker, note);
         }
+    }
+
+    /// Svuota le celle della griglia di un dev (`Some`) o di tutti i dev del
+    /// progetto (`None`). Ritorna `true` se è cambiato qualcosa.
+    pub fn clear_efforts(&mut self, id_project: ProjectId, id_dev: Option<DevId>) -> bool {
+        self.projects
+            .get_mut(&id_project)
+            .is_some_and(|p| p.clear_efforts(id_dev))
     }
 
     pub fn reset_effort(&mut self, id_project: ProjectId, id_dev: DevId, week: WeekId) {

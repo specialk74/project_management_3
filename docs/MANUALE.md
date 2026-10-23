@@ -466,6 +466,12 @@ Per ogni dev del progetto:
 - **Aggiungi riga** — aggiunge una riga worker per quel dev (anche con doppio
   click sul nome).
 - **Elimina riga** — rimuove l'ultima riga worker.
+- **Cancella gli effort…** — svuota **tutte** le celle di quel dev nella griglia
+  (worker assegnati, ore e note di cella), dopo una richiesta di conferma.
+  L'effort pianificato, la nota del dev e la % dichiarata restano invariati.
+  Disabilitata se il dev non ha celle.
+- **Cancella gli effort di tutti i dev…** — come sopra, ma per **tutti i dev del
+  progetto** (sempre con conferma). Disabilitata se nessun dev del progetto ha celle.
 - **Nota Dev…** — apre l'editor per la nota a livello di dev (un triangolo giallo
   segnala la presenza di una nota).
 - **Nascondi effort / Visualizza effort** — nasconde/mostra i numeri di effort di
@@ -713,6 +719,11 @@ quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
   puoi **rimuoverle**. Nella stessa settimana puoi mettere **più milestone diverse**
   (quelle già presenti sono marcate con «●»); la stessa milestone invece compare
   una sola volta per progetto — riassegnarla a un'altra settimana la sposta.
+- **Cancella tutte le milestone…** (in fondo allo stesso sottomenù): toglie dal
+  progetto **tutte** le milestone collocate, sia di sistema sia personalizzate,
+  dopo una finestra di conferma che le elenca. Le milestone **non vengono
+  eliminate**: restano nel gestore e si possono ricollocare. Gli altri progetti
+  non cambiano. La voce è disabilitata se il progetto non ha milestone.
 - **Visualizzazione**: nella griglia il tipo non cambia nulla (il fulmine compare
   solo negli export). La colonna della settimana con milestone assume il colore
   della milestone. Con **più milestone nella stessa settimana** la colonna è

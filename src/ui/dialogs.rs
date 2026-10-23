@@ -381,6 +381,113 @@ pub(crate) fn confirm_del_dev_window(
     }
 }
 
+/// Conferma di «Cancella gli effort» (menù del nome dev): svuota le celle della
+/// griglia del dev, o di tutti i dev del progetto. L'effort pianificato resta.
+pub(crate) fn clear_efforts_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(req) = state.confirm_clear_efforts else {
+        return;
+    };
+    let mut open = true;
+    let mut close = false;
+    let project = project_label(app, req.proj);
+    let what = match req.dev {
+        Some(d) => format!("del dev «{}» nel progetto «{project}»", dev_name(app, d)),
+        None => format!("di tutti i dev del progetto «{project}»"),
+    };
+
+    egui::Window::new("Cancella gli effort")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(format!(
+                "Cancellare tutti gli effort {what}?\n\
+                 Le celle della griglia (worker, ore e note di cella) verranno svuotate;\n\
+                 l'effort pianificato resta invariato."
+            ));
+            ui.horizontal(|ui| {
+                if ui.button("Sì, cancella").clicked() {
+                    actions.push(Action::ClearEfforts {
+                        proj: req.proj,
+                        dev: req.dev,
+                    });
+                    close = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    close = true;
+                }
+            });
+        });
+
+    if close || !open {
+        state.confirm_clear_efforts = None;
+    }
+}
+
+/// Conferma di «Cancella tutte le milestone» (sottomenù milestone della
+/// griglia): toglie dal progetto tutte le milestone collocate, globali e
+/// proprie. Le definizioni restano (si possono ricollocare).
+pub(crate) fn clear_milestones_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(proj) = state.confirm_clear_milestones else {
+        return;
+    };
+    let mut open = true;
+    let mut close = false;
+    let mut placed = app.projects.list_project_milestones(proj);
+    placed.sort_by_key(|(id, w)| (*w, *id));
+
+    egui::Window::new("Cancella tutte le milestone")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(format!(
+                "Togliere dal progetto «{}» tutte le milestone ({})?",
+                project_label(app, proj),
+                placed.len()
+            ));
+            egui::ScrollArea::vertical()
+                .max_height(300.0)
+                .show(ui, |ui| {
+                    for (id, week) in &placed {
+                        let name = app.milestones.get_name(*id).unwrap_or_default();
+                        let icon = app.milestones.get_kind(*id).icon();
+                        let date = days_to_local(week.0 as i32).format("%y-%m-%d");
+                        ui.label(format!("• {icon} {name} — {date}"));
+                    }
+                });
+            ui.label(
+                "Le milestone restano definite e si possono ricollocare;\n\
+                 vengono solo tolte da questo progetto.",
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Sì, cancella").clicked() {
+                    actions.push(Action::ClearProjectMilestones { proj });
+                    close = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    close = true;
+                }
+            });
+        });
+
+    if close || !open {
+        state.confirm_clear_milestones = None;
+    }
+}
+
 /// Conferma di «Sposta inizio/fine progetto qua» quando nel nuovo periodo non
 /// entrerebbero effort o milestone già inseriti: li elenca e chiede se
 /// cancellarli. «Annulla» (o la chiusura) lascia tutto com'era.

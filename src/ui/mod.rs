@@ -292,6 +292,14 @@ pub(crate) struct BoundMove {
     pub loss: BoundLoss,
 }
 
+/// «Cancella gli effort» in attesa di conferma (`clear_efforts_window`):
+/// `dev = Some(d)` svuota le celle di quel dev, `None` di tutti i dev del progetto.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) struct ClearEfforts {
+    pub proj: ProjectId,
+    pub dev: Option<DevId>,
+}
+
 /// Conflitto in sospeso: il file su disco è cambiato mentre c'erano modifiche
 /// locali che toccano gli stessi progetti/dev. L'utente sceglie via dialog.
 struct PendingReload {
@@ -718,6 +726,10 @@ pub struct UiState {
     bound_move: Option<BoundMove>,
     dev_manage: Option<ProjectId>,
     confirm_del_dev: Option<(ProjectId, DevId)>,
+    // conferma «Cancella gli effort» (menù del nome dev)
+    confirm_clear_efforts: Option<ClearEfforts>,
+    // conferma «Cancella tutte le milestone» (menù della fascia milestone)
+    confirm_clear_milestones: Option<ProjectId>,
     // flusso "Sposta" (blocco / devs) aperto dal menù contestuale milestone
     move_dialog: Option<MoveDialog>,
     move_dialog_was_open: bool,
@@ -1110,6 +1122,12 @@ pub(crate) enum Action {
         proj: ProjectId,
         dev: DevId,
     },
+    /// Svuota le celle della griglia (non l'effort pianificato) di un dev, o di
+    /// tutti i dev del progetto con `dev: None`.
+    ClearEfforts {
+        proj: ProjectId,
+        dev: Option<DevId>,
+    },
     SetDevHideEffort {
         proj: ProjectId,
         dev: DevId,
@@ -1249,6 +1267,10 @@ pub(crate) enum Action {
         proj: ProjectId,
         milestone: MilestoneId,
         week: WeekId,
+    },
+    /// Toglie dal progetto tutte le milestone collocate (le definizioni restano).
+    ClearProjectMilestones {
+        proj: ProjectId,
     },
     RemoveProjectMilestone {
         proj: ProjectId,
@@ -1752,6 +1774,8 @@ impl eframe::App for PjmApp {
             report_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
+            clear_efforts_window(ui.ctx(), app, state, &mut actions);
+            clear_milestones_window(ui.ctx(), app, state, &mut actions);
             filters_window(ui.ctx(), app, state, &mut actions);
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             dev_totals_window(ui.ctx(), app, state, &mut actions);
@@ -2427,6 +2451,11 @@ impl PjmApp {
                 self.app.projects.del_row(proj, dev);
                 self.mark_changed();
             }
+            Action::ClearEfforts { proj, dev } => {
+                if self.app.projects.clear_efforts(proj, dev) {
+                    self.mark_changed();
+                }
+            }
             Action::SetDevHideEffort { proj, dev, hide } => {
                 self.app.projects.set_dev_hide_effort(proj, dev, hide);
                 self.mark_changed();
@@ -2799,6 +2828,11 @@ impl PjmApp {
             Action::RemoveProjectMilestone { proj, milestone } => {
                 self.app.projects.remove_project_milestone(proj, milestone);
                 self.mark_changed();
+            }
+            Action::ClearProjectMilestones { proj } => {
+                if self.app.projects.clear_project_milestones(proj) {
+                    self.mark_changed();
+                }
             }
             Action::MoveEffort {
                 proj,
@@ -4090,6 +4124,200 @@ mod tests {
         assert_eq!(app.projects.get_project_end_week(proj), Some(WeekId(20140)));
         // Già lì: nessun cambiamento (il file non va marcato modificato).
         assert!(!move_project_bound(&mut app, proj, ProjectBound::End, WeekId(20140)));
+    }
+
+    #[test]
+    fn clear_project_milestones_removes_placements_but_keeps_definitions() {
+        let (mut app, proj, _dev, _w) = bound_fixture();
+        let other = app.projects.add("Altro", Some("XYZ"), Some(WeekId(20000)));
+        let global = app.milestones.add("Rilascio");
+        let own = app.milestones.add_owned(
+            "Collaudo",
+            crate::milestones::MilestoneKind::default(),
+            Vec::new(),
+            Some(proj),
+        );
+        app.projects.add_project_milestone(proj, global, WeekId(20007));
+        app.projects.add_project_milestone(proj, own, WeekId(20014));
+        app.projects.add_project_milestone(other, global, WeekId(20021));
+
+        assert!(app.projects.clear_project_milestones(proj));
+        assert!(app.projects.list_project_milestones(proj).is_empty());
+        assert_eq!(
+            app.projects.list_project_milestones(other),
+            vec![(global, WeekId(20021))],
+            "gli altri progetti non cambiano"
+        );
+        assert!(app.milestones.get(global).is_some(), "la globale resta definita");
+        assert!(app.milestones.get(own).is_some(), "la propria resta definita");
+        assert!(!app.projects.clear_project_milestones(proj), "già vuoto: nessun cambio");
+    }
+
+    #[test]
+    fn clear_milestones_window_asks_then_confirms() {
+        let (mut app, proj, _dev, _w) = bound_fixture();
+        let m = app.milestones.add("Rilascio");
+        app.projects.add_project_milestone(proj, m, WeekId(20007));
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 800.0),
+        ));
+        let mut state = UiState {
+            confirm_clear_milestones: Some(proj),
+            ..Default::default()
+        };
+        let mut button = None;
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                clear_milestones_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            assert!(actions.is_empty(), "nessuna azione senza click");
+            texts.clear();
+            for cs in &out.shapes {
+                if let egui::epaint::Shape::Text(t) = &cs.shape {
+                    let txt = t.galley.text().to_string();
+                    if txt == "Sì, cancella" {
+                        button = Some(t.visual_bounding_rect().center());
+                    }
+                    texts.push(txt);
+                }
+            }
+        }
+        assert!(texts.iter().any(|t| t.contains("Rilascio")), "{texts:?}");
+        assert!(state.confirm_clear_milestones.is_some(), "senza conferma resta aperta");
+
+        let pos = button.expect("bottone «Sì, cancella»");
+        let mut actions = Vec::new();
+        for ev in [
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ] {
+            let mut i = input.clone();
+            i.events = vec![ev];
+            let _ = ctx.run_ui(i, |ui| {
+                clear_milestones_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+        }
+        assert!(
+            matches!(actions.as_slice(), [Action::ClearProjectMilestones { proj: p }] if *p == proj),
+            "attesa una sola ClearProjectMilestones"
+        );
+        assert!(state.confirm_clear_milestones.is_none());
+    }
+
+    #[test]
+    fn clear_efforts_empties_one_dev_or_all_devs_keeping_planned() {
+        let (mut app, proj, dev, w) = bound_fixture();
+        let dev2 = app.devs.add("Backend");
+        app.projects.add_dev(proj, dev2);
+        app.projects.add_dev_effort(proj, dev, Effort(100));
+        app.projects.add_effort(proj, dev, WeekId(20000), w, Effort(8));
+        app.projects.add_effort(proj, dev, WeekId(20007), w, Effort(0));
+        app.projects.set_note(proj, dev, WeekId(20000), w, "nota");
+        app.projects.set_dev_note(proj, dev, "nota dev");
+        app.projects.add_effort(proj, dev2, WeekId(20014), w, Effort(4));
+
+        // un solo dev: le sue celle (anche a effort 0) spariscono, l'altro resta
+        assert!(app.projects.clear_efforts(proj, Some(dev)));
+        let sd = app.projects.get_single_dev(proj, dev).unwrap();
+        assert!(!sd.has_cells());
+        assert_eq!(sd.planned_effort(), Effort(100), "il pianificato resta");
+        assert_eq!(sd.get_note(), "nota dev", "la nota dev resta");
+        assert!(app.projects.get_single_dev(proj, dev2).unwrap().has_cells());
+        assert!(!app.projects.clear_efforts(proj, Some(dev)), "già vuoto: nessun cambio");
+
+        // tutti i dev del progetto
+        assert!(app.projects.clear_efforts(proj, None));
+        assert!(!app.projects.get_single_dev(proj, dev2).unwrap().has_cells());
+        assert!(!app.projects.clear_efforts(proj, None));
+    }
+
+    #[test]
+    fn clear_efforts_window_asks_then_confirms() {
+        let (mut app, proj, dev, w) = bound_fixture();
+        app.projects.add_effort(proj, dev, WeekId(20000), w, Effort(8));
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 800.0),
+        ));
+        let mut state = UiState {
+            confirm_clear_efforts: Some(ClearEfforts {
+                proj,
+                dev: Some(dev),
+            }),
+            ..Default::default()
+        };
+        let mut button = None;
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input.clone(), |ui| {
+                clear_efforts_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            assert!(actions.is_empty(), "nessuna azione senza click");
+            texts.clear();
+            for cs in &out.shapes {
+                if let egui::epaint::Shape::Text(t) = &cs.shape {
+                    let txt = t.galley.text().to_string();
+                    if txt == "Sì, cancella" {
+                        button = Some(t.visual_bounding_rect().center());
+                    }
+                    texts.push(txt);
+                }
+            }
+        }
+        assert!(texts.iter().any(|t| t.contains("«Frontend»")), "{texts:?}");
+        assert!(state.confirm_clear_efforts.is_some(), "senza conferma resta aperta");
+
+        // click su «Sì, cancella» → azione + dialog chiusa
+        let pos = button.expect("bottone «Sì, cancella»");
+        let mut actions = Vec::new();
+        for ev in [
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ] {
+            let mut i = input.clone();
+            i.events = vec![ev];
+            let _ = ctx.run_ui(i, |ui| {
+                clear_efforts_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+        }
+        assert!(
+            matches!(
+                actions.as_slice(),
+                [Action::ClearEfforts { proj: p, dev: Some(d) }] if *p == proj && *d == dev
+            ),
+            "attesa una sola ClearEfforts"
+        );
+        assert!(state.confirm_clear_efforts.is_none());
     }
 
     #[test]

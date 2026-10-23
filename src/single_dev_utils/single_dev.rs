@@ -79,6 +79,20 @@ impl SingleDev {
         self.weeks.remove(&week);
     }
 
+    /// `true` se in griglia c'è almeno una cella (anche a effort 0).
+    pub fn has_cells(&self) -> bool {
+        !self.weeks.is_empty()
+    }
+
+    /// Svuota tutte le celle della griglia (assegnazioni, ore e note di cella).
+    /// Effort pianificato, nota dev e storico della % dichiarata restano.
+    /// Ritorna `true` se c'era qualcosa da cancellare.
+    pub fn clear_efforts(&mut self) -> bool {
+        let had = self.has_cells();
+        self.weeks.clear();
+        had
+    }
+
     pub fn set_effort(&mut self, effort: Effort) {
         self.effort = effort;
     }

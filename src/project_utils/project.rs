@@ -170,6 +170,18 @@ impl Project {
         self.dev_id.get_mut(&id_dev).unwrap().reset_effort(week);
     }
 
+    /// Svuota le celle di `id_dev`, o di tutti i dev con `None`.
+    /// Ritorna `true` se è cambiato qualcosa.
+    pub fn clear_efforts(&mut self, id_dev: Option<DevId>) -> bool {
+        match id_dev {
+            Some(d) => self.dev_id.get_mut(&d).is_some_and(|sd| sd.clear_efforts()),
+            None => self
+                .dev_id
+                .values_mut()
+                .fold(false, |acc, sd| sd.clear_efforts() || acc),
+        }
+    }
+
     pub fn set_info(&mut self, info: &str) {
         self.info = info.to_string();
     }
@@ -406,6 +418,14 @@ impl Project {
 
     pub fn remove_milestone(&mut self, id: MilestoneId) {
         self.milestones.remove(&id);
+    }
+
+    /// Toglie dal progetto tutte le milestone collocate (globali e proprie);
+    /// le definizioni restano. Ritorna `true` se ce n'era almeno una.
+    pub fn clear_milestones(&mut self) -> bool {
+        let had = !self.milestones.is_empty();
+        self.milestones.clear();
+        had
     }
 
     /// Rimuove ogni collocazione della milestone (usato quando viene eliminata

@@ -486,6 +486,16 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   forward), **overwriting** any existing value for that worker (`add_effort` keeps the
   note), and stops at `app.end_week` — the dialog shows the effective week count. Only
   on non-merged columns (merged/zoom cells `continue` before the slot loop).
+- **Cancella gli effort** (dev-name context menu, below «Elimina riga»): «Cancella
+  gli effort…» (that dev) and «Cancella gli effort di tutti i dev…» (whole project)
+  set `UiState.confirm_clear_efforts: Option<ClearEfforts { proj, dev: Option<DevId> }>`
+  → `clear_efforts_window` (`dialogs.rs`, «Sì, cancella» / «Annulla») →
+  `Action::ClearEfforts` → `Projects::clear_efforts(proj, dev)` → `SingleDev::clear_efforts`:
+  empties `weeks` (cells incl. effort 0 and cell notes); planned effort, dev note and
+  declared history stay. Returns `bool`, so the handler marks changed only on a real
+  change; the items are disabled when there are no cells (`SingleDev::has_cells`).
+  Tests `clear_efforts_empties_one_dev_or_all_devs_keeping_planned`,
+  `clear_efforts_window_asks_then_confirms`.
 - **Notes** (yellow triangle indicator): right-click a non-empty cell → effort note;
   right-click a dev name → **Nota Dev…**; right-click a footer worker cell → **Note**.
 - **Project progress %** — two figures, both planned-effort-weighted and both `None`
@@ -537,6 +547,15 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   column as **N equal vertical bands**, one per milestone, ordered by id
   (`paint_milestone_bands` in `grid.rs`, `MS_BAND_MIN_W` = 4 px minimum band —
   beyond that only the first ones are drawn, the hover tooltip still lists all).
+- **Cancella tutte le milestone…** (bottom of the «Aggiungi milestone qui» submenu,
+  disabled when nothing is placed) → `UiState.confirm_clear_milestones:
+  Option<ProjectId>` → `clear_milestones_window` (`dialogs.rs`, lists the placements)
+  → `Action::ClearProjectMilestones` → `Projects::clear_project_milestones` →
+  `Project::clear_milestones`: removes **only the placements** of that project
+  (globals and own); milestone definitions — owned ones included — stay. Returns
+  `bool` (mark changed only on a real change). Tests
+  `clear_project_milestones_removes_placements_but_keeps_definitions`,
+  `clear_milestones_window_asks_then_confirms`.
 - **Milestone kind** (`MilestoneKind { Goal, Trigger }`, `#[serde(default)]` =
   `Goal`, so old RON files load as goals): a milestone is not only an arrival
   flag, it can be the **trigger of an event**. The kind belongs to the

@@ -853,6 +853,17 @@ fn draw_milestone_strip(
                     }
                 }
             }
+            // Toglie dal progetto tutte le milestone collocate, dopo conferma
+            // (`clear_milestones_window`).
+            let placed = !app.projects.list_project_milestones(proj).is_empty();
+            ui.separator();
+            if ui
+                .add_enabled(placed, egui::Button::new("Cancella tutte le milestone…"))
+                .clicked()
+            {
+                state.confirm_clear_milestones = Some(proj);
+                ui.close();
+            }
             });
 
         // ── Sottomenù: Sposta effort ──
@@ -1933,6 +1944,15 @@ pub(crate) fn draw_left_devs(
         if !dev_note.is_empty() {
             draw_note_triangle(ui, name_rect);
         }
+        let has_cells = app
+            .projects
+            .get_single_dev(proj, *dev)
+            .is_some_and(|sd| sd.has_cells());
+        let project_has_cells = app.projects.list_devs(proj).iter().any(|d| {
+            app.projects
+                .get_single_dev(proj, *d)
+                .is_some_and(|sd| sd.has_cells())
+        });
         let nresp = ui.interact(
             name_rect,
             egui::Id::new(("devname", proj.0, dev.0)),
@@ -1950,6 +1970,28 @@ pub(crate) fn draw_left_devs(
                 actions.push(Action::DelRow { proj, dev: *dev });
                 ui.close_menu();
             }
+            ui.separator();
+            if ui
+                .add_enabled(has_cells, egui::Button::new("Cancella gli effort…"))
+                .clicked()
+            {
+                state.confirm_clear_efforts = Some(ClearEfforts {
+                    proj,
+                    dev: Some(*dev),
+                });
+                ui.close();
+            }
+            if ui
+                .add_enabled(
+                    project_has_cells,
+                    egui::Button::new("Cancella gli effort di tutti i dev…"),
+                )
+                .clicked()
+            {
+                state.confirm_clear_efforts = Some(ClearEfforts { proj, dev: None });
+                ui.close();
+            }
+            ui.separator();
             if ui.button("Nota Dev…").clicked() {
                 state.note_editor = Some(NoteEditing {
                     target: NoteTarget::Dev { proj, dev: *dev },
