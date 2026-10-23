@@ -740,6 +740,10 @@ pub struct UiState {
     // corrente. Dentro il progetto la resa resta come Ctrl+F (tutte le settimane).
     // Ctrl+F la disattiva, Ctrl+G la riattiva. Non persistita.
     worker_filter_current_week: bool,
+    /// Worker scelto col click sinistro sul suo nome nel footer: le sue righe
+    /// nelle celle dei dev restano evidenziate (giallo su scuro) finché non si
+    /// riclicca lo stesso nome (o un altro, che prende il suo posto). Solo sessione.
+    footer_selected_worker: Option<crate::workers_utils::worker::WorkerId>,
     // filtro dev (Ctrl+D): None = nessun filtro; Some(set) = mostra solo i
     // progetti in cui almeno un dev selezionato ha effort > 0, e dentro il
     // progetto solo quei dev. Si combina in AND con il filtro worker. Non persistito.
@@ -4698,6 +4702,96 @@ mod tests {
 
     /// Col cursore sul footer: riga delle date → solo la data; cella di un
     /// worker → data + worker; nome del worker (parte sinistra) → solo il worker.
+    #[test]
+    fn footer_click_toggles_and_switches_the_selected_worker() {
+        let (mut app, alice, _week) = highlight_fixture();
+        let bob = app.workers.add("Bob");
+        let workers = footer_workers(&app, &Filter::default());
+        let row_of = |w: WorkerId| workers.iter().position(|(x, _)| *x == w).unwrap();
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            selected_year: 0,
+            ..Default::default()
+        };
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        let left = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(LEFT_W, 400.0));
+        let name_x = DEV_NAME_W + DEV_TOTAL_W + 5.0 + COL_W / 2.0;
+        let mut click = |state: &mut UiState, w: WorkerId| {
+            let pos = egui::pos2(name_x, (row_of(w) as f32 + 1.5) * ROW_H);
+            for ev in [
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ] {
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    events: vec![ev],
+                    ..Default::default()
+                };
+                let mut actions = Vec::new();
+                let _ = ctx.run_ui(input, |ui| {
+                    draw_left_footer(ui, left, &app, state, &workers, &mut actions);
+                });
+            }
+        };
+        click(&mut state, alice);
+        assert_eq!(state.footer_selected_worker, Some(alice));
+        assert!(state.popup.is_none(), "il click sinistro non apre più «Ore max»");
+        click(&mut state, bob);
+        assert_eq!(state.footer_selected_worker, Some(bob), "un altro worker prende il posto");
+        click(&mut state, bob);
+        assert_eq!(state.footer_selected_worker, None, "riclic sullo stesso: spento");
+    }
+
+    #[test]
+    fn selected_worker_is_highlighted_in_the_dev_cells() {
+        let (app, alice, _week) = highlight_fixture();
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 900.0));
+        // Numero di testi «Alice…» disegnati in giallo evidenziazione.
+        let yellow_alice = |selected: Option<WorkerId>| {
+            let mut state = UiState {
+                footer_selected_worker: selected,
+                ..Default::default()
+            };
+            let mut n = 0;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                let mut actions = Vec::new();
+                let out = ctx.run_ui(input, |ui| {
+                    grid(ui, &app, &mut state, &mut actions, &Filter::default(), &None);
+                });
+                n = out
+                    .shapes
+                    .iter()
+                    .filter(|cs| match &cs.shape {
+                        egui::epaint::Shape::Text(t) => {
+                            t.galley.text().contains("Alice")
+                                && t.galley.job.sections.iter().any(|s| s.format.color == hi_text())
+                        }
+                        _ => false,
+                    })
+                    .count();
+            }
+            n
+        };
+        assert_eq!(yellow_alice(None), 0);
+        assert!(yellow_alice(Some(alice)) > 0, "la riga di Alice va evidenziata");
+    }
+
     #[test]
     fn footer_hover_records_column_and_worker_to_highlight() {
         let (app, alice, week) = highlight_fixture();

@@ -321,7 +321,8 @@ pub(crate) fn draw_left_footer(
     );
 
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
-    // Click sul nome → popup "Ore max" (limite settimanale globale del worker).
+    // Click sinistro sul nome → evidenzia/toglie il worker nelle celle dei dev;
+    // tasto destro → menù con «Ore max…» (limite settimanale globale) e «Ghost».
     for (idx, (wid, name)) in workers.iter().enumerate() {
         let y = rect.top() + (idx as f32 + 1.0) * ROW_H;
         let cell = Rect::from_min_size(egui::pos2(wk_x, y), Vec2::new(COL_W, ROW_H));
@@ -332,8 +333,9 @@ pub(crate) fn draw_left_footer(
         if ui.rect_contains_pointer(cell) {
             state.grid_hl_next.worker = Some(*wid);
         }
-        // Worker della cella puntata (o in modifica) nella griglia o nel footer.
-        let hl = state.grid_hl.worker == Some(*wid);
+        // Worker della cella puntata (o in modifica) nella griglia o nel footer,
+        // oppure quello scelto col click (evidenziazione fissa).
+        let hl = state.grid_hl.worker == Some(*wid) || state.footer_selected_worker == Some(*wid);
         if hl {
             ui.painter().rect_filled(cell, 0.0, hi_bg());
         }
@@ -379,16 +381,20 @@ pub(crate) fn draw_left_footer(
             .interact(cell, ui.id().with(("wmax", wid.0)), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.clicked() {
-            let cur = app.workers.get_max_hours(*wid);
-            state.popup = Some(Popup::WorkerMax {
-                worker: *wid,
-                name: name.clone(),
-                text: cur.to_string(),
-            });
+            state.footer_selected_worker = toggle_selected_worker(state.footer_selected_worker, *wid);
         }
-        // Tasto destro sul nome → toggle "Ghost" per il worker.
+        // Tasto destro sul nome → «Ore max…» e toggle "Ghost" per il worker.
         let is_ghost = app.workers.is_ghost(*wid);
         resp.context_menu(|ui| {
+            if ui.button("Ore max…").clicked() {
+                let cur = app.workers.get_max_hours(*wid);
+                state.popup = Some(Popup::WorkerMax {
+                    worker: *wid,
+                    name: name.clone(),
+                    text: cur.to_string(),
+                });
+                ui.close();
+            }
             if ui
                 .selectable_label(is_ghost, "Ghost")
                 .on_hover_text(
@@ -405,6 +411,15 @@ pub(crate) fn draw_left_footer(
             }
         });
     }
+}
+
+/// Click sul nome di un worker nel footer: lo stesso worker spegne
+/// l'evidenziazione, un altro la sposta su di sé.
+pub(crate) fn toggle_selected_worker(
+    current: Option<crate::workers_utils::worker::WorkerId>,
+    clicked: crate::workers_utils::worker::WorkerId,
+) -> Option<crate::workers_utils::worker::WorkerId> {
+    (current != Some(clicked)).then_some(clicked)
 }
 
 pub(crate) fn draw_right_footer(

@@ -781,10 +781,14 @@ Interazioni:
   settimana (con pulsanti OK / Default / Zero / Annulla).
 - **Tasto destro** → menù **Ferie** / **Malattia** (fanno da interruttore) /
   **Note**.
-- **Click sul nome del worker** (colonna sinistra del footer) → massimo ore
-  **globale** del worker.
-- **Tasto destro sul nome del worker** → toggle **Ghost** (vedi §8, «Worker
-  "ghost"»).
+- **Click sul nome del worker** (colonna sinistra del footer) → **evidenzia il
+  worker** nelle celle dei dev di tutti i progetti: la sua riga «Worker|ore» diventa
+  gialla in grassetto su fondo scuro, e resta così anche spostando il mouse. Un
+  nuovo click sullo stesso nome toglie l'evidenziazione; un click su un altro
+  worker la sposta su quello. Vale solo per la sessione e non si vede nella vista
+  compatta né sulle colonne con zoom, dove i nomi dei worker non compaiono.
+- **Tasto destro sul nome del worker** → menù con **Ore max…** (massimo ore
+  **globale** del worker) e il toggle **Ghost** (vedi §8, «Worker "ghost"»).
 - **Click sull'intestazione di una settimana** (header) → imposta il massimo ore
   di quella settimana **per tutti i worker**.
 
@@ -1441,13 +1445,14 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | Cella worker | Click sinistro | Modifica la cella |
 | Cella worker (non vuota) | Tasto destro | Nota della cella |
 | Riga alta della colonna-dev | Tasto destro | Milestone / Sposta |
-| Nome dev | Tasto destro | Menù dev (righe, nota, nascondi effort) |
+| Nome dev | Tasto destro | Menù dev (righe, cancella effort, nota, nascondi effort) |
 | Tripletta / Inizio / Fine | Tasto destro | Modifica il valore |
 | Categoria progetto | Click | Scegli categoria |
 | Striscia "Dev" | Click | Aggiungi/rimuovi dev |
 | Intestazione settimana | Click | Max ore settimana per tutti i worker |
 | Cella footer worker | Click / Tasto destro | Max ore settimana / stato e nota |
-| Nome worker (footer) | Click | Max ore globale del worker |
+| Nome worker (footer) | Click | Evidenzia/toglie il worker nelle celle dei dev |
+| Nome worker (footer) | Tasto destro | Ore max… (globale) / Ghost |
 
 ---
 

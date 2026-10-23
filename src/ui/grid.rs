@@ -1244,7 +1244,16 @@ fn draw_cell_static(
         } else {
             crate::ui_style::text()
         };
-        paint_person_cell(ui, cell, text, color);
+        if wid.is_some() && wid == state.footer_selected_worker {
+            // Worker scelto nel footer: giallo grassetto su fondo scuro, come
+            // le altre evidenziazioni (grassetto = seconda passata spostata).
+            ui.painter().rect_filled(cell, 0.0, hi_bg());
+            for dx in [0.0, HI_BOLD_DX] {
+                paint_person_cell(ui, cell.translate(Vec2::new(dx, 0.0)), text, hi_text());
+            }
+        } else {
+            paint_person_cell(ui, cell, text, color);
+        }
     }
     if !note.is_empty() {
         resp.on_hover_text(note.to_string());

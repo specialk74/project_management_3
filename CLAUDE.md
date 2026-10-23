@@ -474,6 +474,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `grid_hover_records_column_and_worker_to_highlight`,
   `header_and_footer_paint_the_highlighted_date_and_worker`,
   `footer_hover_records_column_and_worker_to_highlight`.
+- **Footer worker name** (`draw_left_footer`): **left-click** toggles
+  `UiState.footer_selected_worker` (session only) via `toggle_selected_worker`
+  (same worker ⇒ off, another ⇒ switches); `draw_cell_static` paints that worker's
+  `Worker|ore` rows with `hi_bg()` + `hi_text()` (bold = second pass at `HI_BOLD_DX`),
+  and the footer name stays highlighted. **Right-click** menu: «Ore max…» (opens
+  `Popup::WorkerMax`, formerly on left-click) and «Ghost». Tests
+  `footer_click_toggles_and_switches_the_selected_worker`,
+  `selected_worker_is_highlighted_in_the_dev_cells`.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
