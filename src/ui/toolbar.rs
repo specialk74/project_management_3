@@ -489,11 +489,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                         resp.on_hover_text(format!("{txt} … {end}"));
                     }
                 } else if resp.clicked() {
-                    state.popup = Some(Popup::BulkWeekMax {
-                        week: w as usize,
-                        date: txt,
-                        text: DEFAULT_MAX_HOURS.to_string(),
-                    });
+                    state.popup = Some(bulk_week_popup(app, w as usize, txt));
                 }
             }
         });

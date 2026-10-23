@@ -789,8 +789,16 @@ Interazioni:
   compatta né sulle colonne con zoom, dove i nomi dei worker non compaiono.
 - **Tasto destro sul nome del worker** → menù con **Ore max…** (massimo ore
   **globale** del worker) e il toggle **Ghost** (vedi §8, «Worker "ghost"»).
-- **Click sull'intestazione di una settimana** (header) → imposta il massimo ore
-  di quella settimana **per tutti i worker**.
+- **Click sull'intestazione di una settimana** (header) **o sulla data nel
+  footer** → imposta il massimo ore di quella settimana **per tutti i worker**
+  (come impostarlo worker per worker). Non sulle colonne con zoom.
+  Nella stessa finestra la spunta **«Metti tutti i worker in ferie»** mette lo
+  stato **Ferie** a tutti i worker per quella settimana, tranne chi è già in
+  **Malattia** (resta in malattia). Le ore massime sono comunque quelle inserite
+  nella casella (o 40 con Default, 0 con Zero), per tutti. La spunta
+  vale per OK, Default e Zero. Se all'apertura tutti sono già in ferie la spunta
+  è accesa: togliendola e confermando, le ferie vengono rimosse e le ore tornano
+  al massimo del worker (poi si applica il limite inserito).
 
 ### Filtro effort del footer
 Sopra la sezione worker, tre pulsanti: **Tutti** / **Nulli** / **≥40**, per
@@ -1450,6 +1458,7 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | Categoria progetto | Click | Scegli categoria |
 | Striscia "Dev" | Click | Aggiungi/rimuovi dev |
 | Intestazione settimana | Click | Max ore settimana per tutti i worker |
+| Data nel footer | Click | Max ore settimana per tutti i worker |
 | Cella footer worker | Click / Tasto destro | Max ore settimana / stato e nota |
 | Nome worker (footer) | Click | Evidenzia/toglie il worker nelle celle dei dev |
 | Nome worker (footer) | Tasto destro | Ore max… (globale) / Ghost |

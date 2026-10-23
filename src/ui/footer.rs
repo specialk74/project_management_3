@@ -507,10 +507,20 @@ pub(crate) fn draw_right_footer(
             ui.painter().text(
                 hdr.center(),
                 Align2::CENTER_CENTER,
-                date,
+                &date,
                 cell_font(),
                 contrast_text(hdr_bg),
             );
+        }
+        // Click sulla data → limite ore della settimana per TUTTI i worker,
+        // come sulla data dell'intestazione in alto. Non sui gruppi mergiati.
+        if !merged {
+            let resp = ui
+                .interact(hdr, ui.id().with(("ftr_date", w)), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.clicked() {
+                state.popup = Some(bulk_week_popup(app, w as usize, date));
+            }
         }
 
         // celle sovra per worker

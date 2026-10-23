@@ -482,6 +482,18 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `Popup::WorkerMax`, formerly on left-click) and «Ghost». Tests
   `footer_click_toggles_and_switches_the_selected_worker`,
   `selected_worker_is_highlighted_in_the_dev_cells`.
+- **Footer date row** (`draw_right_footer`): left-click on a non-merged date opens
+  the same `Popup::BulkWeekMax` as the header date (→ `Action::SetBulkWeekLimit`,
+  all workers). Test `footer_date_click_opens_the_bulk_week_limit`.
+  The popup (built by `bulk_week_popup(app, week, date)`, shared by header and
+  footer) has the checkbox «Metti tutti i worker in ferie» (`Popup::BulkWeekMax {
+  holiday, holiday_initial }`, initial = `App::all_on_holiday(week)`), drawn via
+  `hours_popup_window_with(…, extra)`. Every confirm button sends
+  `SetBulkWeekLimit { holiday: Option<bool> }` → `App::set_bulk_week`: `Some(true)`
+  = limit (the typed hours, not forced to 0) then Ferie to everyone not in Malattia; `Some(false)` (unticked
+  after starting ticked) = drop Ferie and restore the global max, then limit;
+  `None` = limit only. Tests `bulk_week_holiday_keeps_the_typed_hours_and_spares_sick_workers`,
+  `bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice`.
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).

@@ -14,7 +14,7 @@ use crate::{
         parse_hex_rgb,
     },
     workers_utils::{
-        worker::{DEFAULT_MAX_HOURS, WorkerId},
+        worker::{DEFAULT_MAX_HOURS, WeekStatus, WorkerId},
         workers::Workers,
     },
 };
@@ -337,6 +337,49 @@ impl App {
         Ok(app)
     }
 
+    /// `true` se tutti i worker non in «Malattia» quella settimana sono in
+    /// «Ferie» (e ce n'è almeno uno): stato iniziale della spunta «ferie» del
+    /// limite settimana in bulk.
+    pub fn all_on_holiday(&self, week: usize) -> bool {
+        let mut any = false;
+        for (wid, _) in self.workers.list() {
+            match self.workers.get_week_status(wid, week) {
+                Some(WeekStatus::Malattia) => {}
+                Some(WeekStatus::Ferie) => any = true,
+                None => return false,
+            }
+        }
+        any
+    }
+
+    /// Limite settimana in bulk con la scelta sulle ferie:
+    /// - `Some(true)`: dopo il limite, ogni worker non in «Malattia» va in
+    ///   «Ferie»; le ore restano quelle del limite inserito;
+    /// - `Some(false)`: prima del limite, a chi era in «Ferie» si toglie lo stato
+    ///   e si ripristina il massimo globale (altrimenti il limite, che prende il
+    ///   minimo con l'attuale, lo lascerebbe al valore ridotto delle ferie);
+    /// - `None`: solo il limite (stati invariati).
+    pub fn set_bulk_week(&mut self, week: usize, hours: u32, holiday: Option<bool>) {
+        let worker_ids: Vec<_> = self.workers.list().iter().map(|(id, _)| *id).collect();
+        if holiday == Some(false) {
+            for &wid in &worker_ids {
+                if self.workers.get_week_status(wid, week) == Some(WeekStatus::Ferie) {
+                    self.workers.set_week_status(wid, week, None);
+                    let global_max = self.workers.get_max_hours(wid);
+                    self.workers.set_week_override(wid, week, global_max);
+                }
+            }
+        }
+        self.set_bulk_week_limit(week, hours);
+        if holiday == Some(true) {
+            for &wid in &worker_ids {
+                if self.workers.get_week_status(wid, week) != Some(WeekStatus::Malattia) {
+                    self.workers.set_week_status(wid, week, Some(WeekStatus::Ferie));
+                }
+            }
+        }
+    }
+
     /// Applies a bulk week limit to all workers: min(hours, effective_current) wins.
     /// If hours >= 40, removes the week override for every worker (reset).
     pub fn set_bulk_week_limit(&mut self, week: usize, hours: u32) {
@@ -393,6 +436,44 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bulk_week_holiday_keeps_the_typed_hours_and_spares_sick_workers() {
+        let mut app = App::new();
+        let a = app.workers.add("Alice");
+        let b = app.workers.add("Bob");
+        let c = app.workers.add("Carla");
+        app.workers.set_max_hours(b, 30);
+        let week = 20000;
+        app.workers.set_week_status(c, week, Some(WeekStatus::Malattia));
+        app.workers.set_week_override(c, week, 20);
+        assert!(!app.all_on_holiday(week));
+
+        app.set_bulk_week(week, 32, Some(true));
+        for (w, h) in [(a, 32), (b, 30)] {
+            assert_eq!(app.workers.get_week_status(w, week), Some(WeekStatus::Ferie));
+            assert_eq!(app.workers.get_effective_max_hours(w, week), h, "il limite inserito resta");
+        }
+        assert_eq!(app.workers.get_week_status(c, week), Some(WeekStatus::Malattia));
+        assert_eq!(app.workers.get_effective_max_hours(c, week), 20, "min(32, 20)");
+        assert!(app.all_on_holiday(week));
+        assert_eq!(app.workers.get_week_status(a, week + 7), None, "altre settimane invariate");
+
+        // Togliere le ferie ripristina le ore prima del limite (anche da 0 ore,
+        // come quando un worker è andato in ferie col suo override a 0).
+        app.workers.set_week_override(a, week, 0);
+        app.set_bulk_week(week, 35, Some(false));
+        assert_eq!(app.workers.get_week_status(a, week), None);
+        assert_eq!(app.workers.get_effective_max_hours(a, week), 35);
+        assert_eq!(app.workers.get_effective_max_hours(b, week), 30, "min(35, max 30)");
+        assert_eq!(app.workers.get_week_status(c, week), Some(WeekStatus::Malattia));
+        assert!(!app.all_on_holiday(week));
+
+        // `None`: solo il limite, stati invariati.
+        app.workers.set_week_status(a, week, Some(WeekStatus::Ferie));
+        app.set_bulk_week(week, DEFAULT_MAX_HOURS, None);
+        assert_eq!(app.workers.get_week_status(a, week), Some(WeekStatus::Ferie));
+    }
 
     #[test]
     fn project_milestone_survives_ron_round_trip_and_stays_private() {

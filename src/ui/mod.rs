@@ -131,6 +131,11 @@ pub(crate) enum Popup {
         week: usize,
         date: String,
         text: String,
+        /// Spunta «Metti tutti i worker in ferie».
+        holiday: bool,
+        /// Valore della spunta all'apertura (tutti già in ferie): toglierla
+        /// rimuove le ferie, lasciarla spenta non tocca gli stati.
+        holiday_initial: bool,
     },
 }
 
@@ -212,6 +217,20 @@ pub(crate) fn paint_highlight(ui: &egui::Ui, cell: Rect, text: &str) {
             cell_font(),
             hi_text(),
         );
+    }
+}
+
+/// Finestra «Limite settimana (tutti)» per la settimana `week` (click sulla
+/// data in alto o nel footer): la spunta ferie parte attiva se tutti i worker
+/// (esclusi quelli in malattia) sono già in ferie.
+pub(crate) fn bulk_week_popup(app: &App, week: usize, date: String) -> Popup {
+    let holiday = app.all_on_holiday(week);
+    Popup::BulkWeekMax {
+        week,
+        date,
+        text: DEFAULT_MAX_HOURS.to_string(),
+        holiday,
+        holiday_initial: holiday,
     }
 }
 
@@ -1190,9 +1209,12 @@ pub(crate) enum Action {
         week: usize,
         status: Option<WeekStatus>,
     },
+    /// Limite ore della settimana per tutti i worker; `holiday` vedi
+    /// `App::set_bulk_week` (`Some(true)` ferie, `Some(false)` togli, `None` invariato).
     SetBulkWeekLimit {
         week: usize,
         hours: u32,
+        holiday: Option<bool>,
     },
     MoveProjectUp {
         proj: ProjectId,
@@ -2530,8 +2552,12 @@ impl PjmApp {
                 self.app.workers.set_week_status(worker, week, status);
                 self.mark_changed();
             }
-            Action::SetBulkWeekLimit { week, hours } => {
-                self.app.set_bulk_week_limit(week, hours);
+            Action::SetBulkWeekLimit {
+                week,
+                hours,
+                holiday,
+            } => {
+                self.app.set_bulk_week(week, hours, holiday);
                 self.mark_changed();
             }
             Action::MoveProjectUp { proj } => {
@@ -4790,6 +4816,149 @@ mod tests {
         };
         assert_eq!(yellow_alice(None), 0);
         assert!(yellow_alice(Some(alice)) > 0, "la riga di Alice va evidenziata");
+    }
+
+    #[test]
+    fn bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice() {
+        let (mut app, alice, week) = highlight_fixture();
+        let week = week as usize;
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0));
+        // Disegna la finestra; se `click` è dato, clicca il testo indicato.
+        let run = |app: &App, state: &mut UiState, click: Option<&str>| -> Vec<Action> {
+            let mut actions = Vec::new();
+            let mut target = None;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                };
+                let out = ctx.run_ui(input, |ui| {
+                    popup_window(ui.ctx(), app, state, &mut actions);
+                });
+                for cs in &out.shapes {
+                    if let egui::epaint::Shape::Text(t) = &cs.shape {
+                        if Some(t.galley.text()) == click {
+                            target = Some(t.visual_bounding_rect().center());
+                        }
+                    }
+                }
+            }
+            if let Some(pos) = target {
+                for ev in [
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Default::default(),
+                    },
+                ] {
+                    let input = egui::RawInput {
+                        screen_rect: Some(screen),
+                        events: vec![ev],
+                        ..Default::default()
+                    };
+                    let _ = ctx.run_ui(input, |ui| {
+                        popup_window(ui.ctx(), app, state, &mut actions);
+                    });
+                }
+            }
+            actions
+        };
+        let holiday_of = |state: &UiState| match &state.popup {
+            Some(Popup::BulkWeekMax { holiday, .. }) => Some(*holiday),
+            _ => None,
+        };
+
+        // Nessuno in ferie: spunta spenta, la si accende e OK manda Some(true).
+        let mut state = UiState {
+            popup: Some(bulk_week_popup(&app, week, "d".into())),
+            ..Default::default()
+        };
+        assert_eq!(holiday_of(&state), Some(false));
+        assert!(run(&app, &mut state, Some("Metti tutti i worker in ferie")).is_empty());
+        assert_eq!(holiday_of(&state), Some(true));
+        let acts = run(&app, &mut state, Some("OK"));
+        assert!(matches!(
+            acts.as_slice(),
+            [Action::SetBulkWeekLimit { holiday: Some(true), .. }]
+        ));
+
+        // Spunta mai toccata: OK non cambia gli stati.
+        let mut state = UiState {
+            popup: Some(bulk_week_popup(&app, week, "d".into())),
+            ..Default::default()
+        };
+        let acts = run(&app, &mut state, Some("OK"));
+        assert!(matches!(
+            acts.as_slice(),
+            [Action::SetBulkWeekLimit { holiday: None, .. }]
+        ));
+
+        // Tutti in ferie: la spunta parte accesa; spegnendola OK manda Some(false).
+        app.workers.set_week_status(alice, week, Some(WeekStatus::Ferie));
+        let mut state = UiState {
+            popup: Some(bulk_week_popup(&app, week, "d".into())),
+            ..Default::default()
+        };
+        assert_eq!(holiday_of(&state), Some(true));
+        run(&app, &mut state, Some("Metti tutti i worker in ferie"));
+        let acts = run(&app, &mut state, Some("OK"));
+        assert!(matches!(
+            acts.as_slice(),
+            [Action::SetBulkWeekLimit { holiday: Some(false), .. }]
+        ));
+    }
+
+    #[test]
+    fn footer_date_click_opens_the_bulk_week_limit() {
+        let (app, _alice, week) = highlight_fixture();
+        let workers = footer_workers(&app, &Filter::default());
+        let cols = columns_vec(&app, 0);
+        let ctx = egui::Context::default();
+        let mut state = UiState::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3000.0, 900.0));
+        let right = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(cols_width(&cols, COL_W), 400.0),
+        );
+        let pos = egui::pos2(COL_W / 2.0, ROW_H / 2.0);
+        for ev in [
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ] {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events: vec![ev],
+                ..Default::default()
+            };
+            let mut actions = Vec::new();
+            let _ = ctx.run_ui(input, |ui| {
+                draw_right_footer(ui, right, &app, &mut state, &workers, &cols, &mut actions);
+            });
+        }
+        assert!(
+            matches!(state.popup, Some(Popup::BulkWeekMax { week: w, .. }) if w == week as usize),
+            "il click sulla data del footer apre il limite per tutti i worker"
+        );
     }
 
     #[test]

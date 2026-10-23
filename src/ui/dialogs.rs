@@ -1586,9 +1586,23 @@ pub(crate) fn popup_window(
                 global_max,
             );
         }
-        Popup::BulkWeekMax { week, date, text } => {
+        Popup::BulkWeekMax {
+            week,
+            date,
+            text,
+            holiday,
+            holiday_initial,
+        } => {
             // "Default" = 40 → azzera l'override per tutti i worker su questa settimana.
-            hours_popup_window(
+            // La spunta ferie vale per tutti i pulsanti di conferma (non Annulla):
+            // accesa ⇒ ferie, con le ore inserite (chi è in malattia resta in malattia);
+            // spenta dopo essere partita accesa ⇒ ferie tolte; altrimenti invariato.
+            let choice = if *holiday || *holiday_initial {
+                Some(*holiday)
+            } else {
+                None
+            };
+            hours_popup_window_with(
                 ctx,
                 &format!("Limite settimana (tutti) - {date}"),
                 text,
@@ -1596,9 +1610,21 @@ pub(crate) fn popup_window(
                 &mut close,
                 just_opened,
                 |hours| {
-                    actions.push(Action::SetBulkWeekLimit { week: *week, hours });
+                    actions.push(Action::SetBulkWeekLimit {
+                        week: *week,
+                        hours,
+                        holiday: choice,
+                    });
                 },
                 DEFAULT_MAX_HOURS,
+                |ui| {
+                    ui.checkbox(holiday, "Metti tutti i worker in ferie")
+                        .on_hover_text(
+                            "Stato «Ferie» per la settimana a tutti i worker, tranne \
+                             quelli in «Malattia»; le ore sono quelle inserite. Togliendo la spunta \
+                             (se tutti erano in ferie) le ferie vengono rimosse.",
+                        );
+                },
             );
         }
     }
@@ -1658,7 +1684,34 @@ pub(crate) fn date_popup_window(
 /// Finestra con campo numerico (ore max) + OK / Default / Annulla.
 /// `on_confirm` riceve le ore (u32); il pulsante "Default" conferma `default_hours`,
 /// che azzera l'override/limite (vedi `Worker::set_max_hours` / `set_week_override`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn hours_popup_window(
+    ctx: &egui::Context,
+    title: &str,
+    text: &mut String,
+    open: &mut bool,
+    close: &mut bool,
+    just_opened: bool,
+    on_confirm: impl FnMut(u32),
+    default_hours: u32,
+) {
+    hours_popup_window_with(
+        ctx,
+        title,
+        text,
+        open,
+        close,
+        just_opened,
+        on_confirm,
+        default_hours,
+        |_| {},
+    );
+}
+
+/// Come `hours_popup_window`, con `extra` disegnato tra il campo e i pulsanti
+/// (letto prima della conferma, quindi i valori scelti valgono per i pulsanti).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn hours_popup_window_with(
     ctx: &egui::Context,
     title: &str,
     text: &mut String,
@@ -1667,6 +1720,7 @@ pub(crate) fn hours_popup_window(
     just_opened: bool,
     mut on_confirm: impl FnMut(u32),
     default_hours: u32,
+    extra: impl FnOnce(&mut egui::Ui),
 ) {
     egui::Window::new(title)
         .collapsible(false)
@@ -1683,6 +1737,7 @@ pub(crate) fn hours_popup_window(
                 le.request_focus();
             }
             let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            extra(ui);
             ui.horizontal(|ui| {
                 if ui.button("OK").clicked() || entered {
                     if let Ok(hours) = text.trim().parse::<u32>() {
