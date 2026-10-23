@@ -356,6 +356,9 @@ pub(crate) fn toolbar(
             ui.separator();
             if ui.button("Saturazione worker…").clicked() {
                 state.show_saturation = true;
+                // Si apre sempre da settimana corrente; la spunta resta
+                // modificabile finché la finestra è aperta.
+                state.saturation_future_only = true;
                 ui.close_menu();
             }
             if ui.button("Matrice progetti/worker…").clicked() {

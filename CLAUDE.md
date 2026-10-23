@@ -322,6 +322,20 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
     entro il 31/12 conta nell'anno) e `dal_1_1 = mancante − fino_31_12` (negativo
     ⇒ rosso). Titoli dei gruppi rimpiccioliti se non entrano.
 - **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
+  Finestra ridimensionabile in entrambe le direzioni (gli scroll riempiono
+  `available_height`). Colonne = `SatCol { year, label, full, weeks }`
+  (`saturation_columns`: label `mm-dd` / `mm` senza anno, `full` col year per il
+  tooltip). L'intestazione (riga anno da `year_spans` + riga date) è disegnata da
+  `draw_saturation_header` in uno `ScrollArea::horizontal` a parte, **fuori** dallo
+  scroll verticale, che segue `UiState.sat_scroll_x` del corpo; la colonna fissa
+  segue `sat_scroll_y`. Allineamento a passo fisso `SAT_CW + SAT_GAP` (griglia con
+  `min_col_width(SAT_CW)`), `SAT_HEAD_PAD` compensa la barra verticale del corpo.
+  Test `header_stays_visible_and_aligned_when_scrolled_down`.
+  The menu item re-ticks `saturation_future_only` on every opening.
+  Hover: the heat cell under the pointer writes `(worker, col index)` into a local
+  `hover_next`, published to `UiState.sat_hover` at the end (repaint on change);
+  header and fixed column, drawn first, read `sat_hover` and paint date / name with
+  `hi_bg()`/`hi_text()`/`HI_BOLD_DX`. Test `hovering_a_cell_highlights_its_worker_and_week`.
   **Matrice progetti/worker…**: prima `matrix_select_window` (worker `show_in_find`,
   ricerca + Select All → `UiState.matrix_workers`, **solo sessione**), poi
   `matrix_window` (`UiState.matrix_from`/`matrix_to: Option<i32>` in giorni, `None` =

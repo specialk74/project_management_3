@@ -863,6 +863,13 @@ pub struct UiState {
     // offset verticale condiviso tra colonna fissa (nome+Σ) e heatmap, così le
     // due parti scorrono insieme mentre la heatmap scorre in orizzontale
     sat_scroll_y: f32,
+    // offset orizzontale della heatmap, seguito dall'intestazione (anno + date)
+    // che sta fuori dallo scroll verticale e quindi resta sempre visibile
+    sat_scroll_x: f32,
+    // cella della heatmap sotto il cursore nel frame precedente (worker, indice
+    // di colonna): intestazione e colonna fissa sono disegnate prima delle celle,
+    // quindi leggono questo valore per evidenziare data e nome
+    sat_hover: Option<(WorkerId, usize)>,
     // Matrice progetti × worker (Vista ▸ Matrice progetti/worker…): dialog di
     // scelta dei worker, finestra della matrice, worker scelti (ricordati per
     // la sessione, non persistiti) e intervallo di date (`None` = oggi).

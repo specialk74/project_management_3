@@ -1036,7 +1036,8 @@ filtro worker Ctrl+F). Contiene:
 
 - un selettore **Settimana / Mese** (granularità);
 - una casella **"Solo da settimana corrente"** che nasconde le settimane passate
-  (mostra solo presente e futuro);
+  (mostra solo presente e futuro). È **già spuntata a ogni apertura** della
+  finestra; togliendola si vedono anche le settimane passate;
 - un **riepilogo**: numero di sovra-allocazioni e ore in eccesso totali;
 - una **colonna fissa** a sinistra con il **nome del worker** e la colonna **Σ**
   (totale allocato/capacità e numero di settimane in sovra): resta **sempre visibile**
@@ -1050,10 +1051,18 @@ filtro worker Ctrl+F). Contiene:
   (**verde** = libero, **giallo** = pieno, **rosso** = oltre capacità); ogni cella
   mostra le ore, col tooltip `allocato / capacità`, ed è cliccabile per saltare a
   quella settimana nella griglia; la **settimana corrente** è evidenziata (chip
-  verde nell'intestazione e bordo verde brillante sulle celle).
+  verde nell'intestazione e bordo verde brillante sulle celle);
+- un'**intestazione su due righe**: sopra l'**anno** di riferimento (una fascia per
+  anno, a toni alterni), sotto le date **senza l'anno** — `mm-gg` del lunedì nella
+  vista Settimana, `mm` nella vista Mese. Il tooltip delle celle riporta la data
+  completa. L'intestazione **resta sempre visibile** scorrendo in basso tra i
+  worker, e segue lo scorrimento orizzontale.
+- **evidenziazione al passaggio del mouse**: come nella griglia e nel footer, col
+  cursore su una cella della heatmap la **data** della colonna e il **nome del
+  worker** diventano gialli in grassetto su fondo scuro.
 
-La finestra **non è ridimensionabile**: per vedere quale settimana è stata
-selezionata basta **spostarla**. Nota: **ferie/malattia non azzerano la capacità**
+La finestra è **ridimensionabile** in larghezza e in altezza, fino a tutto lo
+schermo: la heatmap riempie lo spazio disponibile. Nota: **ferie/malattia non azzerano la capacità**
 (si possono fare pochi giorni di ferie e lavorare gli altri), quindi il conteggio
 ore resta quello reale.
 
