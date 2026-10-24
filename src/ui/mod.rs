@@ -2888,6 +2888,9 @@ fn common_prefix(strings: &[String]) -> String {
     first[..len].to_string()
 }
 
+/// Completamento del nome worker digitato in una cella. Propone solo i worker
+/// con la spunta «Elenchi» (`show_in_find`): chi non è più visibile non viene
+/// suggerito, ma scrivendone il nome per intero lo si può ancora inserire.
 fn find_completion(app: &App, prefix: &str, pipe: bool) -> String {
     if prefix.is_empty() {
         return String::new();
@@ -2896,7 +2899,9 @@ fn find_completion(app: &App, prefix: &str, pipe: bool) -> String {
         .workers
         .list()
         .into_iter()
-        .filter(|(id, name)| *id != WORKER_ID_ZERO && name.starts_with(prefix))
+        .filter(|(id, name)| {
+            *id != WORKER_ID_ZERO && app.workers.is_shown_in_find(*id) && name.starts_with(prefix)
+        })
         .map(|(_, name)| name)
         .collect();
     if matches.is_empty() {

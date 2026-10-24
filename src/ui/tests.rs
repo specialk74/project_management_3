@@ -2627,3 +2627,28 @@ fn right_drag_scrolls_the_grid_both_ways() {
     assert!(state.scroll_y > 150.0, "verticale: {}", state.scroll_y);
 }
 
+/// L'autocompletamento della cella non propone i worker senza la spunta
+/// «Elenchi»; scritto per intero, però, un nome nascosto viene accettato.
+#[test]
+fn cell_completion_skips_workers_hidden_from_lists() {
+    let mut app = App::new();
+    app.workers.add("Marco");
+    let mario = app.workers.add("Mario");
+    app.workers.set_shown_in_find(mario, false);
+    // «Mar»: resta solo Marco, completato col separatore.
+    assert_eq!(find_completion(&app, "Mar", true), "Marco|");
+    // «Mari»: Mario è nascosto, nessun suggerimento (resta il digitato).
+    assert_eq!(find_completion(&app, "Mari", true), "");
+    let (mut typed, mut buf) = ("Mari".to_string(), String::new());
+    recompute_completion(&app, &mut typed, &mut buf);
+    assert_eq!(buf, "Mari");
+    // Rimesso negli elenchi torna a essere proposto.
+    app.workers.set_shown_in_find(mario, true);
+    assert_eq!(find_completion(&app, "Mari", true), "Mario|");
+    // Nome nascosto scritto per intero: la cella lo accetta.
+    app.workers.set_shown_in_find(mario, false);
+    let (name, effort) = parse_cell("Mario|8").unwrap();
+    assert_eq!(app.workers.get_id_by_name(name), Some(mario));
+    assert_eq!(effort, 8);
+}
+

@@ -598,7 +598,10 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   week labels come from `date_utils::dates::week_label(days)`; the project's
   display name is `Project::label(id)` (via `ui::project_label`).
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
-  autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
+  autocomplete (`find_completion`: **only workers with `show_in_find`** — the
+  «Elenchi» tick —; a hidden worker typed in full is still accepted on commit;
+  test `cell_completion_skips_workers_hidden_from_lists`); `Enter`/`Tab` commit,
+  `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
 - **Bulk fill** (`UiState.bulk_fill: Option<BulkFill>` + `bulk_fill_window` in
   `dialogs.rs`): right-click an **empty** grid cell → dialog with the `show_in_find`

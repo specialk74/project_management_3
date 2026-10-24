@@ -510,7 +510,10 @@ cella stessa; sul **nome di un worker** (parte sinistra del footer) il solo work
 ### Modificare una cella
 1. **Click** sulla cella: entra in modalità modifica (sfondo evidenziato, cursore).
 2. Digita il nome del worker: parte l'**autocompletamento** (suggerisce i worker
-   esistenti). Poi il separatore `|` e le ore.
+   esistenti). Poi il separatore `|` e le ore. Non vengono suggeriti i worker
+   tolti dagli elenchi (spunta **«Elenchi»** spenta in **Filtri ▸ Worker
+   (visibilità e ghost)…**); se ne scrivi il nome per intero, però, la cella li
+   accetta.
 3. Conferma con **Invio** o **Tab**; annulla con **Esc**.
 
 Le celle prima dell'inizio o dopo la fine del progetto non sono editabili.
