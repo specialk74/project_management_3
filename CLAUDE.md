@@ -209,6 +209,17 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   (`Auto`/`Light`/`Dark`); `Auto` reads `ctx.system_theme()`. egui's own `Visuals`
   are set to match so menus/popups/text-edits follow the theme too.
 
+### egui API conventions
+
+The build has **zero warnings**: don't reintroduce deprecated egui 0.34 APIs. To
+close a menu from one of its items use `ui.close_kind(egui::UiKind::Menu)` (what the
+old `close_menu()` did; `ui.close()` closes the *nearest* closable, which can be just
+a submenu); panels are `egui::Panel::{left,right,top,bottom}` with
+`exact_size`/`default_size`; the toolbar uses `egui::MenuBar::new().ui(…)`; a
+non-scrollable synced `ScrollArea` uses `.scroll_source(ScrollSource::NONE)`;
+`ctx.content_rect()`, `Button::selectable`, `ui.scope_builder`; tests use
+`ctx.run_ui` + `show_inside`.
+
 ### Toolbar menus (in `toolbar`)
 
 - **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Report… (PDF riepilogo progetti), Esci.

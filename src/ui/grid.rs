@@ -30,8 +30,8 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
     }
 
     // Colonna sinistra: larghezza fissa, scroll verticale che segue la griglia.
-    egui::SidePanel::left("leftcol")
-        .exact_width(LEFT_W)
+    egui::Panel::left("leftcol")
+        .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |ui| {
@@ -39,7 +39,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             egui::ScrollArea::vertical()
                 .id_salt("left_scroll")
                 .vertical_scroll_offset(sy)
-                .enable_scrolling(false)
+                .scroll_source(egui::scroll_area::ScrollSource::NONE)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.with_layout(top_down, |ui| {
@@ -2001,11 +2001,11 @@ pub(crate) fn draw_left_devs(
         nresp.context_menu(|ui| {
             if ui.button("Aggiungi riga").clicked() {
                 actions.push(Action::AddRow { proj, dev: *dev });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Elimina riga").clicked() {
                 actions.push(Action::DelRow { proj, dev: *dev });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             if ui
@@ -2034,7 +2034,7 @@ pub(crate) fn draw_left_devs(
                     target: NoteTarget::Dev { proj, dev: *dev },
                     text: dev_note.clone(),
                 });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             let label = if hide_effort {
@@ -2048,7 +2048,7 @@ pub(crate) fn draw_left_devs(
                     dev: *dev,
                     hide: !hide_effort,
                 });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
         if !dev_note.is_empty() {

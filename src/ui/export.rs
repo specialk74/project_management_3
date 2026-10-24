@@ -369,8 +369,8 @@ pub(crate) fn pdf_export_window(
     // allo schermo, così su monitor HD la dialog resta gestibile (contenuti
     // scrollabili). Gli elenchi mostrano comunque al massimo
     // `MAX_VISIBLE_EXPORT_ROWS` righe ciascuno, poi scorrono.
-    let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
-    let list_max = (ctx.screen_rect().height() * 0.30).max(110.0);
+    let maxh = (ctx.content_rect().height() - 90.0).max(320.0);
+    let list_max = (ctx.content_rect().height() * 0.30).max(110.0);
     let dev_rows = egui::Id::new("pdf_dev_list_rows");
     let ms_rows = egui::Id::new("pdf_milestone_list_rows");
 
@@ -691,7 +691,7 @@ pub(crate) fn pdf_multi_export_window(
     let mut cancel = false;
 
     // Cap dell'altezza per schermi HD: l'elenco progetti scorre da sé.
-    let maxh = (ctx.screen_rect().height() - 90.0).max(320.0);
+    let maxh = (ctx.content_rect().height() - 90.0).max(320.0);
 
     egui::Window::new("Esporta PDF")
         .collapsible(false)

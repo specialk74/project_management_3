@@ -36,16 +36,16 @@ pub(crate) fn toolbar(
     state: &mut UiState,
     actions: &mut Vec<Action>,
 ) {
-    egui::menu::bar(ui, |ui| {
+    egui::MenuBar::new().ui(ui, |ui| {
         // ── File ─────────────────────────────────────────────────────────────
         ui.menu_button("File", |ui| {
             if ui.button("Salva").clicked() {
                 actions.push(Action::Save);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Apri…").clicked() {
                 actions.push(Action::Open);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .button("Confronta/Importa progetto…")
@@ -55,12 +55,12 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 actions.push(Action::OpenCompare);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             if ui.button("Esporta…").clicked() {
                 actions.push(Action::ExportPdf);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .button("Andamento…")
@@ -68,7 +68,7 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 actions.push(Action::ExportTrend);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Minuta…").clicked() {
                 // Apre la dialog con i progetti del corpo centrale (abilitati +
@@ -82,7 +82,7 @@ pub(crate) fn toolbar(
                     only_with_notes: true,
                     worker_notes: false,
                 });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .button("Report…")
@@ -100,14 +100,14 @@ pub(crate) fn toolbar(
                         .map(|id| (id, true))
                         .collect(),
                 });
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             if ui.button("Esci").clicked() {
                 // Richiede la chiusura: se ci sono modifiche non salvate,
                 // `handle_exit` intercetta e mostra la conferma; altrimenti esce.
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
 
@@ -126,11 +126,11 @@ pub(crate) fn toolbar(
             .ui(ui, |ui| {
                 if ui.button("+ Progetto").clicked() {
                     actions.push(Action::NewProject);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 if ui.button("Clona progetto…").clicked() {
                     state.clone_project = Some(CloneProject::default());
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 ui.separator();
 
@@ -178,7 +178,7 @@ pub(crate) fn toolbar(
             // la colonna che riceve il focus. La spunta segnala il filtro attivo.
             if ui.button("Progetti…  (⌘/Ctrl+P)").clicked() {
                 toggle_filters(state, FilterPane::Projects);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             let filter_on = state.worker_filter.is_some();
             if ui
@@ -190,7 +190,7 @@ pub(crate) fn toolbar(
             {
                 state.worker_filter_current_week = false;
                 toggle_filters(state, FilterPane::Workers);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(
@@ -201,43 +201,43 @@ pub(crate) fn toolbar(
             {
                 state.worker_filter_current_week = true;
                 toggle_filters(state, FilterPane::Workers);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(state.dev_filter.is_some(), "Dev…  (⌘/Ctrl+D)")
                 .clicked()
             {
                 toggle_filters(state, FilterPane::Devs);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(state.category_filter.is_some(), "Categorie…  (⌘/Ctrl+K)")
                 .clicked()
             {
                 toggle_filters(state, FilterPane::Categories);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(state.year_filter.is_some(), "Anni…  (⌘/Ctrl+Y)")
                 .clicked()
             {
                 toggle_filters(state, FilterPane::Years);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Milestone…").clicked() {
                 state.show_milestone_manager = !state.show_milestone_manager;
                 state.milestone_manager_just_opened = state.show_milestone_manager;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Worker (visibilità e ghost)…").clicked() {
                 state.show_worker_visibility = !state.show_worker_visibility;
                 state.worker_visibility_just_opened = state.show_worker_visibility;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Dev nei totali…").clicked() {
                 state.show_dev_totals = !state.show_dev_totals;
                 state.dev_totals_just_opened = state.show_dev_totals;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             let closed_btn = ui.button("Stato progetti…");
             // La finestra "Stato progetti" si ancora sotto questa voce di menù.
@@ -245,7 +245,7 @@ pub(crate) fn toolbar(
             if closed_btn.clicked() {
                 state.show_closed_filter = !state.show_closed_filter;
                 state.closed_filter_just_opened = state.show_closed_filter;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
 
@@ -256,11 +256,11 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 state.compact_mode = !state.compact_mode;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.selectable_label(state.bw_mode, "Bianco/Nero").clicked() {
                 state.bw_mode = !state.bw_mode;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             // Modalità progetti: filtra il corpo centrale (e di riflesso gli
@@ -278,7 +278,7 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 state.project_view = ProjectViewMode::Open;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(
@@ -288,7 +288,7 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 state.project_view = ProjectViewMode::Closed;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(
@@ -298,7 +298,7 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 state.project_view = ProjectViewMode::All;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             // Tema chiaro/scuro: Auto segue il sistema (macOS "Automatico" =
@@ -309,21 +309,21 @@ pub(crate) fn toolbar(
                 .clicked()
             {
                 state.theme_pref = ThemePref::Auto;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(state.theme_pref == ThemePref::Light, "Chiaro")
                 .clicked()
             {
                 state.theme_pref = ThemePref::Light;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui
                 .selectable_label(state.theme_pref == ThemePref::Dark, "Scuro")
                 .clicked()
             {
                 state.theme_pref = ThemePref::Dark;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             ui.separator();
             // Zoom settimane: mergia 2 o 4 settimane (somma effort, sola lettura).
@@ -359,11 +359,11 @@ pub(crate) fn toolbar(
                 // Si apre sempre da settimana corrente; la spunta resta
                 // modificabile finché la finestra è aperta.
                 state.saturation_future_only = true;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Matrice progetti/worker…").clicked() {
                 state.matrix_select_open = true;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
 
@@ -371,7 +371,7 @@ pub(crate) fn toolbar(
         ui.menu_button("Aiuto", |ui| {
             if ui.button("Manuale d'uso…").clicked() {
                 state.show_help = true;
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         });
 
@@ -408,10 +408,10 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
         state.zoom_level
     };
     let cols = columns_vec(app, level);
-    // Riserva i 300px sinistri con lo stesso meccanismo della griglia (SidePanel),
+    // Riserva i 300px sinistri con lo stesso meccanismo della griglia (`Panel::left`),
     // così l'origine X delle colonne coincide esattamente.
-    egui::SidePanel::left("hdr_left")
-        .exact_width(LEFT_W)
+    egui::Panel::left("hdr_left")
+        .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |_ui| {});
@@ -419,7 +419,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
     egui::ScrollArea::horizontal()
         .id_salt("header_scroll")
         .scroll_offset(Vec2::new(state.scroll_x, 0.0))
-        .enable_scrolling(false)
+        .scroll_source(egui::scroll_area::ScrollSource::NONE)
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;

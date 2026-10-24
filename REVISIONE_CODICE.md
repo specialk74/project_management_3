@@ -18,8 +18,8 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Misura | Inizio (2026-10-24) | Ora |
 |---|---|---|
 | Righe Rust | ~28.000 | ~28.000 |
-| Warning `cargo build` | 82 | 61 (tutti API egui deprecate → A2) |
-| Warning `cargo clippy` | ~135 | 114 |
+| Warning `cargo build` | 82 | **0** |
+| Warning `cargo clippy` | ~135 | 53 (stile → E3) |
 | Test | 275 verdi | 280 verdi |
 
 ## Ordine consigliato
@@ -27,7 +27,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 1. ~~**A1, A3–A7, D3** — pulizia a rischio nullo~~ ✅ fatto
 2. ~~**D1, D2** — bug latenti~~ ✅ fatto
 3. ~~**C1, C2** — il guadagno di velocità più visibile~~ ✅ fatto
-4. **A2** — migrazione API egui deprecate
+4. ~~**A2** — migrazione API egui deprecate~~ ✅ fatto
 5. **B2–B7, C3–C5** — duplicati e ottimizzazioni minori
 6. **B1, B9, E1–E3** — riordino
 7. **B10** — a parte: la modifica più invasiva
@@ -41,12 +41,25 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `export.rs` (2). _Impatto: Alto · Rischio: Nullo._
   _(fatto: letterali `1.0_f32`/`2.0_f32`… nei `Stroke::new`; 0 warning rimasti)_
 
-- [ ] **A2. 50 usi di API egui deprecate** — `close_menu` (35: 31 in `toolbar.rs`,
+- [x] **A2. 50 usi di API egui deprecate** — `close_menu` (35: 31 in `toolbar.rs`,
   4 in `grid.rs`), `SidePanel`/`TopBottomPanel` (8), `exact_width` (3),
   `screen_rect` (4), `enable_scrolling` (3), `SelectableLabel` (2), `menu::bar`,
   `allocate_new_ui`, `style_mut`, `default_width`. Spariranno al prossimo
   aggiornamento di egui. Proposta: passare alle API nuove (sostituzione 1:1; i test
   dei menù lo coprono). _Impatto: Medio · Rischio: Basso._
+  _(fatto: verificato nel sorgente di egui 0.34.3 che ogni funzione deprecata chiama
+  la nuova, quindi il comportamento è identico: `close_menu()` →
+  `close_kind(UiKind::Menu)` (non `close()`, che chiuderebbe il contenitore più
+  vicino), `SidePanel`/`TopBottomPanel` → `Panel`, `exact_width`/`default_width` →
+  `exact_size`/`default_size`, `enable_scrolling(false)` →
+  `scroll_source(ScrollSource::NONE)`, `screen_rect` → `content_rect`,
+  `SelectableLabel::new` → `Button::selectable`, `allocate_new_ui` →
+  `scope_builder`, `style_mut` → `global_style_mut`. **Unica differenza**:
+  `menu::bar` → `MenuBar`: con un menù aperto, passando il mouse su un altro menù
+  della barra si apre quello (come nelle barre dei menù normali); lo stile è lo
+  stesso. Migrati anche i 13 usi deprecati **nei test** (`Context::run` →
+  `run_ui`, `Panel::show(ctx)` → `show_inside`), non conteggiati all'inizio.
+  Build: 0 warning)_
 
 - [x] **A3. `#![allow(unused)]` / `#![allow(dead_code)]` in 10 file del modello**
   (`projects.rs`, `project.rs`, `single_dev.rs`, `worker.rs`, `workers.rs`,
@@ -192,9 +205,12 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `src/ui/tests.rs`.
 - [ ] **E2.** Refusi nei nomi dei file: `sinlge_effort.rs`,
   `sinlge_effort_week.rs` → `single_…`.
-- [ ] **E3.** Stile clippy: ~32 `if` annidabili, 21 assegnazioni dopo
-  `Default::default()` (test), `mut` inutili, 4 `run_ui` con risultato ignorato nei
-  test, ecc. Sistemabili in modo meccanico con `cargo clippy --fix`.
+- [ ] **E3.** Stile clippy (53 warning nel codice, ~85 contando i test): ~32 `if`
+  annidabili, 21 assegnazioni dopo `Default::default()` (test), `mut` inutili, 4
+  `run_ui` con risultato ignorato nei test, ecc. Sistemabili in modo meccanico con
+  `cargo clippy --fix`. Nota: il repo **non** è formattato con `rustfmt` (152
+  differenze già all'ultimo commit): un `cargo fmt` globale toccherebbe molti file,
+  va deciso a parte.
 - [ ] **E4.** Nella radice ~10 copie/backup di `.ron` (già ignorati da git). Dati
   dell'utente: **non si toccano** senza richiesta esplicita.
 
@@ -222,3 +238,5 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
 - **2026-10-24** — Fatto il punto 3 dell'ordine consigliato (C1, C2). Griglia
   10,4 → 0,5 ms per frame sul file reale. Warning build 61, clippy 114 (invariati),
   280 test verdi (+2).
+- **2026-10-24** — Fatto il punto 4 dell'ordine consigliato (A2), compresi gli usi
+  deprecati nei test. Warning build 61 → **0**, clippy 114 → 53, 280 test verdi.

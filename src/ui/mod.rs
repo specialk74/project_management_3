@@ -1356,7 +1356,7 @@ impl PjmApp {
         cc: &eframe::CreationContext<'_>,
     ) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        cc.egui_ctx.style_mut(|s| s.interaction.tooltip_delay = 0.0);
+        cc.egui_ctx.global_style_mut(|s| s.interaction.tooltip_delay = 0.0);
         install_symbol_fallback(&cc.egui_ctx);
 
         let today = today();
@@ -1771,10 +1771,10 @@ impl eframe::App for PjmApp {
             // Evidenziazione data/worker: la griglia la raccoglie da zero.
             state.grid_hl_next = GridHighlight::default();
 
-            egui::TopBottomPanel::top("toolbar")
+            egui::Panel::top("toolbar")
                 .show_inside(ui, |ui| toolbar(ui, app, state, &mut actions));
 
-            egui::TopBottomPanel::top("header")
+            egui::Panel::top("header")
                 .frame(egui::Frame::NONE.fill(bg()))
                 .show_inside(ui, |ui| header(ui, app, state));
 
@@ -1783,11 +1783,11 @@ impl eframe::App for PjmApp {
             if !state.compact_mode {
                 if state.footer_hidden {
                     // Solo la maniglia: triangolino verso l'alto per riaprire.
-                    egui::TopBottomPanel::bottom("footer_handle")
+                    egui::Panel::bottom("footer_handle")
                         .frame(egui::Frame::NONE.fill(bg()))
                         .show_inside(ui, |ui| footer_handle(ui, state));
                 } else {
-                    egui::TopBottomPanel::bottom("footer")
+                    egui::Panel::bottom("footer")
                         .frame(egui::Frame::NONE.fill(bg()))
                         .show_inside(ui, |ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -3475,7 +3475,7 @@ fn milestone_category_items(
         let last = on && cats.len() == 1;
         let text = if compact { c.short() } else { c.label() };
         let resp = ui
-            .add_enabled(!last, egui::SelectableLabel::new(on, text))
+            .add_enabled(!last, egui::Button::selectable(on, text))
             .on_hover_text(match c {
                 MilestoneCategory::Internal => "Stampata nel PDF Internal (e nel Mix)",
                 MilestoneCategory::External => "Stampata nel PDF External (e nel Mix)",
@@ -3842,7 +3842,8 @@ mod tests {
         let consumed = Cell::new(0.0);
         // Due frame: la prima registra le aree, la seconda misura a layout stabile.
         for _ in 0..2 {
-            let _ = ctx.run(input.clone(), |ctx| {
+            let _ = ctx.run_ui(input.clone(), |ui| {
+                let ctx = ui.ctx();
                 egui::Window::new("test").show(ctx, |ui| {
                     let before = ui.cursor().top();
                     project_checklist(ui, &app, &mut entries);
@@ -4064,7 +4065,8 @@ mod tests {
         ));
         for _ in 0..2 {
             let mut actions: Vec<Action> = Vec::new();
-            let _ = ctx.run(input.clone(), |ctx| {
+            let _ = ctx.run_ui(input.clone(), |ui| {
+                let ctx = ui.ctx();
                 bulk_fill_window(ctx, &app, &mut state, &mut actions);
             });
             assert!(
@@ -5528,7 +5530,8 @@ mod tests {
         };
         let mut actions: Vec<Action> = Vec::new();
         for _ in 0..2 {
-            let _ = ctx.run(input.clone(), |ctx| {
+            let _ = ctx.run_ui(input.clone(), |ui| {
+                let ctx = ui.ctx();
                 pdf_export_window(ctx, &app, &mut state, &mut actions);
             });
         }
@@ -5697,8 +5700,8 @@ mod tests {
             }
             menu_open.set(false);
             sub_open.set(false);
-            let _ = ctx.run(inp, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ctx.run_ui(inp, |ui| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     // Stessa struttura di `draw_milestone_strip`: una zona che
                     // risponde al tasto destro, un sottomenù col campo dentro.
                     let (rect, resp) =
@@ -5813,8 +5816,8 @@ mod tests {
                 inp.events = pending.remove(0);
             }
             menu_open.set(false);
-            let out = ctx.run(inp, |ctx| {
-                egui::TopBottomPanel::top("t").show(ctx, |ui| {
+            let out = ctx.run_ui(inp, |ui| {
+                egui::Panel::top("t").show_inside(ui, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
                         // Stessa configurazione del menù «Aggiungi» in toolbar.rs.
                         let (btn, _) = egui::containers::menu::MenuButton::new("Aggiungi")
@@ -5870,7 +5873,7 @@ mod tests {
     fn milestone_kind_icons_are_renderable() {
         let ctx = egui::Context::default();
         install_symbol_fallback(&ctx);
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         let font = egui::FontId::proportional(14.0);
         for kind in [MilestoneKind::Goal, MilestoneKind::Trigger] {
             assert!(
@@ -5982,8 +5985,8 @@ mod tests {
 
         let ctx = egui::Context::default();
         let out = Cell::new(Color32::TRANSPARENT);
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default().show_inside(ui, |ui| {
                 let cell = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(COL_W, ROW_H));
                 // 1 solo giorno di agosto: il centro cade nella banda di settembre
                 out.set(paint_month_tint(ui, cell, &[week_of(2026, 8, 31)]));
@@ -6166,7 +6169,8 @@ mod tests {
             egui::vec2(1200.0, 800.0),
         ));
         let out = std::cell::RefCell::new(Vec::new());
-        let _ = ctx.run(input, |ctx| {
+        let _ = ctx.run_ui(input, |ui| {
+            let ctx = ui.ctx();
             egui::Window::new("t").show(ctx, |ui| {
                 *out.borrow_mut() = project_layout(
                     ui,
@@ -6287,7 +6291,7 @@ mod tests {
     fn toast_icons_are_renderable() {
         let ctx = egui::Context::default();
         install_symbol_fallback(&ctx);
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
         let font = egui::FontId::proportional(14.0);
         for level in [
             ToastLevel::Info,
@@ -6362,7 +6366,7 @@ mod tests {
 
         // Due frame: la prima registra l'area, la seconda disegna a layout stabile.
         for _ in 0..2 {
-            let _ = ctx.run(input.clone(), |ctx| toasts_layer(ctx, &mut state));
+            let _ = ctx.run_ui(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
         }
         assert_eq!(state.toasts.len(), 3, "nessuna deve sparire subito");
 
@@ -6371,7 +6375,7 @@ mod tests {
         for t in state.toasts.iter_mut() {
             t.born = old;
         }
-        let _ = ctx.run(input.clone(), |ctx| toasts_layer(ctx, &mut state));
+        let _ = ctx.run_ui(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
         assert_eq!(state.toasts.len(), 1);
         assert_eq!(state.toasts[0].level, ToastLevel::Error);
     }

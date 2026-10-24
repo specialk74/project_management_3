@@ -89,9 +89,9 @@ pub(crate) fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions:
     // +2 righe dev: una riga vuota di separazione + la riga "Totale" sotto l'elenco dev.
     let footer_h = (workers.len().max(n_devs + 2) as f32 + 1.0) * ROW_H;
 
-    // Footer sinistro: stessa riserva da 300px della griglia (SidePanel).
-    egui::SidePanel::left("ftr_left")
-        .exact_width(LEFT_W)
+    // Footer sinistro: stessa riserva da 300px della griglia (`Panel::left`).
+    egui::Panel::left("ftr_left")
+        .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
         .show_inside(ui, |ui| {
@@ -104,7 +104,7 @@ pub(crate) fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions:
     egui::ScrollArea::horizontal()
         .id_salt("footer_scroll")
         .scroll_offset(Vec2::new(state.scroll_x, 0.0))
-        .enable_scrolling(false)
+        .scroll_source(egui::scroll_area::ScrollSource::NONE)
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -124,7 +124,7 @@ pub(crate) fn footer_combo(
     width: f32,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect), |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         ui.spacing_mut().button_padding = Vec2::new(3.0, 0.0);
         ui.spacing_mut().interact_size.y = ROW_H;
         egui::ComboBox::from_id_salt(id_salt)
@@ -235,7 +235,7 @@ pub(crate) fn draw_left_footer(
         if ui
             .put(
                 br,
-                egui::SelectableLabel::new(active, egui::RichText::new(*lab).color(text())),
+                egui::Button::selectable(active, egui::RichText::new(*lab).color(text())),
             )
             .clicked()
         {

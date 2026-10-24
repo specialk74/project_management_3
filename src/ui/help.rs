@@ -63,9 +63,9 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
             }
 
             // ── Indice cliccabile a sinistra + contenuto a destra ──
-            egui::SidePanel::left("help_toc")
+            egui::Panel::left("help_toc")
                 .resizable(true)
-                .default_width(230.0)
+                .default_size(230.0)
                 .show_inside(ui, |ui| {
                     ui.add_space(2.0);
                     ui.label(

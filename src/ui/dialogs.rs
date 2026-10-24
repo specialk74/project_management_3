@@ -1434,7 +1434,7 @@ pub(crate) fn popup_window(
                 .show(ctx, |ui| {
                     // Cap in altezza + scroll: con tante settimane l'elenco
                     // scorre invece di far crescere la finestra oltre lo schermo.
-                    let max_h = (ui.ctx().screen_rect().height() - 160.0).max(200.0);
+                    let max_h = (ui.ctx().content_rect().height() - 160.0).max(200.0);
                     egui::ScrollArea::vertical()
                         .max_height(max_h.min(480.0))
                         .auto_shrink([false, false])
