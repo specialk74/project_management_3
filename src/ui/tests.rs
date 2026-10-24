@@ -2652,3 +2652,154 @@ fn cell_completion_skips_workers_hidden_from_lists() {
     assert_eq!(effort, 8);
 }
 
+/// Navigazione da tastiera: destra/sinistra saltano le settimane bloccate e si
+/// fermano ai limiti del progetto; su/giù passano al dev vicino, anche di un
+/// altro progetto, saltando quelli in cui la settimana non è modificabile.
+#[test]
+fn nav_target_skips_locked_cells_and_crosses_devs() {
+    let mut app = App::new();
+    let weeks = weeks_vec(&app);
+    let (w0, w1, w2) = (weeks[2], weeks[3], weeks[4]);
+    // A: tre settimane (w0..w2), dev X (2 righe) e Y (1 riga)
+    let a = app.projects.add("A", Some("AAA"), Some(WeekId(w0 as usize)));
+    app.projects.set_project_end_week(a, Some(WeekId(w2 as usize)));
+    // B: comincia dopo w0 → a w0 non è modificabile
+    let b = app.projects.add("B", Some("BBB"), Some(WeekId(w1 as usize)));
+    app.projects.set_project_end_week(b, Some(WeekId(w2 as usize)));
+    // C: comprende w0
+    let c = app.projects.add("C", Some("CCC"), Some(WeekId(w0 as usize)));
+    app.projects.set_project_end_week(c, Some(WeekId(w2 as usize)));
+    let (x, y, z, t) = (DevId(0), DevId(1), DevId(2), DevId(3));
+    let order = vec![(a, x, 2), (a, y, 1), (b, z, 1), (c, t, 3)];
+    let nav = |from, dir| nav_target(&app, &order, from, dir);
+
+    // destra/sinistra dentro il periodo, stop ai bordi del progetto
+    assert_eq!(nav((a, x, w0, 1), NavDir::Right), Some((a, x, w1, 1)));
+    assert_eq!(nav((a, x, w2, 1), NavDir::Right), None, "dopo la fine: fermo");
+    assert_eq!(nav((a, x, w0, 0), NavDir::Left), None, "prima dell'inizio: fermo");
+    // giù: riga successiva, poi dev successivo dalla riga 0
+    assert_eq!(nav((a, x, w0, 0), NavDir::Down), Some((a, x, w0, 1)));
+    assert_eq!(nav((a, x, w0, 1), NavDir::Down), Some((a, y, w0, 0)));
+    // da Y a w0: B non ha w0 → si salta a C
+    assert_eq!(nav((a, y, w0, 0), NavDir::Down), Some((c, t, w0, 0)));
+    // a w1 invece B c'è
+    assert_eq!(nav((a, y, w1, 0), NavDir::Down), Some((b, z, w1, 0)));
+    assert_eq!(nav((c, t, w0, 2), NavDir::Down), None, "ultima riga dell'ultimo dev");
+    // su: riga precedente, poi ultima riga del dev precedente (saltando B a w0)
+    assert_eq!(nav((c, t, w0, 0), NavDir::Up), Some((a, y, w0, 0)));
+    assert_eq!(nav((a, y, w0, 0), NavDir::Up), Some((a, x, w0, 1)));
+    assert_eq!(nav((a, x, w0, 0), NavDir::Up), None);
+}
+
+/// Tasti veri sull'interfaccia intera: freccia destra, Tab e Invio confermano
+/// il valore e aprono la cella vicina (egui non deve rubare frecce/Tab al
+/// campo per spostare il focus altrove).
+#[test]
+fn keyboard_moves_between_cells_and_commits() {
+    let mut app = App::new();
+    let weeks = weeks_vec(&app);
+    let w = weeks[2];
+    let p = app.projects.add("P", Some("PPP"), Some(WeekId(weeks[0] as usize)));
+    app.projects.set_project_end_week(p, Some(WeekId(weeks[10] as usize)));
+    let dev = app.devs.add("Frontend");
+    app.projects.add_dev(p, dev);
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    // due righe nel dev (due worker nella stessa settimana)
+    app.projects.add_effort(p, dev, WeekId(weeks[5] as usize), alice, Effort(1));
+    app.projects.add_effort(p, dev, WeekId(weeks[5] as usize), bob, Effort(1));
+    app.compute_sovra();
+
+    let ctx = egui::Context::default();
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.ui.editing = Some(Editing::open(p, dev, w, 0, "Alice|4", ""));
+    let mut frame = eframe::Frame::_new_kittest();
+    let mut run = |pjm: &mut PjmApp, events: Vec<egui::Event>| {
+        let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), events, ..Default::default() };
+        let _ = ctx.run_ui_test(input, |ui| eframe::App::ui(pjm, ui, &mut frame));
+    };
+    let key = |key, shift: bool| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE },
+    };
+    let at = |pjm: &PjmApp| pjm.ui.editing.as_ref().map(|e| (e.week, e.row));
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+
+    // → : conferma Alice|4 e apre la settimana dopo, stessa riga
+    run(&mut pjm, vec![key(egui::Key::ArrowRight, false)]);
+    run(&mut pjm, vec![]);
+    let effort = |pjm: &PjmApp, week: i32, wid| {
+        pjm.app.projects.get_single_dev(p, dev).unwrap().get_all(WeekId(week as usize))
+            .and_then(|s| s.worker_id.get(&wid).map(|e| e.get_effort().0))
+    };
+    assert_eq!(effort(&pjm, w, alice), Some(4), "valore confermato");
+    assert_eq!(at(&pjm), Some((weeks[3], 0)), "cella a destra");
+
+    // Tab → ancora a destra; Shift+Tab ← torna indietro
+    run(&mut pjm, vec![key(egui::Key::Tab, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[4], 0)));
+    run(&mut pjm, vec![key(egui::Key::Tab, true)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[3], 0)));
+
+    // Invio → riga sotto; Shift+Invio ↑ torna su
+    run(&mut pjm, vec![key(egui::Key::Enter, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[3], 1)));
+    run(&mut pjm, vec![key(egui::Key::Enter, true)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[3], 0)));
+
+    // Esc annulla e chiude, senza spostarsi
+    run(&mut pjm, vec![key(egui::Key::Escape, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), None);
+}
+
+/// Navigando oltre il bordo dello schermo la griglia scorre per tenere visibile
+/// la cella in modifica (a destra e poi di nuovo a sinistra).
+#[test]
+fn keyboard_navigation_scrolls_the_cell_into_view() {
+    let mut app = App::new();
+    let weeks = weeks_vec(&app);
+    let p = app.projects.add("P", Some("PPP"), Some(WeekId(weeks[0] as usize)));
+    app.projects.set_project_end_week(p, Some(WeekId(weeks[60] as usize)));
+    let dev = app.devs.add("Frontend");
+    app.projects.add_dev(p, dev);
+    let ctx = egui::Context::default();
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.ui.editing = Some(Editing::open(p, dev, weeks[0], 0, "", ""));
+    let mut frame = eframe::Frame::_new_kittest();
+    let mut run = |pjm: &mut PjmApp, events: Vec<egui::Event>| {
+        let input = egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), events, ..Default::default() };
+        let _ = ctx.run_ui_test(input, |ui| eframe::App::ui(pjm, ui, &mut frame));
+    };
+    let right = egui::Event::Key {
+        key: egui::Key::ArrowRight,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+    assert_eq!(pjm.ui.scroll_x, 0.0);
+    // ~10 colonne da 90 px stanno nei ~900 px della griglia: 20 passi escono
+    for _ in 0..20 {
+        run(&mut pjm, vec![right.clone()]);
+        run(&mut pjm, vec![]);
+        run(&mut pjm, vec![]);
+    }
+    assert_eq!(pjm.ui.editing.as_ref().map(|e| e.week), Some(weeks[20]));
+    let x = pjm.ui.scroll_x;
+    assert!(x > 10.0 * COL_W, "la griglia deve seguire la cella: scroll_x = {x}");
+    // la cella in modifica è dentro l'area visibile della griglia
+    let cell_left = (20.0 * COL_W) - x; // rispetto all'inizio delle colonne
+    assert!(cell_left >= 0.0 && cell_left + COL_W <= 1200.0 - LEFT_W, "cella fuori vista: {cell_left}");
+}
+

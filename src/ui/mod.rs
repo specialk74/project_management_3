@@ -66,6 +66,34 @@ pub(crate) struct Editing {
     orig_note: String,          // nota presente nella cella all'apertura
 }
 
+impl Editing {
+    /// Cella in modifica appena aperta su `text`/`note` (click o tastiera).
+    pub(crate) fn open(proj: ProjectId, dev: DevId, week: i32, row: usize, text: &str, note: &str) -> Self {
+        Self {
+            proj,
+            dev,
+            week,
+            row,
+            buf: text.to_string(),
+            typed: text.to_string(),
+            just_opened: true,
+            had_focus: false,
+            paste_note: None,
+            orig_worker: cell_worker(text).to_string(),
+            orig_note: note.to_string(),
+        }
+    }
+}
+
+/// Direzione della navigazione da tastiera fra le celle in modifica.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum NavDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
 /// Bersaglio del note editor.
 enum NoteTarget {
     Effort {
@@ -740,6 +768,10 @@ pub struct UiState {
     // progetto verso cui scrollare al prossimo frame (risolto in `body`)
     jump_to_project: Option<ProjectId>,
     editing: Option<Editing>,
+    // ordine dei dev come appaiono nella griglia, con le righe di ciascuno:
+    // serve alla navigazione da tastiera su/giù fra dev e progetti. Aggiornato
+    // dalla griglia mentre una cella è in modifica.
+    nav_order: Vec<(ProjectId, DevId, usize)>,
     note_editor: Option<NoteEditing>,
     popup: Option<Popup>,
     // inserimento multiplo (tasto destro su cella vuota): worker + ore + settimane
@@ -1114,6 +1146,14 @@ pub(crate) enum Action {
     AddRow {
         proj: ProjectId,
         dev: DevId,
+    },
+    /// Apre in modifica la cella indicata (navigazione da tastiera). Va messa
+    /// **dopo** la `CommitCell` della cella lasciata, così legge i dati aggiornati.
+    OpenCellEditor {
+        proj: ProjectId,
+        dev: DevId,
+        week: i32,
+        row: usize,
     },
     CommitCell {
         proj: ProjectId,
@@ -2416,6 +2456,23 @@ impl PjmApp {
                     }
                 }
                 self.mark_changed();
+            }
+            Action::OpenCellEditor {
+                proj,
+                dev,
+                week,
+                row,
+            } => {
+                let slots = gather_slots(
+                    &self.app,
+                    proj,
+                    dev,
+                    week,
+                    row + 1,
+                    &self.ui.worker_filter,
+                );
+                let (text, note, _) = &slots[row];
+                self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
             }
             Action::BulkFillEffort {
                 proj,

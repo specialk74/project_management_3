@@ -26,7 +26,6 @@ non il tempo di digitazione.
 ## B. Produttività nell'editing (UX)
 
 - [ ] **5. Undo/Redo** — snapshot di `to_ron_string` in uno stack (le mutazioni passano già da `Action`). _Tempo: ~half day · Difficoltà: Media._
-- [ ] **6. Navigazione da tastiera nella griglia** (frecce/Tab tra celle) — velocizza molto l'inserimento effort. _Tempo: ~1 giorno · Difficoltà: Media-Alta (rendering a coordinate, serve un modello di focus)._
 - [ ] **9. Persistenza preferenze UI** (tema, compatta, zoom, footer, B/N) — ora `UiState` si resetta a ogni avvio; salvarle in un file di config. _Tempo: ~2-3 h · Difficoltà: Bassa._
 
 ## C. Gestione anagrafiche (oggi si può solo aggiungere)
@@ -57,6 +56,7 @@ non il tempo di digitazione.
 - [x] **21. Evidenziare un worker in tutta la griglia** — click sinistro sul nome nel footer: le sue righe «Worker|ore» nelle celle dei dev diventano gialle su scuro; riclic per spegnere, click su un altro per spostare. _(fatto 2026-10-24: solo sessione. Il massimo ore globale del worker è passato al tasto destro ▸ «Ore max…», accanto a «Ghost»)_
 - [x] **22. Limite ore della settimana per tutti anche dalla data del footer** — prima solo dalla data in alto. _(fatto 2026-10-24: stessa finestra «Limite settimana (tutti)»)_
 - [x] **23. Mettere in ferie tutti i worker di una settimana** — spunta «Metti tutti i worker in ferie» nella finestra del limite settimanale. _(fatto 2026-10-24: stato «Ferie» a tutti tranne chi è in «Malattia»; le ore restano quelle inserite; spunta già accesa se tutti sono in ferie, togliendola si rimuovono)_
+- [x] **6. Navigazione da tastiera nella griglia** (frecce/Tab tra celle) — velocizza molto l'inserimento effort. _(fatto 2026-10-24: con una cella in modifica, frecce, Tab/Shift+Tab e Invio/Shift+Invio confermano e aprono la cella vicina; salta le celle bloccate e i dev dei progetti dove la settimana non è modificabile, su/giù attraversano dev e progetti, la griglia scorre per tenere visibile la cella. Senza cella aperta i tasti non fanno nulla. `nav_target`, `Action::OpenCellEditor`; test `nav_target_skips_locked_cells_and_crosses_devs`, `keyboard_moves_between_cells_and_commits`, `keyboard_navigation_scrolls_the_cell_into_view`)_
 - [x] **24. Autocompletamento senza i worker nascosti** — scrivendo in una cella non vengono più proposti i worker con la spunta «Elenchi» spenta. _(fatto 2026-10-24: scritto per intero, un nome nascosto viene comunque accettato)_
 
 ## D. Reportistica & export
@@ -86,5 +86,5 @@ Le voci #15–#18 sono state spostate in [`REVISIONE_CODICE.md`](REVISIONE_CODIC
 2. **#5** Undo/Redo (il salto di qualità UX più grande)
 3. **#11** UI colore del dev
 
-> Nota: per le voci grosse (#5 Undo/Redo, #6 navigazione tastiera, #10 elimina/rinomina)
+> Nota: per le voci grosse (#5 Undo/Redo, #10 elimina/rinomina)
 > conviene concordare prima il comportamento nei casi limite.

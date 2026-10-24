@@ -59,9 +59,13 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
                 .auto_shrink([false, false]);
             // Scroll pilotato: X per la settimana corrente (init), Y per il salto
             // a un progetto. L'asse non pilotato mantiene la posizione attuale.
-            if state.pending_scroll_x.is_some() || state.pending_scroll_y.is_some() {
-                let x = state.pending_scroll_x.unwrap_or(state.scroll_x);
-                let y = state.pending_scroll_y.unwrap_or(state.scroll_y);
+            // Le richieste si consumano qui, prima di disegnare: una nuova fatta
+            // durante il disegno (es. cella aperta da tastiera fuori vista) resta
+            // per il frame dopo invece di essere cancellata.
+            let (px, py) = (state.pending_scroll_x.take(), state.pending_scroll_y.take());
+            if px.is_some() || py.is_some() {
+                let x = px.unwrap_or(state.scroll_x);
+                let y = py.unwrap_or(state.scroll_y);
                 sa = sa.scroll_offset(Vec2::new(x, y));
             }
             let out = sa.show(ui, |ui| {
@@ -72,8 +76,6 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             let offset = out.state.clamped_offset();
             state.scroll_x = offset.x;
             state.scroll_y = offset.y;
-            state.pending_scroll_x = None;
-            state.pending_scroll_y = None;
         });
 }
 
@@ -391,6 +393,13 @@ pub(crate) fn grid(
     // molti progetti la griglia completa è progetti × dev × settimane celle.
     let visible = ui.clip_rect().expand(CULL_MARGIN);
     let editing_dev = state.editing.as_ref().map(|e| (e.proj, e.dev));
+    // Ordine dei dev per la navigazione da tastiera (solo se serve: cella aperta).
+    if editing_dev.is_some() {
+        state.nav_order = layout
+            .iter()
+            .flat_map(|p| p.devs.iter().map(move |(d, rows)| (p.proj, *d, *rows)))
+            .collect();
+    }
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
     let (rect, _) = ui.allocate_exact_size(Vec2::new(content_w, total_h), Sense::hover());
@@ -1106,14 +1115,29 @@ fn draw_cell_editor(
     let mut ed = state.editing.take().unwrap();
     let id = egui::Id::unique(("celledit", cx.proj.0, cx.dev.0, cx.week, cx.row));
     let resp = ui.interact(cell, id, Sense::click());
+    let opening = ed.just_opened;
     if ed.just_opened {
         resp.request_focus();
         ed.just_opened = false;
     }
+    // Tab e frecce servono alla navigazione fra celle: senza il filtro egui li
+    // userebbe per spostare il focus su un altro widget prima che li vediamo.
+    ui.memory_mut(|m| {
+        m.set_focus_lock_filter(
+            id,
+            egui::EventFilter {
+                tab: true,
+                horizontal_arrows: true,
+                vertical_arrows: true,
+                ..Default::default()
+            },
+        )
+    });
     let has_focus = resp.has_focus();
 
     let mut commit = false;
     let mut cancel = false;
+    let mut nav: Option<NavDir> = None;
     if has_focus {
         ed.had_focus = true;
         let events = ui.input(|i| i.events.clone());
@@ -1145,17 +1169,16 @@ fn draw_cell_editor(
                     ed.typed.clear();
                     ed.buf.clear();
                 }
+                // Conferma e passa a un'altra cella: Tab → destra (Shift ←),
+                // Invio → sotto (Shift ↑), frecce nelle quattro direzioni.
                 egui::Event::Key {
-                    key: egui::Key::Enter,
+                    key,
                     pressed: true,
+                    modifiers,
                     ..
-                }
-                | egui::Event::Key {
-                    key: egui::Key::Tab,
-                    pressed: true,
-                    ..
-                } => {
+                } if nav_key(key, modifiers.shift).is_some() => {
                     commit = true;
+                    nav = nav_key(key, modifiers.shift);
                 }
                 egui::Event::Key {
                     key: egui::Key::Escape,
@@ -1200,6 +1223,21 @@ fn draw_cell_editor(
         }
     } else if ed.had_focus {
         commit = true; // focus perso → conferma
+        // Il focus può essersi perso proprio per un tasto di navigazione: egui
+        // sposta il focus con Tab/frecce prima che il campo legga l'evento, e il
+        // filtro qui sopra vale solo dal secondo frame col focus (cella appena
+        // aperta, tasto tenuto premuto). In quel caso si naviga lo stesso.
+        nav = ui.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => nav_key(*key, modifiers.shift),
+                _ => None,
+            })
+        });
     }
 
     // disegno cella in editing + caret
@@ -1228,8 +1266,111 @@ fn draw_cell_editor(
         // scarta
     } else if commit {
         actions.push(commit_editing(app, &ed));
+        if let Some(target) =
+            nav.and_then(|dir| nav_target(app, &state.nav_order, (ed.proj, ed.dev, ed.week, ed.row), dir))
+        {
+            let (proj, dev, week, row) = target;
+            actions.push(Action::OpenCellEditor {
+                proj,
+                dev,
+                week,
+                row,
+            });
+        }
     } else {
+        // Appena aperta (anche dalla tastiera): se è fuori dall'area visibile la
+        // griglia scorre quanto basta a mostrarla.
+        if opening {
+            scroll_into_view(state, ui.clip_rect(), cell);
+        }
         state.editing = Some(ed);
+    }
+}
+
+/// Tasto di navigazione fra celle (con Shift per Tab/Invio), se lo è.
+fn nav_key(key: egui::Key, shift: bool) -> Option<NavDir> {
+    match key {
+        egui::Key::ArrowLeft => Some(NavDir::Left),
+        egui::Key::ArrowRight => Some(NavDir::Right),
+        egui::Key::ArrowUp => Some(NavDir::Up),
+        egui::Key::ArrowDown => Some(NavDir::Down),
+        egui::Key::Tab => Some(if shift { NavDir::Left } else { NavDir::Right }),
+        egui::Key::Enter => Some(if shift { NavDir::Up } else { NavDir::Down }),
+        _ => None,
+    }
+}
+
+/// La settimana `week` del progetto si può modificare (non è prima dell'inizio
+/// né dopo la fine)? Stessa regola di `draw_dev_cells`.
+fn week_editable(app: &App, proj: ProjectId, week: i32) -> bool {
+    let start = app.projects.get_project_start_week(proj).map(|w| w.0 as i32);
+    let end = app.projects.get_project_end_week(proj).map(|w| w.0 as i32);
+    start.is_none_or(|s| week >= s) && end.is_none_or(|e| week <= e)
+}
+
+/// Cella di destinazione della navigazione da tastiera, partendo da
+/// `(progetto, dev, settimana, riga)`. `order` è l'ordine dei dev nella griglia
+/// con le loro righe. Destra/sinistra: settimana vicina **modificabile** dello
+/// stesso progetto (salta quelle bloccate e le colonne di fine anno). Su/giù:
+/// riga vicina; dal bordo del dev si passa al dev vicino (anche di un altro
+/// progetto) in cui quella settimana è modificabile. `None` al limite: la cella
+/// viene solo confermata.
+pub(crate) fn nav_target(
+    app: &App,
+    order: &[(ProjectId, DevId, usize)],
+    from: (ProjectId, DevId, i32, usize),
+    dir: NavDir,
+) -> Option<(ProjectId, DevId, i32, usize)> {
+    let (proj, dev, week, row) = from;
+    match dir {
+        NavDir::Left | NavDir::Right => {
+            let weeks = weeks_vec(app);
+            let i = weeks.iter().position(|w| *w == week)?;
+            let next = if dir == NavDir::Right {
+                weeks[i + 1..].iter().find(|w| week_editable(app, proj, **w))
+            } else {
+                weeks[..i].iter().rev().find(|w| week_editable(app, proj, **w))
+            };
+            next.map(|w| (proj, dev, *w, row))
+        }
+        NavDir::Down | NavDir::Up => {
+            let k = order.iter().position(|(p, d, _)| *p == proj && *d == dev)?;
+            let rows = order[k].2.max(1);
+            if dir == NavDir::Down && row + 1 < rows {
+                return Some((proj, dev, week, row + 1));
+            }
+            if dir == NavDir::Up && row > 0 {
+                return Some((proj, dev, week, row - 1));
+            }
+            if dir == NavDir::Down {
+                order[k + 1..]
+                    .iter()
+                    .find(|(p, _, _)| week_editable(app, *p, week))
+                    .map(|(p, d, _)| (*p, *d, week, 0))
+            } else {
+                order[..k]
+                    .iter()
+                    .rev()
+                    .find(|(p, _, _)| week_editable(app, *p, week))
+                    .map(|(p, d, r)| (*p, *d, week, r.saturating_sub(1)))
+            }
+        }
+    }
+}
+
+/// Fa scorrere la griglia (dal frame dopo) quanto basta perché `cell` sia
+/// tutta dentro l'area visibile `view`, con un piccolo margine.
+fn scroll_into_view(state: &mut UiState, view: Rect, cell: Rect) {
+    const PAD: f32 = 8.0;
+    if cell.left() < view.left() {
+        state.pending_scroll_x = Some((state.scroll_x - (view.left() - cell.left()) - PAD).max(0.0));
+    } else if cell.right() > view.right() {
+        state.pending_scroll_x = Some(state.scroll_x + (cell.right() - view.right()) + PAD);
+    }
+    if cell.top() < view.top() {
+        state.pending_scroll_y = Some((state.scroll_y - (view.top() - cell.top()) - PAD).max(0.0));
+    } else if cell.bottom() > view.bottom() {
+        state.pending_scroll_y = Some(state.scroll_y + (cell.bottom() - view.bottom()) + PAD);
     }
 }
 
@@ -1314,20 +1455,7 @@ fn draw_cell_static(
         if let Some(old) = state.editing.take() {
             actions.push(commit_editing(app, &old));
         }
-        let orig_worker = cell_worker(text).to_string();
-        state.editing = Some(Editing {
-            proj: cx.proj,
-            dev: cx.dev,
-            week: cx.week,
-            row: cx.row,
-            buf: text.to_string(),
-            typed: text.to_string(),
-            just_opened: true,
-            had_focus: false,
-            paste_note: None,
-            orig_worker,
-            orig_note: note.to_string(),
-        });
+        state.editing = Some(Editing::open(cx.proj, cx.dev, cx.week, cx.row, text, note));
     }
     if secondary {
         if text.is_empty() {

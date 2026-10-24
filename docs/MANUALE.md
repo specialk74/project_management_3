@@ -516,6 +516,25 @@ cella stessa; sul **nome di un worker** (parte sinistra del footer) il solo work
    accetta.
 3. Conferma con **Invio** o **Tab**; annulla con **Esc**.
 
+**Spostarsi con la tastiera.** Mentre una cella è in modifica, questi tasti
+**confermano** il valore e aprono subito la cella vicina, come in un foglio di
+calcolo:
+
+| Tasto | Va a |
+|---|---|
+| **→** / **Tab** | settimana dopo |
+| **←** / **Shift+Tab** | settimana prima |
+| **↓** / **Invio** | riga sotto; dall'ultima riga di un dev si passa alla prima del dev successivo, anche di un altro progetto |
+| **↑** / **Shift+Invio** | riga sopra; dalla prima riga si passa all'ultima del dev precedente |
+
+Le celle non modificabili (prima dell'inizio o dopo la fine del progetto, colonne
+di fine anno) vengono **saltate**; in verticale si saltano i dev dei progetti in
+cui quella settimana non è modificabile. Al limite (fine del progetto, ultimo dev)
+il valore viene solo confermato. La griglia scorre da sola per tenere visibile la
+cella. Senza nessuna cella aperta i tasti non fanno nulla: si comincia con un
+click. Come col mouse, un dev ha tante righe quanti sono al massimo i worker di
+una settimana: per aggiungere un worker in più serve **Aggiungi riga**.
+
 Le celle prima dell'inizio o dopo la fine del progetto non sono editabili.
 
 ### Inserimento multiplo (più worker, più settimane)
@@ -1452,7 +1471,9 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | `Cmd/Ctrl + P` | Apri la dialog «Filtri» sulla colonna Progetti (ricerca, visibilità e salto rapido) |
 | `Cmd/Ctrl + J` | **Azzera tutti i filtri**: torna a vedere tutto (ripetibile, non deseleziona mai) |
 | `Cmd/Ctrl + T` | Torna a **oggi**: scorre la griglia sulla settimana corrente, centrandola |
-| `Invio` / `Tab` | Conferma la modifica della cella |
+| `Tab` / `Shift + Tab` | Conferma la cella e va alla settimana dopo / prima |
+| `Invio` / `Shift + Invio` | Conferma la cella e va alla riga sotto / sopra |
+| Frecce `← → ↑ ↓` | Conferma la cella e va alla cella vicina (salta quelle bloccate) |
 | `Esc` | Annulla la modifica della cella |
 | `Cmd/Ctrl + C / X / V` | Copia / Taglia / Incolla nella cella in modifica |
 | Doppio click sul nome dev | Aggiungi una riga worker |

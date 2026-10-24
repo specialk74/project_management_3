@@ -608,8 +608,21 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete (`find_completion`: **only workers with `show_in_find`** — the
   «Elenchi» tick —; a hidden worker typed in full is still accepted on commit;
-  test `cell_completion_skips_workers_hidden_from_lists`); `Enter`/`Tab` commit,
-  `Esc` cancels. Cell value is `"Worker|effort"`.
+  test `cell_completion_skips_workers_hidden_from_lists`); `Esc` cancels.
+  **Keyboard navigation** (only while a cell is open): arrows, `Tab`/`Shift+Tab`
+  (→/←) and `Enter`/`Shift+Enter` (↓/↑) commit and open the neighbour cell.
+  `nav_target(app, &state.nav_order, from, NavDir)` (`grid.rs`, pure, unit-tested)
+  skips non-editable weeks (`week_editable`) and, vertically, devs of projects
+  where that week isn't editable; up/down cross devs and projects in grid order
+  (`UiState.nav_order`, refreshed by `grid` while editing); `None` at the edge →
+  commit only. The editor pushes `CommitCell` **then** `Action::OpenCellEditor`,
+  whose handler builds `Editing::open(…)` from the already-updated data. Gotchas:
+  egui moves focus on Tab/arrows, so the editor sets `set_focus_lock_filter`
+  **and** also treats a nav key that arrives in the same frame the focus is lost
+  as navigation (the filter only applies from the second focused frame); on its
+  first frame the editor calls `scroll_into_view`, and `body` consumes
+  `pending_scroll_x/y` with `take()` **before** drawing the grid so that a request
+  made while drawing survives to the next frame. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).
 - **Bulk fill** (`UiState.bulk_fill: Option<BulkFill>` + `bulk_fill_window` in
   `dialogs.rs`): right-click an **empty** grid cell → dialog with the `show_in_find`
