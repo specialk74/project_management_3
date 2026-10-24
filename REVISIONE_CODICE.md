@@ -31,7 +31,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 5. ~~**B2–B7, C3–C5** — duplicati e ottimizzazioni minori, in due blocchi:
    5a: B2–B7 (duplicati) · 5b: C3–C5 (ottimizzazioni)~~ ✅ fatto
 6. ~~**B1, B9, E1–E3** — riordino~~ ✅ fatto
-7. **B10** — a parte: la modifica più invasiva
+7. ~~**B10** — a parte: la modifica più invasiva~~ ✅ fatto
 
 ---
 
@@ -173,10 +173,23 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   (colore, solo visibili, prefisso) restano nei loro test. Sistemato anche il
   commento di `queue_click`, già troncato a metà frase nel commit)_
 
-- [ ] **B10. 9 opzioni di export come stato globale** (thread-local:
+- [x] **B10. 9 opzioni di export come stato globale** (thread-local:
   `set_show_pct`, `set_show_year`, scope, allow-list, ghost, ghost_red, corner,
   range…) impostate prima di ogni `build_*` e azzerate a mano. Proposta: struttura
   `ExportOptions` passata come parametro. _Tocca tutte le firme dell'export._
+  _(fatto: in `pdf_export.rs` non c'è più nessun `thread_local`. Le 7 scelte
+  dell'utente (percentuali, anno, ambito milestone, milestone scelte, ghost, colore
+  ghost, periodo) sono in `ExportOptions` (default = quelli delle dialog), passata
+  a `build_pdf_selected`, `build_pdf_project_fmt`, `build_svg_project_fmt` e giù
+  fino ai disegni; `window()` e `milestone_shown()` sono suoi metodi. La
+  smussatura degli angoli non è una scelta della dialog ma del file: letta da
+  `app.corner_pct` e passata come valore a `rect_round`/`round_rect_pts`. Lato UI
+  `UiState::export_options(...)` costruisce le opzioni e `scoped_exports` ne fa una
+  copia per ambito: non c'è più niente da «rimettere a posto» dopo un export (prima
+  bastava un percorso che dimenticasse il reset per sporcare l'export successivo).
+  I test passano le opzioni esplicitamente invece di impostare e ripristinare
+  globali; `scoped_exports_builds_one_item_per_scope` verifica anche che le
+  opzioni di base arrivino a ogni ambito. Comportamento invariato: 286 test verdi)_
 
 ## C. Prestazioni (lavoro ripetuto a ogni frame)
 
@@ -287,8 +300,17 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `.any()`, che si fermerebbe al primo dev: scritto come ciclo esplicito con un
   commento. **Il `cargo fmt` globale resta da decidere a parte.** Clippy: 0
   warning, anche sui test)_
-- [ ] **E4.** Nella radice ~10 copie/backup di `.ron` (già ignorati da git). Dati
+- [x] **E4.** Nella radice ~10 copie/backup di `.ron` (già ignorati da git). Dati
   dell'utente: **non si toccano** senza richiesta esplicita.
+  _(fatto su richiesta: le 5 copie manuali (`workers (1).ron`, `workers_old.ron`,
+  `workers_old2.ron`, `workers copy.ron`, `workers copy 2.ron`) spostate nel
+  **Cestino di macOS** (recuperabili con «Rimetti a posto» finché non si svuota).
+  Prima verificato il contenuto: tutte tranne `workers copy.ron` avevano progetti
+  assenti dal file in uso (`OVT Incr. 2.3` — probabilmente rinominato in
+  `OVT - Incr. 2.3` —, `ALTRO`, `OVT - 3400/4600`, `BCN`, `BM6070`, `CL8000`,
+  `CLAM 2040?)`, `CO8`, `P&P Terze parti`, `STX`); per questo il Cestino e non la
+  cancellazione definitiva. Restano `workers.ron` e i backup automatici
+  `.bak1–5`)_
 
 ## Fatti in precedenza (da `MIGLIORAMENTI.md`)
 
@@ -324,3 +346,7 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   **clippy 0 warning** (anche sui test), 285 test verdi.
 - **2026-10-24** — Fatto B8 (conversioni jiff in `date_utils::picker`). Build e
   clippy 0 warning, 286 test verdi (+1).
+- **2026-10-24** — Chiuso E4: copie manuali dei `.ron` spostate nel Cestino.
+- **2026-10-24** — Fatto B10 (opzioni di export come parametro `ExportOptions`,
+  niente più stato globale). Build e clippy 0 warning, 286 test verdi. Tutte le
+  voci del report sono chiuse.

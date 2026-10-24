@@ -966,6 +966,26 @@ pub struct UiState {
 }
 
 impl UiState {
+    /// Opzioni di un export Gantt dalle scelte ricordate nelle dialog
+    /// (percentuali, anno, ghost), più quelle del singolo export: milestone
+    /// ammesse (`None` = tutte) e periodo (`None` = asse automatico). L'ambito
+    /// milestone lo imposta `scoped_exports`, uno per file.
+    pub(crate) fn export_options(
+        &self,
+        milestones: Option<Vec<MilestoneId>>,
+        range: Option<(i32, i32)>,
+    ) -> crate::pdf_export::ExportOptions {
+        crate::pdf_export::ExportOptions {
+            show_pct: self.export_progress_pct,
+            show_year: self.export_show_year.0,
+            milestones: milestones.map(|v| v.into_iter().collect()),
+            show_ghost: self.export_ghost.show,
+            ghost_red: self.export_ghost.red,
+            range,
+            ..Default::default()
+        }
+    }
+
     /// Mostra una notifica in-app. Se lo stesso testo è già in elenco ne rinfresca
     /// solo l'istante (un errore che si ripete a ogni autosave non impila copie).
     pub(crate) fn toast(&mut self, level: ToastLevel, text: impl Into<String>) {
@@ -1521,25 +1541,24 @@ fn save_multi_export_dialog(
     }
 }
 
-/// Costruisce un export per ogni ambito milestone richiesto: imposta l'ambito
-/// (`set_milestone_scope`), chiama `build`, e restituisce le coppie
-/// `(suffisso file, byte)` degli export riusciti. Alla fine rimette ambito,
-/// filtro milestone e periodo ai valori di default, così i `build_*`
-/// successivi partono da Internal, senza restrizioni e con l'asse automatico.
+/// Costruisce un export per ogni ambito milestone richiesto: per ciascuno
+/// chiama `build` con le opzioni `base` e quell'ambito, e restituisce le coppie
+/// `(suffisso file, byte)` degli export riusciti.
 fn scoped_exports(
+    base: &crate::pdf_export::ExportOptions,
     scopes: &[MilestoneScope],
-    mut build: impl FnMut(MilestoneScope) -> Option<Vec<u8>>,
+    mut build: impl FnMut(&crate::pdf_export::ExportOptions) -> Option<Vec<u8>>,
 ) -> Vec<(String, Vec<u8>)> {
     let mut items = Vec::new();
     for sc in scopes {
-        crate::pdf_export::set_milestone_scope(*sc);
-        if let Some(bytes) = build(*sc) {
+        let opts = crate::pdf_export::ExportOptions {
+            scope: *sc,
+            ..base.clone()
+        };
+        if let Some(bytes) = build(&opts) {
             items.push((sc.file_suffix().to_string(), bytes));
         }
     }
-    crate::pdf_export::set_milestone_scope(MilestoneScope::default());
-    crate::pdf_export::set_milestone_allow(None);
-    crate::pdf_export::set_export_range(None);
     items
 }
 
@@ -2635,14 +2654,11 @@ impl PjmApp {
                 }
             }
             Action::ExportPdfSelected { projects, scopes } => {
-                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
-                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
-                // Export multi-progetto: nessuna scelta milestone per progetto.
-                crate::pdf_export::set_milestone_allow(None);
+                // Export multi-progetto: nessuna scelta milestone per progetto
+                // e asse automatico.
+                let base = self.ui.export_options(None, None);
                 // Un file per ambito milestone scelto (Internal e/o External).
-                let items = scoped_exports(&scopes, |_| {
+                let items = scoped_exports(&base, &scopes, |opts| {
                     crate::pdf_export::build_pdf_selected(
                         &self.app,
                         &projects,
@@ -2650,6 +2666,7 @@ impl PjmApp {
                             self.ui.bar_format,
                             self.ui.export_dates_below,
                         ),
+                        opts,
                     )
                 });
                 if items.is_empty() {
@@ -2673,14 +2690,9 @@ impl PjmApp {
                 milestones,
                 range,
             } => {
-                crate::pdf_export::set_export_range(Some(range));
-                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
-                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
-                crate::pdf_export::set_milestone_allow(Some(milestones));
-                let items = scoped_exports(&scopes, |_| {
-                    crate::pdf_export::build_pdf_project_fmt(&self.app, proj, &devs)
+                let base = self.ui.export_options(Some(milestones), Some(range));
+                let items = scoped_exports(&base, &scopes, |opts| {
+                    crate::pdf_export::build_pdf_project_fmt(&self.app, proj, &devs, opts)
                 });
                 if items.is_empty() {
                     self.ui
@@ -2702,15 +2714,10 @@ impl PjmApp {
                 milestones,
                 range,
             } => {
-                crate::pdf_export::set_export_range(Some(range));
-                crate::pdf_export::set_show_pct(self.ui.export_progress_pct);
-                crate::pdf_export::set_show_year(self.ui.export_show_year.0);
-                crate::pdf_export::set_show_ghost(self.ui.export_ghost.show);
-                crate::pdf_export::set_ghost_red(self.ui.export_ghost.red);
-                crate::pdf_export::set_milestone_allow(Some(milestones));
-                let items = scoped_exports(&scopes, |_| {
-                    crate::pdf_export::build_svg_project_fmt(&self.app, proj, &devs)
-                    .map(String::into_bytes)
+                let base = self.ui.export_options(Some(milestones), Some(range));
+                let items = scoped_exports(&base, &scopes, |opts| {
+                    crate::pdf_export::build_svg_project_fmt(&self.app, proj, &devs, opts)
+                        .map(String::into_bytes)
                 });
                 if items.is_empty() {
                     self.ui

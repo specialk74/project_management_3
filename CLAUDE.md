@@ -744,8 +744,19 @@ content). `project_shapes(app, proj, name, dev_info, today, created, order, char
 gathers rows/flags for a project; `chart_only` drops the tripletta/description and
 the footer date.
 
-- **Progress % in export** (`set_show_pct(bool)` / `show_pct()` — a thread-local flag
-  in `pdf_export.rs`, mirroring `ui_style`'s theme/B-W flags; default off): when on,
+- **Export options are a parameter, not global state**: every Gantt builder
+  (`build_pdf_selected`, `build_pdf_project_fmt`, `build_svg_project_fmt`, and the
+  test-only wrappers) takes `opts: &ExportOptions` (`pdf_export.rs`): `show_pct`
+  (default off), `show_year` (on), `scope` (`Mix`), `milestones:
+  Option<HashSet<MilestoneId>>` (`None` = all), `show_ghost` (on), `ghost_red` (on),
+  `range: Option<(i32, i32)>` (`None` = auto axis). It flows `project_shapes_fmt` →
+  `page_shapes` → helpers (`dev_date`/`dev_range`/`segment_dates` get `show_year`,
+  `pct_label` gets `show_pct`). The UI builds it with
+  `UiState::export_options(milestones, range)` from the remembered dialog choices;
+  `scoped_exports(&base, &scopes, |opts| …)` clones it once per scope. There is
+  nothing to reset after an export. Tests pass `&ExportOptions::default()` or
+  `ExportOptions { field: …, ..Default::default() }`.
+- **Progress % in export** (`ExportOptions::show_pct`, default off): when on,
   each dev row appends `presunta%/dichiarata%` **after the date label (far right,
   same 7.0 date font)** — `Row.presumed_pct` / `Row.declared_pct`, computed in
   `project_shapes` from `today` (`-` when planned=0). **No-effort rows omit it** (they
@@ -758,15 +769,13 @@ the footer date.
   effort/residuo size — a separate choice from the PDF's date-font.)
   The export dialogs (`pdf_export_window`, `pdf_multi_export_window`) expose a
   **«Includi percentuali di avanzamento»** checkbox bound to `UiState.export_progress_pct`
-  (remembered across exports, not persisted); the `Action::ExportPdf*/ExportSvgProject`
-  handlers call `set_show_pct(self.ui.export_progress_pct)` before `build_*`.
-- **Year in dev dates** (`set_show_year(bool)` — `pdf_export.rs` thread-local,
-  default **on**): the «Includi l'anno nelle date dei dev ('26)» checkbox
+  (remembered across exports, not persisted), copied into `ExportOptions::show_pct`.
+- **Year in dev dates** (`ExportOptions::show_year`, default **on**): the «Includi l'anno nelle date dei dev ('26)» checkbox
   (`year_checkbox` in `export.rs`, `UiState.export_show_year: ExportYear` — a
-  newtype like `ExportGhost` so it starts **on**; remembered, not persisted) of both Gantt dialogs. `dev_date(days)` = `short_date` + ` 'YY`
+  newtype like `ExportGhost` so it starts **on**; remembered, not persisted) of both Gantt dialogs. `dev_date(days, show_year)` = `short_date` + ` 'YY`
   (`"Sep 22 '26"`) and is used **only** for the date label after each dev bar;
   milestone flag dates keep `short_date`.
-  The label is `dev_range(start, end)` with end = **Friday** of the last effort week
+  The label is `dev_range(start, end, show_year)` with end = **Friday** of the last effort week
   (`r.end_day + DEV_END_OFFSET`, 4 days after its Monday), so a one-week dev reads
   `Mon - Fri` of that week; with the year on, a same-year range shows it only on the
   end (`Sep 21 - Oct 9 '26`), a cross-year one on both. Only the label: the bar already spans to `end_day + 7`.
@@ -785,8 +794,7 @@ the footer date.
   (start/end of the project); then it is remembered **per project** in
   `ExportProjectMemory.range` and never touched again, even if the project's dates
   change. Rides in `Action::ExportPdfProject/ExportSvgProject { …, range }` →
-  `pdf_export::set_export_range(Some(range))` (thread-local, reset by
-  `scoped_exports`). `export_window()` snaps it to whole weeks `[Monday(from),
+  `ExportOptions::range`. `ExportOptions::window()` snaps it to whole weeks `[Monday(from),
   Monday(to)+7)`; `project_shapes_fmt` drops effort weeks, ghost weeks and
   milestones outside it (`in_window`; a dev with effort **only outside** gets
   `Row.off = Some(OffWindow::{Ended, NotStarted, Gap})` (`OffWindow::of`) and
@@ -794,17 +802,23 @@ the footer date.
   left edge / right edge / centre — test
   `devs_outside_the_export_range_show_their_dates_at_the_edges`; a dev with no
   effort at all stays a `no_effort` thin row; `max_week` stays the all-weeks max so `Proportional`
-  heights don't change), and `page_shapes(…, window)` uses it as the exact axis
+  heights don't change), and `page_shapes` uses `opts.window()` as the exact axis
   instead of the month-snapped auto range (+2 months). Bars are clipped by
   `x_of`'s clamp while the date label keeps the dev's real `start_day/end_day`;
   when the label fits neither right nor left of a bar clipped at both edges it
   goes above the bar, right-aligned. `from > to` disables the export buttons.
+  Because the window snaps to whole weeks it can start with a few days of the
+  previous month (e.g. «Da» 1/1/2026 → Mon 29/12/2025), too narrow for a month
+  label: the **orange year labels** at the axis ends use the first/last month whose
+  name is actually drawn (`labeled` in `page_shapes`), not the axis extremes —
+  otherwise the chart reads «2025 · Jan Feb…». Test
+  `year_labels_follow_the_first_and_last_readable_month`.
   Tests `export_range_limits_axis_milestones_and_devs`,
   `export_range_starts_from_project_dates_and_is_remembered_per_project`.
 
 - **Milestone scope** (`MilestoneScope { Internal, External, Mix }` in
-  `milestones.rs`; `set_milestone_scope(...)` — a thread-local in `pdf_export.rs`,
-  like `set_show_pct`, default `Mix`): which flags `project_shapes` draws.
+  `milestones.rs`; `ExportOptions::scope`, default `Mix`): which flags
+  `project_shapes` draws.
   `Internal` («Solo internal») → those carrying `MilestoneCategory::Internal`
   (uncategorized = Internal); `External` («Solo external») → those carrying
   `External`; an Int/Ext milestone is in **both**; `Mix` → **all**
@@ -814,9 +828,9 @@ the footer date.
   three** ⇒ three files, remembered across exports, not persisted; the export
   buttons are disabled when none is ticked). The list goes into
   `Action::ExportPdfSelected/ExportPdfProject/ExportSvgProject { …, scopes }`,
-  whose handlers call `scoped_exports(&scopes, build)` (`mod.rs`): one `build_*`
-  per scope, each tagged with `MilestoneScope::file_suffix()`, then the scope is
-  reset to the default. Saving goes through `save_multi_export_dialog`: **one**
+  whose handlers call `scoped_exports(&base, &scopes, build)` (`mod.rs`): one
+  `build_*` per scope with `ExportOptions { scope, ..base }`, each tagged with
+  `MilestoneScope::file_suffix()`. Saving goes through `save_multi_export_dialog`: **one**
   rfd dialog, one file with the chosen name when a single scope was picked, and
   `path_with_suffix` (`name_internal.pdf` / `name_external.pdf` / `name_mix.pdf`)
   when more than one was
@@ -829,20 +843,18 @@ the footer date.
   one checkbox per milestone, labelled `icon nome — yy-mm-dd [Int/Ext]` in the
   milestone color) **beside** the dev list (two `ui.columns`, so the dialog stays short on 1920×1080 @125%); the ticked ids ride along in
   `Action::ExportPdfProject/ExportSvgProject { …, milestones }` and become
-  `set_milestone_allow(Some(ids))` — another `pdf_export.rs` thread-local
-  (`None` = no restriction, what the multi-project export sets). `project_shapes`
-  applies **allow-list AND scope**, so a milestone must be ticked *and* in scope.
-  `scoped_exports` resets both thread-locals when it is done.
-- **Ghost in export** (`set_show_ghost(bool)` — a `pdf_export.rs` thread-local,
-  default **true** = historical behavior): the «Includi i worker ghost (anche a
+  `ExportOptions::milestones = Some(ids)` (`None` = no restriction, what the
+  multi-project export uses). `ExportOptions::milestone_shown` applies
+  **allow-list AND scope**, so a milestone must be ticked *and* in scope.
+- **Ghost in export** (`ExportOptions::show_ghost`, default **true** = historical
+  behavior): the «Includi i worker ghost (anche a
   effort 0)» checkbox of both Gantt dialogs (`ghost_checkbox` in `export.rs`,
   bound to `UiState.export_ghost: ExportGhost` — a newtype because `UiState`
   derives `Default` and this one starts **on**; remembered across exports, not
   persisted). `ExportGhost { show, red }`: `show` is the checkbox, `red` a
   sub-option (radio «— colore: Rosso / Colore del dev» on the same row as the checkbox, enabled only when
-  `show`, default red). The three export handlers call
-  `set_show_ghost(export_ghost.show)` + `set_ghost_red(export_ghost.red)` next to
-  `set_show_pct`. In `page_shapes` the overlays use `ghost_col` = `RED` or the
+  `show`, default red), copied into `ExportOptions::show_ghost` / `ghost_red`. In
+  `page_shapes` the overlays use `ghost_col` = `RED` or the
   row's `r.color`; with dev color the dev-name label stays **black**. Gantt
   PDF/SVG only — the trend PDF ignores it (always red). Effects inside `project_shapes`: `ghost_weeks(dev)` is
   empty when off, and when on it uses `SingleDev::weeks_with_worker_assigned`
@@ -856,9 +868,10 @@ the footer date.
   **always serialized**, no UI — same family as `week_color`/`month_tint_pct`;
   default `pdf_export::CORNER_PCT_DEFAULT` = 40, out-of-range reported by
   `App::validate`): percentage of the **maximum** radius (`pct/100 · min(w,h)/2`),
-  so 0 = square and 100 = pill-shaped ends. `project_shapes` pushes it into the
-  `CORNER_PCT` thread-local (`set_corner_pct`, clamped) at the top of every page,
-  so any caller — tests included — is consistent. `rect_round(...)` replaces
+  so 0 = square and 100 = pill-shaped ends. It is a file setting, not a dialog
+  choice, so it is **not** in `ExportOptions`: `project_shapes_fmt` reads
+  `app.corner_pct` (clamped 0–100) and passes it as `corner` to `page_shapes` →
+  `rect_round(…, corner)` / `round_rect_pts(…, corner)`. `rect_round(...)` replaces
   `rect_fill` for the **effort bars** (all three `BarFormat`s), the **ghost
   overlay** on them, the **month axis cells** and the red **"Today" progress bar**
   on the axis; it emits a `Shape::Poly` from

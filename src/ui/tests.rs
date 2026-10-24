@@ -1518,19 +1518,28 @@ fn export_scopes_list_follows_the_checkboxes() {
 /// cui non esce niente (progetto senza inizio/fine) non producono file.
 #[test]
 fn scoped_exports_builds_one_item_per_scope() {
+    // Le opzioni di base arrivano a ogni export, con l'ambito di quel file.
+    let base = crate::pdf_export::ExportOptions {
+        show_pct: true,
+        ..Default::default()
+    };
     let items = scoped_exports(
+        &base,
         &[
             MilestoneScope::Internal,
             MilestoneScope::External,
             MilestoneScope::Mix,
         ],
-        |sc| Some(sc.label().as_bytes().to_vec()),
+        |opts| {
+            assert!(opts.show_pct, "le opzioni di base passano a ogni ambito");
+            Some(opts.scope.label().as_bytes().to_vec())
+        },
     );
     let suffixes: Vec<String> = items.iter().map(|(s, _)| s.clone()).collect();
     assert_eq!(suffixes, ["internal", "external", "mix"]);
     assert_eq!(items[1].1, b"Solo external".to_vec());
 
-    assert!(scoped_exports(&[MilestoneScope::Internal], |_| None).is_empty());
+    assert!(scoped_exports(&base, &[MilestoneScope::Internal], |_| None).is_empty());
 }
 
 /// Con due ambiti si salva una volta sola e i file prendono il suffisso

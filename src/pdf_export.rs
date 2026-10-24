@@ -19,137 +19,66 @@ use crate::milestones::{MilestoneId, MilestoneScope};
 use crate::project_utils::project::ProjectId;
 use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
 
-// Flag di rendering "mostra percentuali di avanzamento" nell'export, scelto
-// dall'utente nelle dialog. Thread-local come i flag tema/B-N di `ui_style`:
-// impostato prima di ogni `build_*`, letto da `page_shapes`. Default: off.
-thread_local! {
-    static SHOW_PCT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    // Anno abbreviato ('26) nelle date accanto alle barre dei dev: "Sep 22 '26".
-    // Default: on, come la spunta nelle dialog di export.
-    static SHOW_YEAR: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-    // Ambito milestone dell'export corrente (vedi `MilestoneScope`): decide
-    // quali bandierine finiscono nella pagina. Default: Internal (= tutte),
-    // cioè il comportamento storico.
-    static MS_SCOPE: std::cell::Cell<MilestoneScope> =
-        const { std::cell::Cell::new(MilestoneScope::Mix) };
-    // Milestone ammesse nell'export corrente, scelte una per una nella dialog
-    // del singolo progetto. `None` = nessun filtro (tutte quelle collocate nel
-    // progetto), che è il default e il caso dell'export multi-progetto.
-    static MS_ALLOW: std::cell::RefCell<Option<std::collections::HashSet<MilestoneId>>> =
-        const { std::cell::RefCell::new(None) };
-    // Stampa dei worker "ghost": `true` (default, comportamento storico) marca
-    // in rosso nome dev e settimane col ghost — comprese quelle in cui è
-    // assegnato a **effort 0** — e fa comparire anche il dev che ha solo un
-    // ghost senza ore; `false` toglie del tutto la marcatura.
-    static SHOW_GHOST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-    // Colore della marcatura ghost quando `SHOW_GHOST` è attivo: `true`
-    // (default, storico) = rosso con nome dev rosso; `false` = colore del dev
-    // e nome nero (le settimane ghost restano disegnate, anche a effort 0).
-    static GHOST_RED: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-    // Smussatura degli angoli dei rettangoli "pieni" (barre effort e celle dei
-    // mesi), in percentuale: 0 = spigolo vivo, 100 = raggio massimo (metà del
-    // lato corto → estremi semicircolari). Viene dal file .ron (`App.corner_pct`)
-    // e la imposta `project_shapes` a ogni pagina.
-    static CORNER_PCT: std::cell::Cell<i32> = const { std::cell::Cell::new(CORNER_PCT_DEFAULT) };
-    // Periodo del grafico Gantt scelto nella dialog del singolo progetto
-    // («Da»/«A», giorni). `None` = asse automatico (comportamento storico).
-    static EXPORT_RANGE: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+/// Scelte dell'utente per un export Gantt (PDF/SVG), fatte nelle dialog e
+/// passate esplicitamente a ogni `build_*`. I default sono quelli delle dialog
+/// alla prima apertura.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExportOptions {
+    /// Percentuali `presunta%/dichiarata%` accanto ai dev e sotto «Today».
+    pub show_pct: bool,
+    /// Anno abbreviato nelle date dei dev: "Sep 22 '26".
+    pub show_year: bool,
+    /// Ambito milestone del file: quali bandierine finiscono nella pagina.
+    pub scope: MilestoneScope,
+    /// Milestone scelte una per una nella dialog del singolo progetto; `None` =
+    /// tutte quelle collocate. Si combina in **AND** con `scope`.
+    pub milestones: Option<std::collections::HashSet<MilestoneId>>,
+    /// Stampa i worker "ghost" (anche a effort 0); `false` toglie la marcatura.
+    pub show_ghost: bool,
+    /// Colore della marcatura ghost: rosso con nome dev rosso, oppure colore
+    /// del dev con nome nero.
+    pub ghost_red: bool,
+    /// Periodo del grafico («Da»/«A», giorni) scelto nella dialog del singolo
+    /// progetto; `None` = asse automatico.
+    pub range: Option<(i32, i32)>,
 }
 
-/// Limita il grafico Gantt dei prossimi export al periodo `(da, a)` in giorni.
-/// Ciascun estremo vale per l'**intera settimana** che lo contiene (da lunedì
-/// a domenica), così le date di inizio/fine progetto (lunedì) mostrano la loro
-/// settimana per intero. `None` = asse automatico.
-pub fn set_export_range(r: Option<(i32, i32)>) {
-    EXPORT_RANGE.with(|c| c.set(r));
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self {
+            show_pct: false,
+            show_year: true,
+            scope: MilestoneScope::Mix,
+            milestones: None,
+            show_ghost: true,
+            ghost_red: true,
+            range: None,
+        }
+    }
 }
 
-/// Finestra dell'asse `[inizio, fine)` in giorni derivata da `set_export_range`:
-/// lunedì della settimana di «Da» → lunedì successivo alla settimana di «A».
-fn export_window() -> Option<(i32, i32)> {
-    let monday = |d: i32| local_to_days(&primo_giorno_settimana_corrente(&day_to_date(d)));
-    EXPORT_RANGE
-        .with(|c| c.get())
-        .map(|(a, b)| (monday(a.min(b)), monday(a.max(b)) + 7))
+impl ExportOptions {
+    /// Finestra dell'asse `[inizio, fine)` in giorni dal periodo scelto: ogni
+    /// estremo vale per l'**intera settimana** che lo contiene (lunedì della
+    /// settimana di «Da» → lunedì successivo alla settimana di «A»), così le
+    /// date di inizio/fine progetto mostrano la loro settimana per intero.
+    fn window(&self) -> Option<(i32, i32)> {
+        let monday = |d: i32| local_to_days(&primo_giorno_settimana_corrente(&day_to_date(d)));
+        self.range
+            .map(|(a, b)| (monday(a.min(b)), monday(a.max(b)) + 7))
+    }
+
+    /// La milestone va disegnata? Deve essere tra quelle scelte **e** rientrare
+    /// nell'ambito del file.
+    fn milestone_shown(&self, app: &App, id: MilestoneId) -> bool {
+        self.milestones.as_ref().is_none_or(|set| set.contains(&id))
+            && app.milestones.in_scope(id, self.scope)
+    }
 }
 
 /// Smussatura predefinita degli angoli, in percentuale del raggio massimo.
 /// È il valore scritto nel `.ron` quando il campo manca.
 pub const CORNER_PCT_DEFAULT: i32 = 40;
-
-/// Imposta la smussatura degli angoli (0–100, valori fuori intervallo vengono
-/// riportati nei limiti — `App::validate` li segnala all'utente).
-pub fn set_corner_pct(v: i32) {
-    CORNER_PCT.with(|c| c.set(v.clamp(0, 100)));
-}
-
-fn corner_pct() -> i32 {
-    CORNER_PCT.with(|c| c.get())
-}
-
-/// Imposta se le percentuali (presunta/dichiarata) vanno disegnate nell'export.
-pub fn set_show_pct(v: bool) {
-    SHOW_PCT.with(|c| c.set(v));
-}
-
-fn show_pct() -> bool {
-    SHOW_PCT.with(|c| c.get())
-}
-
-/// Imposta se le date dei dev riportano anche l'anno abbreviato (`'26`).
-pub fn set_show_year(v: bool) {
-    SHOW_YEAR.with(|c| c.set(v));
-}
-
-fn show_year() -> bool {
-    SHOW_YEAR.with(|c| c.get())
-}
-
-/// Imposta l'ambito milestone del prossimo `build_*`: `Internal` disegna le
-/// milestone Internal, `External` quelle External (le Int/Ext in entrambi),
-/// `Mix` (default) tutte.
-pub fn set_milestone_scope(v: MilestoneScope) {
-    MS_SCOPE.with(|c| c.set(v));
-}
-
-fn milestone_scope() -> MilestoneScope {
-    MS_SCOPE.with(|c| c.get())
-}
-
-/// Limita l'export alle milestone indicate (`None` = tutte). Si combina in
-/// **AND** con l'ambito: una milestone è disegnata se è nell'elenco ammesso
-/// **e** rientra nell'ambito del file.
-pub fn set_milestone_allow(ids: Option<Vec<MilestoneId>>) {
-    MS_ALLOW.with(|c| *c.borrow_mut() = ids.map(|v| v.into_iter().collect()));
-}
-
-/// Imposta se l'export deve stampare i worker "ghost" (default: sì).
-pub fn set_show_ghost(v: bool) {
-    SHOW_GHOST.with(|c| c.set(v));
-}
-
-fn show_ghost() -> bool {
-    SHOW_GHOST.with(|c| c.get())
-}
-
-/// Imposta il colore della marcatura ghost: rosso (default) o colore del dev.
-pub fn set_ghost_red(v: bool) {
-    GHOST_RED.with(|c| c.set(v));
-}
-
-fn ghost_red() -> bool {
-    GHOST_RED.with(|c| c.get())
-}
-
-/// La milestone è ammessa dall'elenco scelto dall'utente?
-fn milestone_allowed(id: MilestoneId) -> bool {
-    MS_ALLOW.with(|c| {
-        c.borrow()
-            .as_ref()
-            .map(|set| set.contains(&id))
-            .unwrap_or(true)
-    })
-}
 
 // Font incorporati (DejaVu Sans, licenza ridistribuibile): resa corretta degli
 // accenti/Unicode, che i font builtin PDF (WinAnsi) non garantiscono.
@@ -332,14 +261,14 @@ const SEG_DATE_LINE: f32 = 2.0;
 /// Le due righe di date sotto un tratto `[start, end]` (giorni): l'anno, se
 /// richiesto, segue la stessa regola dell'etichetta a destra — solo sulla fine
 /// se le due date sono nello stesso anno.
-fn segment_dates(start: i32, end: i32) -> (String, String) {
+fn segment_dates(start: i32, end: i32, show_year: bool) -> (String, String) {
     let same_year = day_to_date(start).year() == day_to_date(end).year();
     let first = if same_year {
         short_date(start)
     } else {
-        dev_date(start)
+        dev_date(start, show_year)
     };
-    (first, dev_date(end))
+    (first, dev_date(end, show_year))
 }
 
 /// Giorni da aggiungere al lunedì dell'ultima settimana di effort per la data
@@ -353,9 +282,9 @@ fn short_date(days: i32) -> String {
 }
 
 /// Data del dev accanto alla barra: "Sep 22", oppure "Sep 22 '26" se l'utente
-/// ha chiesto l'anno (`set_show_year`).
-fn dev_date(days: i32) -> String {
-    if show_year() {
+/// ha chiesto l'anno (`ExportOptions::show_year`).
+fn dev_date(days: i32, show_year: bool) -> String {
+    if show_year {
         let y = day_to_date(days).year().rem_euclid(100);
         format!("{} '{y:02}", short_date(days))
     } else {
@@ -366,14 +295,14 @@ fn dev_date(days: i32) -> String {
 /// Etichetta «inizio - fine» del dev. Con l'anno attivo, se le due date cadono
 /// nello stesso anno l'anno compare solo nella fine («Sep 21 - Oct 9 '26»),
 /// altrimenti in entrambe («Dec 14 '26 - Jan 8 '27»).
-fn dev_range(start: i32, end: i32) -> String {
+fn dev_range(start: i32, end: i32, show_year: bool) -> String {
     let same_year = day_to_date(start).year() == day_to_date(end).year();
     let from = if same_year {
         short_date(start)
     } else {
-        dev_date(start)
+        dev_date(start, show_year)
     };
-    format!("{from} - {}", dev_date(end))
+    format!("{from} - {}", dev_date(end, show_year))
 }
 
 // --- Helper testo/disegno ---------------------------------------------------
@@ -448,13 +377,13 @@ fn rect_fill(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<
 
 /// Punti (in senso antiorario) di un rettangolo con gli **angoli arrotondati**,
 /// approssimati con `SEG` segmenti per angolo: il raggio è
-/// `corner_pct()%` di metà lato corto, quindi al 100% gli estremi diventano
+/// `corner%` (0–100) di metà lato corto, quindi al 100% gli estremi diventano
 /// semicerchi e allo 0% si torna allo spigolo vivo.
-fn round_rect_pts(x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<(f32, f32)> {
+fn round_rect_pts(x0: f32, y0: f32, x1: f32, y1: f32, corner: i32) -> Vec<(f32, f32)> {
     const SEG: usize = 6;
     let (x0, x1) = (x0.min(x1), x0.max(x1));
     let (y0, y1) = (y0.min(y1), y0.max(y1));
-    let r = (corner_pct() as f32 / 100.0) * (x1 - x0).min(y1 - y0) / 2.0;
+    let r = (corner.clamp(0, 100) as f32 / 100.0) * (x1 - x0).min(y1 - y0) / 2.0;
     let mut pts = Vec::with_capacity(4 * (SEG + 1));
     // (centro dell'arco, angolo iniziale) per i quattro angoli, in senso orario
     // partendo da quello in basso a sinistra.
@@ -474,13 +403,20 @@ fn round_rect_pts(x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<(f32, f32)> {
 }
 
 /// Rettangolo pieno con gli angoli **smussati** secondo l'impostazione del file
-/// (`App.corner_pct`): usato per le barre dell'effort e le celle dei mesi. Con
-/// smussatura 0 resta un rettangolo vero e proprio.
-fn rect_round(x0: f32, y0: f32, x1: f32, y1: f32, color: (f32, f32, f32)) -> Vec<Shape> {
-    if corner_pct() <= 0 {
+/// (`App.corner_pct`, passata come `corner`): usato per le barre dell'effort e
+/// le celle dei mesi. Con smussatura 0 resta un rettangolo vero e proprio.
+fn rect_round(
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    color: (f32, f32, f32),
+    corner: i32,
+) -> Vec<Shape> {
+    if corner <= 0 {
         return rect_fill(x0, y0, x1, y1, color);
     }
-    poly_fill(&round_rect_pts(x0, y0, x1, y1), color)
+    poly_fill(&round_rect_pts(x0, y0, x1, y1, corner), color)
 }
 
 /// Poligono pieno da una lista di punti (mm).
@@ -978,8 +914,8 @@ fn contiguous_runs(weeks: &[(i32, u32)]) -> Vec<(i32, i32)> {
 
 /// Percentuali «(presunta%/dichiarata%)» accanto alle date di un dev, se la
 /// stampa delle percentuali è attiva.
-fn pct_label(r: &Row) -> Option<String> {
-    show_pct().then(|| match r.presumed_pct {
+fn pct_label(r: &Row, show_pct: bool) -> Option<String> {
+    show_pct.then(|| match r.presumed_pct {
         Some(p) => format!("({p}%/{}%)", r.declared_pct),
         None => format!("(-/{}%)", r.declared_pct),
     })
@@ -999,9 +935,11 @@ fn page_shapes(
     chart_only: bool,
     progress_pct: Option<u8>,
     presumed_pct: Option<u32>,
-    window: Option<(i32, i32)>,
+    opts: &ExportOptions,
+    corner: i32,
 ) -> Vec<Shape> {
     let mut shapes: Vec<Shape> = Vec::new();
+    let window = opts.window();
 
     // --- Intervallo dell'asse ----------------------------------------------
     // Copre tutti gli elementi (inizio/fine progetto, barre dev, milestone,
@@ -1054,6 +992,12 @@ fn page_shapes(
     // --- Asse dei mesi ------------------------------------------------------
     let mut m = month_start(day_to_date(axis_start));
     let mut idx = 0usize;
+    // Primo e ultimo mese col nome scritto: gli anni ai lati si riferiscono a
+    // quelli. Con un periodo scelto a mano l'asse parte e finisce sulle
+    // settimane intere, quindi può iniziare con pochi giorni del mese prima
+    // (troppo stretti per l'etichetta): l'anno di quel ritaglio sarebbe
+    // fuorviante («2025 · Jan Feb…» per un periodo che inizia a gennaio 2026).
+    let mut labeled: Option<(NaiveDate, NaiveDate)> = None;
     loop {
         let cell_x0 = x_of(local_to_days(&m));
         let next = add_months(m, 1);
@@ -1063,7 +1007,7 @@ fn page_shapes(
         } else {
             GRAY_LT
         };
-        shapes.extend(rect_round(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
+        shapes.extend(rect_round(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill, corner));
         // Separatore bianco a destra della cella.
         shapes.extend(line(cell_x1, AXIS_BOT, cell_x1, AXIS_TOP, 0.6, WHITE));
         // Riga verticale del mese, attraverso la zona delle righe dev.
@@ -1079,6 +1023,7 @@ fn page_shapes(
                 false,
                 WHITE,
             ));
+            labeled = Some(labeled.map_or((m, m), |(first, _)| (first, m)));
         }
         if local_to_days(&next) >= axis_end {
             break;
@@ -1091,9 +1036,15 @@ fn page_shapes(
         CHART_X1, ROWS_BOT, CHART_X1, AXIS_BOT, 0.4, GRAY_GUIDE,
     ));
 
-    // Etichette anno agli estremi (arancione, in grassetto).
-    let year_l = month_start(day_to_date(axis_start)).year();
-    let year_r = add_months(month_start(day_to_date(axis_end)), -1).year();
+    // Etichette anno agli estremi (arancione, in grassetto): l'anno del primo e
+    // dell'ultimo mese leggibili; senza nessun nome scritto, quelli degli estremi.
+    let (year_l, year_r) = match labeled {
+        Some((first, last)) => (first.year(), last.year()),
+        None => (
+            month_start(day_to_date(axis_start)).year(),
+            add_months(month_start(day_to_date(axis_end)), -1).year(),
+        ),
+    };
     let axis_mid = (AXIS_BOT + AXIS_TOP) / 2.0 - 1.8;
     shapes.extend(text_right(
         CHART_X0 - 9.0,
@@ -1123,6 +1074,7 @@ fn page_shapes(
             xt,
             AXIS_TOP,
             RED,
+            corner,
         ));
     }
     if today_in_axis {
@@ -1146,7 +1098,7 @@ fn page_shapes(
         // "(presunta%/attuale%)" al font 7.0. Sta nella fascia tra l'asse e le
         // righe dev, così non copre le barre.
         let lx = xt + 2.0;
-        match (show_pct(), presumed_pct, progress_pct) {
+        match (opts.show_pct, presumed_pct, progress_pct) {
             (true, Some(pres), Some(act)) => {
                 shapes.extend(text_left(lx, AXIS_BOT - 8.5, "Today", 8.0, true, BLACK));
                 shapes.extend(text_left(
@@ -1316,9 +1268,9 @@ fn page_shapes(
         let label = truncate_to_w(&r.label, 8.0, label_w);
         // Marcatura ghost: rosso, oppure il colore del dev se l'utente l'ha
         // scelto nell'export (allora anche il nome resta nero).
-        let ghost_col = if ghost_red() { RED } else { r.color };
+        let ghost_col = if opts.ghost_red { RED } else { r.color };
         // Nome del dev in rosso se contiene almeno un worker "ghost".
-        let label_col = if r.ghost_weeks.is_empty() || !ghost_red() {
+        let label_col = if r.ghost_weeks.is_empty() || !opts.ghost_red {
             BLACK
         } else {
             RED
@@ -1330,8 +1282,8 @@ fn page_shapes(
         // linea, solo le date reali (+ % se richieste) al bordo sinistro (già
         // finito), destro (deve iniziare) o al centro (periodo in un buco).
         if let Some(off) = r.off {
-            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
-            let lbl = match pct_label(r) {
+            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET, opts.show_year);
+            let lbl = match pct_label(r, opts.show_pct) {
                 Some(p) => format!("{range}  {p}"),
                 None => range,
             };
@@ -1401,6 +1353,7 @@ fn page_shapes(
                     bx1.max(bx0 + 1.0),
                     yc + bar_hh,
                     r.color,
+                    corner,
                 ));
             }
             BarFormat::Segmented => {
@@ -1414,6 +1367,7 @@ fn page_shapes(
                         rx1.max(rx0 + 1.0),
                         yc + bar_hh,
                         r.color,
+                        corner,
                     ));
                 }
             }
@@ -1433,6 +1387,7 @@ fn page_shapes(
                         rx1.max(rx0 + 1.0),
                         yc + hh,
                         r.color,
+                        corner,
                     ));
                 }
             }
@@ -1459,6 +1414,7 @@ fn page_shapes(
                         rx1.max(rx0 + 1.0),
                         yc + hh,
                         ghost_col,
+                        corner,
                     ));
                 }
             } else {
@@ -1475,6 +1431,7 @@ fn page_shapes(
                         rx1.max(rx0 + 1.0),
                         yc + bar_hh,
                         ghost_col,
+                        corner,
                     ));
                 }
             }
@@ -1485,13 +1442,13 @@ fn page_shapes(
         // non arrivano qui (hanno già fatto `continue`), quindi non mostrano la %.
         // La fine è il **venerdì** dell'ultima settimana (lunedì + 4): un dev
         // con effort in una sola settimana mostra «lun - ven» di quella settimana.
-        let pct = pct_label(r);
+        let pct = pct_label(r, opts.show_pct);
         let lbl = if r.dates_below {
             // Date sotto ogni tratto (inizio sopra, fine sotto, centrate sul
             // tratto); a destra della barra restano solo le percentuali.
             for (s0, e0) in contiguous_runs(&r.weeks) {
                 let cx = (x_of(s0) + x_of(e0 + 7)) / 2.0;
-                let (d0, d1) = segment_dates(s0, e0 + DEV_END_OFFSET);
+                let (d0, d1) = segment_dates(s0, e0 + DEV_END_OFFSET, opts.show_year);
                 let y0 = yc - bar_hh - 0.6 - SEG_DATE_FONT * 0.352_778;
                 for (k, d) in [d0, d1].iter().enumerate() {
                     shapes.extend(text_center(
@@ -1509,7 +1466,7 @@ fn page_shapes(
                 None => continue,
             }
         } else {
-            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET);
+            let range = dev_range(r.start_day, r.end_day + DEV_END_OFFSET, opts.show_year);
             match pct {
                 Some(p) => format!("{range}  {p}"),
                 None => range,
@@ -1590,10 +1547,11 @@ fn project_shapes(
     order: Option<&[DevId]>,
     chart_only: bool,
     fmt: BarFormat,
+    opts: &ExportOptions,
 ) -> Option<Vec<Shape>> {
     let bar = DevBar::from(fmt);
     project_shapes_fmt(
-        app, proj, name, dev_info, today, created, order, chart_only, &|_| bar,
+        app, proj, name, dev_info, today, created, order, chart_only, &|_| bar, opts,
     )
 }
 
@@ -1610,6 +1568,7 @@ fn project_shapes_fmt(
     order: Option<&[DevId]>,
     chart_only: bool,
     fmt_of: &dyn Fn(DevId) -> DevBar,
+    opts: &ExportOptions,
 ) -> Option<Vec<Shape>> {
     let (Some(start_w), Some(end_w)) = (
         app.projects.get_project_start_week(proj),
@@ -1619,12 +1578,12 @@ fn project_shapes_fmt(
     };
     let proj_start = start_w.0 as i32;
     let proj_end = end_w.0 as i32;
-    // Smussatura degli angoli: impostazione del file .ron, letta a ogni pagina
-    // (così vale anche per chi chiama `project_shapes` direttamente, test inclusi).
-    set_corner_pct(app.corner_pct);
+    // Smussatura degli angoli: impostazione del file .ron (non una scelta della
+    // dialog), riportata nei limiti 0–100 — `App::validate` segnala i valori fuori.
+    let corner = app.corner_pct.clamp(0, 100);
     // Periodo scelto (dialog del singolo progetto): fuori restano settimane
     // di effort, settimane ghost e milestone.
-    let window = export_window();
+    let window = opts.window();
     let in_window = |day: i32| window.is_none_or(|(s, e)| day + 7 > s && day < e);
     let color_of = |dev_id: &DevId| {
         dev_info
@@ -1652,7 +1611,7 @@ fn project_shapes_fmt(
     // con effort 0**. Con la stampa dei ghost disattivata l'elenco è vuoto e
     // nulla viene marcato di rosso.
     let ghost_weeks = |dev_id: DevId| -> Vec<i32> {
-        if !show_ghost() {
+        if !opts.show_ghost {
             return Vec::new();
         }
         let Some(sd) = app.projects.get_single_dev(proj, dev_id) else {
@@ -1797,14 +1756,10 @@ fn project_shapes_fmt(
     }
 
     let mut flags = Vec::new();
-    let scope = milestone_scope();
     for (mid, week) in app.projects.list_project_milestones(proj) {
         // Fuori ambito (es. milestone solo Internal in una stampa External) o
         // non spuntata nella dialog: la bandierina non viene disegnata.
-        if !milestone_allowed(mid)
-            || !app.milestones.in_scope(mid, scope)
-            || !in_window(week.0 as i32)
-        {
+        if !opts.milestone_shown(app, mid) || !in_window(week.0 as i32) {
             continue;
         }
         let mname = app.milestones.get_name(mid).unwrap_or("?").to_string();
@@ -1835,15 +1790,18 @@ fn project_shapes_fmt(
         chart_only,
         progress_pct,
         presumed_pct,
-        window,
+        opts,
+        corner,
     ))
 }
 
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
 #[cfg(test)]
-pub fn build_pdf(app: &App, fmt: impl Into<DevBar>) -> Option<Vec<u8>> {
-    gantt_pdf(app, fmt.into(), |id, enable| enable && !app.projects.is_closed(id))
+pub fn build_pdf(app: &App, fmt: impl Into<DevBar>, opts: &ExportOptions) -> Option<Vec<u8>> {
+    gantt_pdf(app, fmt.into(), opts, |id, enable| {
+        enable && !app.projects.is_closed(id)
+    })
 }
 
 /// Come `build_pdf`, ma limitato ai soli progetti indicati in `selected`
@@ -1854,15 +1812,23 @@ pub fn build_pdf_selected(
     app: &App,
     selected: &[ProjectId],
     fmt: impl Into<DevBar>,
+    opts: &ExportOptions,
 ) -> Option<Vec<u8>> {
     // I chiusi non sono esclusi a priori: la selezione a monte riflette la
     // modalità Vista (può includere progetti chiusi).
-    gantt_pdf(app, fmt.into(), |id, enable| enable && selected.contains(&id))
+    gantt_pdf(app, fmt.into(), opts, |id, enable| {
+        enable && selected.contains(&id)
+    })
 }
 
 /// Una pagina Gantt per ogni progetto (in ordine di visualizzazione) che passa
 /// `keep(id, abilitato)` e ha inizio e fine; tutti i dev con lo stesso `bar`.
-fn gantt_pdf(app: &App, bar: DevBar, keep: impl Fn(ProjectId, bool) -> bool) -> Option<Vec<u8>> {
+fn gantt_pdf(
+    app: &App,
+    bar: DevBar,
+    opts: &ExportOptions,
+    keep: impl Fn(ProjectId, bool) -> bool,
+) -> Option<Vec<u8>> {
     let created = today().format(US_DATE).to_string();
     let today = today_days();
     let dev_info = dev_info_map(app);
@@ -1873,7 +1839,7 @@ fn gantt_pdf(app: &App, bar: DevBar, keep: impl Fn(ProjectId, bool) -> bool) -> 
         .filter(|(id, _, enable)| keep(*id, enable.0))
         .filter_map(|(id, name, _)| {
             project_shapes_fmt(
-                app, id, &name, &dev_info, today, &created, None, false, &|_| bar,
+                app, id, &name, &dev_info, today, &created, None, false, &|_| bar, opts,
             )
         })
         .collect();
@@ -1891,9 +1857,10 @@ pub fn build_pdf_project(
     proj: ProjectId,
     ordered_devs: &[DevId],
     fmt: BarFormat,
+    opts: &ExportOptions,
 ) -> Option<Vec<u8>> {
     let devs: Vec<(DevId, DevBar)> = ordered_devs.iter().map(|&d| (d, fmt.into())).collect();
-    build_pdf_project_fmt(app, proj, &devs)
+    build_pdf_project_fmt(app, proj, &devs, opts)
 }
 
 /// Lookup del formato per dev a partire dalla lista `(dev, formato)` della
@@ -1913,6 +1880,7 @@ pub fn build_pdf_project_fmt(
     app: &App,
     proj: ProjectId,
     devs: &[(DevId, DevBar)],
+    opts: &ExportOptions,
 ) -> Option<Vec<u8>> {
     let created = today().format(US_DATE).to_string();
     let today = today_days();
@@ -1929,6 +1897,7 @@ pub fn build_pdf_project_fmt(
         Some(&order),
         false,
         &fmt_lookup(devs),
+        opts,
     )?;
     pdf_document("Project", &[shapes])
 }
@@ -1942,9 +1911,10 @@ pub fn build_svg_project(
     proj: ProjectId,
     ordered_devs: &[DevId],
     fmt: BarFormat,
+    opts: &ExportOptions,
 ) -> Option<String> {
     let devs: Vec<(DevId, DevBar)> = ordered_devs.iter().map(|&d| (d, fmt.into())).collect();
-    build_svg_project_fmt(app, proj, &devs)
+    build_svg_project_fmt(app, proj, &devs, opts)
 }
 
 /// Come `build_svg_project`, con il formato barra scelto per ogni dev.
@@ -1952,6 +1922,7 @@ pub fn build_svg_project_fmt(
     app: &App,
     proj: ProjectId,
     devs: &[(DevId, DevBar)],
+    opts: &ExportOptions,
 ) -> Option<String> {
     let today = today_days();
     let dev_info = dev_info_map(app);
@@ -1967,6 +1938,7 @@ pub fn build_svg_project_fmt(
         Some(&order),
         true, // solo grafico
         &fmt_lookup(devs),
+        opts,
     )?;
     Some(render_svg(&shapes))
 }
@@ -3364,7 +3336,7 @@ mod tests {
     #[test]
     fn no_eligible_projects_returns_none() {
         let app = App::new();
-        assert!(build_pdf(&app, BarFormat::Continuous).is_none());
+        assert!(build_pdf(&app, BarFormat::Continuous, &ExportOptions::default()).is_none());
     }
 
     #[test]
@@ -3386,7 +3358,8 @@ mod tests {
         let mid = app.milestones.add("Beta");
         app.projects.add_project_milestone(pid, mid, WeekId(20035));
 
-        let bytes = build_pdf(&app, BarFormat::Continuous).expect("un progetto idoneo → Some");
+        let bytes = build_pdf(&app, BarFormat::Continuous, &ExportOptions::default())
+            .expect("un progetto idoneo → Some");
         assert!(
             bytes.starts_with(b"%PDF"),
             "l'output deve essere un PDF valido"
@@ -3498,7 +3471,7 @@ mod tests {
         let mut app = App::new();
         app.projects
             .add("Senza fine", Some("XYZ"), Some(WeekId(20000)));
-        assert!(build_pdf(&app, BarFormat::Continuous).is_none());
+        assert!(build_pdf(&app, BarFormat::Continuous, &ExportOptions::default()).is_none());
     }
 
     #[test]
@@ -3514,18 +3487,25 @@ mod tests {
         app.projects.set_project_end_week(b, Some(WeekId(20070)));
 
         // Solo A selezionato → PDF valido (una pagina).
-        let bytes = build_pdf_selected(&app, &[a], BarFormat::Continuous)
-            .expect("progetto selezionato idoneo → Some");
+        let bytes =
+            build_pdf_selected(&app, &[a], BarFormat::Continuous, &ExportOptions::default())
+                .expect("progetto selezionato idoneo → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun progetto selezionato → None.
-        assert!(build_pdf_selected(&app, &[], BarFormat::Continuous).is_none());
+        assert!(
+            build_pdf_selected(&app, &[], BarFormat::Continuous, &ExportOptions::default())
+                .is_none()
+        );
 
         // Progetto selezionato ma senza fine → None (non idoneo).
         let c = app
             .projects
             .add("Senza fine", Some("CCC"), Some(WeekId(20000)));
-        assert!(build_pdf_selected(&app, &[c], BarFormat::Continuous).is_none());
+        assert!(
+            build_pdf_selected(&app, &[c], BarFormat::Continuous, &ExportOptions::default())
+                .is_none()
+        );
     }
 
     #[test]
@@ -3542,13 +3522,25 @@ mod tests {
             .add_effort(pid, dev_eff, WeekId(20007), WorkerId(0), Effort(8));
 
         // Ordine scelto dall'utente: prima il dev senza effort.
-        let bytes = build_pdf_project(&app, pid, &[dev_empty, dev_eff], BarFormat::Continuous)
-            .expect("progetto con inizio/fine e dev → Some");
+        let bytes = build_pdf_project(
+            &app,
+            pid,
+            &[dev_empty, dev_eff],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .expect("progetto con inizio/fine e dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
 
         // Nessun dev selezionato → esporta comunque il resto (milestone, asse…).
-        let bytes =
-            build_pdf_project(&app, pid, &[], BarFormat::Continuous).expect("senza dev → Some");
+        let bytes = build_pdf_project(
+            &app,
+            pid,
+            &[],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .expect("senza dev → Some");
         assert!(bytes.starts_with(b"%PDF"));
     }
 
@@ -3557,7 +3549,16 @@ mod tests {
         let mut app = App::new();
         let pid = app.projects.add("Prog", Some("ABC"), Some(WeekId(20000)));
         // niente fine → None anche col percorso singolo progetto
-        assert!(build_pdf_project(&app, pid, &[], BarFormat::Continuous).is_none());
+        assert!(
+            build_pdf_project(
+                &app,
+                pid,
+                &[],
+                BarFormat::Continuous,
+                &ExportOptions::default()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -3574,8 +3575,14 @@ mod tests {
         app.projects
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
 
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous)
-            .expect("progetto valido → Some");
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .expect("progetto valido → Some");
         assert!(svg.trim_start().starts_with("<svg"), "deve essere un SVG");
         assert!(svg.contains("</svg>"));
         // "solo grafico": niente tripletta né descrizione del progetto.
@@ -3587,7 +3594,16 @@ mod tests {
 
         // Senza inizio/fine → None.
         let p2 = app.projects.add("NoFine", Some("ZZZ"), Some(WeekId(20000)));
-        assert!(build_svg_project(&app, p2, &[], BarFormat::Continuous).is_none());
+        assert!(
+            build_svg_project(
+                &app,
+                p2,
+                &[],
+                BarFormat::Continuous,
+                &ExportOptions::default()
+            )
+            .is_none()
+        );
     }
 
     /// Numero di vertici di ogni `<polygon>` presente nell'SVG.
@@ -3619,13 +3635,27 @@ mod tests {
         let bolt = |svg: &str| polygon_vertex_counts(svg).iter().filter(|n| **n == 6).count();
 
         // Traguardo: un pennant triangolare, nessun fulmine.
-        let goal_svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let goal_svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .unwrap();
         assert_eq!(bolt(&goal_svg), 0, "senza trigger niente fulmine");
 
         // Stessa milestone marcata come trigger: il triangolo lascia il posto
         // al fulmine, uno per uno.
         app.milestones.set_kind(mid, MilestoneKind::Trigger);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .unwrap();
         assert_eq!(bolt(&svg), 1, "il trigger disegna un fulmine a 6 vertici");
         assert_eq!(
             tri(&svg),
@@ -3657,15 +3687,31 @@ mod tests {
         app.projects.add_project_milestone(pid, interna, WeekId(20021));
         app.projects.add_project_milestone(pid, esterna, WeekId(20035));
 
+        let scoped = |scope| ExportOptions {
+            scope,
+            ..Default::default()
+        };
         // Mix: tutte e due le bandierine.
-        set_milestone_scope(MilestoneScope::Mix);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &scoped(MilestoneScope::Mix),
+        )
+        .unwrap();
         assert!(svg.contains("SoloInterna"));
         assert!(svg.contains("AncheEsterna"));
 
         // Solo internal: resta fuori quella marcata solo External.
-        set_milestone_scope(MilestoneScope::Internal);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &scoped(MilestoneScope::Internal),
+        )
+        .unwrap();
         assert!(svg.contains("SoloInterna"));
         assert_eq!(
             svg.contains("AncheEsterna"),
@@ -3674,15 +3720,19 @@ mod tests {
         );
 
         // External: solo quella External.
-        set_milestone_scope(MilestoneScope::External);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &scoped(MilestoneScope::External),
+        )
+        .unwrap();
         assert!(
             !svg.contains("SoloInterna"),
             "la milestone Internal non va nella stampa External"
         );
         assert!(svg.contains("AncheEsterna"));
-
-        set_milestone_scope(MilestoneScope::Mix);
     }
 
     /// Periodo scelto nella dialog del singolo progetto: l'asse copre solo
@@ -3716,13 +3766,22 @@ mod tests {
         let devs = [solo_ottobre, a_cavallo];
 
         // Senza periodo: tutto il progetto, ottobre compreso.
-        let full = build_svg_project(&app, pid, &devs, BarFormat::Continuous).unwrap();
+        let full = build_svg_project(
+            &app,
+            pid,
+            &devs,
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .unwrap();
         assert!(full.contains(">Oct<") && full.contains("Kickoff"));
         assert!(full.contains("Oct 4"), "date del dev di ottobre");
 
-        set_export_range(Some((20077, 20140)));
-        let svg = build_svg_project(&app, pid, &devs, BarFormat::Continuous).unwrap();
-        set_export_range(None);
+        let ranged = ExportOptions {
+            range: Some((20077, 20140)),
+            ..Default::default()
+        };
+        let svg = build_svg_project(&app, pid, &devs, BarFormat::Continuous, &ranged).unwrap();
         assert!(!svg.contains(">Oct<"), "ottobre è fuori dall'asse");
         assert!(svg.contains(">Jan<"));
         assert!(!svg.contains("Kickoff"), "milestone fuori periodo omessa");
@@ -3730,6 +3789,36 @@ mod tests {
         assert!(svg.contains("SoloOttobre"));
         // Dev tagliato al bordo sinistro: date reali (dal 6 dicembre).
         assert!(svg.contains("Dec 6"), "date reali del dev tagliato");
+    }
+
+    /// Periodo che inizia di giovedì 1° gennaio: l'asse parte dal lunedì 29
+    /// dicembre (settimane intere), ma l'anno a sinistra è quello del primo
+    /// mese leggibile (2026), non quello del ritaglio di dicembre (2025).
+    /// Caso reale: progetto «OVT 3» esportato da gennaio 2026 ad agosto 2027.
+    #[test]
+    fn year_labels_follow_the_first_and_last_readable_month() {
+        let d = |y, m, dd| local_to_days(&NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        let mut app = App::new();
+        let pid = app
+            .projects
+            .add("OVT", Some("OVT 3"), Some(WeekId(d(2026, 11, 9) as usize)));
+        app.projects
+            .set_project_end_week(pid, Some(WeekId(d(2027, 7, 5) as usize)));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(pid, dev);
+        app.projects
+            .add_effort(pid, dev, WeekId(d(2026, 11, 9) as usize), WorkerId(0), Effort(8));
+        let opts = ExportOptions {
+            range: Some((d(2026, 1, 1), d(2027, 8, 31))),
+            ..Default::default()
+        };
+        let window = opts.window().unwrap();
+        assert_eq!(day_to_date(window.0), NaiveDate::from_ymd_opt(2025, 12, 29).unwrap());
+
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous, &opts).unwrap();
+        assert!(svg.contains(">2026<"), "anno a sinistra: quello di Jan 2026");
+        assert!(!svg.contains(">2025<"), "il ritaglio di dicembre 2025 non dà l'anno");
+        assert!(svg.contains(">2027<"), "anno a destra");
     }
 
     /// Dev con effort solo fuori dal periodo scelto: niente barra né linea
@@ -3759,7 +3848,6 @@ mod tests {
         let order = [finito, futuro, buco, dentro];
 
         // Periodo: 20 dicembre 2024 → settimana del 21 febbraio 2025.
-        set_export_range(Some((20077, 20140)));
         let shapes = project_shapes_fmt(
             &app,
             pid,
@@ -3770,9 +3858,12 @@ mod tests {
             Some(&order),
             true,
             &|_| DevBar::from(BarFormat::Continuous),
+            &ExportOptions {
+                range: Some((20077, 20140)),
+                ..Default::default()
+            },
         )
         .unwrap();
-        set_export_range(None);
 
         // (x iniziale, larghezza) del testo che contiene `pat`.
         let at = |pat: &str| -> (f32, f32) {
@@ -3857,7 +3948,7 @@ mod tests {
         (app, pid, normale, solo_ghost)
     }
 
-    fn shapes_all_devs(app: &App, pid: ProjectId) -> Vec<Shape> {
+    fn shapes_all_devs(app: &App, pid: ProjectId, opts: &ExportOptions) -> Vec<Shape> {
         project_shapes(
             app,
             pid,
@@ -3868,8 +3959,17 @@ mod tests {
             None, // come l'export multi-progetto: solo i dev con effort
             false,
             BarFormat::Continuous,
+            opts,
         )
         .unwrap()
+    }
+
+    /// Opzioni di default con la stampa dei ghost attiva o no.
+    fn ghost_opts(show_ghost: bool) -> ExportOptions {
+        ExportOptions {
+            show_ghost,
+            ..Default::default()
+        }
     }
 
     /// Con la spunta «Includi i worker ghost» il ghost si stampa anche dove ha
@@ -3879,14 +3979,12 @@ mod tests {
     fn zero_effort_ghost_is_printed_only_when_enabled() {
         let (app, pid, ..) = app_with_zero_effort_ghost();
 
-        set_show_ghost(true);
-        let on = shapes_all_devs(&app, pid);
+        let on = shapes_all_devs(&app, pid, &ghost_opts(true));
         assert!(
             texts(&on).iter().any(|t| t == "Backend"),
             "il dev con il solo ghost a effort 0 deve comparire"
         );
-        set_show_ghost(false);
-        let off = shapes_all_devs(&app, pid);
+        let off = shapes_all_devs(&app, pid, &ghost_opts(false));
         assert!(
             !texts(&off).iter().any(|t| t == "Backend"),
             "senza spunta il dev senza ore non si stampa"
@@ -3901,8 +3999,6 @@ mod tests {
             2,
             "una marcatura rossa per ogni settimana col ghost"
         );
-
-        set_show_ghost(true);
     }
 
     /// Con «Colore del dev» il ghost resta stampato (il dev col solo ghost a
@@ -3918,14 +4014,16 @@ mod tests {
                 .count()
         };
 
-        set_show_ghost(false);
-        let off = shapes_all_devs(&app, pid);
-        set_show_ghost(true);
-        set_ghost_red(true);
-        let red = shapes_all_devs(&app, pid);
-        set_ghost_red(false);
-        let dev_col = shapes_all_devs(&app, pid);
-        set_ghost_red(true);
+        let off = shapes_all_devs(&app, pid, &ghost_opts(false));
+        let red = shapes_all_devs(&app, pid, &ghost_opts(true));
+        let dev_col = shapes_all_devs(
+            &app,
+            pid,
+            &ExportOptions {
+                ghost_red: false,
+                ..ghost_opts(true)
+            },
+        );
 
         assert!(
             texts(&dev_col).iter().any(|t| t == "Backend"),
@@ -3949,7 +4047,6 @@ mod tests {
     fn zero_effort_ghost_marks_the_thin_row_of_a_dev_without_effort() {
         let (app, pid, _, solo_ghost) = app_with_zero_effort_ghost();
         let page = |ghost_on: bool| -> Vec<Shape> {
-            set_show_ghost(ghost_on);
             project_shapes(
                 &app,
                 pid,
@@ -3960,6 +4057,7 @@ mod tests {
                 Some(&[solo_ghost]), // ordine scelto dall'utente
                 true,
                 BarFormat::Continuous,
+                &ghost_opts(ghost_on),
             )
             .unwrap()
         };
@@ -3969,7 +4067,6 @@ mod tests {
             1,
             "la settimana del ghost è marcata sulla riga sottile"
         );
-        set_show_ghost(true);
     }
 
     /// Le settimane ghost **consecutive** formano un'unica marcatura: con gli
@@ -3991,7 +4088,6 @@ mod tests {
         }
 
         let marks = |fmt| {
-            set_show_ghost(true);
             let on = project_shapes(
                 &app,
                 pid,
@@ -4002,9 +4098,9 @@ mod tests {
                 Some(&[dev]),
                 true,
                 fmt,
+                &ghost_opts(true),
             )
             .unwrap();
-            set_show_ghost(false);
             let off = project_shapes(
                 &app,
                 pid,
@@ -4015,9 +4111,9 @@ mod tests {
                 Some(&[dev]),
                 true,
                 fmt,
+                &ghost_opts(false),
             )
             .unwrap();
-            set_show_ghost(true);
             red_rects(&on) - red_rects(&off)
         };
 
@@ -4044,7 +4140,7 @@ mod tests {
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
         let dev_color = dev_info_map(&app).get(&dev).unwrap().1;
 
-        let shapes_of = |app: &App| shapes_all_devs(app, pid);
+        let shapes_of = |app: &App| shapes_all_devs(app, pid, &ExportOptions::default());
         let colored = |shapes: &[Shape], want: (f32, f32, f32)| -> (usize, usize) {
             let rects = shapes
                 .iter()
@@ -4075,8 +4171,7 @@ mod tests {
     /// il rettangolo di partenza, e raggio proporzionale alla percentuale.
     #[test]
     fn round_rect_points_stay_inside_the_rectangle() {
-        set_corner_pct(100);
-        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0);
+        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0, 100);
         assert_eq!(pts.len(), 28);
         for (x, y) in &pts {
             assert!((9.99..=30.01).contains(x), "x fuori: {x}");
@@ -4092,16 +4187,13 @@ mod tests {
         assert!((top_left_x - 12.0).abs() < 0.05, "rientro atteso 2mm: {top_left_x}");
 
         // Metà smussatura = metà raggio.
-        set_corner_pct(50);
-        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0);
+        let pts = round_rect_pts(10.0, 20.0, 30.0, 24.0, 50);
         let top_left_x = pts
             .iter()
             .filter(|(_, y)| (*y - 24.0).abs() < 0.01)
             .map(|(x, _)| *x)
             .fold(f32::MAX, f32::min);
         assert!((top_left_x - 11.0).abs() < 0.05, "rientro atteso 1mm: {top_left_x}");
-
-        set_corner_pct(CORNER_PCT_DEFAULT);
     }
 
     #[test]
@@ -4121,32 +4213,35 @@ mod tests {
         app.projects
             .add_project_milestone(pid, scartata, WeekId(20035));
 
+        let svg_with = |app: &App, allow: Option<Vec<MilestoneId>>, scope| {
+            let opts = ExportOptions {
+                milestones: allow.map(|v| v.into_iter().collect()),
+                scope,
+                ..Default::default()
+            };
+            build_svg_project(app, pid, &[dev], BarFormat::Continuous, &opts).unwrap()
+        };
         // Solo la prima è spuntata nella dialog: l'altra non viene disegnata.
-        set_milestone_allow(Some(vec![tenuta]));
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = svg_with(&app, Some(vec![tenuta]), MilestoneScope::Mix);
         assert!(svg.contains("Tenuta"));
         assert!(!svg.contains("Scartata"));
 
         // Il filtro si combina in AND con l'ambito: in External resta fuori
         // anche quella spuntata, se non è marcata External.
-        set_milestone_scope(MilestoneScope::External);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = svg_with(&app, Some(vec![tenuta]), MilestoneScope::External);
         assert!(!svg.contains("Tenuta"));
         app.milestones
             .set_category(tenuta, MilestoneCategory::External, true);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = svg_with(&app, Some(vec![tenuta]), MilestoneScope::External);
         assert!(svg.contains("Tenuta"));
 
         // Nessuna selezione = nessuna bandierina.
-        set_milestone_scope(MilestoneScope::Mix);
-        set_milestone_allow(Some(Vec::new()));
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = svg_with(&app, Some(Vec::new()), MilestoneScope::Mix);
         assert!(!svg.contains("Tenuta"));
         assert!(!svg.contains("Scartata"));
 
         // Senza filtro (export multi-progetto) tornano tutte.
-        set_milestone_allow(None);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = svg_with(&app, None, MilestoneScope::Mix);
         assert!(svg.contains("Tenuta"));
         assert!(svg.contains("Scartata"));
     }
@@ -4169,17 +4264,26 @@ mod tests {
         app.projects
             .set_dev_declared_pct(pid, dev_empty, WeekId(0), 33);
 
+        let pct = ExportOptions {
+            show_pct: true,
+            ..Default::default()
+        };
         // Flag off (default): niente percentuali.
-        set_show_pct(false);
-        let svg = build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev, dev_empty],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .unwrap();
         assert!(!svg.contains("80%/60%"), "senza flag non devono comparire");
 
         // Flag on: compare "presunta/dichiarata" solo per il dev con effort.
-        set_show_pct(true);
-        let svg = build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous).unwrap();
+        let svg =
+            build_svg_project(&app, pid, &[dev, dev_empty], BarFormat::Continuous, &pct).unwrap();
         assert!(svg.contains("80%/60%"), "con flag deve comparire 80%/60%");
         assert!(!svg.contains("33%"), "il dev senza effort non mostra la %");
-        set_show_pct(false);
     }
 
     /// La spunta «anno» aggiunge `'AA` alle date del dev (solo alla fine se
@@ -4188,12 +4292,9 @@ mod tests {
     #[test]
     fn dev_range_shows_both_years_across_new_year() {
         let d = |y, m, dd| local_to_days(&NaiveDate::from_ymd_opt(y, m, dd).unwrap());
-        set_show_year(true);
-        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8)), "Dec 14 '26 - Jan 8 '27");
-        assert_eq!(dev_range(d(2026, 9, 21), d(2026, 10, 9)), "Sep 21 - Oct 9 '26");
-        set_show_year(false);
-        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8)), "Dec 14 - Jan 8");
-        set_show_year(true);
+        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8), true), "Dec 14 '26 - Jan 8 '27");
+        assert_eq!(dev_range(d(2026, 9, 21), d(2026, 10, 9), true), "Sep 21 - Oct 9 '26");
+        assert_eq!(dev_range(d(2026, 12, 14), d(2027, 1, 8), false), "Dec 14 - Jan 8");
     }
 
     /// Etichetta del dev: la fine è il venerdì dell'ultima settimana di effort,
@@ -4209,7 +4310,7 @@ mod tests {
         app.projects.add_dev(pid, dev);
         app.projects
             .add_effort(pid, dev, WeekId(monday as usize), WorkerId(0), Effort(8));
-        set_show_year(true);
+        // Anno nelle date: è il default delle opzioni.
         let shapes = project_shapes(
             &app,
             pid,
@@ -4220,6 +4321,7 @@ mod tests {
             Some(&[dev]),
             true,
             BarFormat::Continuous,
+            &ExportOptions::default(),
         )
         .unwrap();
         let t = texts(&shapes);
@@ -4238,7 +4340,7 @@ mod tests {
         app.projects.add_dev(pid, dev);
         app.projects
             .add_effort(pid, dev, WeekId(20007), WorkerId(0), Effort(8));
-        let page = || {
+        let page = |show_year: bool| {
             project_shapes(
                 &app,
                 pid,
@@ -4249,15 +4351,16 @@ mod tests {
                 Some(&[dev]),
                 true,
                 BarFormat::Continuous,
+                &ExportOptions {
+                    show_year,
+                    ..Default::default()
+                },
             )
             .unwrap()
         };
 
-        set_show_year(false);
-        let off = texts(&page());
-        set_show_year(true);
-        let on = texts(&page());
-        set_show_year(false);
+        let off = texts(&page(false));
+        let on = texts(&page(true));
         let y = format!("'{:02}", day_to_date(20007).year() % 100);
         let dated: Vec<_> = on.iter().filter(|t| t.contains(" - ")).collect();
         assert_eq!(dated.len(), 1, "una sola etichetta date: {on:?}");
@@ -4270,7 +4373,6 @@ mod tests {
         assert!(dated[0].ends_with(&y), "{}", dated[0]);
         assert!(!off.iter().any(|t| t.contains(&y)), "senza spunta niente anno");
         assert_eq!(on.len(), off.len(), "nessun altro testo cambia");
-        set_show_year(true);
     }
 
     #[test]
@@ -4296,8 +4398,14 @@ mod tests {
         app.projects.set_dev_declared_pct(pid, dev, WeekId(0), 70);
         // presunta = usato 50 / pianificato 100 = 50%; attuale (dichiarata) = 70%.
 
-        set_show_pct(false);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let svg = build_svg_project(
+            &app,
+            pid,
+            &[dev],
+            BarFormat::Continuous,
+            &ExportOptions::default(),
+        )
+        .unwrap();
         assert!(
             svg.contains("Today"),
             "oggi è nell'asse: Today deve comparire"
@@ -4307,14 +4415,16 @@ mod tests {
             "senza flag niente % sotto Today"
         );
 
-        set_show_pct(true);
-        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous).unwrap();
+        let pct = ExportOptions {
+            show_pct: true,
+            ..Default::default()
+        };
+        let svg = build_svg_project(&app, pid, &[dev], BarFormat::Continuous, &pct).unwrap();
         assert!(svg.contains("Today"), "Today resta presente");
         assert!(
             svg.contains("(50%/70%)"),
             "col flag presunta/attuale tra parentesi sotto Today"
         );
-        set_show_pct(false);
     }
 
     #[test]
@@ -4391,8 +4501,7 @@ mod tests {
             app.projects
                 .add_effort(pid, dev, WeekId(d(m, dd) as usize), WorkerId(0), Effort(8));
         }
-        set_show_year(true);
-        set_show_pct(false);
+        // Opzioni di default: anno nelle date sì, percentuali no.
         let page = |bar: DevBar| {
             texts(
                 &project_shapes_fmt(
@@ -4405,6 +4514,7 @@ mod tests {
                     Some(&[dev]),
                     true,
                     &|_| bar,
+                    &ExportOptions::default(),
                 )
                 .unwrap(),
             )
@@ -4439,7 +4549,7 @@ mod tests {
                 .add_effort(pid, d, WeekId(20035), WorkerId(0), Effort(8));
         }
         let fills = |devs: &[(DevId, DevBar)]| {
-            let svg = build_svg_project_fmt(&app, pid, devs).unwrap();
+            let svg = build_svg_project_fmt(&app, pid, devs, &ExportOptions::default()).unwrap();
             svg.matches("<rect").count() + svg.matches("<polygon").count()
         };
         let (c, sg) = (
@@ -4452,8 +4562,16 @@ mod tests {
         assert_eq!(fills(&[(a, sg), (b, sg)]), base + 2, "entrambi in 2 tratti");
         // Il wrapper col formato unico equivale a darlo a tutti i dev.
         assert_eq!(
-            build_svg_project(&app, pid, &[a, b], BarFormat::Segmented).unwrap(),
-            build_svg_project_fmt(&app, pid, &[(a, sg), (b, sg)]).unwrap()
+            build_svg_project(
+                &app,
+                pid,
+                &[a, b],
+                BarFormat::Segmented,
+                &ExportOptions::default()
+            )
+            .unwrap(),
+            build_svg_project_fmt(&app, pid, &[(a, sg), (b, sg)], &ExportOptions::default())
+                .unwrap()
         );
     }
 
@@ -4480,7 +4598,7 @@ mod tests {
         // barre. 3 settimane con effort, 2 tratti contigui (20007-20014 e 20035):
         //   Continua = 1 barra, Segmentata = 2, Proporzionale = 3 (una a settimana).
         let fills = |fmt| {
-            let svg = build_svg_project(&app, pid, &[dev], fmt).unwrap();
+            let svg = build_svg_project(&app, pid, &[dev], fmt, &ExportOptions::default()).unwrap();
             svg.matches("<rect").count() + svg.matches("<polygon").count()
         };
         let (cont, seg, prop) = (
@@ -4500,9 +4618,11 @@ mod tests {
         );
 
         for fmt in [BarFormat::Segmented, BarFormat::Proportional] {
-            let bytes = build_pdf_project(&app, pid, &[dev], fmt).expect("PDF valido");
+            let bytes = build_pdf_project(&app, pid, &[dev], fmt, &ExportOptions::default())
+                .expect("PDF valido");
             assert!(bytes.starts_with(b"%PDF"));
-            let svg = build_svg_project(&app, pid, &[dev], fmt).expect("SVG valido");
+            let svg = build_svg_project(&app, pid, &[dev], fmt, &ExportOptions::default())
+                .expect("SVG valido");
             assert!(svg.contains("</svg>"));
         }
     }

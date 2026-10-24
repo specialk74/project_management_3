@@ -282,7 +282,7 @@ pub(crate) fn milestone_scope_selector(ui: &mut egui::Ui, scopes: &mut ExportSco
 
 /// Riga «Periodo da disegnare: Da [data] A [data] [Inizio/fine progetto]»
 /// della dialog di export di un progetto. Ogni data vale per l'intera
-/// settimana che la contiene (vedi `pdf_export::set_export_range`). Ritorna
+/// settimana che la contiene (vedi `pdf_export::ExportOptions::range`). Ritorna
 /// `false` se «Da» è dopo «A» (export disabilitato, con avviso).
 fn period_row(ui: &mut egui::Ui, app: &App, proj: ProjectId, range: &mut (i32, i32)) -> bool {
     let picker = |ui: &mut egui::Ui, id: &str, day: &mut i32| {
