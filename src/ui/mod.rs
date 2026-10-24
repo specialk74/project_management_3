@@ -10,6 +10,9 @@ pub(crate) use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 pub(crate) use crate::app::App;
 pub(crate) use crate::categories::CategoryId;
+pub(crate) use crate::date_utils::picker::{
+    date_str_to_jiff, days_to_jiff, jiff_to_date_str, jiff_to_days, today_jiff,
+};
 pub(crate) use crate::date_utils::dates::{
     current_monday_days, days_to_local, local_to_days, parse_date_str,
     primo_giorno_settimana_corrente, today, today_days, week_label,
@@ -1853,34 +1856,6 @@ fn week_from_date_str(date: &str) -> Option<WeekId> {
         return None;
     }
     parse_date_str(date).map(|d| WeekId(d as usize))
-}
-
-/// Interpreta una stringa `yy-mm-dd` / `yyyy-mm-dd` come `jiff::civil::Date`
-/// (il giorno esatto, non allineato al lunedì). Usata per inizializzare il
-/// calendario `DatePickerButton`. `None` se vuota o non valida.
-fn date_str_to_jiff(s: &str) -> Option<jiff::civil::Date> {
-    let parts: Vec<&str> = s.trim().split('-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let year: i32 = parts[0].parse().ok()?;
-    let month: i8 = parts[1].parse().ok()?;
-    let day: i8 = parts[2].parse().ok()?;
-    let year = if year < 100 { year + 2000 } else { year };
-    jiff::civil::Date::new(year as i16, month, day).ok()
-}
-
-/// Formatta un `jiff::civil::Date` come `yyyy-mm-dd` (accettato da `parse_date_str`,
-/// che poi allinea al lunedì della settimana).
-fn jiff_to_date_str(d: &jiff::civil::Date) -> String {
-    format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day())
-}
-
-/// Data odierna come `jiff::civil::Date`, valore di default del calendario.
-fn today_jiff() -> jiff::civil::Date {
-    let t = today();
-    jiff::civil::Date::new(t.year() as i16, t.month() as i8, t.day() as i8)
-        .unwrap_or_else(|_| jiff::civil::Date::new(2000, 1, 1).unwrap())
 }
 
 impl PjmApp {

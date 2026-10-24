@@ -510,6 +510,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   label — gated by the export checkbox, see **Ghost in export** below;
   (4) the trend PDF draws the incoming presunta segment + dot **red and thicker** for
   a ghost week.
+- **Date picker conversions** live only in `date_utils::picker` (`days_to_jiff`,
+  `jiff_to_days`, `date_str_to_jiff`, `jiff_to_date_str`, `today_jiff`):
+  `egui_extras::DatePickerButton` uses `jiff`, everything else uses `chrono`. The
+  `yy-mm-dd`/`yyyy-mm-dd` parsing is `dates::parse_ymd` (exact day), shared with
+  `parse_date_str` (Monday of the week).
 - **«Oggi» has a single source**: `date_utils::dates::today()` (local date — never
   `Utc::now`, which shows the previous week on Monday after midnight in Italy),
   `today_days()` and `current_monday_days()`. `current_week_id()` wraps the latter,

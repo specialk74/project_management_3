@@ -51,6 +51,14 @@ pub fn week_label(days: i32) -> String {
 /// Parses a date string in "yy-mm-dd" or "yyyy-mm-dd" format and returns the
 /// Monday of that week as days since Unix epoch. Returns None on parse failure.
 pub fn parse_date_str(s: &str) -> Option<i32> {
+    let date = parse_ymd(s)?;
+    let monday = primo_giorno_settimana_corrente(&date);
+    Some(local_to_days(&monday))
+}
+
+/// Parses "yy-mm-dd" or "yyyy-mm-dd" (two-digit years are 20yy) into the exact
+/// day, not aligned to Monday. None if empty or not a valid date.
+pub fn parse_ymd(s: &str) -> Option<NaiveDate> {
     let parts: Vec<&str> = s.trim().split('-').collect();
     if parts.len() != 3 {
         return None;
@@ -59,9 +67,7 @@ pub fn parse_date_str(s: &str) -> Option<i32> {
     let month: u32 = parts[1].parse().ok()?;
     let day: u32 = parts[2].parse().ok()?;
     let year = if year < 100 { year + 2000 } else { year };
-    let date = NaiveDate::from_ymd_opt(year, month, day)?;
-    let monday = primo_giorno_settimana_corrente(&date);
-    Some(local_to_days(&monday))
+    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 /// Default week range: from the current week's Monday (or `start`, if earlier)

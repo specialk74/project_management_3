@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 285 verdi |
+| Test | 275 verdi | 286 verdi |
 
 ## Ordine consigliato
 
@@ -152,8 +152,15 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   nominano sempre il progetto (prima potevano restare senza nome). Test
   `label_is_tripletta_then_first_description_line_then_number`)_
 
-- [ ] **B8. Conversioni per jiff** (richiesto dal date-picker di egui) sparse tra
+- [x] **B8. Conversioni per jiff** (richiesto dal date-picker di egui) sparse tra
   `ui/mod.rs` e `matrix.rs`. Proposta: riunirle in `date_utils`.
+  _(fatto: nuovo modulo `date_utils::picker` con `today_jiff`, `days_to_jiff`,
+  `jiff_to_days`, `date_str_to_jiff`, `jiff_to_date_str`, costruite su due sole
+  conversioni chrono ⇄ jiff. La lettura `yy-mm-dd`/`yyyy-mm-dd` non è più
+  duplicata: `parse_date_str` e il calendario usano lo stesso `parse_ymd`. Unica
+  differenza: un anno fuori dall'intervallo di jiff (±9999) ora dà `None` invece
+  di finire troncato. Test
+  `conversions_round_trip_and_parse_like_the_rest_of_the_app`)_
 
 - [x] **B9. Test** — sequenza di click (sposta/premi/rilascia) copiata ~11 volte,
   estrazione dei testi disegnati ~19, preparazione dello schermo 29. Proposta:
@@ -315,3 +322,5 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   clippy 53, 285 test verdi (+1). Punto 5 completato.
 - **2026-10-24** — Fatto il punto 6 (B1, B9, E1, E2, E3). Build 0 warning,
   **clippy 0 warning** (anche sui test), 285 test verdi.
+- **2026-10-24** — Fatto B8 (conversioni jiff in `date_utils::picker`). Build e
+  clippy 0 warning, 286 test verdi (+1).
