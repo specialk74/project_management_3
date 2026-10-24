@@ -989,7 +989,7 @@ pub(crate) fn build_minuta(
     worker_notes: bool,
 ) -> String {
     let current = current_week_id();
-    let today = Utc::now().date_naive().format("%y-%m-%d");
+    let today = today().format("%y-%m-%d");
     let mut out = format!("# Minuta — {today}\n\n");
 
     for &proj in projects {

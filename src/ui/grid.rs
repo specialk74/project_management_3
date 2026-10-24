@@ -1532,8 +1532,7 @@ pub(crate) fn left_column(
 /// WeekId della settimana che contiene oggi, normalizzata al primo giorno della
 /// settimana (come le etichette della griglia).
 pub(crate) fn current_week_id() -> WeekId {
-    let today = Utc::now().date_naive();
-    WeekId(local_to_days(&primo_giorno_settimana_corrente(&today)) as usize)
+    WeekId(current_monday_days() as usize)
 }
 
 /// Costruisce il popup delle note di progetto a partire dalla mappa salvata.

@@ -1,6 +1,6 @@
 //! Date and time utility functions for week-based calculations.
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate};
 
 const NUM_DEFAULT_WEEK: i64 = 52 * 2;
 
@@ -20,6 +20,23 @@ pub fn days_to_local(days: i32) -> NaiveDate {
 pub fn primo_giorno_settimana_corrente(data: &chrono::NaiveDate) -> chrono::NaiveDate {
     let giorni_da_lunedi = data.weekday().num_days_from_monday();
     *data - chrono::Duration::days(giorni_da_lunedi as i64)
+}
+
+/// Today's date in **local** time: the single source of "today" for the whole
+/// app (grid, footer, exports). UTC would still show the previous day — and on
+/// Monday the previous week — in the first hours after midnight in Italy.
+pub fn today() -> NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+/// Today as days since Unix epoch (same unit as `WeekId`).
+pub fn today_days() -> i32 {
+    local_to_days(&today())
+}
+
+/// Monday of the current week as days since Unix epoch (same unit as `WeekId`).
+pub fn current_monday_days() -> i32 {
+    local_to_days(&primo_giorno_settimana_corrente(&today()))
 }
 
 /// Parses a date string in "yy-mm-dd" or "yyyy-mm-dd" format and returns the
@@ -42,7 +59,7 @@ pub fn parse_date_str(s: &str) -> Option<i32> {
 /// to `NUM_DEFAULT_WEEK` weeks after today.
 /// Returns `(number_of_weeks, start_week_days, end_week_days)`.
 pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
-    let today = Utc::now().date_naive();
+    let today = today();
     let start_date = local_to_days(&primo_giorno_settimana_corrente(&today));
     let start_date = start.map_or(start_date, |s| start_date.min(s));
     let end_date = local_to_days(&primo_giorno_settimana_corrente(
@@ -56,6 +73,15 @@ pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+
+    #[test]
+    fn today_and_current_monday_agree() {
+        let t = today();
+        assert_eq!(today_days(), local_to_days(&t));
+        let monday = current_monday_days();
+        assert_eq!(days_to_local(monday).weekday(), chrono::Weekday::Mon);
+        assert!(monday <= today_days() && today_days() < monday + 7);
+    }
 
     #[test]
     fn test_local_to_days_and_back() {

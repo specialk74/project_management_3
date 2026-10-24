@@ -106,7 +106,9 @@ impl Projects {
     }
 
     pub fn del_row(&mut self, project_id: ProjectId, id_dev: DevId) {
-        self.projects.get_mut(&project_id).unwrap().del_row(id_dev);
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.del_row(id_dev);
+        }
     }
 
     /// Returns (id, name, visible, enable)
@@ -290,15 +292,22 @@ impl Projects {
     }
 
     pub fn add_dev(&mut self, id_project: ProjectId, id_dev: DevId) {
-        self.projects.get_mut(&id_project).unwrap().add_dev(id_dev);
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.add_dev(id_dev);
+        }
     }
 
     pub fn del_dev(&mut self, id_project: ProjectId, id_dev: DevId) {
-        self.projects.get_mut(&id_project).unwrap().del_dev(id_dev);
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.del_dev(id_dev);
+        }
     }
 
     pub fn list_devs(&self, id_project: ProjectId) -> Vec<DevId> {
-        self.projects.get(&id_project).unwrap().list_dev_id()
+        self.projects
+            .get(&id_project)
+            .map(|p| p.list_dev_id())
+            .unwrap_or_default()
     }
 
     pub fn set_dev_note(&mut self, id_project: ProjectId, id_dev: DevId, note: &str) {
@@ -342,17 +351,15 @@ impl Projects {
         id_worker: WorkerId,
         effort: Effort,
     ) {
-        self.projects
-            .get_mut(&id_project)
-            .unwrap()
-            .add_effort(id_dev, week, id_worker, effort);
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.add_effort(id_dev, week, id_worker, effort);
+        }
     }
 
     pub fn add_dev_effort(&mut self, id_project: ProjectId, id_dev: DevId, effort: Effort) {
-        self.projects
-            .get_mut(&id_project)
-            .unwrap()
-            .add_dev_effort(id_dev, effort);
+        if let Some(p) = self.projects.get_mut(&id_project) {
+            p.add_dev_effort(id_dev, effort);
+        }
     }
 
     /// Registra la % dichiarata dal dev per la settimana `week` (storico).
@@ -562,6 +569,25 @@ mod tests {
         let (mut ps, _, _, c) = three();
         assert!(!ps.move_down(c));
         assert_eq!(names(&ps), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn calls_on_missing_project_or_dev_do_not_panic() {
+        let (mut ps, a, ..) = three();
+        let ghost_p = ProjectId(999);
+        let ghost_d = DevId(999);
+        // progetto inesistente (es. sparito dopo un ricaricamento esterno)
+        ps.del_row(ghost_p, ghost_d);
+        ps.add_dev(ghost_p, ghost_d);
+        ps.del_dev(ghost_p, ghost_d);
+        ps.add_effort(ghost_p, ghost_d, WeekId(7), WorkerId(1), Effort(8));
+        ps.add_dev_effort(ghost_p, ghost_d, Effort(8));
+        assert!(ps.list_devs(ghost_p).is_empty());
+        // progetto esistente, dev inesistente
+        ps.del_row(a, ghost_d);
+        ps.reset_effort(a, ghost_d, WeekId(7));
+        assert_eq!(ps.get_week_with_max_worker(a, ghost_d), None);
+        assert!(ps.list_devs(a).is_empty(), "nessun dev creato per sbaglio");
     }
 
     #[test]

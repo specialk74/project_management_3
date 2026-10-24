@@ -161,11 +161,15 @@ impl Project {
     }
 
     pub fn del_row(&mut self, id_dev: DevId) {
-        self.dev_id.get_mut(&id_dev).unwrap().del_row();
+        if let Some(sd) = self.dev_id.get_mut(&id_dev) {
+            sd.del_row();
+        }
     }
 
     pub fn reset_effort(&mut self, id_dev: DevId, week: WeekId) {
-        self.dev_id.get_mut(&id_dev).unwrap().reset_effort(week);
+        if let Some(sd) = self.dev_id.get_mut(&id_dev) {
+            sd.reset_effort(week);
+        }
     }
 
     /// Svuota le celle di `id_dev`, o di tutti i dev con `None`.
@@ -185,22 +189,22 @@ impl Project {
     }
 
     pub fn add_dev(&mut self, id_dev: DevId) {
-        self.dev_id.entry(id_dev).or_insert_with(SingleDev::new);
+        self.dev_mut(id_dev);
+    }
+
+    /// Il dev del progetto, creato vuoto se manca.
+    fn dev_mut(&mut self, id_dev: DevId) -> &mut SingleDev {
+        self.dev_id.entry(id_dev).or_insert_with(SingleDev::new)
     }
 
     pub fn add_dev_effort(&mut self, id_dev: DevId, effort: Effort) {
-        self.add_dev(id_dev);
-        self.dev_id.get_mut(&id_dev).unwrap().set_effort(effort);
+        self.dev_mut(id_dev).set_effort(effort);
     }
 
     /// Registra la % dichiarata dal dev per la settimana `week` (storico).
     /// Ritorna `true` se lo storico è cambiato. Vedi `SingleDev::set_declared_pct`.
     pub fn set_dev_declared_pct(&mut self, id_dev: DevId, week: WeekId, pct: u8) -> bool {
-        self.add_dev(id_dev);
-        self.dev_id
-            .get_mut(&id_dev)
-            .unwrap()
-            .set_declared_pct(week, pct)
+        self.dev_mut(id_dev).set_declared_pct(week, pct)
     }
 
     /// Somme (sui dev con pianificato > 0) che generano le percentuali di
@@ -252,19 +256,11 @@ impl Project {
     }
 
     pub fn set_note(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, note: &str) {
-        self.add_dev(id_dev);
-        self.dev_id
-            .get_mut(&id_dev)
-            .unwrap()
-            .set_note(week, id_worker, note);
+        self.dev_mut(id_dev).set_note(week, id_worker, note);
     }
 
     pub fn add_effort(&mut self, id_dev: DevId, week: WeekId, id_worker: WorkerId, effort: Effort) {
-        self.add_dev(id_dev);
-        self.dev_id
-            .get_mut(&id_dev)
-            .unwrap()
-            .add(week, id_worker, effort);
+        self.dev_mut(id_dev).add(week, id_worker, effort);
     }
 
     pub fn del_dev(&mut self, id_dev: DevId) {
@@ -278,7 +274,7 @@ impl Project {
     }
 
     pub fn get_week_with_max_worker(&self, id_dev: DevId) -> Option<WeekId> {
-        self.dev_id.get(&id_dev).unwrap().get_week_with_max_worker()
+        self.dev_id.get(&id_dev)?.get_week_with_max_worker()
     }
 
     pub fn get_tripletta(&self) -> Option<&str> {

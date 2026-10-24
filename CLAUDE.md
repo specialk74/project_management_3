@@ -476,6 +476,13 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   label — gated by the export checkbox, see **Ghost in export** below;
   (4) the trend PDF draws the incoming presunta segment + dot **red and thicker** for
   a ghost week.
+- **«Oggi» has a single source**: `date_utils::dates::today()` (local date — never
+  `Utc::now`, which shows the previous week on Monday after midnight in Italy),
+  `today_days()` and `current_monday_days()`. `current_week_id()` wraps the latter,
+  and `UiState.this_week` is refreshed at the top of every `ui()` frame, so grid,
+  footer and saturation agree even if the app stays open across a Monday. Exports
+  use the same functions. Only wall-clock timestamps (git commit, file name, toast
+  time) still call `chrono::Local::now()` directly.
 - **Vai a oggi** (`Cmd/Ctrl+T`): ricalcola `columns_vec` con lo zoom/compact correnti,
   trova la colonna che contiene `current_week_id()` e imposta `UiState.pending_scroll_x`
   con `centered_scroll_x(cols, idx, cw, ui.available_width() - LEFT_W)` — lo stesso

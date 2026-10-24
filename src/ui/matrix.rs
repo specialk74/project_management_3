@@ -6,10 +6,6 @@
 use super::*;
 use crate::worker_matrix::{MatrixData, category_color, closed_colors, hatch_segments};
 
-/// Giorno odierno (locale), nello stesso formato di `WeekId` (giorni).
-fn today_days() -> i32 {
-    local_to_days(&chrono::Local::now().date_naive())
-}
 
 pub(crate) fn days_to_jiff(days: i32) -> jiff::civil::Date {
     let d = days_to_local(days);

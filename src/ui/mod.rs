@@ -4,14 +4,15 @@
 
 pub(crate) use std::collections::{HashMap, HashSet};
 
-pub(crate) use chrono::{Datelike, Utc};
+pub(crate) use chrono::Datelike;
 pub(crate) use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, Vec2};
 pub(crate) use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 pub(crate) use crate::app::App;
 pub(crate) use crate::categories::CategoryId;
 pub(crate) use crate::date_utils::dates::{
-    days_to_local, local_to_days, parse_date_str, primo_giorno_settimana_corrente,
+    current_monday_days, days_to_local, local_to_days, parse_date_str,
+    primo_giorno_settimana_corrente, today, today_days,
 };
 pub(crate) use crate::dev_utils::dev::DevId;
 pub(crate) use crate::milestones::{MilestoneCategory, MilestoneId, MilestoneKind, MilestoneScope};
@@ -532,7 +533,7 @@ pub(crate) fn project_export_range(app: &App, proj: ProjectId) -> (i32, i32) {
         (Some(s), None) => (s, s + SPAN),
         (None, Some(e)) => (e - SPAN, e),
         (None, None) => {
-            let today = local_to_days(&chrono::Local::now().date_naive());
+            let today = today_days();
             (today, today + SPAN)
         }
     }
@@ -1358,8 +1359,8 @@ impl PjmApp {
         cc.egui_ctx.style_mut(|s| s.interaction.tooltip_delay = 0.0);
         install_symbol_fallback(&cc.egui_ctx);
 
-        let today = Utc::now().date_naive();
-        let this_week = local_to_days(&primo_giorno_settimana_corrente(&today));
+        let today = today();
+        let this_week = current_monday_days();
 
         // Scroll iniziale per centrare la settimana corrente.
         // L'offset X tiene conto delle colonne di confine d'anno (più strette).
@@ -1586,6 +1587,11 @@ impl eframe::App for PjmApp {
         {
             let app = &self.app;
             let state = &mut self.ui;
+
+            // Settimana corrente ricalcolata a ogni frame (non solo all'avvio): se
+            // l'app resta aperta oltre il lunedì, footer e saturazione seguono la
+            // griglia (`current_week_id()`), che legge la stessa data.
+            state.this_week = current_monday_days();
 
             // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
             set_bw_mode(state.bw_mode);
@@ -1878,7 +1884,7 @@ fn jiff_to_date_str(d: &jiff::civil::Date) -> String {
 
 /// Data odierna come `jiff::civil::Date`, valore di default del calendario.
 fn today_jiff() -> jiff::civil::Date {
-    let t = chrono::Utc::now().date_naive();
+    let t = today();
     jiff::civil::Date::new(t.year() as i16, t.month() as i8, t.day() as i8)
         .unwrap_or_else(|_| jiff::civil::Date::new(2000, 1, 1).unwrap())
 }
@@ -2336,12 +2342,7 @@ impl PjmApp {
                 }
             }
             Action::NewProject => {
-                let start = parse_date_str(
-                    &primo_giorno_settimana_corrente(&Utc::now().date_naive())
-                        .format("%y-%m-%d")
-                        .to_string(),
-                )
-                .map(|d| WeekId(d as usize));
+                let start = Some(WeekId(current_monday_days() as usize));
                 self.app.projects.add("Nuovo Progetto", None, start);
                 self.mark_changed();
             }
@@ -4735,6 +4736,13 @@ mod tests {
 
     /// Col cursore sul footer: riga delle date → solo la data; cella di un
     /// worker → data + worker; nome del worker (parte sinistra) → solo il worker.
+    #[test]
+    fn grid_and_footer_share_the_same_current_week() {
+        // La griglia (`current_week_id`) e footer/saturazione (`this_week`,
+        // ricalcolato a ogni frame) leggono la stessa data locale.
+        assert_eq!(current_week_id().0 as i32, current_monday_days());
+    }
+
     #[test]
     fn footer_click_toggles_and_switches_the_selected_worker() {
         let (mut app, alice, _week) = highlight_fixture();

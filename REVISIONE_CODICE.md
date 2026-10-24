@@ -20,12 +20,12 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | 61 (tutti API egui deprecate → A2) |
 | Warning `cargo clippy` | ~135 | 114 |
-| Test | 275 verdi | 275 verdi |
+| Test | 275 verdi | 278 verdi |
 
 ## Ordine consigliato
 
 1. ~~**A1, A3–A7, D3** — pulizia a rischio nullo~~ ✅ fatto
-2. **D1, D2** — bug latenti
+2. ~~**D1, D2** — bug latenti~~ ✅ fatto
 3. **C1, C2** — il guadagno di velocità più visibile
 4. **A2** — migrazione API egui deprecate
 5. **B2–B7, C3–C5** — duplicati e ottimizzazioni minori
@@ -142,18 +142,33 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 ## D. Incoerenze e possibili bug
 
-- [ ] **D1. «Oggi» calcolato in modi diversi** — `UiState.this_week` (footer,
+- [x] **D1. «Oggi» calcolato in modi diversi** — `UiState.this_week` (footer,
   saturazione) è calcolato **solo all'avvio**, `current_week_id()` (griglia) è sempre
   aggiornato: se l'app resta aperta oltre il lunedì, griglia e footer segnano
   settimane diverse. Inoltre la griglia usa **UTC** e il PDF l'ora **locale**: in
   Italia, il lunedì tra le 00:00 e le 01:00/02:00, la griglia mostra ancora la
   settimana precedente. Proposta: un'unica funzione «settimana di oggi», in ora
   locale, ricalcolata a ogni frame.
+  _(fatto: in `date_utils::dates` le funzioni `today()` (data locale),
+  `today_days()` e `current_monday_days()` sono l'unica fonte di «oggi»;
+  `current_week_id()`, il default delle date, «Nuovo progetto», minuta, matrice e
+  tutti gli export PDF passano da lì; nessun `Utc::now` rimasto. `UiState.this_week`
+  è ricalcolato in cima a ogni frame. Restano su `Local::now()` solo i timestamp con
+  l'ora: commit git, nome file, ora dei toast. Test
+  `today_and_current_monday_agree`, `grid_and_footer_share_the_same_current_week`)_
 
-- [ ] **D2. `unwrap()` che possono far crashare l'app** se l'id di un progetto o di
+- [x] **D2. `unwrap()` che possono far crashare l'app** se l'id di un progetto o di
   un dev non esiste più (es. dopo un ricaricamento esterno): `Projects::del_row`/
   `add_dev`/`del_dev`/`list_devs`, `Project::del_row`/`reset_effort`/`set_effort`…
   Proposta: no-op sicuri.
+  _(fatto: `Projects::del_row`/`add_dev`/`del_dev`/`add_effort`/`add_dev_effort`
+  ignorano un progetto inesistente, `list_devs` torna vuoto; `Project::del_row`/
+  `reset_effort` ignorano un dev inesistente, `get_week_with_max_worker` torna
+  `None`; gli `unwrap()` dopo `add_dev` (sicuri ma fragili) sostituiti da
+  `Project::dev_mut` (crea il dev se manca). Nessun `unwrap()` rimasto nel modello
+  fuori dai test. Verificati anche quelli dell'interfaccia e del PDF andamento: sono
+  protetti da un controllo subito prima. Test
+  `calls_on_missing_project_or_dev_do_not_panic`)_
 
 - [x] **D3. `MIGLIORAMENTI.md` #14** diceva «ferie/malattia = capacità 0», il codice
   fa il contrario. _(fatto: testo corretto)_
@@ -189,3 +204,5 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   D3). Warning build 82 → 61, clippy ~135 → 114, 275 test verdi.
 - **2026-10-24** — Spostate qui da `MIGLIORAMENTI.md` le voci di qualità del codice
   già fatte (#15–#18 → M15–M18); aggiunti i rimandi tra i due file.
+- **2026-10-24** — Fatto il punto 2 dell'ordine consigliato (D1, D2). Warning build
+  61, clippy 114 (invariati), 278 test verdi (+3).

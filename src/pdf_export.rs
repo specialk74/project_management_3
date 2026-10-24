@@ -11,7 +11,9 @@ use chrono::{Datelike, NaiveDate};
 use printpdf::*;
 
 use crate::app::App;
-use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
+use crate::date_utils::dates::{
+    days_to_local, local_to_days, primo_giorno_settimana_corrente, today, today_days,
+};
 use crate::dev_utils::dev::DevId;
 use crate::milestones::{MilestoneId, MilestoneScope};
 use crate::project_utils::project::ProjectId;
@@ -1823,8 +1825,8 @@ pub fn build_pdf(app: &App, fmt: impl Into<DevBar>) -> Option<Vec<u8>> {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let created = today().format(US_DATE).to_string();
+    let today = today_days();
     let dev_info = dev_info_map(app);
 
     let mut pages = Vec::new();
@@ -1879,8 +1881,8 @@ pub fn build_pdf_selected(
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let created = today().format(US_DATE).to_string();
+    let today = today_days();
     let dev_info = dev_info_map(app);
 
     let mut pages = Vec::new();
@@ -1954,8 +1956,8 @@ pub fn build_pdf_project_fmt(
     proj: ProjectId,
     devs: &[(DevId, DevBar)],
 ) -> Option<Vec<u8>> {
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let created = today().format(US_DATE).to_string();
+    let today = today_days();
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
     let order: Vec<DevId> = devs.iter().map(|(d, _)| *d).collect();
@@ -2005,7 +2007,7 @@ pub fn build_svg_project_fmt(
     proj: ProjectId,
     devs: &[(DevId, DevBar)],
 ) -> Option<String> {
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let today = today_days();
     let dev_info = dev_info_map(app);
     let name = project_name(app, proj);
     let order: Vec<DevId> = devs.iter().map(|(d, _)| *d).collect();
@@ -2487,8 +2489,8 @@ pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let now = chrono::Local::now().date_naive();
+    let created = today().format(US_DATE).to_string();
+    let now = today();
     let today = local_to_days(&now);
     let today_week = local_to_days(&primo_giorno_settimana_corrente(&now));
     let dev_info = dev_info_map(app);
@@ -2888,8 +2890,8 @@ pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let created = today().format(US_DATE).to_string();
+    let today = today_days();
     let dev_info = dev_info_map(app);
 
     let pages: Vec<PdfPage> = projects
@@ -3306,8 +3308,8 @@ pub fn build_matrix_pdf(
         regular: doc.add_font(&regular),
         bold: doc.add_font(&bold),
     };
-    let created = chrono::Local::now().format(US_DATE).to_string();
-    let today = local_to_days(&chrono::Local::now().date_naive());
+    let created = today().format(US_DATE).to_string();
+    let today = today_days();
     let pages: Vec<PdfPage> = matrix_pages(app, m, from, to, years, &categories, today, &created)
         .into_iter()
         .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
@@ -4367,7 +4369,7 @@ mod tests {
     #[test]
     fn show_pct_adds_project_progress_next_to_today() {
         // Progetto che contiene "oggi" nell'asse, così il marker Today è disegnato.
-        let base = local_to_days(&chrono::Local::now().date_naive());
+        let base = today_days();
         let mut app = App::new();
         let pid = app
             .projects
