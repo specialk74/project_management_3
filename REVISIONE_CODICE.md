@@ -122,7 +122,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `right_drag_scrolls_the_grid_both_ways`. Build e clippy 0 warning, 289 test
   verdi. **Prova a mano superata** (confermata dall'utente il 2026-10-24).)_
 
-- [ ] **A9. Aggiornamento printpdf 0.9.1 → 0.12.8.** Misurato su una copia:
+- [x] **A9. Aggiornamento printpdf 0.9.1 → 0.12.8.** Misurato su una copia:
   nessuna modifica al codice (0 errori, 0 warning), 290 test verdi, aspetto
   identico (prima pagina di Gantt/report/andamento: 7–83 pixel diversi su 500.000,
   bordi dei caratteri), stesso testo cercabile (nel Gantt stesse 1.720 parole, in
@@ -130,8 +130,23 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   180 KB: solo i caratteri usati del font vengono incorporati), dipendenze
   589 → 542. _Impatto: Basso · Rischio: Basso._ _(approvato il 2026-10-24)_
   _(applicato sul branch `egui-0.37`: cambiata solo la versione in `Cargo.toml`
-  (+ `Cargo.lock`); build e clippy 0 warning, 290 test verdi. **Manca la prova a
-  mano**: esportare Gantt, report, andamento e matrice e guardarli in Anteprima.)_
+  (+ `Cargo.lock`); build e clippy 0 warning, 290 test verdi. **Prova a mano
+  superata** (confermata dall'utente il 2026-10-24).)_
+
+- [x] **A10. Aggiornamento delle dipendenze indirette** (`cargo update`, solo
+  versioni compatibili). Le 10 dipendenze dirette sono già all'ultima versione;
+  disponibili 35 aggiornamenti compatibili di dipendenze indirette (tokio, uuid,
+  smallvec, zerovec…) e la rimozione di 9 pacchetti Windows non più usati.
+  `cargo audit` (542 pacchetti): **nessuna vulnerabilità**; 6 avvisi «non più
+  mantenuto» su dipendenze indirette (bincode, ttf-parser, zbus_names, zvariant,
+  zvariant_derive, clipboard-win), non risolvibili da qui: arrivano da egui, rfd
+  e printpdf. Prova a mano: dialog Apri/Salva/Esporta, copia/incolla delle celle.
+  _Impatto: Basso · Rischio: Basso._ _(approvato il 2026-10-24)_
+  _(applicato sul branch `egui-0.37`: `cargo update`, cambia solo `Cargo.lock`;
+  pacchetti 542 → 532, nessun altro aggiornamento compatibile rimasto. Build e
+  clippy 0 warning, 290 test verdi. `cargo audit`: nessuna vulnerabilità, avvisi
+  «non più mantenuto» 6 → 5 (sparito `clipboard-win`). **Prova a mano superata**
+  (dialog Apri/Salva/Esporta, copia/incolla; confermata dall'utente il 2026-10-24).)_
 
 ## B. Codice duplicato
 
@@ -402,3 +417,9 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   build e clippy 0 warning, 290 test verdi. Tutte le voci del report sono chiuse.
 - **2026-10-24** — Aggiunta e approvata A9 (aggiornamento printpdf 0.12.8).
 - **2026-10-24** — A9 applicata (printpdf 0.12.8), in attesa della prova a mano.
+- **2026-10-24** — Chiusa A9: prova a mano dell'utente superata. Tutte le voci del
+  report sono chiuse.
+- **2026-10-24** — Aggiunta e approvata A10 (aggiornamento dipendenze indirette).
+- **2026-10-24** — A10 applicata (`cargo update`), in attesa della prova a mano.
+- **2026-10-24** — Chiusa A10: prova a mano dell'utente superata. Tutte le voci del
+  report sono chiuse.
