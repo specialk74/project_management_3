@@ -423,3 +423,8 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
 - **2026-10-24** — A10 applicata (`cargo update`), in attesa della prova a mano.
 - **2026-10-24** — Chiusa A10: prova a mano dell'utente superata. Tutte le voci del
   report sono chiuse.
+- **2026-10-24** — Conseguenza di A8 segnalata dall'utente: su Windows, portatile
+  con due GPU, lo scroll col trascinamento scattava con egui 0.37. Escluse cause
+  nell'app (allineamento, tempo di frame ~3 ms, ridisegni); risolto con
+  `WGPU_POWER_PREF=low`, ora predefinito su Windows (`prefer_low_power_gpu` in
+  `main.rs`, la variabile resta prioritaria). 291 test verdi.

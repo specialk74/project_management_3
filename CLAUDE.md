@@ -253,6 +253,14 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   fixed column/header) don't. **Every new `ScrollArea` must use `drag_scroll()`.**
   The compare window pans with its own background drag (`compare.rs`). Test
   `right_drag_scrolls_the_grid_both_ways` (fails with egui's default).
+- **GPU on Windows**: `main.rs` calls `prefer_low_power_gpu(&mut native_options,
+  env_set)` only under `#[cfg(windows)]`: `wgpu_options.wgpu_setup` →
+  `PowerPreference::LowPower` unless `WGPU_POWER_PREF` is set. On a hybrid laptop
+  (NVIDIA RTX 2000 Ada + iGPU) the default `HighPerformance` made drag-scrolling
+  stutter with egui 0.37 (cross-adapter presentation); the user confirmed
+  `WGPU_POWER_PREF=low` fixes it. The function compiles and is tested on every OS
+  (`low_power_gpu_unless_the_env_var_decides`); only the call is Windows-only, and
+  there is no Windows target installed here, so that one line is not compiled locally.
 - `TextEdit::align(Align2)` replaces `horizontal_align`.
 - Tests run frames with `ctx.run_ui_test(input, |ui| …)` (`test_util::RunUiTest`):
   it clears `textures_delta`, otherwise a dropped `FullOutput` panics in debug

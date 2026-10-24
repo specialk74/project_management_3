@@ -37,6 +37,19 @@ consultabile anche dall'app: **Aiuto ▸ Manuale d'uso…**.
 - macOS, Windows o Linux. Su Linux servono le librerie di sistema per finestre e
   dialog di file usate da eframe e `rfd`.
 
+### Scheda grafica
+
+L'interfaccia è disegnata dalla GPU (wgpu: Metal su macOS, DirectX 12/Vulkan su
+Windows, Vulkan/OpenGL su Linux). Su **Windows** l'app usa di default la GPU **a
+basso consumo**: sui portatili con due schede (es. NVIDIA + integrata) quella ad
+alte prestazioni faceva scattare lo scroll col trascinamento. La variabile
+d'ambiente `WGPU_POWER_PREF` (`low`, `high`, `none`) ha sempre la precedenza, e
+`WGPU_BACKEND` (`dx12`, `vulkan`, `gl`) sceglie il backend:
+
+```powershell
+$env:WGPU_POWER_PREF="high"; .\target\release\project_management_app_2.exe
+```
+
 ## Avvio
 
 ```bash
