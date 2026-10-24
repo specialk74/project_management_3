@@ -467,7 +467,30 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   e ogni testo evidenziabile è a sua volta uno slot (`HiText`, via `put`);
   a fine disegno, calcolato `mx_hit`, si riempiono con `p.set` (test
   `hover_highlight_is_yellow_on_dark_in_dark_theme`).
-  Nome del worker puntato a colori invertiti (fondo `text()`, nome `bg()`). `worker_matrix::build`
+  Nome del worker puntato a colori invertiti (fondo `text()`, nome `bg()`).
+  **Worker header split by dev hours** (GUI and PDF): `MatrixData.dev_hours[w]` =
+  hours per dev (DevId order, >0 only) summed over the matrix's rows (category/
+  status filters apply) in the weeks overlapping `[from, to]`;
+  `worker_matrix::dev_bands(&hours) -> Vec<(DevId, from, to)>` gives the width
+  fractions, shared by `draw_matrix`'s `header` and `matrix_pages`' `header`, so
+  screen and PDF match. No hours (only effort-0 assignments) → grey
+  (`mx_no_hours_bg` / `MATRIX_NO_HOURS_BG`). The name uses `contrast_text` /
+  `text_on` against the band under its centre. Tests
+  `dev_hours_sum_projects_in_the_period_and_filters`,
+  `worker_header_is_split_by_dev_hours`, `matrix_pdf_worker_header_is_split_by_dev_hours`.
+  **Worker separators**: the vertical border between label column/workers and
+  between workers is thick (`MX_SEP_W` 2.5 px, `mx_sep_color()` = `text()`; PDF
+  `MATRIX_SEP_W` 0.6 mm black), the left edge stays thin; in the GUI the header's
+  `vlines` are drawn **after** the inverted hovered name, which would cover half of
+  it. **Hours by dev** (bottom of the summary, GUI «Ore per dev» / PDF «Hours by
+  dev»): a header row with `worker_hours(&dev_hours[w])` then one row per dev in
+  `MatrixData.devs` (= **all** `app.devs.list()`, even with no hours), label in the
+  dev's colors, cell = `dev_share_label(h, pct)` (`30h · 75%`) from
+  `dev_share(&dev_hours[w], dev)` (`None` ⇒ empty; pct rounded). In the PDF these
+  are the `SumRow::DevHead`/`Dev(i)` rows, so they page-break like the rest. Tests
+  `dev_share_is_hours_and_rounded_percent_of_the_worker_total`,
+  `dev_rows_show_hours_and_percent_and_workers_are_split_by_thick_lines`,
+  `matrix_pdf_has_dev_hour_rows_and_thick_worker_borders`. `worker_matrix::build`
   esiste solo nei test (`#[cfg(test)]`); il codice usa `build_filtered`.
   **Esporta PDF…** → `Action::ExportWorkerMatrix { from, to, years }` (anni della
   combo, stampati nel sottotitolo da `matrix_subtitle`) →

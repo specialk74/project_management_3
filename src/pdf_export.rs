@@ -2813,6 +2813,9 @@ const MATRIX_SUM_H: f32 = 5.0;
 /// Sotto-righe per stato del riepilogo (Active / On-Hold / Closed).
 const MATRIX_SUB_H: f32 = 4.0;
 const MATRIX_SUB_FONT: f32 = 6.5;
+/// Bordo fra un worker e l'altro (mm): marcato e nero, perché con le bande
+/// colorate dei dev la divisione fra le colonne si perdeva.
+const MATRIX_SEP_W: f32 = 0.6;
 
 /// Etichetta data dell'intervallo: `10/17/2026`, con «(today)» se è oggi.
 fn matrix_date(day: i32, today: i32) -> String {
@@ -2859,6 +2862,15 @@ fn matrix_subtitle(from: i32, to: i32, today: i32, years: &[i32], categories: &[
     out
 }
 
+/// Fondo dell'intestazione di un worker senza ore nel periodo.
+const MATRIX_NO_HOURS_BG: (f32, f32, f32) = (0.63, 0.63, 0.63);
+
+/// Testo nero o bianco, quello che si legge meglio sul fondo `bg`.
+fn text_on(bg: (f32, f32, f32)) -> (f32, f32, f32) {
+    let lum = 0.299 * bg.0 + 0.587 * bg.1 + 0.114 * bg.2;
+    if lum > 0.55 { BLACK } else { WHITE }
+}
+
 /// Nomi degli stati nel PDF della matrice (ordine di `ProjectStatus::ALL`).
 const MATRIX_STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
 
@@ -2902,6 +2914,20 @@ fn matrix_pages(
         let col_w = (avail / cols.len() as f32).min(MATRIX_COL_MAX);
         let x1 = MATRIX_X0 + MATRIX_LABEL_W + col_w * cols.len() as f32;
         let col_x = |i: usize| MATRIX_X0 + MATRIX_LABEL_W + i as f32 * col_w;
+        let dev_rgb = |dev| {
+            app.devs
+                .get(dev)
+                .map(|d| u32_rgb(d.bg_color() as u32))
+                .unwrap_or(GRAY_FOOTER)
+        };
+        // Bordi verticali della fascia [y_bot, y_top]: sottile a sinistra,
+        // marcato fra le etichette e i worker e fra un worker e l'altro.
+        let vlines = |shapes: &mut Vec<Shape>, y_bot: f32, y_top: f32| {
+            shapes.extend(line(MATRIX_X0, y_bot, MATRIX_X0, y_top, 0.2, GRAY_DK));
+            for x in std::iter::once(MATRIX_X0 + MATRIX_LABEL_W).chain((1..=cols.len()).map(col_x)) {
+                shapes.extend(line(x, y_bot, x, y_top, MATRIX_SEP_W, BLACK));
+            }
+        };
 
         // Titolo + sottotitolo con l'intervallo, in testa a ogni pagina.
         let title = |shapes: &mut Vec<Shape>| {
@@ -2928,6 +2954,23 @@ fn matrix_pages(
             shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_HEAD_H, x1, y, GRAY_FOOTER));
             shapes.extend(text_left(MATRIX_X0 + 1.5, y - 4.6, label, 8.0, true, BLACK));
             for (i, &c) in cols.iter().enumerate() {
+                // Sfondo diviso fra i dev del worker in proporzione alle ore
+                // (stesse bande della finestra); grigio senza ore.
+                let (cx0, cx1) = (col_x(i), col_x(i) + col_w);
+                let bands = crate::worker_matrix::dev_bands(&m.dev_hours[c]);
+                let mut under_name = MATRIX_NO_HOURS_BG;
+                if bands.is_empty() {
+                    shapes.extend(rect_fill(cx0, y - MATRIX_HEAD_H, cx1, y, under_name));
+                }
+                for (dev, from, to) in &bands {
+                    let color = dev_rgb(*dev);
+                    let bx0 = cx0 + (cx1 - cx0) * from;
+                    let bx1 = cx0 + (cx1 - cx0) * to;
+                    shapes.extend(rect_fill(bx0, y - MATRIX_HEAD_H, bx1, y, color));
+                    if (*from..=*to).contains(&0.5) {
+                        under_name = color;
+                    }
+                }
                 let name = truncate_to_w(&m.workers[c].1, 8.0, col_w - 2.0);
                 shapes.extend(text_center(
                     col_x(i) + col_w / 2.0,
@@ -2935,9 +2978,10 @@ fn matrix_pages(
                     &name,
                     8.0,
                     true,
-                    BLACK,
+                    text_on(under_name),
                 ));
             }
+            vlines(shapes, y - MATRIX_HEAD_H, y);
             y - MATRIX_HEAD_H
         };
         let new_page = |shapes: &mut Vec<Shape>| -> f32 {
@@ -2961,16 +3005,6 @@ fn matrix_pages(
                 TEXT_GRAY,
             ));
         };
-        // Bordi verticali della fascia [y_bot, y_top].
-        let vlines = |shapes: &mut Vec<Shape>, y_bot: f32, y_top: f32| {
-            for x in [MATRIX_X0, MATRIX_X0 + MATRIX_LABEL_W]
-                .into_iter()
-                .chain((1..=cols.len()).map(col_x))
-            {
-                shapes.extend(line(x, y_bot, x, y_top, 0.2, GRAY_DK));
-            }
-        };
-
         let mut shapes = Vec::new();
         let mut y = new_page(&mut shapes);
         let mut prev_cat: Option<Option<crate::categories::CategoryId>> = None;
@@ -3061,13 +3095,17 @@ fn matrix_pages(
         }
 
         // Riepilogo: per ogni categoria, in quanti progetti è presente il worker,
-        // seguita dalle sotto-righe per stato; poi il totale, idem. Riga per riga,
-        // con salto pagina (intestazione dei worker ripetuta) se non c'è spazio.
+        // seguita dalle sotto-righe per stato; poi il totale, idem; infine le ore
+        // per dev (intestazione con le ore del worker, poi una riga per ogni dev
+        // del file). Riga per riga, con salto pagina (intestazione dei worker
+        // ripetuta) se non c'è spazio.
         enum SumRow {
             Cat(usize),
             CatStatus(usize, usize),
             Total,
             TotalStatus(usize),
+            DevHead,
+            Dev(usize),
         }
         let mut sum_rows = Vec::new();
         for ci in 0..m.categories.len() {
@@ -3076,12 +3114,17 @@ fn matrix_pages(
         }
         sum_rows.push(SumRow::Total);
         sum_rows.extend(m.statuses.iter().map(|&si| SumRow::TotalStatus(si)));
+        sum_rows.push(SumRow::DevHead);
+        sum_rows.extend((0..m.devs.len()).map(SumRow::Dev));
         y -= 1.5;
         for row in &sum_rows {
             let h = match row {
-                SumRow::Cat(_) | SumRow::Total => MATRIX_SUM_H,
+                SumRow::Cat(_) | SumRow::Total | SumRow::DevHead | SumRow::Dev(_) => MATRIX_SUM_H,
                 _ => MATRIX_SUB_H,
             };
+            if matches!(row, SumRow::DevHead) {
+                y -= 1.5;
+            }
             if y - h < MATRIX_BOT {
                 footer(&mut shapes);
                 pages.push(std::mem::take(&mut shapes));
@@ -3137,6 +3180,53 @@ fn matrix_pages(
                             true,
                             BLACK,
                         ));
+                    }
+                }
+                SumRow::DevHead => {
+                    shapes.extend(rect_fill(MATRIX_X0, y - h, x1, y, GRAY_FOOTER));
+                    shapes.extend(text_left(
+                        MATRIX_X0 + 1.5,
+                        base,
+                        "Hours by dev",
+                        MATRIX_FONT,
+                        true,
+                        BLACK,
+                    ));
+                    for (i, &c) in cols.iter().enumerate() {
+                        let total = crate::worker_matrix::worker_hours(&m.dev_hours[c]);
+                        shapes.extend(text_center(
+                            col_x(i) + col_w / 2.0,
+                            base,
+                            &format!("{total}h"),
+                            MATRIX_FONT,
+                            true,
+                            BLACK,
+                        ));
+                    }
+                }
+                SumRow::Dev(di) => {
+                    let (dev, name) = &m.devs[*di];
+                    let bg = dev_rgb(*dev);
+                    let fg = app
+                        .devs
+                        .get(*dev)
+                        .map(|d| u32_rgb(d.font_color() as u32))
+                        .unwrap_or_else(|| text_on(bg));
+                    shapes.extend(rect_fill(MATRIX_X0, y - h, MATRIX_X0 + MATRIX_LABEL_W, y, bg));
+                    let name = truncate_to_w(name, MATRIX_FONT, MATRIX_LABEL_W - 3.0);
+                    shapes.extend(text_left(MATRIX_X0 + 1.5, base, &name, MATRIX_FONT, true, fg));
+                    for (i, &c) in cols.iter().enumerate() {
+                        if let Some((hours, pct)) = crate::worker_matrix::dev_share(&m.dev_hours[c], *dev) {
+                            let s = crate::worker_matrix::dev_share_label(hours, pct);
+                            shapes.extend(text_center(
+                                col_x(i) + col_w / 2.0,
+                                base,
+                                &truncate_to_w(&s, MATRIX_SUB_FONT, col_w - 2.0),
+                                MATRIX_SUB_FONT,
+                                false,
+                                BLACK,
+                            ));
+                        }
                     }
                 }
                 SumRow::CatStatus(_, si) | SumRow::TotalStatus(si) => {
@@ -3212,6 +3302,90 @@ mod tests {
     /// progetti nell'intervallo → `None`.
     /// Riepilogo lungo (molte categorie × 4 righe): continua sulle pagine
     /// successive e nessuna riga della tabella scende sotto il margine.
+    /// Intestazione del worker nel PDF della matrice: a 50/50 fra due dev, due
+    /// bande dei colori dei dev larghe uguali; senza ore, fondo grigio.
+    #[test]
+    fn matrix_pdf_worker_header_is_split_by_dev_hours() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let luigi = app.workers.add("Luigi");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, be);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(8));
+        app.projects.add_effort(p, be, WeekId(20000), mario, Effort(8));
+        app.projects.add_effort(p, fe, WeekId(20000), luigi, Effort(0));
+        let sel: std::collections::HashSet<_> = [mario, luigi].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &Default::default(),
+            &Default::default(),
+        );
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        let color = |d| u32_rgb(app.devs.get(d).unwrap().bg_color() as u32);
+        let widths = |c: (f32, f32, f32)| -> Vec<f32> {
+            pages[0]
+                .iter()
+                .filter_map(|sh| match sh {
+                    // Le etichette delle righe «ore per dev» hanno lo stesso
+                    // colore ma stanno nella colonna Project.
+                    Shape::Rect { x0, x1, color, .. }
+                        if *color == c && *x0 >= MATRIX_X0 + MATRIX_LABEL_W - 0.01 =>
+                    {
+                        Some(x1 - x0)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let (wf, wb) = (widths(color(fe)), widths(color(be)));
+        assert_eq!((wf.len(), wb.len()), (1, 1), "una banda per dev");
+        assert!((wf[0] - wb[0]).abs() < 0.01, "metà e metà: {wf:?} {wb:?}");
+        assert_eq!(widths(MATRIX_NO_HOURS_BG).len(), 1, "Luigi senza ore: grigio");
+    }
+
+    /// PDF della matrice: righe «Hours by dev» (ore del worker, poi ogni dev
+    /// del file con ore e %) e bordi marcati neri fra i worker.
+    #[test]
+    fn matrix_pdf_has_dev_hour_rows_and_thick_worker_borders() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let luigi = app.workers.add("Luigi");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        app.devs.add("Design");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, be);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        app.projects.add_effort(p, be, WeekId(20000), mario, Effort(10));
+        app.projects.add_effort(p, fe, WeekId(20000), luigi, Effort(8));
+        let sel: std::collections::HashSet<_> = [mario, luigi].into_iter().collect();
+        let m = crate::worker_matrix::build(&app, &sel, 20000, 20006);
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        let all: Vec<String> = pages.iter().flat_map(|pg| texts(pg)).collect();
+        for t in ["Hours by dev", "40h", "8h", "Design", "30h · 75%", "10h · 25%", "8h · 100%"] {
+            assert!(all.iter().any(|s| s == t), "manca «{t}»: {all:?}");
+        }
+        let thick: std::collections::BTreeSet<i32> = pages[0]
+            .iter()
+            .filter_map(|sh| match sh {
+                Shape::Line { x0, x1, thick, color, .. }
+                    if *thick == MATRIX_SEP_W && x0 == x1 && *color == BLACK =>
+                {
+                    Some((x0 * 100.0).round() as i32)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thick.len(), 3, "etichette|Mario, Mario|Luigi, dopo Luigi: {thick:?}");
+    }
+
     #[test]
     fn matrix_summary_breaks_across_pages() {
         let mut app = App::new();

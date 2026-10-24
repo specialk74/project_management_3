@@ -6,12 +6,13 @@
 //! settimana che si **sovrappone** all'intervallo `[from, to]` (giorni). Le righe
 //! sono raggruppate per categoria; nella cella i dev con cui il worker è
 //! assegnato nell'intervallo. In fondo, per worker, il numero di progetti per
-//! categoria.
+//! categoria e, per ogni dev, ore e percentuale sul totale del worker.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::app::App;
 use crate::categories::CategoryId;
+use crate::dev_utils::dev::DevId;
 use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
@@ -55,6 +56,53 @@ pub struct MatrixData {
     /// Stati mostrati (indici in `ProjectStatus::ALL`, in ordine): solo per
     /// questi il riepilogo ha la sotto-riga. Tutti e tre senza filtro.
     pub statuses: Vec<usize>,
+    /// Per ogni worker (stesso ordine di `workers`): ore per dev, sommate su
+    /// tutti i progetti della matrice nelle settimane che si sovrappongono al
+    /// periodo, in ordine di id del dev e solo i dev con ore > 0. Colora
+    /// l'intestazione del worker (vedi `dev_bands`).
+    pub dev_hours: Vec<Vec<(DevId, u32)>>,
+    /// Tutti i dev del file (ordine di id): le righe «ore per dev» in fondo
+    /// alla matrice, anche quelli senza ore per nessun worker.
+    pub devs: Vec<(DevId, String)>,
+}
+
+/// Ore totali di un worker nel periodo (somma di `dev_hours[w]`).
+pub fn worker_hours(hours: &[(DevId, u32)]) -> u32 {
+    hours.iter().map(|(_, h)| h).sum()
+}
+
+/// Ore del worker nel dev e percentuale (arrotondata) sul suo totale; `None`
+/// se nel dev non ha ore (cella vuota nelle righe «ore per dev»).
+pub fn dev_share(hours: &[(DevId, u32)], dev: DevId) -> Option<(u32, u32)> {
+    let total = worker_hours(hours);
+    let h = hours.iter().find(|(d, _)| *d == dev).map_or(0, |(_, h)| *h);
+    (h > 0 && total > 0).then(|| (h, (h * 100 + total / 2) / total))
+}
+
+/// Testo della cella «ore per dev»: `16h · 50%`. Condiviso da finestra e PDF.
+pub fn dev_share_label(hours: u32, pct: u32) -> String {
+    format!("{hours}h · {pct}%")
+}
+
+/// Bande dell'intestazione di un worker: `(dev, da, a)` con `da`/`a` frazioni
+/// 0..1 della larghezza, proporzionali alle ore, nell'ordine dato. Vuoto se non
+/// ci sono ore (il worker è solo assegnato a effort 0): l'intestazione è grigia.
+/// Condiviso da finestra e PDF, così le proporzioni coincidono.
+pub fn dev_bands(hours: &[(DevId, u32)]) -> Vec<(DevId, f32, f32)> {
+    let total: u32 = hours.iter().map(|(_, h)| h).sum();
+    if total == 0 {
+        return Vec::new();
+    }
+    let mut acc = 0u32;
+    hours
+        .iter()
+        .filter(|(_, h)| *h > 0)
+        .map(|&(dev, h)| {
+            let from = acc as f32 / total as f32;
+            acc += h;
+            (dev, from, acc as f32 / total as f32)
+        })
+        .collect()
 }
 
 /// La settimana che inizia il giorno `week_start` (lunedì, 7 giorni) si
@@ -91,6 +139,8 @@ pub fn build_filtered(
     let dev_names: HashMap<_, _> = app.devs.list().into_iter().collect();
 
     let mut rows: Vec<MatrixRow> = Vec::new();
+    // Ore per worker e dev sui progetti che entrano nella matrice.
+    let mut hours: Vec<BTreeMap<DevId, u32>> = vec![BTreeMap::new(); workers.len()];
     for (proj, _) in app.projects.list() {
         if !cats.is_empty() && !cats.contains(&app.projects.get_category(proj)) {
             continue;
@@ -99,6 +149,7 @@ pub fn build_filtered(
             continue;
         }
         let mut cells: Vec<Vec<String>> = vec![Vec::new(); workers.len()];
+        let mut proj_hours: Vec<BTreeMap<DevId, u32>> = vec![BTreeMap::new(); workers.len()];
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
                 continue;
@@ -109,17 +160,23 @@ pub fn build_filtered(
                 }
                 let Some(sew) = sd.get_all(wk) else { continue };
                 for (wi, (wid, _)) in workers.iter().enumerate() {
-                    if sew.worker_id.contains_key(wid) {
+                    if let Some(se) = sew.worker_id.get(wid) {
                         let name = dev_names.get(&dev).cloned().unwrap_or_default();
                         if !cells[wi].contains(&name) {
                             cells[wi].push(name);
                         }
+                        *proj_hours[wi].entry(dev).or_default() += se.get_effort().0 as u32;
                     }
                 }
             }
         }
         if cells.iter().all(|c| c.is_empty()) {
             continue;
+        }
+        for (total, proj) in hours.iter_mut().zip(proj_hours) {
+            for (dev, h) in proj {
+                *total.entry(dev).or_default() += h;
+            }
         }
         rows.push(MatrixRow {
             proj,
@@ -195,6 +252,11 @@ pub fn build_filtered(
         statuses: (0..ProjectStatus::ALL.len())
             .filter(|&i| statuses.is_empty() || statuses.contains(&ProjectStatus::ALL[i]))
             .collect(),
+        dev_hours: hours
+            .into_iter()
+            .map(|m| m.into_iter().filter(|(_, h)| *h > 0).collect())
+            .collect(),
+        devs: app.devs.list(),
     }
 }
 
@@ -352,6 +414,71 @@ mod tests {
         assert_eq!(m.summary, [vec![2]]);
         assert_eq!(m.status_totals, [[1, 0, 1]]);
         assert_eq!(m.statuses, [0, 2]);
+    }
+
+    #[test]
+    fn dev_bands_are_proportional_to_hours() {
+        let (a, b) = (DevId(1), DevId(2));
+        assert_eq!(dev_bands(&[(a, 8), (b, 8)]), [(a, 0.0, 0.5), (b, 0.5, 1.0)]);
+        assert_eq!(dev_bands(&[(a, 30), (b, 10)]), [(a, 0.0, 0.75), (b, 0.75, 1.0)]);
+        assert!(dev_bands(&[]).is_empty(), "nessuna ora: nessuna banda (grigio)");
+        assert!(dev_bands(&[(a, 0)]).is_empty());
+    }
+
+    /// Righe «ore per dev»: ore nel dev e percentuale arrotondata sul totale
+    /// del worker; dev senza ore (o worker senza ore) → cella vuota.
+    #[test]
+    fn dev_share_is_hours_and_rounded_percent_of_the_worker_total() {
+        let (a, b, c) = (DevId(1), DevId(2), DevId(3));
+        let h = [(a, 30), (b, 10)];
+        assert_eq!(dev_share(&h, a), Some((30, 75)));
+        assert_eq!(dev_share(&h, b), Some((10, 25)));
+        assert_eq!(dev_share(&h, c), None);
+        assert_eq!(dev_share(&[(a, 2), (b, 1)], a), Some((2, 67)));
+        assert_eq!(dev_share(&[], a), None);
+        assert_eq!(dev_share_label(30, 75), "30h · 75%");
+    }
+
+    /// Ore per dev del worker: sommate su tutti i progetti della matrice, solo
+    /// nelle settimane del periodo e solo nei progetti che passano i filtri; un
+    /// worker con sole assegnazioni a effort 0 non ha ore.
+    #[test]
+    fn dev_hours_sum_projects_in_the_period_and_filters() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let luigi = app.workers.add("Luigi");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p1 = app.projects.add("x", Some("P1"), None);
+        let p2 = app.projects.add("x", Some("P2"), None);
+        for p in [p1, p2] {
+            app.projects.add_dev(p, fe);
+            app.projects.add_dev(p, be);
+        }
+        app.projects.add_effort(p1, fe, WeekId(20000), mario, Effort(8));
+        app.projects.add_effort(p2, be, WeekId(20000), mario, Effort(4));
+        app.projects.add_effort(p2, be, WeekId(20007), mario, Effort(4));
+        app.projects.add_effort(p2, fe, WeekId(20100), mario, Effort(99)); // fuori periodo
+        app.projects.add_effort(p1, be, WeekId(20000), luigi, Effort(0));
+        let sel: HashSet<_> = [mario, luigi].into_iter().collect();
+        let none = BTreeSet::new();
+        let m = build_filtered(&app, &sel, 20000, 20013, &none, &BTreeSet::new());
+        let col = |w| m.workers.iter().position(|(id, _)| *id == w).unwrap();
+        // 8 h Frontend (P1) + 8 h Backend (P2, due settimane): metà e metà
+        assert_eq!(m.dev_hours[col(mario)], [(fe, 8), (be, 8)]);
+        assert_eq!(dev_bands(&m.dev_hours[col(mario)]), [(fe, 0.0, 0.5), (be, 0.5, 1.0)]);
+        // Luigi è assegnato ma a 0 ore: intestazione grigia
+        assert!(m.dev_hours[col(luigi)].is_empty());
+        assert_eq!(worker_hours(&m.dev_hours[col(mario)]), 16);
+        assert_eq!(dev_share(&m.dev_hours[col(mario)], fe), Some((8, 50)));
+        assert_eq!(dev_share(&m.dev_hours[col(luigi)], fe), None, "senza ore: vuota");
+        assert_eq!(m.devs.len(), app.devs.list().len(), "tutti i dev");
+        // Filtro categoria che esclude P2: restano solo le ore di P1
+        let cat = app.categories.add("Cat");
+        app.projects.set_category(p1, Some(cat));
+        let only: BTreeSet<_> = [Some(cat)].into();
+        let m = build_filtered(&app, &sel, 20000, 20013, &only, &BTreeSet::new());
+        assert_eq!(m.dev_hours[col(mario)], [(fe, 8)]);
     }
 
     #[test]

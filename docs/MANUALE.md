@@ -1125,12 +1125,31 @@ progetto**.
    alla tripletta; conta comunque nel riepilogo.
 4. **Celle** — all'incrocio progetto × worker ci sono i **dev** con cui il worker è
    assegnato nell'intervallo, **uno per riga** se sono più d'uno.
+   **Intestazione dei worker** — lo sfondo della casella col nome è diviso fra i
+   **colori dei dev** su cui il worker ha lavorato, **in proporzione alle ore**:
+   chi ha fatto metà ore su un dev e metà su un altro ha la casella metà di un
+   colore e metà dell'altro. Contano le ore di tutti i progetti della matrice
+   (quindi con i filtri di categoria e stato) nelle settimane dell'intervallo; lo
+   stesso dev in più progetti fa una sola fetta. Se il worker nell'intervallo è
+   solo assegnato a effort 0, la casella è **grigia**. Il nome è scritto nero o
+   bianco, quello che si legge meglio. Anche nel PDF.
+   Fra un worker e l'altro il bordo verticale è **più spesso e scuro** degli altri,
+   su tutta l'altezza (intestazione, righe e riepilogo), così con i colori dei dev
+   si vede subito dove finisce una colonna e inizia la successiva.
 5. **Riepilogo** — subito sotto la matrice (allineato alle sue colonne), una riga per
    categoria: per ogni worker, in quanti progetti di quella categoria è presente
    (vuoto = nessuno), seguita da tre sotto-righe con la **suddivisione per stato**:
    **Attivi**, **On-Hold** e **Closed**; in fondo il **Totale progetti** in cui il
    worker è coinvolto, con la stessa suddivisione. Nel PDF, se il riepilogo non
    entra nella pagina, continua sulla successiva con l'intestazione dei worker.
+   **Ore per dev** — in fondo, una riga «Ore per dev» con le **ore totali** di ogni
+   worker nell'intervallo, poi una riga per **ogni dev** del file (sotto la colonna
+   «Progetto», col colore del dev): nella colonna del worker ci sono le **ore** fatte
+   in quel dev e la **percentuale sul suo totale**, es. `30h · 75%` (vuota se il
+   worker non ha ore in quel dev). Sono le stesse ore delle fasce colorate
+   dell'intestazione: valgono l'intervallo e i filtri di categoria e stato, e le
+   assegnazioni a effort 0 non contano. Le percentuali sono arrotondate, quindi la
+   somma può fare 99% o 101%. Nel PDF la sezione si chiama «Hours by dev».
 6. **Lettura** — la riga con i **nomi dei worker resta sempre visibile** in cima
    mentre scorri la matrice in verticale. Passando col mouse su una **cella**:
    - **tutta la colonna** del worker, riepilogo compreso, ha un velo leggero

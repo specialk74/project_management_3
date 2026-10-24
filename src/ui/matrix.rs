@@ -4,7 +4,10 @@
 //! `crate::worker_matrix`, condivisi con l'export PDF.
 
 use super::*;
-use crate::worker_matrix::{MatrixData, category_color, closed_colors, hatch_segments};
+use crate::worker_matrix::{
+    MatrixData, category_color, closed_colors, dev_share, dev_share_label, hatch_segments,
+    worker_hours,
+};
 
 /// Intervallo `[1 gennaio dell'anno più vecchio, 31 dicembre del più recente]`
 /// (giorni) degli anni scelti nella combo; `None` se nessun anno è scelto.
@@ -294,6 +297,9 @@ const MX_SUM_H: f32 = 20.0;
 const MX_SUB_H: f32 = 16.0;
 const MX_YEARS_W: f32 = 180.0;
 const MX_STATUS_W: f32 = 150.0;
+/// Spessore del bordo fra un worker e l'altro: più marcato degli altri, perché
+/// con le bande colorate dei dev la divisione fra le colonne si perdeva.
+const MX_SEP_W: f32 = 2.5;
 
 fn mx_row_h(lines: usize) -> f32 {
     lines.max(1) as f32 * MX_LINE_H + 2.0 * MX_PAD
@@ -401,7 +407,7 @@ fn mx_hi_text() -> Color32 {
 const MX_BOLD_DX: f32 = HI_BOLD_DX;
 
 /// Disegna la matrice (righe progetto raggruppate per categoria) e, sotto, il
-/// riepilogo dei progetti per categoria di ogni worker.
+/// riepilogo dei progetti per categoria di ogni worker e le ore per dev.
 fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     let n = m.workers.len();
     let width = MX_LABEL_W + n as f32 * MX_COL_W;
@@ -418,12 +424,15 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     // categorie + totale, ciascuno con le 3 sotto-righe per stato
     let subs = m.statuses.len() as f32;
     let sum_h = MX_SUM_GAP + (m.categories.len() + 1) as f32 * (MX_SUM_H + subs * MX_SUB_H);
+    // ore per dev: intestazione + una riga per ogni dev del file
+    let sum_h = sum_h + MX_SUM_GAP + (m.devs.len() + 1) as f32 * MX_SUM_H;
     let height = MX_HEAD_H + groups as f32 * MX_GROUP_H + body_h + sum_h;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), Sense::hover());
     let p = ui.painter().clone();
     let x0 = rect.left();
     let col_x = |i: usize| x0 + MX_LABEL_W + i as f32 * MX_COL_W;
     let border = Stroke::new(1.0_f32, strip_border());
+    let sep = Stroke::new(MX_SEP_W, mx_sep_color());
     let bold = egui::FontId::proportional(13.0);
     let font = egui::FontId::proportional(12.5);
 
@@ -438,19 +447,41 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
             text(),
         );
         for (i, (_, name)) in m.workers.iter().enumerate() {
+            // Sfondo diviso fra i dev del worker in proporzione alle ore
+            // (`dev_bands`); grigio se ha solo assegnazioni a effort 0.
+            let cell = Rect::from_min_size(egui::pos2(col_x(i), y), egui::vec2(MX_COL_W, MX_HEAD_H));
+            let bands = crate::worker_matrix::dev_bands(&m.dev_hours[i]);
+            let mut under_name = mx_no_hours_bg();
+            if bands.is_empty() {
+                p.rect_filled(cell, 0.0, under_name);
+            }
+            for (dev, from, to) in &bands {
+                let color = dev_color(app, *dev);
+                let band = Rect::from_min_max(
+                    egui::pos2(cell.left() + cell.width() * from, cell.top()),
+                    egui::pos2(cell.left() + cell.width() * to, cell.bottom()),
+                );
+                p.rect_filled(band, 0.0, color);
+                if (*from..=*to).contains(&0.5) {
+                    under_name = color;
+                }
+            }
             p.text(
-                egui::pos2(col_x(i) + MX_COL_W / 2.0, y + MX_HEAD_H / 2.0),
+                cell.center(),
                 Align2::CENTER_CENTER,
                 fit_text(ui, name, &bold, MX_COL_W - 2.0 * MX_PAD),
                 bold.clone(),
-                text(),
+                contrast_text(under_name),
             );
         }
         p.hline(x0..=x0 + width, y + MX_HEAD_H, border);
     };
+    // Bordo sinistro sottile; fra le etichette e i worker e fra un worker e
+    // l'altro il bordo marcato.
     let vlines = |y0: f32, y1: f32| {
-        for x in [x0, x0 + MX_LABEL_W].into_iter().chain((1..=n).map(col_x)) {
-            p.vline(x, y0..=y1, border);
+        p.vline(x0, y0..=y1, border);
+        for x in std::iter::once(x0 + MX_LABEL_W).chain((1..=n).map(col_x)) {
+            p.vline(x, y0..=y1, sep);
         }
     };
 
@@ -693,7 +724,68 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     p.hline(x0..=x0 + width, y + MX_SUM_H, border);
     vlines(y, y + MX_SUM_H);
     y += MX_SUM_H;
-    status_rows(y, &|wi| m.status_totals[wi]);
+    let mut y = status_rows(y, &|wi| m.status_totals[wi]);
+
+    // Ore per dev: intestazione con le ore totali di ogni worker nel periodo,
+    // poi una riga per ogni dev del file con ore e percentuale sul totale del
+    // worker (vuota se il worker non ha ore in quel dev).
+    y += MX_SUM_GAP;
+    let hr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(width, MX_SUM_H));
+    p.rect_filled(hr, 0.0, strip_bg(false));
+    let band = reserve(y, MX_SUM_H, Band::Summary);
+    put(
+        band,
+        None,
+        egui::pos2(x0 + MX_PAD, y + MX_SUM_H / 2.0),
+        Align2::LEFT_CENTER,
+        "Ore per dev".to_string(),
+        &bold,
+        text(),
+    );
+    for wi in 0..n {
+        put(
+            band,
+            Some(wi),
+            egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUM_H / 2.0),
+            Align2::CENTER_CENTER,
+            format!("{}h", worker_hours(&m.dev_hours[wi])),
+            &bold,
+            text(),
+        );
+    }
+    p.hline(x0..=x0 + width, y + MX_SUM_H, border);
+    vlines(y, y + MX_SUM_H);
+    y += MX_SUM_H;
+    for (dev, name) in &m.devs {
+        let lr = Rect::from_min_size(egui::pos2(x0, y), egui::vec2(MX_LABEL_W, MX_SUM_H));
+        p.rect_filled(lr, 0.0, dev_color(app, *dev));
+        let band = reserve(y, MX_SUM_H, Band::Summary);
+        put(
+            band,
+            None,
+            egui::pos2(x0 + MX_PAD, y + MX_SUM_H / 2.0),
+            Align2::LEFT_CENTER,
+            fit_text(ui, name, &bold, MX_LABEL_W - 2.0 * MX_PAD),
+            &bold,
+            dev_text_color(app, *dev),
+        );
+        for wi in 0..n {
+            if let Some((h, pct)) = dev_share(&m.dev_hours[wi], *dev) {
+                put(
+                    band,
+                    Some(wi),
+                    egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUM_H / 2.0),
+                    Align2::CENTER_CENTER,
+                    fit_text(ui, &dev_share_label(h, pct), &font, MX_COL_W - 2.0 * MX_PAD),
+                    &font,
+                    text(),
+                );
+            }
+        }
+        p.hline(x0..=x0 + width, y + MX_SUM_H, border);
+        vlines(y, y + MX_SUM_H);
+        y += MX_SUM_H;
+    }
 
     // Riga dei worker sempre visibile: in cima all'area visibile (o al suo
     // posto, se la matrice non è scorsa). Scorre in orizzontale con le colonne.
@@ -754,7 +846,6 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
     }
 
     header(head_y, "Progetto");
-    vlines(head_y, head_bottom);
     // Il nome del worker puntato: lo sfondo della riga è già grigio e un velo
     // leggero non si nota, quindi colori invertiti (fondo del colore del
     // testo, nome del colore dello sfondo): spicca in entrambi i temi.
@@ -769,6 +860,20 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
             bg(),
         );
     }
+    // Dopo il nome invertito, che altrimenti coprirebbe metà del bordo marcato.
+    vlines(head_y, head_bottom);
+}
+
+/// Fondo dell'intestazione di un worker senza ore nel periodo (solo
+/// assegnazioni a effort 0): grigio neutro, uguale nei due temi.
+fn mx_no_hours_bg() -> Color32 {
+    g(Color32::from_gray(0xA0))
+}
+
+/// Colore del bordo fra i worker: quello del testo, quindi scuro nel tema
+/// chiaro e contrastato anche nel tema scuro.
+fn mx_sep_color() -> Color32 {
+    text()
 }
 
 /// Etichette delle sotto-righe per stato (ordine di `ProjectStatus::ALL`).
@@ -907,6 +1012,107 @@ mod tests {
 
     /// Anni scelti → Da = 1/1 del più vecchio, A = 31/12 del più recente (anche
     /// se in mezzo c'è un anno non scelto); nessun anno → nessun intervallo.
+    /// Intestazione del worker nella finestra: a 50/50 fra due dev, due bande dei
+    /// colori dei dev larghe mezza colonna ciascuna.
+    #[test]
+    fn worker_header_is_split_by_dev_hours() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, be);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(8));
+        app.projects.add_effort(p, be, WeekId(20000), mario, Effort(8));
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 600.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_matrix(ui, &app, &m));
+        let widths = |c: Color32| -> Vec<f32> {
+            out.shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    // Le etichette delle righe «ore per dev» hanno lo stesso
+                    // colore ma sono larghe quanto la colonna Progetto.
+                    egui::epaint::Shape::Rect(r) if r.fill == c && r.rect.width() <= MX_COL_W => {
+                        Some(r.rect.width())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let (wf, wb) = (widths(dev_color(&app, fe)), widths(dev_color(&app, be)));
+        assert_eq!((wf.len(), wb.len()), (1, 1), "una banda per dev: {wf:?} {wb:?}");
+        assert!((wf[0] - MX_COL_W / 2.0).abs() < 0.5 && (wb[0] - MX_COL_W / 2.0).abs() < 0.5);
+    }
+
+    /// In fondo alla matrice: «Ore per dev» con le ore totali del worker, poi
+    /// una riga per **ogni** dev del file (anche senza ore) con ore e % sul
+    /// totale del worker; fra i worker il bordo marcato.
+    #[test]
+    fn dev_rows_show_hours_and_percent_and_workers_are_split_by_thick_lines() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let luigi = app.workers.add("Luigi");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        app.devs.add("Design"); // nessuna ora: riga presente, celle vuote
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, be);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        app.projects.add_effort(p, be, WeekId(20000), mario, Effort(10));
+        app.projects.add_effort(p, fe, WeekId(20000), luigi, Effort(8));
+        let sel: std::collections::HashSet<_> = [mario, luigi].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 900.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_matrix(ui, &app, &m));
+        let texts = drawn_texts(&out);
+        for t in ["Ore per dev", "40h", "Frontend", "Backend", "Design", "30h · 75%", "10h · 25%"] {
+            assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+        }
+        // Luigi: 8h tutte in Frontend → 100%, e 8h in testa alla colonna.
+        assert_eq!(texts.iter().filter(|s| *s == "8h · 100%").count(), 1);
+        assert!(texts.iter().any(|s| s == "8h"));
+        // Bordi marcati: fra etichette/Mario, Mario/Luigi e dopo Luigi.
+        let thick: std::collections::BTreeSet<i32> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::LineSegment { points, stroke }
+                    if stroke.width == MX_SEP_W && points[0].x == points[1].x =>
+                {
+                    Some(points[0].x.round() as i32)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thick.len(), 3, "un bordo marcato per confine: {thick:?}");
+    }
+
     #[test]
     fn years_range_spans_oldest_to_newest() {
         let d = |y, m, dd| local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap());
