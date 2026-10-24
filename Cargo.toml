@@ -16,7 +16,7 @@ eframe = "0.37.0"
 egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
 egui_extras = { version = "0.37.0", features = ["datepicker"] }
 jiff = "0.2.23"
-printpdf = "0.9.1"
+printpdf = "0.12.8"
 egui_commonmark = { version = "0.26.0", default-features = false, features = [
     "pulldown_cmark",
 ] }

@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 289 verdi |
+| Test | 275 verdi | 290 verdi |
 
 ## Ordine consigliato
 
@@ -90,7 +90,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   _(fatto: commenti aggiornati; il codice di `dates.rs` verificato identico riga per
   riga)_
 
-- [ ] **A8. Aggiornamento egui 0.34 → 0.37** (eframe, egui_extras 0.37.0;
+- [x] **A8. Aggiornamento egui 0.34 → 0.37** (eframe, egui_extras 0.37.0;
   egui_commonmark 0.23 → 0.26). Misurato su una copia: 7 errori di compilazione
   (`scroll_area::State.offset` privato → `offset()`, 2 cambi sugli `Id`, un campo
   nuovo negli eventi dei test) e 52 API deprecate (25 `Id::new` →
@@ -101,7 +101,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   Piano: commit + branch dedicato, errori, deprecazioni fino a 0 warning, test,
   **prova a mano** dell'interfaccia. _Impatto: Medio · Rischio: Medio._
   _(approvato il 2026-10-24)_
-  _(in corso, branch `egui-0.37`: fatti i punti 1–4. **Errori**: offset → 
+  _(fatto, branch `egui-0.37`: punti 1–5. **Errori**: offset → 
   `clamped_offset()`, salt `impl Hash + Debug`, campo `source` negli eventi dei
   test. **Deprecazioni**: 52 → 0 (`Id::new` = `Id::unique` in 0.37, quindi
   comportamento identico; `scope_id`, `show`, `align(Align2::CENTER_TOP)`).
@@ -120,7 +120,18 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   touch screen → `drag_scroll()` su tutte le 27 aree di scorrimento dell'utente
   (le 5 che seguono un'altra area restano escluse), test
   `right_drag_scrolls_the_grid_both_ways`. Build e clippy 0 warning, 289 test
-  verdi. **Prova a mano in corso (punto 5).**)_
+  verdi. **Prova a mano superata** (confermata dall'utente il 2026-10-24).)_
+
+- [ ] **A9. Aggiornamento printpdf 0.9.1 → 0.12.8.** Misurato su una copia:
+  nessuna modifica al codice (0 errori, 0 warning), 290 test verdi, aspetto
+  identico (prima pagina di Gantt/report/andamento: 7–83 pixel diversi su 500.000,
+  bordi dei caratteri), stesso testo cercabile (nel Gantt stesse 1.720 parole, in
+  ordine di lettura diverso), PDF **10–40 volte più piccoli** (Gantt 2,1 MB →
+  180 KB: solo i caratteri usati del font vengono incorporati), dipendenze
+  589 → 542. _Impatto: Basso · Rischio: Basso._ _(approvato il 2026-10-24)_
+  _(applicato sul branch `egui-0.37`: cambiata solo la versione in `Cargo.toml`
+  (+ `Cargo.lock`); build e clippy 0 warning, 290 test verdi. **Manca la prova a
+  mano**: esportare Gantt, report, andamento e matrice e guardarli in Anteprima.)_
 
 ## B. Codice duplicato
 
@@ -387,3 +398,7 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   0 warning (build e clippy), 288 test verdi. In attesa della prova a mano.
 - **2026-10-24** — A8: ripristinato lo scroll trascinando col mouse in tutte le
   viste (egui 0.37 lo limitava ai touch screen). 289 test verdi.
+- **2026-10-24** — Chiusa A8: prova a mano dell'utente superata. egui 0.37,
+  build e clippy 0 warning, 290 test verdi. Tutte le voci del report sono chiuse.
+- **2026-10-24** — Aggiunta e approvata A9 (aggiornamento printpdf 0.12.8).
+- **2026-10-24** — A9 applicata (printpdf 0.12.8), in attesa della prova a mano.
