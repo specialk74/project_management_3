@@ -19,7 +19,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 |---|---|---|
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | **0** |
-| Warning `cargo clippy` | ~135 | 53 (stile → E3) |
+| Warning `cargo clippy` | ~135 | **0** (anche sui test) |
 | Test | 275 verdi | 285 verdi |
 
 ## Ordine consigliato
@@ -30,7 +30,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 4. ~~**A2** — migrazione API egui deprecate~~ ✅ fatto
 5. ~~**B2–B7, C3–C5** — duplicati e ottimizzazioni minori, in due blocchi:
    5a: B2–B7 (duplicati) · 5b: C3–C5 (ottimizzazioni)~~ ✅ fatto
-6. **B1, B9, E1–E3** — riordino
+6. ~~**B1, B9, E1–E3** — riordino~~ ✅ fatto
 7. **B10** — a parte: la modifica più invasiva
 
 ---
@@ -92,10 +92,16 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 ## B. Codice duplicato
 
-- [ ] **B1. Export PDF ripetuto** — `build_pdf` e `build_pdf_selected` quasi
+- [x] **B1. Export PDF ripetuto** — `build_pdf` e `build_pdf_selected` quasi
   identici (~50 righe ciascuno); la preparazione del documento (font regular/bold,
   `PdfDocument`, salvataggio) è ripetuta **6 volte** in `pdf_export.rs`. Proposta:
   helper `new_doc()` / `save_doc(pages)` e un unico `build_pdf_filtered`.
+  _(fatto: `pdf_document(title, &pages)` è l'unico punto che crea il PDF (font,
+  pagine, salvataggio; `None` senza pagine) e lo usano tutti gli export: Gantt,
+  progetto singolo, andamento, report, matrice. `build_pdf` e `build_pdf_selected`
+  passano da `gantt_pdf(app, bar, filtro)`. Report e matrice prima salvavano anche
+  con zero pagine: verificato che non può succedere (almeno una pagina per
+  progetto / per blocco di worker), quindi il comportamento non cambia)_
 
 - [x] **B2. Data della settimana** — `primo_giorno_settimana_corrente(&days_to_local(w)).format("%y-%m-%d")`
   ripetuto **21 volte** in 8 file. Proposta: helper `week_label(w)`.
@@ -149,9 +155,16 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 - [ ] **B8. Conversioni per jiff** (richiesto dal date-picker di egui) sparse tra
   `ui/mod.rs` e `matrix.rs`. Proposta: riunirle in `date_utils`.
 
-- [ ] **B9. Test** — sequenza di click (sposta/premi/rilascia) copiata ~11 volte,
+- [x] **B9. Test** — sequenza di click (sposta/premi/rilascia) copiata ~11 volte,
   estrazione dei testi disegnati ~19, preparazione dello schermo 29. Proposta:
   modulo di helper per i test (`click_at`, `drawn_texts`, `screen`).
+  _(fatto: `src/ui/test_util.rs` (solo test) con `screen(w, h)`,
+  `click_events(pos, tasto)`, `drawn_texts(out)` e `text_pos(out, testo)` (spostato
+  da `tests.rs`). Usati nei 6 array di click copiati, in `queue_click`/
+  `queue_right_click`, in 5 estrazioni di testo e in 29 definizioni di schermo,
+  anche nei test di `saturation.rs` e `matrix.rs`. Le estrazioni con filtri propri
+  (colore, solo visibili, prefisso) restano nei loro test. Sistemato anche il
+  commento di `queue_click`, già troncato a metà frase nel commit)_
 
 - [ ] **B10. 9 opzioni di export come stato globale** (thread-local:
   `set_show_pct`, `set_show_year`, scope, allow-list, ghost, ghost_red, corner,
@@ -244,16 +257,29 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 ## E. Struttura (facoltativo)
 
-- [ ] **E1.** `ui/mod.rs` ha ~6.300 righe, di cui ~2.480 di test: spostarli in
-  `src/ui/tests.rs`.
-- [ ] **E2.** Refusi nei nomi dei file: `sinlge_effort.rs`,
-  `sinlge_effort_week.rs` → `single_…`.
-- [ ] **E3.** Stile clippy (53 warning nel codice, ~85 contando i test): ~32 `if`
+- [x] **E1.** `ui/mod.rs` ha ~6.300 righe, di cui ~2.480 di test: spostarli in
+  `src/ui/tests.rs`. _(fatto: `mod.rs` 6.484 → 3.799 righe, test in `tests.rs`
+  (modulo figlio, `use super::*` invariato); verificato prima che nessuna stringa
+  su più righe dipendesse dal rientro tolto)_
+- [x] **E2.** Refusi nei nomi dei file: `sinlge_effort.rs`,
+  `sinlge_effort_week.rs` → `single_…`. _(fatto con `git mv`, così git conserva la
+  storia; aggiornati moduli e `use`. Le rinomine sono già in staging)_
+- [x] **E3.** Stile clippy (53 warning nel codice, ~85 contando i test): ~32 `if`
   annidabili, 21 assegnazioni dopo `Default::default()` (test), `mut` inutili, 4
-  `run_ui` con risultato ignorato nei test, ecc. Sistemabili in modo meccanico con
-  `cargo clippy --fix`. Nota: il repo **non** è formattato con `rustfmt` (152
-  differenze già all'ultimo commit): un `cargo fmt` globale toccherebbe molti file,
-  va deciso a parte.
+  `run_ui` con risultato ignorato nei test, ecc. Nota: il repo **non** è formattato
+  con `rustfmt` (152 differenze già all'ultimo commit): un `cargo fmt` globale
+  toccherebbe molti file, va deciso a parte.
+  _(fatto: `cargo clippy --fix` (51 correzioni: `if` annidati uniti con le *let
+  chains*, `is_some_and`, `values()`, `sort_by_key`, `#[derive(Default)]`…) e il
+  resto a mano (inizializzazioni dirette al posto di `Default` + assegnazione, `mut`
+  e risultati `run_ui`, un alias di tipo, 5 `#[allow(too_many_arguments)]` come da
+  convenzione del progetto). `clippy --fix` lascia la formattazione rotta: le sole
+  righe toccate sono state formattate con `rustfmt +nightly --file-lines` (il resto
+  dei file resta com'era), più 6 blocchi a mano; ripristinate 9 riformattazioni
+  fuori ambito nei test. **Attenzione**: per `clear_efforts` clippy suggeriva
+  `.any()`, che si fermerebbe al primo dev: scritto come ciclo esplicito con un
+  commento. **Il `cargo fmt` globale resta da decidere a parte.** Clippy: 0
+  warning, anche sui test)_
 - [ ] **E4.** Nella radice ~10 copie/backup di `.ron` (già ignorati da git). Dati
   dell'utente: **non si toccano** senza richiesta esplicita.
 
@@ -287,3 +313,5 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   53, 284 test verdi (+4).
 - **2026-10-24** — Punto 5, blocco 5b (C3–C5, ottimizzazioni). Build 0 warning,
   clippy 53, 285 test verdi (+1). Punto 5 completato.
+- **2026-10-24** — Fatto il punto 6 (B1, B9, E1, E2, E3). Build 0 warning,
+  **clippy 0 warning** (anche sui test), 285 test verdi.

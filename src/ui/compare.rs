@@ -794,14 +794,16 @@ fn compare_view_stage(
                             .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
                             .collect();
                         let txt = contrast_text(fill);
-                        let mut job = egui::text::LayoutJob::default();
-                        job.wrap = egui::text::TextWrapping {
-                            max_width: CW - 6.0,
-                            max_rows: 2,
-                            break_anywhere: true,
-                            overflow_character: Some('…'),
+                        let mut job = egui::text::LayoutJob {
+                            wrap: egui::text::TextWrapping {
+                                max_width: CW - 6.0,
+                                max_rows: 2,
+                                break_anywhere: true,
+                                overflow_character: Some('…'),
+                            },
+                            halign: egui::Align::Center,
+                            ..Default::default()
                         };
-                        job.halign = egui::Align::Center;
                         job.append(
                             &names.join(", "),
                             0.0,

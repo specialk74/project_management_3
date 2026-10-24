@@ -6,7 +6,7 @@ use crate::{
     dev_utils::dev::DevId,
     milestones::MilestoneId,
     single_dev_utils::single_dev::{SingleDev, WEEK_STEP, WeekId},
-    single_effort_utils::sinlge_effort::Effort,
+    single_effort_utils::single_effort::Effort,
     workers_utils::worker::WorkerId,
 };
 
@@ -177,10 +177,15 @@ impl Project {
     pub fn clear_efforts(&mut self, id_dev: Option<DevId>) -> bool {
         match id_dev {
             Some(d) => self.dev_id.get_mut(&d).is_some_and(|sd| sd.clear_efforts()),
-            None => self
-                .dev_id
-                .values_mut()
-                .fold(false, |acc, sd| sd.clear_efforts() || acc),
+            None => {
+                // Niente `any()`: si fermerebbe al primo dev con celle e gli altri
+                // resterebbero pieni. Vanno svuotati tutti.
+                let mut changed = false;
+                for sd in self.dev_id.values_mut() {
+                    changed |= sd.clear_efforts();
+                }
+                changed
+            }
         }
     }
 
@@ -524,15 +529,15 @@ impl Project {
         let dd = delta_weeks * WEEK_STEP as i64;
         let (lo, hi) = Self::moves_day_span(moves)?;
         if dd > 0 {
-            if let Some(end) = self.end_week {
-                if hi + dd > end.0 as i64 {
-                    return Some(true);
-                }
+            if let Some(end) = self.end_week
+                && hi + dd > end.0 as i64
+            {
+                return Some(true);
             }
-        } else if let Some(start) = self.start_week {
-            if lo + dd < start.0 as i64 {
-                return Some(false);
-            }
+        } else if let Some(start) = self.start_week
+            && lo + dd < start.0 as i64
+        {
+            return Some(false);
         }
         None
     }
@@ -607,25 +612,23 @@ impl Project {
         // segue l'effort fino alla prima/ultima settimana ancora occupata.
         if dd < 0 {
             // a sinistra → può liberarsi la FINE
-            if let Some(end0) = end0 {
-                if had_effort_at_end && !self.has_effort_at(end0) {
-                    if let Some(last) = self.last_effort_week() {
-                        if last < end0 {
-                            self.end_week = Some(last);
-                        }
-                    }
-                }
+            if let Some(end0) = end0
+                && had_effort_at_end
+                && !self.has_effort_at(end0)
+                && let Some(last) = self.last_effort_week()
+                && last < end0
+            {
+                self.end_week = Some(last);
             }
         } else {
             // a destra → può liberarsi l'INIZIO
-            if let Some(start0) = start0 {
-                if had_effort_at_start && !self.has_effort_at(start0) {
-                    if let Some(first) = self.first_effort_week() {
-                        if first > start0 {
-                            self.start_week = Some(first);
-                        }
-                    }
-                }
+            if let Some(start0) = start0
+                && had_effort_at_start
+                && !self.has_effort_at(start0)
+                && let Some(first) = self.first_effort_week()
+                && first > start0
+            {
+                self.start_week = Some(first);
             }
         }
     }

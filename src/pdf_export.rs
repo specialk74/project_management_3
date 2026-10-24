@@ -162,6 +162,31 @@ struct Fonts {
     bold: FontId,
 }
 
+/// Documento PDF `title` con una pagina (formato `PAGE_W`×`PAGE_H`) per ogni
+/// elenco di forme in `pages`: registra i font, disegna e salva. Unico punto
+/// in cui si crea un PDF. `None` se non c'è nessuna pagina o i font non si
+/// caricano.
+fn pdf_document(title: &str, pages: &[Vec<Shape>]) -> Option<Vec<u8>> {
+    if pages.is_empty() {
+        return None;
+    }
+    let mut doc = PdfDocument::new(title);
+    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
+    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
+    let fonts = Fonts {
+        regular: doc.add_font(&regular),
+        bold: doc.add_font(&bold),
+    };
+    let pages: Vec<PdfPage> = pages
+        .iter()
+        .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, shapes)))
+        .collect();
+    Some(
+        doc.with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut Vec::new()),
+    )
+}
+
 impl Fonts {
     fn handle(&self, bold: bool) -> PdfFontHandle {
         PdfFontHandle::External(if bold {
@@ -961,6 +986,7 @@ fn pct_label(r: &Row) -> Option<String> {
 }
 
 /// Genera gli `Op` di una pagina Gantt per un progetto.
+#[allow(clippy::too_many_arguments)]
 fn page_shapes(
     tripletta: &str,
     descr: &str,
@@ -1032,7 +1058,11 @@ fn page_shapes(
         let cell_x0 = x_of(local_to_days(&m));
         let next = add_months(m, 1);
         let cell_x1 = x_of(local_to_days(&next));
-        let fill = if idx % 2 == 0 { GRAY_DK } else { GRAY_LT };
+        let fill = if idx.is_multiple_of(2) {
+            GRAY_DK
+        } else {
+            GRAY_LT
+        };
         shapes.extend(rect_round(cell_x0, AXIS_BOT, cell_x1, AXIS_TOP, fill));
         // Separatore bianco a destra della cella.
         shapes.extend(line(cell_x1, AXIS_BOT, cell_x1, AXIS_TOP, 0.6, WHITE));
@@ -1549,6 +1579,7 @@ fn project_name(app: &App, proj: ProjectId) -> String {
 /// `chart_only` esclude tripletta/descrizione e la banda della data in fondo.
 /// `None` se il progetto non ha inizio E fine.
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn project_shapes(
     app: &App,
     proj: ProjectId,
@@ -1812,51 +1843,7 @@ fn project_shapes_fmt(
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
 #[cfg(test)]
 pub fn build_pdf(app: &App, fmt: impl Into<DevBar>) -> Option<Vec<u8>> {
-    let bar: DevBar = fmt.into();
-    let mut doc = PdfDocument::new("Projects");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
-    let created = today().format(US_DATE).to_string();
-    let today = today_days();
-    let dev_info = dev_info_map(app);
-
-    let mut pages = Vec::new();
-    for (id, name, enable) in app.projects.list_full() {
-        if !enable.0 || app.projects.is_closed(id) {
-            continue;
-        }
-        if let Some(shapes) =
-            project_shapes_fmt(
-                app,
-                id,
-                &name,
-                &dev_info,
-                today,
-                &created,
-                None,
-                false,
-                &|_| bar,
-            )
-        {
-            pages.push(PdfPage::new(
-                Mm(PAGE_W),
-                Mm(PAGE_H),
-                render_pdf(&fonts, &shapes),
-            ));
-        }
-    }
-
-    if pages.is_empty() {
-        return None;
-    }
-    let bytes = doc
-        .with_pages(pages)
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-    Some(bytes)
+    gantt_pdf(app, fmt.into(), |id, enable| enable && !app.projects.is_closed(id))
 }
 
 /// Come `build_pdf`, ma limitato ai soli progetti indicati in `selected`
@@ -1868,53 +1855,29 @@ pub fn build_pdf_selected(
     selected: &[ProjectId],
     fmt: impl Into<DevBar>,
 ) -> Option<Vec<u8>> {
-    let bar: DevBar = fmt.into();
-    let mut doc = PdfDocument::new("Projects");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
+    // I chiusi non sono esclusi a priori: la selezione a monte riflette la
+    // modalità Vista (può includere progetti chiusi).
+    gantt_pdf(app, fmt.into(), |id, enable| enable && selected.contains(&id))
+}
+
+/// Una pagina Gantt per ogni progetto (in ordine di visualizzazione) che passa
+/// `keep(id, abilitato)` e ha inizio e fine; tutti i dev con lo stesso `bar`.
+fn gantt_pdf(app: &App, bar: DevBar, keep: impl Fn(ProjectId, bool) -> bool) -> Option<Vec<u8>> {
     let created = today().format(US_DATE).to_string();
     let today = today_days();
     let dev_info = dev_info_map(app);
-
-    let mut pages = Vec::new();
-    for (id, name, enable) in app.projects.list_full() {
-        // I chiusi non sono esclusi a priori: la selezione a monte riflette la
-        // modalità Vista (può includere progetti chiusi).
-        if !selected.contains(&id) || !enable.0 {
-            continue;
-        }
-        if let Some(shapes) =
+    let pages: Vec<Vec<Shape>> = app
+        .projects
+        .list_full()
+        .into_iter()
+        .filter(|(id, _, enable)| keep(*id, enable.0))
+        .filter_map(|(id, name, _)| {
             project_shapes_fmt(
-                app,
-                id,
-                &name,
-                &dev_info,
-                today,
-                &created,
-                None,
-                false,
-                &|_| bar,
+                app, id, &name, &dev_info, today, &created, None, false, &|_| bar,
             )
-        {
-            pages.push(PdfPage::new(
-                Mm(PAGE_W),
-                Mm(PAGE_H),
-                render_pdf(&fonts, &shapes),
-            ));
-        }
-    }
-
-    if pages.is_empty() {
-        return None;
-    }
-    let bytes = doc
-        .with_pages(pages)
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-    Some(bytes)
+        })
+        .collect();
+    pdf_document("Projects", &pages)
 }
 
 /// Costruisce un PDF di **un solo progetto**, con i dev nell'ordine `ordered_devs`
@@ -1967,19 +1930,7 @@ pub fn build_pdf_project_fmt(
         false,
         &fmt_lookup(devs),
     )?;
-
-    let mut doc = PdfDocument::new("Project");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
-    let page = PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes));
-    let bytes = doc
-        .with_pages(vec![page])
-        .save(&PdfSaveOptions::default(), &mut Vec::new());
-    Some(bytes)
+    pdf_document("Project", &[shapes])
 }
 
 /// Esporta il **solo grafico** di un progetto in SVG: come il PDF a singolo
@@ -2103,6 +2054,14 @@ fn declared_at(hist: &[DeclaredPoint], w: i32) -> u8 {
         .map_or(0, |p| p.pct)
 }
 
+/// Dev nel PDF andamento: dati, pianificato, colore, nome.
+type TrendDev<'a> = (
+    &'a crate::single_dev_utils::single_dev::SingleDev,
+    u64,
+    (f32, f32, f32),
+    String,
+);
+
 /// Una pagina del PDF andamento per un progetto: linee presunta (continua) e
 /// dichiarata (tratteggiata) per ogni dev (colore GUI) + una coppia aggregata di
 /// progetto (nera). `None` se il progetto non ha dev con effort pianificato.
@@ -2116,12 +2075,7 @@ fn trend_page_shapes(
     created: &str,
 ) -> Option<Vec<Shape>> {
     // Dev con pianificato > 0 (gli unici con presunta/dichiarata definite).
-    let mut devs: Vec<(
-        &crate::single_dev_utils::single_dev::SingleDev,
-        u64,
-        (f32, f32, f32),
-        String,
-    )> = Vec::new();
+    let mut devs: Vec<TrendDev> = Vec::new();
     for id in app.projects.get_dev_ids(proj) {
         if let Some(sd) = app.projects.get_single_dev(proj, id) {
             let planned = sd.planned_effort().0;
@@ -2203,10 +2157,10 @@ fn trend_page_shapes(
             .map(|p| (x_of(p.week.0 as i32), y_of(p.pct as f32)))
             .collect();
         // La dichiarata si ferma a oggi: estende piatto l'ultimo valore.
-        if let Some(last) = hist.last() {
-            if (last.week.0 as i32) < today_week {
-                pts.push((x_of(today_week), y_of(last.pct as f32)));
-            }
+        if let Some(last) = hist.last()
+            && (last.week.0 as i32) < today_week
+        {
+            pts.push((x_of(today_week), y_of(last.pct as f32)));
         }
         pts
     };
@@ -2477,39 +2431,20 @@ fn trend_page_shapes(
 /// PDF dell'andamento nel tempo: una pagina per progetto (con dati), linee
 /// presunta/dichiarata per dev e progetto. `None` se nessun progetto ha dati.
 pub fn build_trend_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
-    let mut doc = PdfDocument::new("Trend");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
     let created = today().format(US_DATE).to_string();
     let now = today();
     let today = local_to_days(&now);
     let today_week = local_to_days(&primo_giorno_settimana_corrente(&now));
     let dev_info = dev_info_map(app);
 
-    let mut pages = Vec::new();
-    for &id in projects {
-        let name = project_name(app, id);
-        if let Some(shapes) =
+    let pages: Vec<Vec<Shape>> = projects
+        .iter()
+        .filter_map(|&id| {
+            let name = project_name(app, id);
             trend_page_shapes(app, id, &name, &dev_info, today, today_week, &created)
-        {
-            pages.push(PdfPage::new(
-                Mm(PAGE_W),
-                Mm(PAGE_H),
-                render_pdf(&fonts, &shapes),
-            ));
-        }
-    }
-    if pages.is_empty() {
-        return None;
-    }
-    Some(
-        doc.with_pages(pages)
-            .save(&PdfSaveOptions::default(), &mut Vec::new()),
-    )
+        })
+        .collect();
+    pdf_document("Trend", &pages)
 }
 
 // --- Report di progetto (File ▸ Report…) ------------------------------------
@@ -2878,26 +2813,15 @@ pub fn build_report_pdf(app: &App, projects: &[ProjectId]) -> Option<Vec<u8>> {
     if projects.is_empty() {
         return None;
     }
-    let mut doc = PdfDocument::new("Report");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
     let created = today().format(US_DATE).to_string();
     let today = today_days();
     let dev_info = dev_info_map(app);
 
-    let pages: Vec<PdfPage> = projects
+    let pages: Vec<Vec<Shape>> = projects
         .iter()
         .flat_map(|&id| report_pages(app, id, &dev_info, today, &created))
-        .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
         .collect();
-    Some(
-        doc.with_pages(pages)
-            .save(&PdfSaveOptions::default(), &mut Vec::new()),
-    )
+    pdf_document("Report", &pages)
 }
 
 // --- Matrice progetti × worker -------------------------------------------------
@@ -2966,6 +2890,7 @@ fn matrix_subtitle(from: i32, to: i32, today: i32, years: &[i32], categories: &[
 /// Nomi degli stati nel PDF della matrice (ordine di `ProjectStatus::ALL`).
 const MATRIX_STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
 
+#[allow(clippy::too_many_arguments)]
 fn matrix_pages(
     app: &App,
     m: &crate::worker_matrix::MatrixData,
@@ -3296,23 +3221,10 @@ pub fn build_matrix_pdf(
     if m.workers.is_empty() || m.rows.is_empty() {
         return None;
     }
-    let mut doc = PdfDocument::new("Projects x workers");
-    let regular = ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())?;
-    let bold = ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())?;
-    let fonts = Fonts {
-        regular: doc.add_font(&regular),
-        bold: doc.add_font(&bold),
-    };
     let created = today().format(US_DATE).to_string();
     let today = today_days();
-    let pages: Vec<PdfPage> = matrix_pages(app, m, from, to, years, &categories, today, &created)
-        .into_iter()
-        .map(|shapes| PdfPage::new(Mm(PAGE_W), Mm(PAGE_H), render_pdf(&fonts, &shapes)))
-        .collect();
-    Some(
-        doc.with_pages(pages)
-            .save(&PdfSaveOptions::default(), &mut Vec::new()),
-    )
+    let pages = matrix_pages(app, m, from, to, years, &categories, today, &created);
+    pdf_document("Projects x workers", &pages)
 }
 
 #[cfg(test)]
@@ -3320,7 +3232,7 @@ mod tests {
     use super::*;
     use crate::milestones::MilestoneKind;
     use crate::single_dev_utils::single_dev::WeekId;
-    use crate::single_effort_utils::sinlge_effort::Effort;
+    use crate::single_effort_utils::single_effort::Effort;
     use crate::workers_utils::worker::WorkerId;
 
     /// Matrice progetti × worker: tanti worker (più blocchi di colonne) e tanti
@@ -4595,7 +4507,3 @@ mod tests {
         }
     }
 }
-
-
-
-

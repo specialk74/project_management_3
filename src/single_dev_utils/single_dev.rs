@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    single_effort_utils::{sinlge_effort::Effort, sinlge_effort_week::SingleEffortWeek},
+    single_effort_utils::{single_effort::Effort, single_effort_week::SingleEffortWeek},
     workers_utils::worker::{WORKER_ID_ZERO, WorkerId},
 };
 
@@ -96,7 +96,7 @@ impl SingleDev {
 
     pub fn max_num_efforts(&self) -> usize {
         let mut max = 0;
-        for (_, s) in self.weeks.iter() {
+        for s in self.weeks.values() {
             if s.num_workers() > max {
                 max = s.num_workers();
             }
@@ -264,15 +264,15 @@ impl SingleDev {
             if nw < 0 {
                 continue;
             }
-            if let Some(ts) = trunc_start {
-                if nw < ts {
-                    continue;
-                }
+            if let Some(ts) = trunc_start
+                && nw < ts
+            {
+                continue;
             }
-            if let Some(te) = trunc_end {
-                if nw > te {
-                    continue;
-                }
+            if let Some(te) = trunc_end
+                && nw > te
+            {
+                continue;
             }
             let key = WeekId(nw as usize);
             match self.weeks.get_mut(&key) {

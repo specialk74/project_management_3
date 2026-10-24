@@ -451,26 +451,26 @@ pub(crate) fn draw_right_footer(
 
     // Cursore sul footer: come sulla griglia, si evidenziano la data della
     // colonna e, sulle righe worker, il worker (nome + cella della settimana).
-    if ui.rect_contains_pointer(rect) {
-        if let Some(p) = ui.ctx().pointer_hover_pos() {
-            let mut x = rect.left();
-            for c in cols {
-                let colw = col_width(c, COL_W);
-                if p.x >= x && p.x < x + colw {
-                    if let Col::Weeks(ws) = c {
-                        state.grid_hl_next.week = ws.first().copied();
-                        // Riga 0 = date, poi una riga per worker.
-                        let row = ((p.y - rect.top()) / ROW_H).floor() as i64 - 1;
-                        if row >= 0 {
-                            if let Some((wid, _)) = workers.get(row as usize) {
-                                state.grid_hl_next.worker = Some(*wid);
-                            }
-                        }
+    if ui.rect_contains_pointer(rect)
+        && let Some(p) = ui.ctx().pointer_hover_pos()
+    {
+        let mut x = rect.left();
+        for c in cols {
+            let colw = col_width(c, COL_W);
+            if p.x >= x && p.x < x + colw {
+                if let Col::Weeks(ws) = c {
+                    state.grid_hl_next.week = ws.first().copied();
+                    // Riga 0 = date, poi una riga per worker.
+                    let row = ((p.y - rect.top()) / ROW_H).floor() as i64 - 1;
+                    if row >= 0
+                        && let Some((wid, _)) = workers.get(row as usize)
+                    {
+                        state.grid_hl_next.worker = Some(*wid);
                     }
-                    break;
                 }
-                x += colw;
+                break;
             }
+            x += colw;
         }
     }
 

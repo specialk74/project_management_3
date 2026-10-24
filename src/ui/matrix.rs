@@ -193,10 +193,10 @@ fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option
                 .id_salt(id)
                 .format("%Y-%m-%d"),
         );
-        if r.changed() {
-            if let Some(d) = jiff_to_days(date) {
-                *value = Some(d);
-            }
+        if r.changed()
+            && let Some(d) = jiff_to_days(date)
+        {
+            *value = Some(d);
         }
     });
     *value != before
@@ -968,8 +968,10 @@ mod tests {
         );
 
         let ctx = egui::Context::default();
-        let mut input = egui::RawInput::default();
-        input.screen_rect = Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 600.0)),
+            ..Default::default()
+        };
         let frame = |input: egui::RawInput| {
             let cs = ctx
                 .run_ui(input, |ui| {
@@ -1079,8 +1081,10 @@ mod tests {
         assert_eq!(m.rows.len(), 60);
 
         let ctx = egui::Context::default();
-        let mut input = egui::RawInput::default();
-        input.screen_rect = Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 400.0)));
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 400.0)),
+            ..Default::default()
+        };
         let mut view_top = 0.0;
         let mut name_y = None;
         for _ in 0..2 {

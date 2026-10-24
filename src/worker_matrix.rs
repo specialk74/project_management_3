@@ -269,7 +269,7 @@ pub fn hatch_segments(x0: f32, x1: f32, top: f32, bot: f32, step: f32) -> Vec<(f
 mod tests {
     use super::*;
     use crate::single_dev_utils::single_dev::WeekId;
-    use crate::single_effort_utils::sinlge_effort::Effort;
+    use crate::single_effort_utils::single_effort::Effort;
 
     #[test]
     fn hatch_stays_inside_the_rect() {

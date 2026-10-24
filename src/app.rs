@@ -8,7 +8,7 @@ use crate::{
     milestones::Milestones,
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
-    single_effort_utils::sinlge_effort::Effort,
+    single_effort_utils::single_effort::Effort,
     ui_style::{
         MONTH_COLORS_DEFAULT, MONTH_TINT_PCT_DEFAULT, THIS_WEEK_DEFAULT, hex_rgb_string,
         parse_hex_rgb,
@@ -202,10 +202,10 @@ impl App {
             if issues.len() >= MAX {
                 break;
             }
-            if let Some(cat) = self.projects.get_category(pid) {
-                if self.categories.get_name(cat).is_none() {
-                    issues.push(format!("Progetto «{pname}»: categoria inesistente."));
-                }
+            if let Some(cat) = self.projects.get_category(pid)
+                && self.categories.get_name(cat).is_none()
+            {
+                issues.push(format!("Progetto «{pname}»: categoria inesistente."));
             }
             for d in self.projects.list_devs(pid) {
                 if !dev_ids.contains(&d) {

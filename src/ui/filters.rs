@@ -107,7 +107,7 @@ pub(crate) fn filters_window(
             Some((id, en, label))
         })
         .collect();
-    projects.sort_by(|a, b| a.2.to_lowercase().cmp(&b.2.to_lowercase()));
+    projects.sort_by_key(|a| a.2.to_lowercase());
 
     let qd = state.dev_search.trim().to_lowercase();
     let devs: Vec<(DevId, String)> = app
@@ -298,10 +298,8 @@ pub(crate) fn filters_window(
                             }
                             remember_project_rows(ui, rows_key, top, projects.len());
                             // Invio → salta al primo risultato.
-                            if enter {
-                                if let Some((id, _, _)) = projects.first() {
-                                    jump = Some(*id);
-                                }
+                            if enter && let Some((id, _, _)) = projects.first() {
+                                jump = Some(*id);
                             }
                         });
                 });
@@ -506,10 +504,10 @@ fn normalize_worker_filter(filter: &mut Filter, app: &App) {
 
 /// Idem per il filtro dev.
 fn normalize_dev_filter(filter: &mut DevFilter, app: &App) {
-    if let Some(set) = filter {
-        if app.devs.list().iter().all(|(id, _)| set.contains(id)) {
-            *filter = None;
-        }
+    if let Some(set) = filter
+        && app.devs.list().iter().all(|(id, _)| set.contains(id))
+    {
+        *filter = None;
     }
 }
 
@@ -535,10 +533,10 @@ fn set_year_selection(filter: &mut YearFilter, app: &App, shown: &[i32], on: boo
 
 /// Tutti gli anni selezionati ⇒ filtro spento (qualunque sia il criterio).
 fn normalize_year_filter(filter: &mut YearFilter, app: &App) {
-    if let Some(set) = filter {
-        if available_years(app).iter().all(|y| set.contains(y)) {
-            *filter = None;
-        }
+    if let Some(set) = filter
+        && available_years(app).iter().all(|y| set.contains(y))
+    {
+        *filter = None;
     }
 }
 
@@ -593,10 +591,10 @@ fn set_category_selection(
 
 /// Idem per il filtro categorie.
 fn normalize_category_filter(filter: &mut CategoryFilter, app: &App) {
-    if let Some(set) = filter {
-        if all_category_ids(app).iter().all(|id| set.contains(id)) {
-            *filter = None;
-        }
+    if let Some(set) = filter
+        && all_category_ids(app).iter().all(|id| set.contains(id))
+    {
+        *filter = None;
     }
 }
 

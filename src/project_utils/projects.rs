@@ -7,7 +7,7 @@ use crate::{
     milestones::MilestoneId,
     project_utils::project::{Enable, OverflowResolution, Project, ProjectId, ProjectStatus},
     single_dev_utils::single_dev::{SingleDev, WeekId},
-    single_effort_utils::sinlge_effort::Effort,
+    single_effort_utils::single_effort::Effort,
     workers_utils::worker::WorkerId,
 };
 
@@ -467,7 +467,7 @@ impl Projects {
     pub fn is_closed(&self, project_id: ProjectId) -> bool {
         self.projects
             .get(&project_id)
-            .map_or(false, |p| p.is_closed())
+            .is_some_and(|p| p.is_closed())
     }
 
     /// Ricalcola lo stato `enable` (filtro) di tutti i progetti a partire da

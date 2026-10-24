@@ -1,2 +1,2 @@
-pub mod sinlge_effort;
-pub mod sinlge_effort_week;
+pub mod single_effort;
+pub mod single_effort_week;

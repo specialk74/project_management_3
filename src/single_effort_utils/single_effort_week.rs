@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    single_effort_utils::sinlge_effort::{Effort, SingleEffort},
+    single_effort_utils::single_effort::{Effort, SingleEffort},
     workers_utils::worker::{WORKER_ID_ZERO, WorkerId},
 };
 

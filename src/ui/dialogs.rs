@@ -721,7 +721,7 @@ pub(crate) fn closed_filter_window(
             (id, label)
         })
         .collect();
-    projects.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    projects.sort_by_key(|a| a.1.to_lowercase());
 
     let mut open = true;
     let just_opened = state.closed_filter_just_opened;
@@ -871,10 +871,8 @@ pub(crate) fn clone_project_window(
             });
         });
 
-    if confirm {
-        if let Some(src) = cp.src {
-            actions.push(Action::CloneProject { src });
-        }
+    if confirm && let Some(src) = cp.src {
+        actions.push(Action::CloneProject { src });
     }
     if confirm || cancel || !open {
         state.clone_project = None;
@@ -920,14 +918,14 @@ pub(crate) fn dev_totals_window(
             let currently_all = devs
                 .iter()
                 .all(|(id, _)| !app.devs.is_hidden_in_totals(*id));
-            if !devs.is_empty() {
-                if let Some(all) = select_all_checkbox(ui, currently_all) {
-                    for (id, _) in &devs {
-                        actions.push(Action::SetDevHiddenInTotals {
-                            dev: *id,
-                            hidden: !all,
-                        });
-                    }
+            if !devs.is_empty()
+                && let Some(all) = select_all_checkbox(ui, currently_all)
+            {
+                for (id, _) in &devs {
+                    actions.push(Action::SetDevHiddenInTotals {
+                        dev: *id,
+                        hidden: !all,
+                    });
                 }
             }
             egui::ScrollArea::vertical()
@@ -1240,36 +1238,36 @@ pub(crate) fn move_dialog_window(
                     ui.separator();
                     ui.horizontal(|ui| {
                         let confirm = ui.button("Sposta").clicked() || entered;
-                        if confirm {
-                            if let Ok(n) = weeks_text.trim().parse::<i64>() {
-                                if n == 0 {
-                                    close = true;
-                                } else {
-                                    let sel_ms: Vec<MilestoneId> = milestones
-                                        .iter()
-                                        .filter(|(_, _, s)| *s)
-                                        .map(|(id, _, _)| *id)
-                                        .collect();
-                                    match app.projects.move_overflow_side(*proj, moves, n) {
-                                        Some(end_side) => {
-                                            next = Some(MoveDialog::Overflow {
-                                                proj: *proj,
-                                                moves: moves.clone(),
-                                                delta: n,
-                                                milestones: sel_ms,
-                                                end_side,
-                                            });
-                                        }
-                                        None => {
-                                            actions.push(Action::MoveEffort {
-                                                proj: *proj,
-                                                moves: moves.clone(),
-                                                delta: n,
-                                                milestones: sel_ms,
-                                                resolution: OverflowResolution::None,
-                                            });
-                                            close = true;
-                                        }
+                        if confirm
+                            && let Ok(n) = weeks_text.trim().parse::<i64>()
+                        {
+                            if n == 0 {
+                                close = true;
+                            } else {
+                                let sel_ms: Vec<MilestoneId> = milestones
+                                    .iter()
+                                    .filter(|(_, _, s)| *s)
+                                    .map(|(id, _, _)| *id)
+                                    .collect();
+                                match app.projects.move_overflow_side(*proj, moves, n) {
+                                    Some(end_side) => {
+                                        next = Some(MoveDialog::Overflow {
+                                            proj: *proj,
+                                            moves: moves.clone(),
+                                            delta: n,
+                                            milestones: sel_ms,
+                                            end_side,
+                                        });
+                                    }
+                                    None => {
+                                        actions.push(Action::MoveEffort {
+                                            proj: *proj,
+                                            moves: moves.clone(),
+                                            delta: n,
+                                            milestones: sel_ms,
+                                            resolution: OverflowResolution::None,
+                                        });
+                                        close = true;
                                     }
                                 }
                             }

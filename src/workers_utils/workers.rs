@@ -103,21 +103,19 @@ impl Workers {
     pub fn is_hidden_in_footer(&self, id: WorkerId) -> bool {
         self.worker_id
             .get(&id)
-            .map_or(false, |w| w.is_hidden_in_footer())
+            .is_some_and(|w| w.is_hidden_in_footer())
     }
 
     /// True se il worker va mostrato nel filtro (Ctrl+F). Default `true` (anche
     /// per un id sconosciuto).
     pub fn is_shown_in_find(&self, id: WorkerId) -> bool {
-        self.worker_id
-            .get(&id)
-            .map_or(true, |w| w.is_shown_in_find())
+        self.worker_id.get(&id).is_none_or(|w| w.is_shown_in_find())
     }
 
     /// True se il worker è di tipo "ghost". Default `false` (anche per un id
     /// sconosciuto).
     pub fn is_ghost(&self, id: WorkerId) -> bool {
-        self.worker_id.get(&id).map_or(false, |w| w.is_ghost())
+        self.worker_id.get(&id).is_some_and(|w| w.is_ghost())
     }
 
     /// Nasconde/mostra la riga del worker nel footer. Ritorna `true` se il

@@ -19,7 +19,7 @@ pub(crate) fn saturation_columns(app: &App, monthly: bool) -> Vec<SatCol> {
     let mut out: Vec<SatCol> = Vec::new();
     for w in weeks_vec(app) {
         let d = primo_giorno_settimana_corrente(&days_to_local(w));
-        let year = d.year() as i32;
+        let year = d.year();
         if !monthly {
             out.push(SatCol {
                 year,
@@ -525,14 +525,18 @@ mod tests {
         let d = primo_giorno_settimana_corrente(&days_to_local(first.weeks[0]));
         assert_eq!(first.label, d.format("%m-%d").to_string());
         assert_eq!(first.full, d.format("%y-%m-%d").to_string());
-        assert_eq!(first.year, d.year() as i32);
+        assert_eq!(first.year, d.year());
         assert!(weekly.iter().all(|c| c.label.len() == 5), "solo mm-dd");
 
         let monthly = saturation_columns(&app, true);
         assert!(monthly.iter().all(|c| c.label.len() == 2), "solo mm");
         // stesso mese di anni diversi = colonne diverse
         let spans = year_spans(&monthly);
-        assert!(spans.windows(2).all(|w| w[0].0 != w[1].0 && w[0].2 + 1 == w[1].1));
+        assert!(
+            spans
+                .windows(2)
+                .all(|w| w[0].0 != w[1].0 && w[0].2 + 1 == w[1].1)
+        );
         assert_eq!(spans.last().unwrap().2, monthly.len() - 1);
     }
 
@@ -551,7 +555,7 @@ mod tests {
             .insert((WeekId(w0 as usize), last.unwrap()), Effort(13));
 
         let ctx = egui::Context::default();
-        let screen = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 700.0));
+        let screen = screen(1200.0, 700.0);
         let mut state = UiState {
             show_saturation: true,
             this_week: -1,
@@ -622,7 +626,7 @@ mod tests {
         app.sovra.insert((WeekId(w as usize), anna), Effort(13));
 
         let ctx = egui::Context::default();
-        let screen = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 700.0));
+        let screen = screen(1200.0, 700.0);
         let mut state = UiState {
             show_saturation: true,
             this_week: -1,

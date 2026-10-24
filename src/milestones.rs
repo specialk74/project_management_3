@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use crate::project_utils::project::ProjectId;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
+#[derive(
+    Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug, Default,
+)]
 pub struct MilestoneId(pub usize);
 
 /// Palette di colori distinti (0xRRGGBB) da cui pescare per le nuove milestone.
@@ -211,12 +213,6 @@ pub struct Milestones {
     milestones: HashMap<MilestoneId, Milestone>,
 }
 
-impl Default for MilestoneId {
-    fn default() -> Self {
-        MilestoneId(0)
-    }
-}
-
 /// Ordina le categorie come `MilestoneCategory::ALL`, toglie i doppioni e
 /// garantisce che l'elenco non sia mai vuoto (vuoto = Internal, quindi si
 /// scrive `Internal` esplicito).
@@ -361,7 +357,6 @@ impl Milestones {
     }
 
     #[cfg(test)]
-
     pub fn has_category(&self, id: MilestoneId, cat: MilestoneCategory) -> bool {
         self.milestones
             .get(&id)

@@ -58,7 +58,13 @@ references; the UI lives entirely in the `src/ui/` module.
   - `mod.rs` — the **core**: `eframe::App` (`PjmApp`), `UiState`, the `Action` enum + apply
     loop, all shared **types** (`Editing`/`Popup`/`Col`/`ProjLayout`/…), and shared helpers
     (`columns_vec`, `col_*`, `dev_*`, `project_in_body`, `select_all_checkbox`,
-    `project_checklist`, save dialogs, `weeks_vec`…). The `#[cfg(test)]` tests live here.
+    `project_checklist`, save dialogs, `weeks_vec`…).
+  - `tests.rs` — the UI tests (`#[cfg(test)] mod tests;` in `mod.rs`, a child module,
+    so `use super::*` sees everything). `test_util.rs` (test-only, re-exported) holds
+    the shared helpers: `screen(w, h)`, `click_events(pos, button)` (move/press/
+    release — send them in **three separate frames**), `drawn_texts(out)`,
+    `text_pos(out, label)`. Use them in new tests instead of re-writing the event
+    arrays or the `Shape::Text` extraction.
   - `toolbar.rs` (`toolbar`/`header`/`add_field`), `grid.rs` (`body`/`grid`/`left_column`/
     `draw_dev_cells`/`project_layout`/`draw_project_info`/paint helpers…), `footer.rs`
     (`footer`/`draw_left_footer`/`draw_right_footer`…), `dialogs.rs` (all the modeless
@@ -211,7 +217,12 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 
 ### egui API conventions
 
-The build has **zero warnings**: don't reintroduce deprecated egui 0.34 APIs. To
+The build **and `cargo clippy --all-targets`** have **zero warnings**: keep it that
+way, and don't reintroduce deprecated egui 0.34 APIs. Functions with many parameters
+use `#[allow(clippy::too_many_arguments)]` (project convention). The repo is **not**
+`rustfmt`-formatted: don't run a global `cargo fmt`; to format only touched code use
+`rustfmt +nightly --unstable-features --file-lines` with absolute paths, covering the
+enclosing block. To
 close a menu from one of its items use `ui.close_kind(egui::UiKind::Menu)` (what the
 old `close_menu()` did; `ui.close()` closes the *nearest* closable, which can be just
 a submenu); panels are `egui::Panel::{left,right,top,bottom}` with
@@ -898,6 +909,9 @@ the footer date.
   helpers used only by tests are marked `#[cfg(test)]` so dead code shows up as a warning.
 - `build_pdf(app, fmt)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
+- **One PDF writer**: every `build_*_pdf` turns its pages into `Vec<Shape>` and calls
+  `pdf_document(title, &pages)` (fonts, `PdfPage`s, save; `None` with no pages).
+  `build_pdf`/`build_pdf_selected` share `gantt_pdf(app, bar, keep)`.
 - `build_pdf_selected(app, &[ProjectId], fmt)` — same as `build_pdf` but only the given
   projects (still enabled + has start AND end; **closed are allowed** — the caller's
   selection already reflects the view mode), in display order.

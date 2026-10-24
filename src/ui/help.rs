@@ -79,10 +79,10 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             for (i, sec) in sections.iter().enumerate() {
-                                if let Some(title) = chapter_title(sec) {
-                                    if ui.link(title).clicked() {
-                                        state.help_scroll_to = Some(i);
-                                    }
+                                if let Some(title) = chapter_title(sec)
+                                    && ui.link(title).clicked()
+                                {
+                                    state.help_scroll_to = Some(i);
                                 }
                             }
                         });

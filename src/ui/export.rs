@@ -292,10 +292,10 @@ fn period_row(ui: &mut egui::Ui, app: &App, proj: ProjectId, range: &mut (i32, i
                 .id_salt(id)
                 .format("%Y-%m-%d"),
         );
-        if r.changed() {
-            if let Some(d) = jiff_to_days(date) {
-                *day = d;
-            }
+        if r.changed()
+            && let Some(d) = jiff_to_days(date)
+        {
+            *day = d;
         }
     };
     let valid = range.0 <= range.1;
@@ -456,19 +456,19 @@ pub(crate) fn pdf_export_window(
                             let resp = inner.response;
                             let ptr = ui.input(|i| i.pointer.interact_pos());
                             // Indicatore di inserimento mentre si trascina sopra la riga.
-                            if resp.dnd_hover_payload::<usize>().is_some() {
-                                if let Some(p) = ptr {
-                                    let y = if p.y > resp.rect.center().y {
-                                        resp.rect.bottom()
-                                    } else {
-                                        resp.rect.top()
-                                    };
-                                    ui.painter().hline(
-                                        resp.rect.x_range(),
-                                        y,
-                                        Stroke::new(2.0_f32, g(EFFORT_ORANGE)),
-                                    );
-                                }
+                            if resp.dnd_hover_payload::<usize>().is_some()
+                                && let Some(p) = ptr
+                            {
+                                let y = if p.y > resp.rect.center().y {
+                                    resp.rect.bottom()
+                                } else {
+                                    resp.rect.top()
+                                };
+                                ui.painter().hline(
+                                    resp.rect.x_range(),
+                                    y,
+                                    Stroke::new(2.0_f32, g(EFFORT_ORANGE)),
+                                );
                             }
                             if let Some(payload) = resp.dnd_release_payload::<usize>() {
                                 from = Some(*payload);
@@ -537,12 +537,12 @@ pub(crate) fn pdf_export_window(
                     });
             });
             // Applica lo spostamento a fine passata.
-            if let (Some(f), Some(t)) = (from, to) {
-                if f != t {
-                    let item = px.entries.remove(f);
-                    let insert = if f < t { t - 1 } else { t };
-                    px.entries.insert(insert.min(px.entries.len()), item);
-                }
+            if let (Some(f), Some(t)) = (from, to)
+                && f != t
+            {
+                let item = px.entries.remove(f);
+                let insert = if f < t { t - 1 } else { t };
+                px.entries.insert(insert.min(px.entries.len()), item);
             }
 
             ui.separator();

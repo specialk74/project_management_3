@@ -148,7 +148,7 @@ mod tests {
     use crate::milestones::MilestoneId;
     use crate::project_utils::project::Project;
     use crate::single_dev_utils::single_dev::WeekId;
-    use crate::single_effort_utils::sinlge_effort::Effort;
+    use crate::single_effort_utils::single_effort::Effort;
     use crate::workers_utils::worker::WorkerId;
 
     /// Progetto con due dev, ciascuno con un po' di effort.

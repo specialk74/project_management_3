@@ -119,6 +119,7 @@ pub(crate) fn body_layout(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_layout(
     ui: &egui::Ui,
     app: &App,
@@ -149,12 +150,11 @@ pub(crate) fn project_layout(
         // Modalità "settimana corrente" (Ctrl+G): col filtro worker attivo mostra
         // solo i progetti in cui un worker selezionato ha effort nella settimana
         // corrente. Dentro, la resa resta identica a Ctrl+F (nessun'altra modifica).
-        if current_week_only {
-            if let Some(set) = filter.as_ref() {
-                if !project_worker_in_current_week(app, proj_id, set) {
-                    continue;
-                }
-            }
+        if current_week_only
+            && let Some(set) = filter.as_ref()
+            && !project_worker_in_current_week(app, proj_id, set)
+        {
+            continue;
         }
         // Filtro dev (Ctrl+D): tiene solo i dev selezionati con effort > 0; si
         // combina in AND col filtro worker (che agisce sulle righe/celle).
@@ -396,19 +396,19 @@ pub(crate) fn grid(
 
     // Colonna sotto il cursore → data evidenziata in intestazione e footer
     // (il worker lo aggiunge `draw_cell_static`). Le colonne di fine anno no.
-    if ui.rect_contains_pointer(rect) {
-        if let Some(p) = ui.ctx().pointer_hover_pos() {
-            let mut x = left;
-            for c in &cols {
-                let colw = col_width(c, cw);
-                if p.x >= x && p.x < x + colw {
-                    if let Col::Weeks(ws) = c {
-                        state.grid_hl_next.week = ws.first().copied();
-                    }
-                    break;
+    if ui.rect_contains_pointer(rect)
+        && let Some(p) = ui.ctx().pointer_hover_pos()
+    {
+        let mut x = left;
+        for c in &cols {
+            let colw = col_width(c, cw);
+            if p.x >= x && p.x < x + colw {
+                if let Col::Weeks(ws) = c {
+                    state.grid_hl_next.week = ws.first().copied();
                 }
-                x += colw;
+                break;
             }
+            x += colw;
         }
     }
 
@@ -451,8 +451,8 @@ pub(crate) fn grid(
                 || editing_dev == Some((p.proj, *dev_id))
             {
                 draw_dev_cells(
-                    ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols,
-                    proj_start, deadline, filter, compact, cw, merged,
+                    ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols, proj_start,
+                    deadline, filter, compact, cw, merged,
                 );
             }
             dy += inner_h;
@@ -468,19 +468,19 @@ pub(crate) fn grid(
             let mut cx = left;
             for c in &cols {
                 let colw = col_width(c, cw);
-                if let Col::YearEnd(year_ending) = c {
-                    if let Some(total) = project_missing_at_year_end(app, p.proj, *year_ending) {
-                        let cell =
-                            Rect::from_min_size(egui::pos2(cx, proj_top), Vec2::new(colw, ROW_H));
-                        ui.painter().rect_filled(cell, 0.0, bg());
-                        ui.painter().text(
-                            cell.center(),
-                            Align2::CENTER_CENTER,
-                            format!("T:{total}"),
-                            cell_font(),
-                            g(EFFORT_ORANGE),
-                        );
-                    }
+                if let Col::YearEnd(year_ending) = c
+                    && let Some(total) = project_missing_at_year_end(app, p.proj, *year_ending)
+                {
+                    let cell =
+                        Rect::from_min_size(egui::pos2(cx, proj_top), Vec2::new(colw, ROW_H));
+                    ui.painter().rect_filled(cell, 0.0, bg());
+                    ui.painter().text(
+                        cell.center(),
+                        Align2::CENTER_CENTER,
+                        format!("T:{total}"),
+                        cell_font(),
+                        g(EFFORT_ORANGE),
+                    );
                 }
                 cx += colw;
             }
@@ -732,17 +732,17 @@ fn draw_year_end_cell(
     hide_effort: bool,
 ) {
     ui.painter().rect_filled(col_rect, 0.0, g(CANARY));
-    if let Some(missing) = dev_missing_at_year_end(app, proj, dev, year_ending) {
-        if !hide_effort {
-            // In basso, per non collidere col totale progetto in cima alla colonna.
-            ui.painter().text(
-                col_rect.center_bottom() - Vec2::new(0.0, 2.0),
-                Align2::CENTER_BOTTOM,
-                missing.to_string(),
-                cell_font(),
-                Color32::BLACK, // su sfondo canarino: sempre nero
-            );
-        }
+    if let Some(missing) = dev_missing_at_year_end(app, proj, dev, year_ending)
+        && !hide_effort
+    {
+        // In basso, per non collidere col totale progetto in cima alla colonna.
+        ui.painter().text(
+            col_rect.center_bottom() - Vec2::new(0.0, 2.0),
+            Align2::CENTER_BOTTOM,
+            missing.to_string(),
+            cell_font(),
+            Color32::BLACK, // su sfondo canarino: sempre nero
+        );
     }
 }
 
@@ -1267,8 +1267,8 @@ fn draw_cell_static(
         draw_note_triangle(ui, cell);
     }
     if !text.is_empty() {
-        let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
-        let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));
+        let hidden = wid.is_some_and(|id| app.workers.is_hidden_in_footer(id));
+        let is_ghost = wid.is_some_and(|id| app.workers.is_ghost(id));
         let sovra = wid
             .map(|id| {
                 app.sovra
@@ -1581,7 +1581,7 @@ pub(crate) fn make_project_notes_popup(proj: ProjectId, notes: &HashMap<WeekId, 
         .filter(|(w, _)| **w != current)
         .map(|(w, t)| (*w, t.clone()))
         .collect();
-    weeks.sort_by(|a, b| b.0.cmp(&a.0));
+    weeks.sort_by_key(|w| std::cmp::Reverse(w.0));
     let cur_text = notes.get(&current).cloned().unwrap_or_default();
     weeks.insert(0, (current, cur_text));
     Popup::ProjectNotes {
@@ -1591,6 +1591,7 @@ pub(crate) fn make_project_notes_popup(proj: ProjectId, notes: &HashMap<WeekId, 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_project_info(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -1908,9 +1909,7 @@ pub(crate) fn draw_left_devs(
         let tcol = dev_text_color(app, *dev);
         // Se il dev contiene un worker "ghost" (con effort), il suo nome lampeggia
         // fra il colore normale e il porpora (~0.5s per fase) come segnale d'allarme.
-        let has_ghost = sd.map_or(false, |sd| {
-            sd.has_worker_matching(|id| app.workers.is_ghost(id))
-        });
+        let has_ghost = sd.is_some_and(|sd| sd.has_worker_matching(|id| app.workers.is_ghost(id)));
         let name_col = if has_ghost {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(120));
@@ -1981,17 +1980,12 @@ pub(crate) fn draw_left_devs(
                 );
             }
         }
-        let dev_note = sd
-            .map(|sd| sd.get_note())
-            .unwrap_or_default();
-        let hide_effort = sd
-            .map(|sd| sd.get_hide_effort())
-            .unwrap_or(false);
+        let dev_note = sd.map(|sd| sd.get_note()).unwrap_or_default();
+        let hide_effort = sd.map(|sd| sd.get_hide_effort()).unwrap_or(false);
         if !dev_note.is_empty() {
             draw_note_triangle(ui, name_rect);
         }
-        let has_cells = sd
-            .is_some_and(|sd| sd.has_cells());
+        let has_cells = sd.is_some_and(|sd| sd.has_cells());
         let nresp = ui.interact(
             name_rect,
             egui::Id::new(("devname", proj.0, dev.0)),
@@ -2064,9 +2058,7 @@ pub(crate) fn draw_left_devs(
         // e quando l'effort pianificato è 0 (`used_pct` è `Some` sse pianificato
         // ≠ 0): in tal caso il campo non compare e non è modificabile.
         if !compact && used_pct.is_some() {
-            let declared = sd
-                .map(|sd| sd.declared_pct())
-                .unwrap_or(0);
+            let declared = sd.map(|sd| sd.declared_pct()).unwrap_or(0);
             let bg = used_pct.map(|presumed| {
                 if (declared as usize) < presumed {
                     g(Color32::RED)
@@ -2116,9 +2108,7 @@ pub(crate) fn draw_left_devs(
 
         if !compact {
             // effort pianificato (editabile)
-            let planned = sd
-                .map(|sd| sd.planned_effort().0)
-                .unwrap_or(0);
+            let planned = sd.map(|sd| sd.planned_effort().0).unwrap_or(0);
             let eff_rect =
                 Rect::from_min_size(egui::pos2(eff_x, inner_y), Vec2::new(DEV_EFFORT_W, ROW_H));
             let key = (proj.0, dev.0);
@@ -2147,9 +2137,7 @@ pub(crate) fn draw_left_devs(
             }
 
             // remains
-            let total = sd
-                .map(|sd| sd.get_effort_tot().0 as i32)
-                .unwrap_or(0);
+            let total = sd.map(|sd| sd.get_effort_tot().0 as i32).unwrap_or(0);
             let remains = planned as i32 - total;
             let rem_rect = Rect::from_min_size(
                 egui::pos2(eff_x, inner_y + ROW_H),
