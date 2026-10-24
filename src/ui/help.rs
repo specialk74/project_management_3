@@ -33,7 +33,7 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
                         .hint_text("Cerca nel manuale…")
                         .desired_width(360.0),
                 );
-                if ui.button("✕").on_hover_text("Pulisci").clicked() {
+                if ui.button("✖").on_hover_text("Pulisci").clicked() {
                     state.help_search.clear();
                 }
             });
@@ -44,6 +44,7 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
             // ── Ricerca attiva: elenco piatto delle sezioni che combaciano ──
             if !q.is_empty() {
                 egui::ScrollArea::vertical()
+                    .scroll_source(drag_scroll())
                     .id_salt("help_search_results")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -66,7 +67,7 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
             egui::Panel::left("help_toc")
                 .resizable(true)
                 .default_size(230.0)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     ui.add_space(2.0);
                     ui.label(
                         egui::RichText::new("Indice")
@@ -75,6 +76,7 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
                     );
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("help_toc_scroll")
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
@@ -88,8 +90,9 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
                         });
                 });
 
-            egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical()
+                    .scroll_source(drag_scroll())
                     .id_salt("help_content_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {

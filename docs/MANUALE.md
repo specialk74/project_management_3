@@ -1419,10 +1419,10 @@ export non scritto, `git push` fallito). Ogni notifica ha un'icona per gravità:
 | ✔ | Operazione riuscita (file salvato, PDF/SVG/minuta scritti) | pochi secondi |
 | ℹ | Informazione (il file è stato aggiornato o unito da un collega) | ~10 secondi |
 | ⚠ | Niente da fare (es. «Nessun progetto visibile: PDF non creato») | ~15 secondi |
-| ⛔ | **Errore** | **resta finché non la chiudi** con ✕ |
+| ⛔ | **Errore** | **resta finché non la chiudi** con ✖ |
 
 Gli errori non spariscono da soli, proprio per non passare inosservati; le altre si
-possono comunque chiudere subito con la ✕. Un errore che si ripete (per esempio un
+possono comunque chiudere subito con la ✖. Un errore che si ripete (per esempio un
 `git push` che fallisce a ogni salvataggio automatico) **non impila copie**: la
 notifica esistente viene solo rinfrescata.
 

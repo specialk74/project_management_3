@@ -143,8 +143,9 @@ fn compare_select_stage(ui: &mut egui::Ui, cmp: &mut CompareState) {
     });
     ui.add_space(4.0);
 
-    let rows_key = egui::Id::new("compare_pairs_rows");
+    let rows_key = egui::Id::unique("compare_pairs_rows");
     egui::ScrollArea::vertical()
+        .scroll_source(drag_scroll())
         .max_height(project_list_max_height(ui, rows_key))
         .show(ui, |ui| {
             let top = ui.cursor().top();
@@ -542,7 +543,7 @@ fn compare_view_stage(
     // dello sfondo per spostarsi anche nel tempo con un mouse senza rotella
     // orizzontale. Le frecce/scrollbar (disegnate dopo) hanno la priorità sui
     // rispettivi rettangoli, quindi il drag panning parte solo dallo sfondo.
-    let bg_resp = ui.interact(r, ui.id().with("cmp_view_bg"), Sense::click_and_drag());
+    let bg_resp = ui.interact(r, ui.scope_id().with("cmp_view_bg"), Sense::click_and_drag());
     if bg_resp.hovered() {
         let (dx, dy) = ui.input(|i| {
             let d = i.smooth_scroll_delta;
@@ -585,7 +586,7 @@ fn compare_view_stage(
         content_h,
         viewport_h,
         sy,
-        ui.id().with("cmp_vsb"),
+        ui.scope_id().with("cmp_vsb"),
     );
     sx = scrollbar(
         ui,
@@ -594,7 +595,7 @@ fn compare_view_stage(
         content_w,
         week_area_w,
         sx,
-        ui.id().with("cmp_hsb"),
+        ui.scope_id().with("cmp_hsb"),
     );
 
     // Fonts e colori (più grandi per leggibilità; celle monospaziate come griglia).
@@ -722,7 +723,7 @@ fn compare_view_stage(
                     egui::vec2((GUTTER_W - 14.0).min(42.0), bh),
                 );
                 let lr = ui
-                    .interact(lb, ui.id().with(("cmp_pl", off.0)), Sense::click())
+                    .interact(lb, ui.scope_id().with(("cmp_pl", off.0)), Sense::click())
                     .on_hover_text("Importa l'intero progetto nel file ufficiale");
                 let fill = if lr.hovered() {
                     Color32::from_gray(120)
@@ -926,7 +927,7 @@ fn compare_view_stage(
                         egui::vec2((GUTTER_W - 14.0).min(42.0), 18.0),
                     );
                     let lr = ui
-                        .interact(lb, ui.id().with(("cmp_l", off.0, dev.0)), Sense::click())
+                        .interact(lb, ui.scope_id().with(("cmp_l", off.0, dev.0)), Sense::click())
                         .on_hover_text("Importa questo dev nel file ufficiale");
                     let fill = if lr.hovered() {
                         Color32::from_gray(120)

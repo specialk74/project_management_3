@@ -4,7 +4,7 @@
 //!
 //! Le notifiche sono impilate in basso a destra, sopra a tutto. Quelle con una
 //! durata (`ToastLevel::ttl`) spariscono da sole; gli **errori** restano finché
-//! non si preme la ✕, così non possono passare inosservati.
+//! non si preme la ✖, così non possono passare inosservati.
 
 use super::*;
 
@@ -34,7 +34,7 @@ pub(crate) fn toasts_layer(ctx: &egui::Context, state: &mut UiState) {
     }
 
     let mut close: Option<usize> = None;
-    egui::Area::new(egui::Id::new("toasts"))
+    egui::Area::new(egui::Id::unique("toasts"))
         .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-12.0, -12.0))
         .order(egui::Order::Foreground)
         .interactable(true)
@@ -49,9 +49,9 @@ pub(crate) fn toasts_layer(ctx: &egui::Context, state: &mut UiState) {
                     .inner_margin(egui::Margin::symmetric(10, 6))
                     .show(ui, |ui| {
                         ui.set_max_width(TOAST_W);
-                        // ✕ ancorata a destra, testo e icona a sinistra.
+                        // ✖ ancorata a destra, testo e icona a sinistra.
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                            if ui.small_button("✕").on_hover_text("Chiudi").clicked() {
+                            if ui.small_button("✖").on_hover_text("Chiudi").clicked() {
                                 close = Some(i);
                             }
                             ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {

@@ -434,6 +434,7 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                             draw_saturation_header(ui, &columns, this_week, hover.map(|h| h.1))
                         });
                     let out = egui::ScrollArea::both()
+                        .scroll_source(drag_scroll())
                         .id_salt("sat_heat")
                         .max_height(body_h)
                         .auto_shrink([false, false])
@@ -470,8 +471,9 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                 });
                         });
                     // Il corpo comanda: colonna fissa e intestazione seguono.
-                    state.sat_scroll_y = out.state.offset.y;
-                    state.sat_scroll_x = out.state.offset.x;
+                    let offset = out.state.clamped_offset();
+                    state.sat_scroll_y = offset.y;
+                    state.sat_scroll_x = offset.x;
                 });
             });
         });
@@ -567,7 +569,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            ctx.run_ui(input, |ui| saturation_window(ui.ctx(), &app, state))
+            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state))
         };
         let _ = frame(&mut state, vec![]); // prima passata: dimensionamento
         let first = texts(&frame(&mut state, vec![]));
@@ -589,6 +591,7 @@ mod tests {
                         unit: egui::MouseWheelUnit::Point,
                         delta: egui::vec2(0.0, -400.0),
                         phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Wheel,
                         modifiers: Default::default(),
                     },
                 ],
@@ -638,7 +641,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            ctx.run_ui(input, |ui| saturation_window(ui.ctx(), &app, state))
+            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state))
         };
         // testi disegnati in giallo evidenziazione
         let yellow = |out: &egui::FullOutput| -> Vec<String> {

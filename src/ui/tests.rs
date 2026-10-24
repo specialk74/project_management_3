@@ -36,7 +36,7 @@ fn checklist_height(n: usize, screen_h: f32) -> f32 {
     let consumed = Cell::new(0.0);
     // Due frame: la prima registra le aree, la seconda misura a layout stabile.
     for _ in 0..2 {
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             let ctx = ui.ctx();
             egui::Window::new("test").show(ctx, |ui| {
                 let before = ui.cursor().top();
@@ -90,7 +90,7 @@ fn project_checklist_shows_at_most_15_projects() {
     };
     let mut visible = 0;
     for _ in 0..3 {
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             // Finestra alta quanto lo schermo: lo spazio non fa da limite.
             egui::Window::new("test")
                 .resizable(false)
@@ -138,7 +138,7 @@ fn multi_export_button_stays_on_a_small_screen() {
     let mut button: Option<egui::Rect> = None;
     for _ in 0..5 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             pdf_multi_export_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         button = None;
@@ -261,7 +261,7 @@ fn bulk_fill_window_renders() {
     };
     for _ in 0..2 {
         let mut actions: Vec<Action> = Vec::new();
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             let ctx = ui.ctx();
             bulk_fill_window(ctx, &app, &mut state, &mut actions);
         });
@@ -407,7 +407,7 @@ fn clear_milestones_window_asks_then_confirms() {
     let mut texts = Vec::new();
     for _ in 0..2 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             clear_milestones_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         assert!(actions.is_empty(), "nessuna azione senza click");
@@ -430,7 +430,7 @@ fn clear_milestones_window_asks_then_confirms() {
     for ev in click_events(pos, egui::PointerButton::Primary) {
         let mut i = input.clone();
         i.events = vec![ev];
-        let _ = ctx.run_ui(i, |ui| {
+        let _ = ctx.run_ui_test(i, |ui| {
             clear_milestones_window(ui.ctx(), &app, &mut state, &mut actions);
         });
     }
@@ -488,7 +488,7 @@ fn clear_efforts_window_asks_then_confirms() {
     let mut texts = Vec::new();
     for _ in 0..2 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             clear_efforts_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         assert!(actions.is_empty(), "nessuna azione senza click");
@@ -512,7 +512,7 @@ fn clear_efforts_window_asks_then_confirms() {
     for ev in click_events(pos, egui::PointerButton::Primary) {
         let mut i = input.clone();
         i.events = vec![ev];
-        let _ = ctx.run_ui(i, |ui| {
+        let _ = ctx.run_ui_test(i, |ui| {
             clear_efforts_window(ui.ctx(), &app, &mut state, &mut actions);
         });
     }
@@ -548,7 +548,7 @@ fn bound_move_window_confirms_or_cancels() {
     let mut texts = Vec::new();
     for _ in 0..2 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             bound_move_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         assert!(actions.is_empty(), "nessuna azione senza click");
@@ -588,7 +588,7 @@ fn export_range_starts_from_project_dates_and_is_remembered_per_project() {
     };
     let frame = |pjm: &mut PjmApp| {
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             pdf_export_window(ui.ctx(), &pjm.app, &mut pjm.ui, &mut actions);
         });
         pjm.ui.pdf_export = None;
@@ -636,7 +636,7 @@ fn dev_hidden_in_totals_leaves_footer_row_and_grand_total() {
         };
         let workers = footer_workers(app, &Filter::default());
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             let (rect, _) =
                 ui.allocate_exact_size(egui::vec2(LEFT_W, 400.0), Sense::hover());
             draw_left_footer(ui, rect, app, &mut state, &workers, &mut actions);
@@ -770,7 +770,7 @@ fn clone_project_window_lists_all_projects() {
     let mut texts = Vec::new();
     for _ in 0..2 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let out = ctx.run_ui_test(egui::RawInput::default(), |ui| {
             clone_project_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         assert!(actions.is_empty());
@@ -840,7 +840,7 @@ fn culled_grid_texts(state: &mut UiState, scroll_col: usize) -> (Vec<String>, Ve
             ..Default::default()
         };
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input, |ui| {
+        let out = ctx.run_ui_test(input, |ui| {
             egui::ScrollArea::both()
                 .scroll_offset(egui::vec2(x_off, 0.0))
                 .auto_shrink([false, false])
@@ -907,7 +907,7 @@ fn grid_hover_records_column_and_worker_to_highlight() {
         }
         state.grid_hl_next = GridHighlight::default();
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(input, |ui| {
+        let _ = ctx.run_ui_test(input, |ui| {
             origin.set(ui.cursor().min);
             let layout = body_layout(ui, &app, state, &Filter::default(), &None);
             grid(ui, &app, state, &mut actions, &Filter::default(), &layout);
@@ -1001,7 +1001,7 @@ fn confirm_window_reports_ok_cancel_or_still_open() {
     // nel frame precedente).
     let frame = |events: Vec<egui::Event>| {
         let mut answer = None;
-        let out = ctx.run_ui(
+        let out = ctx.run_ui_test(
             egui::RawInput {
                 screen_rect: Some(screen),
                 events,
@@ -1080,7 +1080,7 @@ fn footer_click_toggles_and_switches_the_selected_worker() {
                 ..Default::default()
             };
             let mut actions = Vec::new();
-            let _ = ctx.run_ui(input, |ui| {
+            let _ = ctx.run_ui_test(input, |ui| {
                 draw_left_footer(ui, left, &app, state, &workers, &mut actions);
             });
         }
@@ -1112,7 +1112,7 @@ fn selected_worker_is_highlighted_in_the_dev_cells() {
                 ..Default::default()
             };
             let mut actions = Vec::new();
-            let out = ctx.run_ui(input, |ui| {
+            let out = ctx.run_ui_test(input, |ui| {
                 let layout = body_layout(ui, &app, &state, &Filter::default(), &None);
                 grid(ui, &app, &mut state, &mut actions, &Filter::default(), &layout);
             });
@@ -1149,7 +1149,7 @@ fn bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice() {
                 screen_rect: Some(screen),
                 ..Default::default()
             };
-            let out = ctx.run_ui(input, |ui| {
+            let out = ctx.run_ui_test(input, |ui| {
                 popup_window(ui.ctx(), app, state, &mut actions);
             });
             for cs in &out.shapes {
@@ -1167,7 +1167,7 @@ fn bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice() {
                     events: vec![ev],
                     ..Default::default()
                 };
-                let _ = ctx.run_ui(input, |ui| {
+                let _ = ctx.run_ui_test(input, |ui| {
                     popup_window(ui.ctx(), app, state, &mut actions);
                 });
             }
@@ -1239,7 +1239,7 @@ fn footer_date_click_opens_the_bulk_week_limit() {
             ..Default::default()
         };
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(input, |ui| {
+        let _ = ctx.run_ui_test(input, |ui| {
             draw_right_footer(ui, right, &app, &mut state, &workers, &cols, &mut actions);
         });
     }
@@ -1277,7 +1277,7 @@ fn footer_hover_records_column_and_worker_to_highlight() {
             };
             state.grid_hl_next = GridHighlight::default();
             let mut actions = Vec::new();
-            let _ = ctx.run_ui(input, |ui| {
+            let _ = ctx.run_ui_test(input, |ui| {
                 draw_left_footer(ui, left, &app, state, &workers, &mut actions);
                 draw_right_footer(ui, right, &app, state, &workers, &cols, &mut actions);
             });
@@ -1320,7 +1320,7 @@ fn header_and_footer_paint_the_highlighted_date_and_worker() {
         ..Default::default()
     };
     let mut actions = Vec::new();
-    let out = ctx.run_ui(input, |ui| {
+    let out = ctx.run_ui_test(input, |ui| {
         header(ui, &app, &mut state);
         footer(ui, &app, &mut state, &mut actions);
     });
@@ -1397,7 +1397,7 @@ fn worker_visibility_window_lists_and_searches_workers() {
         let mut out_texts = Vec::new();
         for _ in 0..2 {
             let mut actions = Vec::new();
-            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let out = ctx.run_ui_test(egui::RawInput::default(), |ui| {
                 worker_visibility_window(ui.ctx(), &app, state, &mut actions);
             });
             assert!(actions.is_empty());
@@ -1594,12 +1594,12 @@ fn pdf_export_window_does_not_stretch_to_screen_height() {
     // Più frame: col difetto la finestra cresceva un po' a ogni frame.
     for _ in 0..20 {
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             pdf_export_window(ui.ctx(), &app, &mut state, &mut actions);
         });
     }
     let rect = ctx
-        .memory(|m| m.area_rect(egui::Id::new("pdf_export_window")))
+        .memory(|m| m.area_rect(egui::Id::unique("pdf_export_window")))
         .expect("finestra disegnata");
     assert!(rect.height() < 500.0, "finestra alta {}", rect.height());
 }
@@ -1639,7 +1639,7 @@ fn pdf_export_window_lists_show_at_most_10_rows() {
     let (mut devs, mut mss) = (0, 0);
     for _ in 0..3 {
         let mut actions = Vec::new();
-        let out = ctx.run_ui(input.clone(), |ui| {
+        let out = ctx.run_ui_test(input.clone(), |ui| {
             pdf_export_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         // Righe interamente visibili (non tagliate dal clip dell'elenco).
@@ -1693,7 +1693,7 @@ fn pdf_export_window_draws_the_milestone_checklist() {
     };
     let mut actions: Vec<Action> = Vec::new();
     for _ in 0..2 {
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             let ctx = ui.ctx();
             pdf_export_window(ctx, &app, &mut state, &mut actions);
         });
@@ -1737,7 +1737,7 @@ fn status_combo_sets_on_hold_and_keeps_the_window_open() {
             inp.events = pending.remove(0);
         }
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(inp, |ui| {
+        let _ = ctx.run_ui_test(inp, |ui| {
             closed_filter_window(ui.ctx(), &app, &mut state, &mut actions);
         });
         for a in actions {
@@ -1773,7 +1773,7 @@ fn status_combo_sets_on_hold_and_keeps_the_window_open() {
     // Altri frame senza input: la finestra resta aperta.
     for _ in 0..3 {
         let mut actions = Vec::new();
-        let _ = ctx.run_ui(input.clone(), |ui| {
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
             closed_filter_window(ui.ctx(), &app, &mut state, &mut actions);
         });
     }
@@ -1844,8 +1844,8 @@ fn project_milestone_field_keeps_the_context_menu_open() {
         }
         menu_open.set(false);
         sub_open.set(false);
-        let _ = ctx.run_ui(inp, |ui| {
-            egui::CentralPanel::default().show_inside(ui, |ui| {
+        let _ = ctx.run_ui_test(inp, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 // Stessa struttura di `draw_milestone_strip`: una zona che
                 // risponde al tasto destro, un sottomenù col campo dentro.
                 let (rect, resp) =
@@ -1959,8 +1959,8 @@ fn milestone_kind_submenu_keeps_the_add_menu_open() {
             inp.events = pending.remove(0);
         }
         menu_open.set(false);
-        let out = ctx.run_ui(inp, |ui| {
-            egui::Panel::top("t").show_inside(ui, |ui| {
+        let out = ctx.run_ui_test(inp, |ui| {
+            egui::Panel::top("t").show(ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     // Stessa configurazione del menù «Aggiungi» in toolbar.rs.
                     let (btn, _) = egui::containers::menu::MenuButton::new("Aggiungi")
@@ -2016,7 +2016,7 @@ fn milestone_kind_submenu_keeps_the_add_menu_open() {
 fn milestone_kind_icons_are_renderable() {
     let ctx = egui::Context::default();
     install_symbol_fallback(&ctx);
-    let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+    let _ = ctx.run_ui_test(egui::RawInput::default(), |_| {});
     let font = egui::FontId::proportional(14.0);
     for kind in [MilestoneKind::Goal, MilestoneKind::Trigger] {
         assert!(
@@ -2128,8 +2128,8 @@ fn month_tint_center_is_the_band_under_the_label() {
 
     let ctx = egui::Context::default();
     let out = Cell::new(Color32::TRANSPARENT);
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+    let _ = ctx.run_ui_test(egui::RawInput::default(), |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let cell = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(COL_W, ROW_H));
             // 1 solo giorno di agosto: il centro cade nella banda di settembre
             out.set(paint_month_tint(ui, cell, &[week_of(2026, 8, 31)]));
@@ -2311,7 +2311,7 @@ fn layout_in_headless_ui(
         ..Default::default()
     };
     let out = std::cell::RefCell::new(Vec::new());
-    let _ = ctx.run_ui(input, |ui| {
+    let _ = ctx.run_ui_test(input, |ui| {
         let ctx = ui.ctx();
         egui::Window::new("t").show(ctx, |ui| {
             *out.borrow_mut() = project_layout(
@@ -2433,7 +2433,7 @@ fn compact_view_is_shorter_than_the_normal_one() {
 fn toast_icons_are_renderable() {
     let ctx = egui::Context::default();
     install_symbol_fallback(&ctx);
-    let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+    let _ = ctx.run_ui_test(egui::RawInput::default(), |_| {});
     let font = egui::FontId::proportional(14.0);
     for level in [
         ToastLevel::Info,
@@ -2507,7 +2507,7 @@ fn toasts_layer_draws_and_expires() {
 
     // Due frame: la prima registra l'area, la seconda disegna a layout stabile.
     for _ in 0..2 {
-        let _ = ctx.run_ui(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
+        let _ = ctx.run_ui_test(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
     }
     assert_eq!(state.toasts.len(), 3, "nessuna deve sparire subito");
 
@@ -2516,7 +2516,7 @@ fn toasts_layer_draws_and_expires() {
     for t in state.toasts.iter_mut() {
         t.born = old;
     }
-    let _ = ctx.run_ui(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
+    let _ = ctx.run_ui_test(input.clone(), |ui| toasts_layer(ui.ctx(), &mut state));
     assert_eq!(state.toasts.len(), 1);
     assert_eq!(state.toasts[0].level, ToastLevel::Error);
 }
@@ -2535,3 +2535,95 @@ fn failed_save_reports_an_error_toast() {
     assert_eq!(state.toasts[0].level, ToastLevel::Error);
     assert!(state.toasts[0].text.contains(bad));
 }
+
+/// Ogni carattere non ASCII nelle stringhe dell'interfaccia (simboli, icone,
+/// frecce, lettere accentate) dev'essere disegnabile con i font caricati
+/// dall'app; altrimenti comparirebbe un quadratino vuoto. Legge i sorgenti di
+/// `src/ui`: copre anche i simboli aggiunti in futuro. Da egui 0.37 i font con
+/// simboli/emoji vanno attivati (`monochrome_emoji_fonts` in `Cargo.toml`), e
+/// «✕» non c'è in nessun font di egui (al suo posto «✖»).
+#[test]
+fn every_ui_symbol_is_renderable() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui");
+    let mut chars = std::collections::BTreeMap::<char, String>::new();
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if !name.ends_with(".rs") || name == "tests.rs" || name == "test_util.rs" {
+            continue;
+        }
+        for (n, line) in std::fs::read_to_string(&path).unwrap().lines().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            // Testo tra virgolette (stringhe sulla riga), commenti finali esclusi.
+            let code = line.split(" // ").next().unwrap_or(line);
+            for (k, part) in code.split('"').enumerate() {
+                if k % 2 == 1 {
+                    for c in part.chars().filter(|c| !c.is_ascii()) {
+                        chars.entry(c).or_insert_with(|| format!("{name}:{}", n + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(chars.len() > 10, "il sorgente dovrebbe contenere simboli: {chars:?}");
+    let ctx = egui::Context::default();
+    install_symbol_fallback(&ctx);
+    let _ = ctx.run_ui_test(egui::RawInput::default(), |_| {});
+    let font = egui::FontId::proportional(14.0);
+    let missing: Vec<String> = chars
+        .iter()
+        .filter(|(c, _)| !ctx.fonts_mut(|f| f.has_glyphs(&font, &c.to_string())))
+        .map(|(c, at)| format!("{c} (U+{:04X}) in {at}", *c as u32))
+        .collect();
+    assert!(missing.is_empty(), "simboli non disegnabili: {missing:?}");
+}
+
+/// Tasto destro premuto e trascinamento sulla griglia: scorre in orizzontale e
+/// in verticale (è il modo in cui l'utente si muove ovunque). Da egui 0.37 il
+/// trascinamento vale di default solo sui touch screen: `drag_scroll()` lo
+/// riattiva col mouse.
+#[test]
+fn right_drag_scrolls_the_grid_both_ways() {
+    let mut app = App::new();
+    for i in 0..40 {
+        let p = app
+            .projects
+            .add("P", Some(&format!("T{i:02}")), Some(app.start_week));
+        app.projects.set_project_end_week(p, Some(app.end_week));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev(p, dev);
+    }
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let run = |state: &mut UiState, events: Vec<egui::Event>| {
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 900.0)),
+            events,
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let _ = ctx.run_ui_test(input, |ui| body(ui, &app, state, &mut actions));
+    };
+    run(&mut state, vec![]);
+    run(&mut state, vec![]);
+    let start = egui::pos2(1000.0, 500.0);
+    let end = egui::pos2(700.0, 300.0); // trascina a sinistra e in su
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Secondary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    run(&mut state, vec![egui::Event::PointerMoved(start)]);
+    run(&mut state, vec![button(start, true)]);
+    for k in 1..=10 {
+        let t = k as f32 / 10.0;
+        run(&mut state, vec![egui::Event::PointerMoved(start + (end - start) * t)]);
+    }
+    run(&mut state, vec![button(end, false)]);
+    assert!(state.scroll_x > 250.0, "orizzontale: {}", state.scroll_x);
+    assert!(state.scroll_y > 150.0, "verticale: {}", state.scroll_y);
+}
+

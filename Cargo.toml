@@ -8,10 +8,15 @@ chrono = "0.4.44"
 ron = "0.12.1"
 serde = { version = "1.0.228", features = ["derive"] }
 rfd = "0.17.2"
-eframe = "0.34.3"
-egui_extras = { version = "0.34.3", features = ["datepicker"] }
+eframe = "0.37.0"
+# Dipendenza diretta solo per l'opzione `monochrome_emoji_fonts` (stessa versione
+# di eframe, cargo unisce le opzioni): da egui 0.37 i font con simboli ed emoji
+# (NotoEmoji, emoji-icon-font) non sono più caricati di default e servono per le
+# icone dell'interfaccia (ℹ ⚠ ⛔ ✔ ⚑ ⚡ ⌘ 🔎 🗑).
+egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
+egui_extras = { version = "0.37.0", features = ["datepicker"] }
 jiff = "0.2.23"
 printpdf = "0.9.1"
-egui_commonmark = { version = "0.23.0", default-features = false, features = [
+egui_commonmark = { version = "0.26.0", default-features = false, features = [
     "pulldown_cmark",
 ] }

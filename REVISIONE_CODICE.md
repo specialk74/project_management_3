@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 286 verdi |
+| Test | 275 verdi | 289 verdi |
 
 ## Ordine consigliato
 
@@ -89,6 +89,38 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   inesistente, e il commento di `get_default_weeks` attaccato a `parse_date_str`.
   _(fatto: commenti aggiornati; il codice di `dates.rs` verificato identico riga per
   riga)_
+
+- [ ] **A8. Aggiornamento egui 0.34 → 0.37** (eframe, egui_extras 0.37.0;
+  egui_commonmark 0.23 → 0.26). Misurato su una copia: 7 errori di compilazione
+  (`scroll_area::State.offset` privato → `offset()`, 2 cambi sugli `Id`, un campo
+  nuovo negli eventi dei test) e 52 API deprecate (25 `Id::new` →
+  `Id::unique`/`IdSalt::new`, 14 `show_inside` → `show`, 11 `ui.id()` →
+  `scope_id()`, 2 `horizontal_align` → `align`). Rischi: nuovo motore del testo
+  (harfrust/skrifa/vello_cpu → misure dei testi), scroll sincronizzato
+  (API dell'offset cambiata), scelta degli `Id` (stato di menù/scroll).
+  Piano: commit + branch dedicato, errori, deprecazioni fino a 0 warning, test,
+  **prova a mano** dell'interfaccia. _Impatto: Medio · Rischio: Medio._
+  _(approvato il 2026-10-24)_
+  _(in corso, branch `egui-0.37`: fatti i punti 1–4. **Errori**: offset → 
+  `clamped_offset()`, salt `impl Hash + Debug`, campo `source` negli eventi dei
+  test. **Deprecazioni**: 52 → 0 (`Id::new` = `Id::unique` in 0.37, quindi
+  comportamento identico; `scope_id`, `show`, `align(Align2::CENTER_TOP)`).
+  **Scoperto durante il lavoro**: (1) egui 0.37 attiva il «rimbalzo» dello scroll:
+  disattivato, altrimenti intestazione/footer/colonna sinistra si disallineano;
+  (2) egui 0.37 non carica più i font con simboli/emoji → attivata l'opzione
+  `monochrome_emoji_fonts` (stessi font e regolazioni di 0.34), altrimenti ℹ ⚠ ⛔
+  ✔ ⚑ ⚡ ⌘ 🔎 🗑 sarebbero quadratini; (3) **difetto già presente in 0.34**: «✕»
+  non c'è in nessun font di egui, quindi i pulsanti «Pulisci» (manuale) e «Chiudi»
+  (toast) mostravano un quadratino → sostituito con «✖»; nuovo test
+  `every_ui_symbol_is_renderable` che controlla tutti i simboli delle stringhe;
+  (4) nuovo controllo di egui 0.37 sui test (texture non applicate) → helper
+  `run_ui_test`; (5) **segnalato dall'utente nella prova a mano**: lo scroll
+  trascinando col mouse (tasto destro e trascina, usato ovunque) non funzionava
+  più, perché in 0.37 il trascinamento del contenuto vale di default solo sui
+  touch screen → `drag_scroll()` su tutte le 27 aree di scorrimento dell'utente
+  (le 5 che seguono un'altra area restano escluse), test
+  `right_drag_scrolls_the_grid_both_ways`. Build e clippy 0 warning, 289 test
+  verdi. **Prova a mano in corso (punto 5).**)_
 
 ## B. Codice duplicato
 
@@ -350,3 +382,8 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
 - **2026-10-24** — Fatto B10 (opzioni di export come parametro `ExportOptions`,
   niente più stato globale). Build e clippy 0 warning, 286 test verdi. Tutte le
   voci del report sono chiuse.
+- **2026-10-24** — Aggiunta e approvata A8 (aggiornamento egui 0.37).
+- **2026-10-24** — A8, punti 1–4 sul branch `egui-0.37`: compila con egui 0.37,
+  0 warning (build e clippy), 288 test verdi. In attesa della prova a mano.
+- **2026-10-24** — A8: ripristinato lo scroll trascinando col mouse in tutte le
+  viste (egui 0.37 lo limitava ai touch screen). 289 test verdi.

@@ -183,7 +183,7 @@ pub(crate) fn filters_window(
     let mut esc = false;
 
     let resp = egui::Window::new("Filtri")
-        .id(egui::Id::new("filters_window"))
+        .id(egui::Id::unique("filters_window"))
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(90.0, 40.0))
@@ -214,6 +214,7 @@ pub(crate) fn filters_window(
                     );
                     ui.separator();
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("filters_workers")
                         .max_height(400.0)
                         .auto_shrink([false, true])
@@ -260,8 +261,9 @@ pub(crate) fn filters_window(
                     }
                     let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     ui.separator();
-                    let rows_key = egui::Id::new("filters_projects_rows");
+                    let rows_key = egui::Id::unique("filters_projects_rows");
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("filters_projects")
                         .max_height(project_list_max_height(ui, rows_key))
                         .auto_shrink([false, true])
@@ -316,6 +318,7 @@ pub(crate) fn filters_window(
                     }
                     ui.separator();
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("filters_devs")
                         .max_height(400.0)
                         .auto_shrink([false, true])
@@ -360,6 +363,7 @@ pub(crate) fn filters_window(
                     }
                     ui.separator();
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("filters_categories")
                         .max_height(400.0)
                         .auto_shrink([false, true])
@@ -401,6 +405,7 @@ pub(crate) fn filters_window(
                     }
                     ui.separator();
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .id_salt("filters_years")
                         .max_height(400.0)
                         .auto_shrink([false, true])

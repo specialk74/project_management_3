@@ -218,7 +218,7 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 ### egui API conventions
 
 The build **and `cargo clippy --all-targets`** have **zero warnings**: keep it that
-way, and don't reintroduce deprecated egui 0.34 APIs. Functions with many parameters
+way, and don't reintroduce deprecated egui 0.37 APIs. Functions with many parameters
 use `#[allow(clippy::too_many_arguments)]` (project convention). The repo is **not**
 `rustfmt`-formatted: don't run a global `cargo fmt`; to format only touched code use
 `rustfmt +nightly --unstable-features --file-lines` with absolute paths, covering the
@@ -226,10 +226,37 @@ enclosing block. To
 close a menu from one of its items use `ui.close_kind(egui::UiKind::Menu)` (what the
 old `close_menu()` did; `ui.close()` closes the *nearest* closable, which can be just
 a submenu); panels are `egui::Panel::{left,right,top,bottom}` with
-`exact_size`/`default_size`; the toolbar uses `egui::MenuBar::new().ui(…)`; a
-non-scrollable synced `ScrollArea` uses `.scroll_source(ScrollSource::NONE)`;
-`ctx.content_rect()`, `Button::selectable`, `ui.scope_builder`; tests use
-`ctx.run_ui` + `show_inside`.
+`exact_size`/`default_size` and `.show(ui, …)` (`show_inside` was renamed); the
+toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea` uses
+`.scroll_source(ScrollSource::NONE)`; `ctx.content_rect()`, `Button::selectable`,
+`ui.scope_builder`.
+
+**egui 0.37 specifics** (upgraded from 0.34, item A8 of `REVISIONE_CODICE.md`):
+- Ids: `egui::Id::unique(…)` (what `Id::new` was) for absolute ids
+  (`ui.interact`, `Window::id`, `Area::new`); `ui.scope_id()` (was `ui.id()`) as
+  parent for `.with(…)`. A generic "salt" parameter must be `impl Hash + Debug`.
+- Scroll offsets: `out.state.clamped_offset()` (the `offset` field is private).
+  **Rubber-band overscroll is turned off** at startup
+  (`style.spacing.scroll.kinetic.rubber_band = false` in `PjmApp::new`): header,
+  footer and left column follow the grid's offset and would drift during a bounce.
+- Fonts: egui 0.37 no longer loads the symbol/emoji fonts by default; `Cargo.toml`
+  enables `egui`'s `monochrome_emoji_fonts` (direct `egui` dependency only for that
+  feature). «✕» (U+2715) is in **no** egui font — use «✖». The test
+  `every_ui_symbol_is_renderable` scans the string literals of `src/ui/*.rs` and
+  fails on any non-drawable character.
+- **Drag-to-scroll everywhere**: the user scrolls every view by pressing a mouse
+  button (usually the right one) on the content and dragging, horizontally and
+  vertically. egui 0.37 made content dragging touch-screen-only by default
+  (`DragScroll::OnTouch`), so every user-facing `ScrollArea` uses
+  `.scroll_source(drag_scroll())` (`mod.rs`: bar + wheel + `DragScroll::Always`).
+  Only the synced followers (header, footer, grid's left column, saturation's
+  fixed column/header) don't. **Every new `ScrollArea` must use `drag_scroll()`.**
+  The compare window pans with its own background drag (`compare.rs`). Test
+  `right_drag_scrolls_the_grid_both_ways` (fails with egui's default).
+- `TextEdit::align(Align2)` replaces `horizontal_align`.
+- Tests run frames with `ctx.run_ui_test(input, |ui| …)` (`test_util::RunUiTest`):
+  it clears `textures_delta`, otherwise a dropped `FullOutput` panics in debug
+  («Dropped TexturesDelta with N unapplied deltas»).
 
 ### Toolbar menus (in `toolbar`)
 
@@ -476,7 +503,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
 - API: `state.toast_ok / toast_info / toast_warn / toast_error` (e `toast(level, …)`).
   Un testo **già presente** non crea un duplicato: rinfresca `born` (un `git push`
   che fallisce a ogni autosave non impila copie).
-- Solo `Error` è **sticky** (`ttl() == None`, si chiude con ✕); gli altri livelli
+- Solo `Error` è **sticky** (`ttl() == None`, si chiude con ✖); gli altri livelli
   scadono da soli. `toasts_layer(ctx, state)` (ultima chiamata del blocco finestre in
   `ui()`) fa scadere, disegna in `Align2::RIGHT_BOTTOM` su `Order::Foreground` e
   chiama `request_repaint_after` sulla scadenza più vicina.
@@ -663,7 +690,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   windows**, and `milestone_kind_submenu` (a `SubMenuButton` «Tipo: … ⏵») **inside
   toolbar menus** — a `ComboBox` there breaks, because its dropdown lives in its
   own layer and the menu (`CloseOnClickOutside`) reads the click as "outside" and
-  closes before the item is even selected (egui 0.34; guarded by the test
+  closes before the item is even selected (egui 0.34–0.37; guarded by the test
   `milestone_kind_submenu_keeps_the_add_menu_open`). On screen the kind only shows
   as an **icon before the name** in the grid's «Aggiungi milestone qui» menu
   (`MilestoneKind::icon()` — `⚑` / `⚡`, glyphs already covered by egui's bundled

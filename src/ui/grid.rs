@@ -34,7 +34,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
         .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             let sy = state.scroll_y;
             egui::ScrollArea::vertical()
                 .id_salt("left_scroll")
@@ -51,8 +51,10 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
     // Griglia: prende lo spazio restante, è la "master" dello scroll.
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(bg()))
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
+            // Barra, rotella e trascinamento col mouse (vedi `drag_scroll`).
             let mut sa = egui::ScrollArea::both()
+                .scroll_source(drag_scroll())
                 .id_salt("grid_scroll")
                 .auto_shrink([false, false]);
             // Scroll pilotato: X per la settimana corrente (init), Y per il salto
@@ -67,8 +69,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
                     grid(ui, app, state, actions, &filter, &layout)
                 });
             });
-            state.scroll_x = out.state.offset.x;
-            state.scroll_y = out.state.offset.y;
+            let offset = out.state.clamped_offset();
+            state.scroll_x = offset.x;
+            state.scroll_y = offset.y;
             state.pending_scroll_x = None;
             state.pending_scroll_y = None;
         });
@@ -793,7 +796,7 @@ fn draw_milestone_strip(
         if !ms_here.is_empty() {
             ui.interact(
                 top,
-                egui::Id::new(("msrow_m", proj.0, dev.0, w)),
+                egui::Id::unique(("msrow_m", proj.0, dev.0, w)),
                 Sense::hover(),
             )
             .on_hover_text(names());
@@ -803,7 +806,7 @@ fn draw_milestone_strip(
 
     let mut resp = ui.interact(
         top,
-        egui::Id::new(("msrow", proj.0, dev.0, w)),
+        egui::Id::unique(("msrow", proj.0, dev.0, w)),
         Sense::click(),
     );
     if !ms_here.is_empty() {
@@ -1020,7 +1023,7 @@ fn draw_compact_bar(
     let date = week_label(w);
     ui.interact(
         col_rect,
-        egui::Id::new(("cbar", proj.0, dev.0, w)),
+        egui::Id::unique(("cbar", proj.0, dev.0, w)),
         Sense::hover(),
     )
     .on_hover_text(format!("{}  ·  {}h", date, week_total));
@@ -1101,7 +1104,7 @@ fn draw_cell_editor(
     note: &str,
 ) {
     let mut ed = state.editing.take().unwrap();
-    let id = egui::Id::new(("celledit", cx.proj.0, cx.dev.0, cx.week, cx.row));
+    let id = egui::Id::unique(("celledit", cx.proj.0, cx.dev.0, cx.week, cx.row));
     let resp = ui.interact(cell, id, Sense::click());
     if ed.just_opened {
         resp.request_focus();
@@ -1248,7 +1251,7 @@ fn draw_cell_static(
 ) {
     let resp = ui.interact(
         cell,
-        egui::Id::new(("cell", cx.proj.0, cx.dev.0, cx.week, cx.row)),
+        egui::Id::unique(("cell", cx.proj.0, cx.dev.0, cx.week, cx.row)),
         Sense::click(),
     );
     let hovered = resp.hovered();
@@ -1630,7 +1633,7 @@ pub(crate) fn draw_project_info(
             g(EFFORT_ORANGE),
         );
     }
-    let tr = ui.interact(trip_rect, egui::Id::new(("trip", proj.0)), Sense::click());
+    let tr = ui.interact(trip_rect, egui::Id::unique(("trip", proj.0)), Sense::click());
     // Tasto sinistro: modifica la tripletta.
     if tr.clicked() {
         state.popup = Some(Popup::Tripletta {
@@ -1694,7 +1697,7 @@ pub(crate) fn draw_project_info(
             cell_font(),
             cat_col,
         );
-        let cr = ui.interact(cat_rect, egui::Id::new(("cat", proj.0)), Sense::click());
+        let cr = ui.interact(cat_rect, egui::Id::unique(("cat", proj.0)), Sense::click());
         if cr.clicked() {
             state.popup = Some(Popup::Category { proj });
         }
@@ -1759,7 +1762,7 @@ pub(crate) fn draw_project_info(
         mono(FONT_SIZE - 2.0),
         text_dim(),
     );
-    let srr = ui.interact(sr, egui::Id::new(("start", proj.0)), Sense::click());
+    let srr = ui.interact(sr, egui::Id::unique(("start", proj.0)), Sense::click());
     if srr.secondary_clicked() {
         state.popup = Some(Popup::Start {
             proj,
@@ -1790,7 +1793,7 @@ pub(crate) fn draw_project_info(
         mono(FONT_SIZE - 2.0),
         text_dim(),
     );
-    let err = ui.interact(er, egui::Id::new(("end", proj.0)), Sense::click());
+    let err = ui.interact(er, egui::Id::unique(("end", proj.0)), Sense::click());
     if err.secondary_clicked() {
         state.popup = Some(Popup::End {
             proj,
@@ -1834,7 +1837,7 @@ pub(crate) fn draw_project_info(
         mono(FONT_SIZE - 2.0),
         text_dim(),
     );
-    ui.interact(pr, egui::Id::new(("prog", proj.0)), Sense::hover())
+    ui.interact(pr, egui::Id::unique(("prog", proj.0)), Sense::hover())
         .on_hover_text(prog_tip);
 }
 
@@ -1849,7 +1852,7 @@ pub(crate) fn draw_left_dev_strip(
         egui::pos2(x, rect.top()),
         Vec2::new(DEV_STRIP_W, rect.height()),
     );
-    let resp = ui.interact(strip, egui::Id::new(("devstrip", proj.0)), Sense::click());
+    let resp = ui.interact(strip, egui::Id::unique(("devstrip", proj.0)), Sense::click());
     ui.painter()
         .rect_filled(strip, 0.0, strip_bg(resp.hovered()));
     ui.painter().rect_stroke(
@@ -1988,7 +1991,7 @@ pub(crate) fn draw_left_devs(
         let has_cells = sd.is_some_and(|sd| sd.has_cells());
         let nresp = ui.interact(
             name_rect,
-            egui::Id::new(("devname", proj.0, dev.0)),
+            egui::Id::unique(("devname", proj.0, dev.0)),
             Sense::click(),
         );
         if nresp.double_clicked() {
@@ -2085,7 +2088,7 @@ pub(crate) fn draw_left_devs(
                     .font(cell_font())
                     .text_color(txt_col)
                     .frame(egui::Frame::NONE)
-                    .horizontal_align(egui::Align::Center),
+                    .align(egui::Align2::CENTER_TOP),
             );
             if resp.lost_focus() {
                 if let Ok(v) = dbuf.trim().trim_end_matches('%').trim().parse::<u8>() {
@@ -2122,7 +2125,7 @@ pub(crate) fn draw_left_devs(
                     .font(cell_font())
                     .text_color(dev_text_color(app, *dev))
                     .frame(egui::Frame::NONE)
-                    .horizontal_align(egui::Align::Center),
+                    .align(egui::Align2::CENTER_TOP),
             );
             if resp.lost_focus() {
                 if let Ok(v) = buf.trim().parse::<usize>() {

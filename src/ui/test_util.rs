@@ -3,6 +3,22 @@
 
 use super::*;
 
+/// Un frame di prova: come `Context::run_ui`, ma scarta gli aggiornamenti delle
+/// texture (atlante dei font) che nell'app applica il renderer. Da egui 0.37,
+/// in debug, buttare un `FullOutput` senza farlo manda in panic
+/// («Dropped TexturesDelta with N unapplied deltas»).
+pub(crate) trait RunUiTest {
+    fn run_ui_test(&self, input: egui::RawInput, f: impl FnMut(&mut egui::Ui)) -> egui::FullOutput;
+}
+
+impl RunUiTest for egui::Context {
+    fn run_ui_test(&self, input: egui::RawInput, f: impl FnMut(&mut egui::Ui)) -> egui::FullOutput {
+        let mut out = self.run_ui(input, f);
+        out.textures_delta.clear();
+        out
+    }
+}
+
 /// Schermo `w`×`h` con l'origine in alto a sinistra, per `RawInput::screen_rect`.
 pub(crate) fn screen(w: f32, h: f32) -> egui::Rect {
     egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h))

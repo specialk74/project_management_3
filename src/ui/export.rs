@@ -109,6 +109,7 @@ pub(crate) fn bar_format_selector(
     ui.label(egui::RichText::new(title).strong());
     ui.add_space(4.0);
     egui::ScrollArea::horizontal()
+        .scroll_source(drag_scroll())
         .id_salt("bar_format_row")
         .show(ui, |ui| {
             ui.horizontal_top(|ui| {
@@ -189,7 +190,7 @@ fn dev_bar_label(b: crate::pdf_export::DevBar) -> &'static str {
 /// `ComboBox` va bene, vedi la nota sui menù della toolbar).
 fn dev_bar_format_combo(
     ui: &mut egui::Ui,
-    id: impl std::hash::Hash,
+    id: impl std::hash::Hash + std::fmt::Debug,
     bar: &mut crate::pdf_export::DevBar,
 ) {
     egui::ComboBox::from_id_salt(id)
@@ -371,12 +372,12 @@ pub(crate) fn pdf_export_window(
     // `MAX_VISIBLE_EXPORT_ROWS` righe ciascuno, poi scorrono.
     let maxh = (ctx.content_rect().height() - 90.0).max(320.0);
     let list_max = (ctx.content_rect().height() * 0.30).max(110.0);
-    let dev_rows = egui::Id::new("pdf_dev_list_rows");
-    let ms_rows = egui::Id::new("pdf_milestone_list_rows");
+    let dev_rows = egui::Id::unique("pdf_dev_list_rows");
+    let ms_rows = egui::Id::unique("pdf_milestone_list_rows");
 
     // Id fisso: il titolo cambia col progetto, la posizione/dimensione no.
     egui::Window::new(&title)
-        .id(egui::Id::new("pdf_export_window"))
+        .id(egui::Id::unique("pdf_export_window"))
         .collapsible(false)
         .resizable(true)
         .default_width(1120.0)
@@ -402,6 +403,7 @@ pub(crate) fn pdf_export_window(
                 // Elenco dev con riordino drag & drop (payload = indice di
                 // partenza), in un'area scorrevole.
                 egui::ScrollArea::vertical()
+                    .scroll_source(drag_scroll())
                     .id_salt("pdf_dev_list")
                     // +1: anche la riga del Select All sta nell'area scorrevole.
                     .max_height(list_max.min(rows_max_height(
@@ -433,7 +435,7 @@ pub(crate) fn pdf_export_window(
                                     &mut dfmt,
                                 );
                                 ui.dnd_drag_source(
-                                    egui::Id::new(("pdf_drag", proj.0, i)),
+                                    egui::Id::unique(("pdf_drag", proj.0, i)),
                                     i,
                                     |ui| {
                                         ui.add(
@@ -493,6 +495,7 @@ pub(crate) fn pdf_export_window(
                     return;
                 }
                 egui::ScrollArea::vertical()
+                    .scroll_source(drag_scroll())
                     .id_salt("pdf_milestone_list")
                     // +1 come per i dev: Select All dentro lo scroll, così le
                     // due colonne restano allineate riga per riga.

@@ -1370,6 +1370,7 @@ fn install_symbol_fallback(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+
 impl PjmApp {
     pub fn new(
         app: App,
@@ -1379,7 +1380,13 @@ impl PjmApp {
         cc: &eframe::CreationContext<'_>,
     ) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        cc.egui_ctx.global_style_mut(|s| s.interaction.tooltip_delay = 0.0);
+        cc.egui_ctx.global_style_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            // Niente «rimbalzo» oltre i bordi (attivo di default da egui 0.37):
+            // intestazione, footer e colonna sinistra seguono l'offset della
+            // griglia e durante il rimbalzo resterebbero disallineati.
+            s.spacing.scroll.kinetic.rubber_band = false;
+        });
         install_symbol_fallback(&cc.egui_ctx);
 
         let today = today();
@@ -1788,11 +1795,11 @@ impl eframe::App for PjmApp {
             state.grid_hl_next = GridHighlight::default();
 
             egui::Panel::top("toolbar")
-                .show_inside(ui, |ui| toolbar(ui, app, state, &mut actions));
+                .show(ui, |ui| toolbar(ui, app, state, &mut actions));
 
             egui::Panel::top("header")
                 .frame(egui::Frame::NONE.fill(bg()))
-                .show_inside(ui, |ui| header(ui, app, state));
+                .show(ui, |ui| header(ui, app, state));
 
             // Footer (worker / sovra) — nascosto in vista compatta.
             // La maniglia col triangolino permette di collassarlo/riaprirlo.
@@ -1801,11 +1808,11 @@ impl eframe::App for PjmApp {
                     // Solo la maniglia: triangolino verso l'alto per riaprire.
                     egui::Panel::bottom("footer_handle")
                         .frame(egui::Frame::NONE.fill(bg()))
-                        .show_inside(ui, |ui| footer_handle(ui, state));
+                        .show(ui, |ui| footer_handle(ui, state));
                 } else {
                     egui::Panel::bottom("footer")
                         .frame(egui::Frame::NONE.fill(bg()))
-                        .show_inside(ui, |ui| {
+                        .show(ui, |ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
                             // Maniglia (triangolino verso il basso) in cima al footer.
                             footer_handle(ui, state);
@@ -1816,7 +1823,7 @@ impl eframe::App for PjmApp {
 
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(bg()))
-                .show_inside(ui, |ui| body(ui, app, state, &mut actions));
+                .show(ui, |ui| body(ui, app, state, &mut actions));
 
             note_editor_window(ui.ctx(), state, &mut actions);
             popup_window(ui.ctx(), app, state, &mut actions);
@@ -3344,6 +3351,19 @@ fn gather_slots(
 
 // ── Toolbar ─────────────────────────────────────────────────────────────────
 
+/// Sorgenti di scorrimento di ogni `ScrollArea` che l'utente usa: barra,
+/// rotella **e trascinamento del contenuto col mouse** (tasto premuto e
+/// trascina), che l'utente usa ovunque in orizzontale e verticale. Da egui 0.37
+/// il trascinamento di default vale solo sui touch screen
+/// (`DragScroll::OnTouch`). Le aree che seguono un'altra (intestazione, footer,
+/// colonne fisse) restano invece a `ScrollSource::NONE`.
+pub(crate) fn drag_scroll() -> egui::scroll_area::ScrollSource {
+    egui::scroll_area::ScrollSource {
+        drag: egui::scroll_area::DragScroll::Always,
+        ..Default::default()
+    }
+}
+
 /// Checkbox "Select All" condivisa dai dialog con un elenco selezionabile.
 /// `currently_all` deve essere `true` solo se ogni elemento attualmente elencato
 /// è già selezionato. Ritorna `Some(nuovo_stato)` quando l'utente clicca la
@@ -3388,7 +3408,7 @@ fn milestone_kind_items(ui: &mut egui::Ui, kind: &mut MilestoneKind) -> bool {
 pub(crate) fn milestone_kind_combo(
     ui: &mut egui::Ui,
     label: &str,
-    id_salt: impl std::hash::Hash,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
     kind: &mut MilestoneKind,
 ) -> bool {
     let mut changed = false;
@@ -3584,7 +3604,7 @@ fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bo
     // che restano SOTTO (opzioni + bottoni): misurato al frame precedente da
     // `checklist_dialog_end`, con 140 px di partenza. Con pochi progetti si
     // restringe al contenuto (`auto_shrink` verticale) evitando un riquadro vuoto.
-    let key = ui.id().with("project_checklist");
+    let key = ui.scope_id().with("project_checklist");
     let reserve = ui
         .ctx()
         .data(|d| d.get_temp::<f32>(key.with("reserve")))
@@ -3593,6 +3613,7 @@ fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bo
         .max(120.0)
         .min(project_list_max_height(ui, key));
     egui::ScrollArea::vertical()
+        .scroll_source(drag_scroll())
         .max_height(max_h)
         .auto_shrink([false, true])
         .show(ui, |ui| {
@@ -3611,7 +3632,7 @@ fn project_checklist(ui: &mut egui::Ui, app: &App, entries: &mut [(ProjectId, bo
 /// (stesso `ui`): misura quanto spazio occupano i controlli sotto l'elenco,
 /// così al frame dopo l'elenco lo lascia libero e i bottoni restano a schermo.
 pub(crate) fn checklist_dialog_end(ui: &egui::Ui) {
-    let key = ui.id().with("project_checklist");
+    let key = ui.scope_id().with("project_checklist");
     let ctx = ui.ctx();
     if let Some(bottom) = ctx.data(|d| d.get_temp::<f32>(key.with("bottom"))) {
         let below = ui.min_rect().bottom() - bottom;

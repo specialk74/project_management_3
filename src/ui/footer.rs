@@ -94,7 +94,7 @@ pub(crate) fn footer(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions:
         .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let (lrect, _) = ui.allocate_exact_size(Vec2::new(LEFT_W, footer_h), Sense::hover());
             draw_left_footer(ui, lrect, app, state, &workers, actions);
@@ -276,7 +276,7 @@ pub(crate) fn draw_left_footer(
         );
         // Tasto destro sul nome: esclude il dev dai totali (si rimette da
         // «Filtri ▸ Dev nei totali…»).
-        ui.interact(nrect, egui::Id::new(("footer_dev", dev.0)), Sense::click())
+        ui.interact(nrect, egui::Id::unique(("footer_dev", dev.0)), Sense::click())
             .context_menu(|ui| {
                 if ui.button("Nascondi dai totali").clicked() {
                     actions.push(Action::SetDevHiddenInTotals {
@@ -394,7 +394,7 @@ pub(crate) fn draw_left_footer(
         }
 
         let resp = ui
-            .interact(cell, ui.id().with(("wmax", wid.0)), Sense::click())
+            .interact(cell, ui.scope_id().with(("wmax", wid.0)), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.clicked() {
             state.footer_selected_worker = toggle_selected_worker(state.footer_selected_worker, *wid);
@@ -530,7 +530,7 @@ pub(crate) fn draw_right_footer(
         // come sulla data dell'intestazione in alto. Non sui gruppi mergiati.
         if !merged {
             let resp = ui
-                .interact(hdr, ui.id().with(("ftr_date", w)), Sense::click())
+                .interact(hdr, ui.scope_id().with(("ftr_date", w)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
                 state.popup = Some(bulk_week_popup(app, w as usize, date));
@@ -648,7 +648,7 @@ pub(crate) fn draw_right_footer(
 
             // Tasto sinistro → override ore max; tasto destro → nota worker/settimana.
             let resp = ui
-                .interact(cell, ui.id().with(("wkmax", wid.0, w)), Sense::click())
+                .interact(cell, ui.scope_id().with(("wkmax", wid.0, w)), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             if resp.clicked() {
                 state.popup = Some(Popup::WorkerWeekMax {

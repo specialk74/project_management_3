@@ -414,7 +414,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
         .exact_size(LEFT_W)
         .resizable(false)
         .frame(egui::Frame::NONE.fill(bg()))
-        .show_inside(ui, |_ui| {});
+        .show(ui, |_ui| {});
 
     egui::ScrollArea::horizontal()
         .id_salt("header_scroll")
@@ -460,7 +460,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 let txt = week_label(w);
                 // Click sulla data → popup limite ore settimana per TUTTI i worker.
                 let mut resp = ui
-                    .interact(cell, egui::Id::new(("hdr", w)), Sense::click())
+                    .interact(cell, egui::Id::unique(("hdr", w)), Sense::click())
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                 // Colonna sotto il cursore (o in modifica) nella griglia.
                 let hl = state.grid_hl.week == Some(w);

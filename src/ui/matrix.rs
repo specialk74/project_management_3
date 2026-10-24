@@ -242,6 +242,7 @@ pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut U
             }
             ui.separator();
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(360.0)
                 .show(ui, |ui| {
                     for (id, name) in &listed {
@@ -576,7 +577,7 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         };
         ui.interact(
             label_rect,
-            ui.id().with(("mx_row", r.proj.0)),
+            ui.scope_id().with(("mx_row", r.proj.0)),
             Sense::hover(),
         )
         .on_hover_text(tip);
@@ -890,6 +891,7 @@ pub(crate) fn matrix_window(
                 ui.label("Nessun progetto con i worker selezionati nell'intervallo.");
             }
             egui::ScrollArea::both()
+                .scroll_source(drag_scroll())
                 .auto_shrink([false, false])
                 .show(ui, |ui| draw_matrix(ui, app, &m));
         });
@@ -962,7 +964,7 @@ mod tests {
         };
         let frame = |input: egui::RawInput| {
             let cs = ctx
-                .run_ui(input, |ui| {
+                .run_ui_test(input, |ui| {
                     crate::ui_style::set_dark_theme(true);
                     draw_matrix(ui, &app, &m);
                 })
@@ -1076,8 +1078,9 @@ mod tests {
         let mut view_top = 0.0;
         let mut name_y = None;
         for _ in 0..2 {
-            let out = ctx.run_ui(input.clone(), |ui| {
+            let out = ctx.run_ui_test(input.clone(), |ui| {
                 let sa = egui::ScrollArea::both()
+                    .scroll_source(drag_scroll())
                     .vertical_scroll_offset(500.0)
                     .auto_shrink([false, false])
                     .show(ui, |ui| draw_matrix(ui, &app, &m));

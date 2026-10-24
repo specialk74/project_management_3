@@ -166,6 +166,7 @@ pub(crate) fn bulk_fill_window(
                 }
             }
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(220.0)
                 .show(ui, |ui| {
                     ui.set_min_width(240.0);
@@ -419,6 +420,7 @@ pub(crate) fn clear_milestones_window(
             placed.len()
         ));
         egui::ScrollArea::vertical()
+            .scroll_source(drag_scroll())
             .max_height(300.0)
             .show(ui, |ui| {
                 for (id, week) in &placed {
@@ -477,7 +479,7 @@ pub(crate) fn bound_move_window(
         ));
         ui.label("Vuoi cancellarli e spostare la data?");
         ui.separator();
-        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+        egui::ScrollArea::vertical().scroll_source(drag_scroll()).max_height(260.0).show(ui, |ui| {
             if !per_dev.is_empty() {
                 ui.label(egui::RichText::new("Effort").strong());
                 for (dev, ws) in &per_dev {
@@ -621,6 +623,7 @@ pub(crate) fn milestone_manager_window(
                 );
             }
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(400.0)
                 .show(ui, |ui| {
                     // Griglia: ogni colonna è larga quanto il suo contenuto più
@@ -745,8 +748,9 @@ pub(crate) fn closed_filter_window(
     }
     let resp = window.show(ctx, |ui| {
         let min_w = title_width(ui, "Stato progetti");
-        let rows_key = egui::Id::new("project_status_rows");
+        let rows_key = egui::Id::unique("project_status_rows");
         egui::ScrollArea::vertical()
+            .scroll_source(drag_scroll())
             .max_height(project_list_max_height(ui, rows_key))
             .show(ui, |ui| {
                 ui.set_min_width(min_w);
@@ -818,7 +822,7 @@ pub(crate) fn clone_project_window(
         .map(|(id, _, _)| id)
         .filter(|id| search_matches(&q, &project_label(app, *id)))
         .collect();
-    let rows_key = egui::Id::new("clone_project_rows");
+    let rows_key = egui::Id::unique("clone_project_rows");
     let mut open = true;
     let mut confirm = false;
     let mut cancel = false;
@@ -840,6 +844,7 @@ pub(crate) fn clone_project_window(
                     .desired_width(320.0),
             );
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(project_list_max_height(ui, rows_key))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
@@ -929,6 +934,7 @@ pub(crate) fn dev_totals_window(
                 }
             }
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(400.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
@@ -1012,6 +1018,7 @@ pub(crate) fn worker_visibility_window(
                 return;
             }
             egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
                 .max_height(400.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
@@ -1407,6 +1414,7 @@ pub(crate) fn popup_window(
                     // scorre invece di far crescere la finestra oltre lo schermo.
                     let max_h = (ui.ctx().content_rect().height() - 160.0).max(200.0);
                     egui::ScrollArea::vertical()
+                        .scroll_source(drag_scroll())
                         .max_height(max_h.min(480.0))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
