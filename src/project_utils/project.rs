@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -115,6 +112,7 @@ fn is_zero(n: &usize) -> bool {
 }
 
 impl Project {
+    #[cfg(test)]
     pub fn new(info: &str) -> Self {
         Self {
             info: info.to_string(),
@@ -188,9 +186,6 @@ impl Project {
 
     pub fn add_dev(&mut self, id_dev: DevId) {
         self.dev_id.entry(id_dev).or_insert_with(SingleDev::new);
-        // if !self.dev_id.contains_key(&id_dev) {
-        //     self.dev_id.insert(id_dev, SingleDev::new());
-        // }
     }
 
     pub fn add_dev_effort(&mut self, id_dev: DevId, effort: Effort) {

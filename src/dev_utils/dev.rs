@@ -1,8 +1,4 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug)]
 pub struct DevId(pub usize);

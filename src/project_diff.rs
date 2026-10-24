@@ -68,6 +68,7 @@ impl ProjectDiff {
     }
 
     /// I soli dev che differiscono (diverso o presente in un solo file).
+    #[cfg(test)]
     pub fn changed_devs(&self) -> impl Iterator<Item = &DevDiff> {
         self.devs
             .iter()

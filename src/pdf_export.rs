@@ -1551,6 +1551,7 @@ fn project_name(app: &App, proj: ProjectId) -> String {
 ///
 /// `chart_only` esclude tripletta/descrizione e la banda della data in fondo.
 /// `None` se il progetto non ha inizio E fine.
+#[cfg(test)]
 fn project_shapes(
     app: &App,
     proj: ProjectId,
@@ -1812,6 +1813,7 @@ fn project_shapes_fmt(
 
 /// Costruisce il PDF con una pagina per ogni progetto visibile (abilitato e non
 /// chiuso) dotato di data di inizio E fine. `None` se nessun progetto è idoneo.
+#[cfg(test)]
 pub fn build_pdf(app: &App, fmt: impl Into<DevBar>) -> Option<Vec<u8>> {
     let bar: DevBar = fmt.into();
     let mut doc = PdfDocument::new("Projects");
@@ -1923,6 +1925,7 @@ pub fn build_pdf_selected(
 /// effort una riga sottile del colore del dev per tutta la larghezza del calendario.
 /// Con `ordered_devs` vuoto esporta comunque la pagina (asse, milestone, today…)
 /// senza righe dev. `None` solo se il progetto non ha inizio E fine.
+#[cfg(test)]
 pub fn build_pdf_project(
     app: &App,
     proj: ProjectId,
@@ -1985,6 +1988,7 @@ pub fn build_pdf_project_fmt(
 /// Esporta il **solo grafico** di un progetto in SVG: come il PDF a singolo
 /// progetto ma senza tripletta/descrizione e senza la data in fondo. `None` se il
 /// progetto non ha inizio E fine.
+#[cfg(test)]
 pub fn build_svg_project(
     app: &App,
     proj: ProjectId,

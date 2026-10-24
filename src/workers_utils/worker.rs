@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -173,13 +170,16 @@ impl Worker {
         }
     }
 
+    #[cfg(test)]
     pub fn set_name(&mut self, name: String) {
         self.name = name;
     }
 
+    #[cfg(test)]
     pub fn set_bg_color(&mut self, color: Option<usize>) {
         self.bg_color = color;
     }
+    #[cfg(test)]
     pub fn set_font_color(&mut self, color: Option<usize>) {
         self.font_color = color;
     }

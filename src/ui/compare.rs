@@ -665,7 +665,7 @@ fn compare_view_stage(
 
     // Separatori verticali.
     for x in [l_week_x, gutter_x, right_x, r_week_x] {
-        p.vline(x, rows_top..=(r.top() + inner_h), Stroke::new(1.0, sep));
+        p.vline(x, rows_top..=(r.top() + inner_h), Stroke::new(1.0_f32, sep));
     }
 
     // Righe.
@@ -823,13 +823,13 @@ fn compare_view_stage(
                         lcell.rect_stroke(
                             Rect::from_min_size(egui::pos2(cx_l, screen_y), egui::vec2(CW, MS_H)),
                             0.0,
-                            Stroke::new(1.0, red),
+                            Stroke::new(1.0_f32, red),
                             sk,
                         );
                         rcell.rect_stroke(
                             Rect::from_min_size(egui::pos2(cx_r, screen_y), egui::vec2(CW, MS_H)),
                             0.0,
-                            Stroke::new(1.0, red),
+                            Stroke::new(1.0_f32, red),
                             sk,
                         );
                     }
@@ -837,7 +837,7 @@ fn compare_view_stage(
                 p.hline(
                     r.left()..=(r.left() + inner_w),
                     screen_y + MS_H,
-                    Stroke::new(1.0, Color32::from_gray(70)),
+                    Stroke::new(1.0_f32, Color32::from_gray(70)),
                 );
             }
             RowKind::DevBlock {
@@ -989,13 +989,13 @@ fn compare_view_stage(
                             lcell.rect_stroke(
                                 Rect::from_min_size(egui::pos2(cx_l, sub_y), egui::vec2(CW, ROW_H)),
                                 0.0,
-                                Stroke::new(1.0, red),
+                                Stroke::new(1.0_f32, red),
                                 sk,
                             );
                             rcell.rect_stroke(
                                 Rect::from_min_size(egui::pos2(cx_r, sub_y), egui::vec2(CW, ROW_H)),
                                 0.0,
-                                Stroke::new(1.0, red),
+                                Stroke::new(1.0_f32, red),
                                 sk,
                             );
                         }
@@ -1006,7 +1006,7 @@ fn compare_view_stage(
                 p.hline(
                     r.left()..=(r.left() + inner_w),
                     screen_y + block_h,
-                    Stroke::new(1.0, Color32::from_gray(70)),
+                    Stroke::new(1.0_f32, Color32::from_gray(70)),
                 );
             }
         }

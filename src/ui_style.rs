@@ -1,8 +1,8 @@
-//! Costanti visive e helper colore — riproducono `ui/styles.slint`.
+//! Costanti visive e helper colore: dimensioni, font, colori, tema chiaro/scuro e B/N.
 
 use eframe::egui::{Color32, FontId};
 
-// Dimensioni (px logici), come Styles in styles.slint
+// Dimensioni (px logici)
 pub const ROW_H: f32 = 18.0;
 pub const COL_W: f32 = 90.0;
 pub const COMPACT_W: f32 = 25.0; // larghezza colonna in vista compatta
@@ -20,9 +20,9 @@ pub const LEFT_INFO_W: f32 = LEFT_W - DEV_STRIP_W - LEFT_DEV_W; // 133
 
 pub const DEFAULT_MAX_HOURS: u32 = 40;
 
-// Colori (da styles.slint / Slint Colors.*)
-pub const BETWEEN_PROJECTS: Color32 = Color32::from_rgb(0x80, 0x80, 0x80); // Colors.gray
-pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // Colors.yellow
+// Colori
+pub const BETWEEN_PROJECTS: Color32 = Color32::from_rgb(0x80, 0x80, 0x80); // gray
+pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // yellow
 /// Colore **di default** dell'evidenziazione della settimana corrente (giallo
 /// fosforescente). Non è una costante d'uso diretto: il colore effettivo è
 /// `this_week()`, impostato a inizio frame da `set_this_week_color` con il
@@ -53,7 +53,7 @@ pub const MONTH_COLORS_DEFAULT: [u32; 12] = [
 pub const MONTH_TINT_PCT_DEFAULT: i32 = 60;
 pub const EFFORT_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
-pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // Colors.green
+pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // green
 pub const START_BG: Color32 = Color32::from_rgb(70, 130, 180); // steelblue
 pub const CANARY: Color32 = Color32::from_rgb(0xff, 0xf0, 0x66); // giallo canarino (colonna confine anno)
 /// Porpora usato **solo nella GUI** per i worker "ghost", così da distinguerli
@@ -382,7 +382,7 @@ pub fn from_hex(rgb: u32) -> Color32 {
     ))
 }
 
-/// Colore del cumulativo per dev (replica `my-function` in global.slint).
+/// Colore del cumulativo per dev.
 pub fn cumulative_color(total: i32, planned: i32) -> Color32 {
     if total == 0 {
         return text();

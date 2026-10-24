@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -30,10 +27,6 @@ impl SingleEffortWeek {
     pub fn remove_zero(&mut self) {
         self.worker_id.remove(&WORKER_ID_ZERO);
     }
-
-    // pub fn reset_effort(&mut self) {
-    //     self.worker_id.clear();
-    // }
 
     pub fn has_worker_zero(&self) -> bool {
         self.worker_id.contains_key(&WorkerId(0))

@@ -1,4 +1,4 @@
-//! Interfaccia egui (immediate-mode) — sostituisce il layer Slint.
+//! Interfaccia egui (immediate-mode): stato UI, azioni, ciclo `ui()` e helper condivisi.
 //! Tappa 1: griglia effort fedele, editing celle, scroll sincronizzato,
 //! salva/apri, aggiunta worker/dev/progetto/categoria.
 
@@ -1361,7 +1361,7 @@ impl PjmApp {
         let today = Utc::now().date_naive();
         let this_week = local_to_days(&primo_giorno_settimana_corrente(&today));
 
-        // Scroll iniziale per centrare la settimana corrente (come nel main.rs Slint).
+        // Scroll iniziale per centrare la settimana corrente.
         // L'offset X tiene conto delle colonne di confine d'anno (più strette).
         let cols = columns_vec(&app, 0);
         let col_pos = cols.iter().position(|c| c.contains_week(this_week));
@@ -2930,7 +2930,7 @@ fn find_completion(app: &App, prefix: &str, pipe: bool) -> String {
     }
 }
 
-/// Logica Slint: completa `typed`; se nessun match tieni il digitato, altrimenti
+/// Autocompletamento: completa `typed`; se nessun match tieni il digitato, altrimenti
 /// adotta il completamento come nuovo prefisso.
 fn recompute_completion(app: &App, typed: &mut String, buf: &mut String) {
     let c = find_completion(app, typed, true);

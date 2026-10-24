@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Code review / refactoring backlog: **`REVISIONE_CODICE.md`** (Italian). Items have
+> stable codes (A1, C1, …) and are done **only after the user approves them**. Keep it
+> up to date on **every** change that touches an item: tick it, add a note of what was
+> done, refresh the "Stato attuale" numbers and append to "Registro delle modifiche".
+>
+> Feature / UX roadmap: **`MIGLIORAMENTI.md`** (numbered #1…). Code-quality items go in
+> `REVISIONE_CODICE.md`, not there.
+
 > User-facing manual: see **`docs/MANUALE.md`** (Italian, complete). It is embedded
 > into the app via `include_str!` and shown by the in-app Help window
 > (**Aiuto ▸ Manuale d'uso…**). Keep it in sync when you change user-visible behavior.
@@ -846,6 +854,10 @@ the footer date.
   keeps only the percentages (nothing if they are off). Rows are **variable-height**:
   dates rows add `SEG_DATES_H`, and everything scales down together when the page
   would overflow.
+- **Test-only wrappers** (`#[cfg(test)]`, the app calls the `*_fmt` / `_selected`
+  variants): `build_pdf`, `build_pdf_project`, `build_svg_project`, `project_shapes`.
+  The model modules no longer carry `#![allow(unused)]`/`#![allow(dead_code)]`:
+  helpers used only by tests are marked `#[cfg(test)]` so dead code shows up as a warning.
 - `build_pdf(app, fmt)` — one Gantt page per eligible project (enabled, not closed, has
   start AND end). Dev rows are only those **with** effort, sorted by start date (`order=None`).
 - `build_pdf_selected(app, &[ProjectId], fmt)` — same as `build_pdf` but only the given

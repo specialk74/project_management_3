@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -116,6 +114,7 @@ pub enum MilestoneScope {
 }
 
 impl MilestoneScope {
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             MilestoneScope::Internal => "Solo internal",
@@ -188,11 +187,13 @@ impl Milestone {
     }
 
     /// Va stampata in questo ambito di export?
+    #[cfg(test)]
     pub fn in_scope(&self, scope: MilestoneScope) -> bool {
         scope.accepts(&self.effective_categories())
     }
 
     /// Milestone di sistema (usabile in tutti i progetti)?
+    #[cfg(test)]
     pub fn is_global(&self) -> bool {
         self.owner.is_none()
     }
@@ -267,11 +268,13 @@ impl Milestones {
 
     /// Crea una nuova milestone (traguardo) con un colore distinto assegnato in
     /// automatico.
+    #[cfg(test)]
     pub fn add(&mut self, name: &str) -> MilestoneId {
         self.add_with_kind(name, MilestoneKind::default())
     }
 
     /// Come `add` ma scegliendo il tipo (traguardo / trigger).
+    #[cfg(test)]
     pub fn add_with_kind(&mut self, name: &str, kind: MilestoneKind) -> MilestoneId {
         self.add_with(name, kind, Vec::new())
     }
@@ -317,6 +320,7 @@ impl Milestones {
         self.milestones.remove(&id);
     }
 
+    #[cfg(test)]
     pub fn get(&self, id: MilestoneId) -> Option<&Milestone> {
         self.milestones.get(&id)
     }
@@ -355,6 +359,8 @@ impl Milestones {
             .map(|m| m.effective_categories())
             .unwrap_or_else(|| vec![MilestoneCategory::Internal])
     }
+
+    #[cfg(test)]
 
     pub fn has_category(&self, id: MilestoneId, cat: MilestoneCategory) -> bool {
         self.milestones
@@ -411,6 +417,7 @@ impl Milestones {
 
     /// Elimina tutte le milestone personalizzate di un progetto (da chiamare se
     /// il progetto sparisce, per non lasciare milestone orfane).
+    #[cfg(test)]
     pub fn purge_project(&mut self, proj: ProjectId) -> Vec<MilestoneId> {
         let doomed: Vec<MilestoneId> = self
             .milestones

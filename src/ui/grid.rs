@@ -1154,7 +1154,7 @@ fn draw_cell_editor(
     ui.painter().rect_stroke(
         cell,
         0.0,
-        Stroke::new(1.0, g(FOCUS_BORDER)),
+        Stroke::new(1.0_f32, g(FOCUS_BORDER)),
         egui::StrokeKind::Inside,
     );
     let trect = ui.painter().text(
@@ -1168,7 +1168,7 @@ fn draw_cell_editor(
     ui.painter().vline(
         caret_x,
         (cell.top() + 2.0)..=(cell.bottom() - 2.0),
-        Stroke::new(1.0, crate::ui_style::text()),
+        Stroke::new(1.0_f32, crate::ui_style::text()),
     );
 
     if cancel {
@@ -1823,7 +1823,7 @@ pub(crate) fn draw_left_dev_strip(
     ui.painter().rect_stroke(
         strip,
         0.0,
-        Stroke::new(1.0, strip_border()),
+        Stroke::new(1.0_f32, strip_border()),
         egui::StrokeKind::Inside,
     );
     // etichetta "Dev" verticale (lettere impilate)

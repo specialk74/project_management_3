@@ -199,11 +199,11 @@ pub(crate) fn heat_cell(
     // Riga selezionata → bordo arancione su tutte le celle (prevale). Altrimenti
     // settimana corrente → bordo verde; le altre un bordo tenue.
     let stroke = if selected {
-        Stroke::new(2.0, g(EFFORT_ORANGE))
+        Stroke::new(2.0_f32, g(EFFORT_ORANGE))
     } else if current {
-        Stroke::new(2.5, g(Color32::from_rgb(0x00, 0xe0, 0x4b)))
+        Stroke::new(2.5_f32, g(Color32::from_rgb(0x00, 0xe0, 0x4b)))
     } else {
-        Stroke::new(0.5, text_faint())
+        Stroke::new(0.5_f32, text_faint())
     };
     ui.painter()
         .rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Inside);

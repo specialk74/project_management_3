@@ -17,7 +17,7 @@ pub(crate) fn draw_bar_format_preview(
     p.rect_stroke(
         rect,
         3.0,
-        Stroke::new(1.0, Color32::from_gray(200)),
+        Stroke::new(1.0_f32, Color32::from_gray(200)),
         egui::StrokeKind::Inside,
     );
 
@@ -466,7 +466,7 @@ pub(crate) fn pdf_export_window(
                                     ui.painter().hline(
                                         resp.rect.x_range(),
                                         y,
-                                        Stroke::new(2.0, g(EFFORT_ORANGE)),
+                                        Stroke::new(2.0_f32, g(EFFORT_ORANGE)),
                                     );
                                 }
                             }

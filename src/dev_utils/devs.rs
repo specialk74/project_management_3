@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use crate::dev_utils::dev::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

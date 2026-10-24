@@ -1,10 +1,4 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
-use crate::workers_utils::{
-    worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WeekStatus, Worker, WorkerId},
-    *,
-};
+use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WeekStatus, Worker, WorkerId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -45,6 +39,7 @@ impl Workers {
         })
     }
 
+    #[cfg(test)]
     pub fn del(&mut self, id: WorkerId) {
         self.worker_id.remove(&id);
     }

@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -487,6 +484,7 @@ impl Projects {
         }
     }
 
+    #[cfg(test)]
     pub fn set_closed(&mut self, project_id: ProjectId, closed: bool) {
         if let Some(p) = self.projects.get_mut(&project_id) {
             p.set_closed(closed);
@@ -570,7 +568,7 @@ mod tests {
     fn new_project_appended_after_reorder() {
         let (mut ps, a, ..) = three();
         ps.move_down(a); // B, A, C
-        let d = ps.add("D", None, None);
+        ps.add("D", None, None);
         assert_eq!(names(&ps), vec!["B", "A", "C", "D"]);
     }
 }
