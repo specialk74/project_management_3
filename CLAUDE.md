@@ -149,7 +149,19 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 - **`project_layout(ui, app, filter, compact, merged) -> Vec<ProjLayout>`** is the
   single source of truth for row heights, shared by `left_column` and `grid` so the
   two columns can never diverge. `dev_inner_h` / `dev_block_height` compute per-dev
-  block heights.
+  block heights. It is computed **once per frame** in `body` via
+  `body_layout(ui, app, state, filter, dev_filter)` and passed as `&[ProjLayout]` to
+  `left_column`, `grid` and the jump-to-project (tests that call `grid` directly use
+  `body_layout` too).
+- **Viewport culling in the grid**: `grid` skips `draw_dev_cells` for dev blocks
+  outside `ui.clip_rect()` (+ `CULL_MARGIN` = one column) and `draw_dev_cells` skips
+  week columns outside it — but still adds their `week_total` to `running`, because
+  the cumulative row sums every week from the left. The block/column holding the
+  open `Editing` cell is **always** drawn (an editor that stops being drawn loses
+  focus and would commit by itself). The left column is not culled (it has
+  editable fields and is per-dev, not per-week). Tests
+  `grid_skips_offscreen_columns_but_keeps_the_cumulative`,
+  `grid_keeps_drawing_the_cell_being_edited_when_scrolled_away`.
 
 ### Theme and colors (`ui_style.rs`)
 

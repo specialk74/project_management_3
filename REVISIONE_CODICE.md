@@ -20,13 +20,13 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | 61 (tutti API egui deprecate → A2) |
 | Warning `cargo clippy` | ~135 | 114 |
-| Test | 275 verdi | 278 verdi |
+| Test | 275 verdi | 280 verdi |
 
 ## Ordine consigliato
 
 1. ~~**A1, A3–A7, D3** — pulizia a rischio nullo~~ ✅ fatto
 2. ~~**D1, D2** — bug latenti~~ ✅ fatto
-3. **C1, C2** — il guadagno di velocità più visibile
+3. ~~**C1, C2** — il guadagno di velocità più visibile~~ ✅ fatto
 4. **A2** — migrazione API egui deprecate
 5. **B2–B7, C3–C5** — duplicati e ottimizzazioni minori
 6. **B1, B9, E1–E3** — riordino
@@ -119,14 +119,27 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 ## C. Prestazioni (lavoro ripetuto a ogni frame)
 
-- [ ] **C1. La griglia elabora tutto a ogni frame** — ogni progetto × dev ×
+- [x] **C1. La griglia elabora tutto a ogni frame** — ogni progetto × dev ×
   settimana (~104 colonne), anche fuori schermo; per ogni cella interazione,
   stringhe, ricerche nomi. Nessun taglio sulla parte visibile (nessun `clip_rect` in
   `grid.rs`). **Il collo di bottiglia principale.** Proposta: saltare righe e
   colonne fuori vista, mantenendo il calcolo del cumulativo.
+  _(fatto: `grid` salta i blocchi dev fuori dall'area visibile (+ margine di una
+  colonna, `CULL_MARGIN`) e `draw_dev_cells` le colonne fuori vista, sommando però
+  le loro ore al cumulativo. Il blocco/colonna con la cella in modifica si disegna
+  sempre, altrimenti l'editor perderebbe il focus e confermerebbe da solo. La
+  colonna sinistra non è tagliata: ha campi modificabili e costa poco (una riga per
+  dev, non per settimana). **Misura** con il `workers.ron` reale (29 progetti,
+  153 dev, 158 colonne, schermo 1600×900, build release): **10,4 → 0,5 ms per
+  frame** per la griglia. Test `grid_skips_offscreen_columns_but_keeps_the_cumulative`,
+  `grid_keeps_drawing_the_cell_being_edited_when_scrolled_away`; entrambi falliscono
+  se si toglie il taglio o l'eccezione per la cella in modifica)_
 
-- [ ] **C2. `project_layout` calcolato due volte per frame** (colonna sinistra e
+- [x] **C2. `project_layout` calcolato due volte per frame** (colonna sinistra e
   griglia; tre col salto a progetto). Proposta: calcolarlo una volta in `body`.
+  _(fatto: `body_layout` lo calcola una volta in `body` e lo passa a
+  `left_column`, `grid` e al salto a progetto; `grid` non riceve più `dev_filter`,
+  che gli serviva solo per il layout)_
 
 - [ ] **C3. Ricerche ripetute per cella** — `get_id_by_name` scorre tutti i worker,
   due volte per cella; in `draw_left_devs` lo stesso dev viene cercato ~5 volte;
@@ -206,3 +219,6 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   già fatte (#15–#18 → M15–M18); aggiunti i rimandi tra i due file.
 - **2026-10-24** — Fatto il punto 2 dell'ordine consigliato (D1, D2). Warning build
   61, clippy 114 (invariati), 278 test verdi (+3).
+- **2026-10-24** — Fatto il punto 3 dell'ordine consigliato (C1, C2). Griglia
+  10,4 → 0,5 ms per frame sul file reale. Warning build 61, clippy 114 (invariati),
+  280 test verdi (+2).

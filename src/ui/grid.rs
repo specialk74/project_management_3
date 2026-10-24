@@ -8,22 +8,13 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
     let filter = state.worker_filter.clone();
     let dev_filter = state.dev_filter.clone();
 
+    // Layout calcolato una sola volta per frame e condiviso da colonna sinistra,
+    // griglia e salto a progetto: le altezze non possono divergere.
+    let layout = body_layout(ui, app, state, &filter, &dev_filter);
+
     // Salto rapido a un progetto: risolvo qui (prima delle aree di scroll) la
     // posizione Y del progetto scelto, usando lo stesso layout della griglia.
     if let Some(target) = state.jump_to_project.take() {
-        let compact = state.compact_mode;
-        let merged = !compact && state.zoom_level > 0;
-        let layout = project_layout(
-            ui,
-            app,
-            &filter,
-            state.worker_filter_current_week,
-            &dev_filter,
-            &ProjectFilter::from_state(state),
-            state.project_view,
-            compact,
-            merged,
-        );
         let mut y = DEV_BORDER;
         let mut found = false;
         for p in &layout {
@@ -52,7 +43,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.with_layout(top_down, |ui| {
-                        left_column(ui, app, state, actions, &filter, &dev_filter)
+                        left_column(ui, app, state, actions, &filter, &dev_filter, &layout)
                     });
                 });
         });
@@ -73,7 +64,7 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             }
             let out = sa.show(ui, |ui| {
                 ui.with_layout(top_down, |ui| {
-                    grid(ui, app, state, actions, &filter, &dev_filter)
+                    grid(ui, app, state, actions, &filter, &layout)
                 });
             });
             state.scroll_x = out.state.offset.x;
@@ -101,6 +92,31 @@ pub(crate) fn name_block_height(ui: &egui::Ui, name: &str) -> f32 {
         .painter()
         .layout(name.to_string(), cell_font(), text(), LEFT_INFO_W);
     galley.size().y.max(NAME_ROWS as f32 * ROW_H)
+}
+
+/// Layout dei progetti del corpo con lo stato corrente (filtri, Vista,
+/// compatta, zoom): calcolato una volta per frame da `body`.
+pub(crate) fn body_layout(
+    ui: &egui::Ui,
+    app: &App,
+    state: &UiState,
+    filter: &Filter,
+    dev_filter: &DevFilter,
+) -> Vec<ProjLayout> {
+    let compact = state.compact_mode;
+    // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
+    let merged = !compact && state.zoom_level > 0;
+    project_layout(
+        ui,
+        app,
+        filter,
+        state.worker_filter_current_week,
+        dev_filter,
+        &ProjectFilter::from_state(state),
+        state.project_view,
+        compact,
+        merged,
+    )
 }
 
 pub(crate) fn project_layout(
@@ -350,13 +366,17 @@ pub(crate) fn draw_compact_date_marker(
     ui.painter().galley(pos, galley, text());
 }
 
+/// Margine oltre l'area visibile entro cui la griglia disegna comunque: evita
+/// che celle ai bordi compaiano con un frame di ritardo durante lo scroll.
+const CULL_MARGIN: f32 = COL_W;
+
 pub(crate) fn grid(
     ui: &mut egui::Ui,
     app: &App,
     state: &mut UiState,
     actions: &mut Vec<Action>,
     filter: &Filter,
-    dev_filter: &DevFilter,
+    layout: &[ProjLayout],
 ) {
     let compact = state.compact_mode;
     // zoom attivo solo in vista normale; le colonne mergiate sono sola lettura.
@@ -365,18 +385,11 @@ pub(crate) fn grid(
     let cw = col_w(compact);
     let cols = columns_vec(app, level);
     let content_w = cols_width(&cols, cw);
-    let layout = project_layout(
-        ui,
-        app,
-        filter,
-        state.worker_filter_current_week,
-        dev_filter,
-        &ProjectFilter::from_state(state),
-        state.project_view,
-        compact,
-        merged,
-    );
-    let total_h = total_content_h(&layout);
+    let total_h = total_content_h(layout);
+    // Solo ciò che cade nell'area visibile (+ margine) viene disegnato: con
+    // molti progetti la griglia completa è progetti × dev × settimane celle.
+    let visible = ui.clip_rect().expand(CULL_MARGIN);
+    let editing_dev = state.editing.as_ref().map(|e| (e.proj, e.dev));
 
     // Un'unica allocazione: tutto il resto è disegno a coordinate assolute.
     let (rect, _) = ui.allocate_exact_size(Vec2::new(content_w, total_h), Sense::hover());
@@ -404,7 +417,7 @@ pub(crate) fn grid(
     paint_hstrip(ui, left, content_w, y, g(START_STOP));
     y += DEV_BORDER;
 
-    for p in &layout {
+    for p in layout {
         // I progetti chiusi si disegnano in scala di grigi (come la modalità B/N),
         // indipendentemente dal B/N globale; ripristinato a fine progetto.
         set_bw_mode(state.bw_mode || app.projects.is_closed(p.proj));
@@ -433,10 +446,17 @@ pub(crate) fn grid(
             dy += DEV_BORDER;
             let inner_h = dev_inner_h(*max_rows, compact, merged);
             let block = Rect::from_min_size(egui::pos2(left, dy), Vec2::new(content_w, inner_h));
-            draw_dev_cells(
-                ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols, proj_start,
-                deadline, filter, compact, cw, merged,
-            );
+            // Blocco fuori vista: non si disegna (l'altezza resta nel layout). Quello
+            // con la cella in modifica sì, sempre: l'editor perderebbe il focus e
+            // confermerebbe da solo.
+            if block.y_range().intersects(visible.y_range())
+                || editing_dev == Some((p.proj, *dev_id))
+            {
+                draw_dev_cells(
+                    ui, block, app, state, actions, p.proj, *dev_id, *max_rows, &cols,
+                    proj_start, deadline, filter, compact, cw, merged,
+                );
+            }
             dy += inner_h;
             paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
@@ -444,7 +464,9 @@ pub(crate) fn grid(
 
         // Totale progetto in cima a ogni colonna di confine d'anno (solo progetti a
         // cavallo): somma dei residui positivi dei dev per completare il progetto.
-        if !compact {
+        let proj_visible =
+            egui::Rangef::new(proj_top, proj_top + p.proj_h).intersects(visible.y_range());
+        if !compact && proj_visible {
             let mut cx = left;
             for c in &cols {
                 let colw = col_width(c, cw);
@@ -532,6 +554,16 @@ pub(crate) fn draw_dev_cells(
         })
         .unwrap_or((-1, -1));
     let dcolor = dev_color(app, dev);
+    // Colonne fuori dall'area visibile (+ margine): si salta il disegno ma non il
+    // conto del cumulativo, che somma tutte le settimane da sinistra. La colonna
+    // con la cella in modifica si disegna sempre (vedi `grid`).
+    let visible_x = ui.clip_rect().expand(CULL_MARGIN).x_range();
+    let editing_week = state
+        .editing
+        .as_ref()
+        .filter(|e| e.proj == proj && e.dev == dev)
+        .map(|e| e.week);
+    let sd = app.projects.get_single_dev(proj, dev);
 
     let mut running = 0i32;
     let mut next_x = rect.left();
@@ -539,12 +571,15 @@ pub(crate) fn draw_dev_cells(
         let colw = col_width(c, cw);
         let x = next_x;
         next_x += colw;
+        let in_view = egui::Rangef::new(x, x + colw).intersects(visible_x);
 
         // ── Colonna di confine d'anno: sola lettura, sfondo canarino ──
         if let Col::YearEnd(year_ending) = c {
-            let col_rect =
-                Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
-            draw_year_end_cell(ui, app, col_rect, proj, dev, *year_ending, hide_effort);
+            if in_view {
+                let col_rect =
+                    Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(colw, rect.height()));
+                draw_year_end_cell(ui, app, col_rect, proj, dev, *year_ending, hide_effort);
+            }
             continue;
         }
         let ws = match c {
@@ -552,6 +587,21 @@ pub(crate) fn draw_dev_cells(
             Col::YearEnd(_) => unreachable!(),
         };
         let w = &ws[0]; // settimana rappresentativa (etichette/id)
+
+        // Effort del gruppo = somma delle settimane mergiate (una sola al livello 0).
+        let week_total: i32 = sd
+            .map(|sd| {
+                ws.iter()
+                    .map(|wk| sd.get_effort_by_week(WeekId(*wk as usize)).0 as i32)
+                    .sum()
+            })
+            .unwrap_or(0);
+        if !in_view && !editing_week.is_some_and(|ew| ws.contains(&ew)) {
+            if !compact {
+                running += week_total;
+            }
+            continue;
+        }
 
         // Flag aggregati sul gruppo di settimane (una sola al livello zoom 0).
         let before_start = proj_start >= 0 && ws.iter().all(|wk| *wk < proj_start);
@@ -578,17 +628,6 @@ pub(crate) fn draw_dev_cells(
         draw_milestone_strip(
             ui, app, state, actions, proj, dev, *w, &ms_here, col_rect, merged,
         );
-
-        // Effort del gruppo = somma delle settimane mergiate (una sola al livello 0).
-        let week_total = app
-            .projects
-            .get_single_dev(proj, dev)
-            .map(|sd| {
-                ws.iter()
-                    .map(|wk| sd.get_effort_by_week(WeekId(*wk as usize)).0 as i32)
-                    .sum()
-            })
-            .unwrap_or(0);
 
         // ── Vista compatta: una barra (altezza ∝ effort) per settimana attiva ──
         if compact {
@@ -1476,22 +1515,12 @@ pub(crate) fn left_column(
     actions: &mut Vec<Action>,
     filter: &Filter,
     dev_filter: &DevFilter,
+    layout: &[ProjLayout],
 ) {
     let compact = state.compact_mode;
     // stesso zoom della griglia: blocchi dev alti 2 righe quando mergiato.
     let merged = !compact && state.zoom_level > 0;
-    let layout = project_layout(
-        ui,
-        app,
-        filter,
-        state.worker_filter_current_week,
-        dev_filter,
-        &ProjectFilter::from_state(state),
-        state.project_view,
-        compact,
-        merged,
-    );
-    let total_h = total_content_h(&layout);
+    let total_h = total_content_h(layout);
 
     // Stessa altezza totale e stessa allocazione singola della griglia.
     let (rect, _) = ui.allocate_exact_size(Vec2::new(LEFT_W, total_h), Sense::hover());
@@ -1501,7 +1530,7 @@ pub(crate) fn left_column(
     paint_hstrip(ui, left, LEFT_W, y, g(START_STOP));
     y += DEV_BORDER;
 
-    for p in &layout {
+    for p in layout {
         // Progetti chiusi in grigio (come la griglia), a prescindere dal B/N globale.
         set_bw_mode(state.bw_mode || app.projects.is_closed(p.proj));
         let proj_rect = Rect::from_min_size(egui::pos2(left, y), Vec2::new(LEFT_W, p.proj_h));

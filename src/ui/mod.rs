@@ -4660,6 +4660,98 @@ mod tests {
 
     /// Col cursore sulla griglia si raccolgono la colonna e, sulle celle con
     /// un worker, il worker; con una cella in modifica vince quella.
+    /// Griglia con un dev che lavora 8 h a settimana per 30 settimane (pianificato
+    /// 1000), disegnata in uno scroll spostato in orizzontale su `scroll_col`.
+    /// Ritorna i testi disegnati.
+    fn culled_grid_texts(state: &mut UiState, scroll_col: usize) -> (Vec<String>, Vec<i32>) {
+        let mut app = App::new();
+        let cols = columns_vec(&app, 0);
+        let week_cols: Vec<(usize, i32)> = cols
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match c {
+                Col::Weeks(ws) => Some((i, ws[0])),
+                Col::YearEnd(_) => None,
+            })
+            .collect();
+        let proj = app
+            .projects
+            .add("Prog", Some("ABC"), Some(WeekId(week_cols[0].1 as usize)));
+        app.projects.set_project_end_week(proj, Some(app.end_week));
+        let dev = app.devs.add("Frontend");
+        app.projects.add_dev_effort(proj, dev, Effort(1000));
+        let alice = app.workers.add("Alice");
+        for (_, w) in week_cols.iter().take(30) {
+            app.projects
+                .add_effort(proj, dev, WeekId(*w as usize), alice, Effort(8));
+        }
+        let x_off = col_x_offset(&cols, week_cols[scroll_col].0, COL_W);
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
+        let mut texts = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            let mut actions = Vec::new();
+            let out = ctx.run_ui(input, |ui| {
+                egui::ScrollArea::both()
+                    .scroll_offset(egui::vec2(x_off, 0.0))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let layout = body_layout(ui, &app, state, &Filter::default(), &None);
+                        grid(ui, &app, state, &mut actions, &Filter::default(), &layout);
+                    });
+            });
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect();
+        }
+        let weeks = week_cols.iter().map(|(_, w)| *w).collect();
+        (texts, weeks)
+    }
+
+    #[test]
+    fn grid_skips_offscreen_columns_but_keeps_the_cumulative() {
+        let mut state = UiState::default();
+        // ~11 colonne da 90 px in 1000 px: in vista le colonne 5..16 circa
+        let (texts, _) = culled_grid_texts(&mut state, 5);
+        // colonna 5 visibile: il cumulativo conta anche le 5 settimane fuori vista
+        assert!(texts.iter().any(|t| t == "48 | 952"), "{texts:?}");
+        // colonna 0 fuori vista: non disegnata
+        assert!(!texts.iter().any(|t| t == "8 | 992"));
+        // colonne oltre la destra dello schermo: nemmeno
+        assert!(!texts.iter().any(|t| t == "240 | 760"), "settimana 30 fuori vista");
+    }
+
+    #[test]
+    fn grid_keeps_drawing_the_cell_being_edited_when_scrolled_away() {
+        let mut state = UiState::default();
+        let (_, weeks) = culled_grid_texts(&mut state, 0);
+        state.editing = Some(Editing {
+            proj: ProjectId(0),
+            dev: DevId(0),
+            week: weeks[0],
+            row: 0,
+            buf: "Alice|4".to_string(),
+            typed: "Alice|4".to_string(),
+            just_opened: true,
+            had_focus: false,
+            paste_note: None,
+            orig_worker: "Alice".to_string(),
+            orig_note: String::new(),
+        });
+        let (texts, _) = culled_grid_texts(&mut state, 20);
+        assert!(state.editing.is_some(), "l'editor fuori vista non deve chiudersi");
+        assert!(texts.iter().any(|t| t == "Alice|4"), "editor disegnato: {texts:?}");
+    }
+
     #[test]
     fn grid_hover_records_column_and_worker_to_highlight() {
         let (app, alice, week) = highlight_fixture();
@@ -4679,7 +4771,8 @@ mod tests {
             let mut actions = Vec::new();
             ctx.run_ui(input, |ui| {
                 origin.set(ui.cursor().min);
-                grid(ui, &app, state, &mut actions, &Filter::default(), &None);
+                let layout = body_layout(ui, &app, state, &Filter::default(), &None);
+                grid(ui, &app, state, &mut actions, &Filter::default(), &layout);
             });
         };
         frame(&mut state, None);
@@ -4813,7 +4906,8 @@ mod tests {
                 };
                 let mut actions = Vec::new();
                 let out = ctx.run_ui(input, |ui| {
-                    grid(ui, &app, &mut state, &mut actions, &Filter::default(), &None);
+                    let layout = body_layout(ui, &app, &state, &Filter::default(), &None);
+                    grid(ui, &app, &mut state, &mut actions, &Filter::default(), &layout);
                 });
                 n = out
                     .shapes
