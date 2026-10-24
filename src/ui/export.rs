@@ -514,7 +514,7 @@ pub(crate) fn pdf_export_window(
                         for (id, week, sel) in px.milestones.iter_mut() {
                             let name = app.milestones.get_name(*id).unwrap_or("?");
                             let kind = app.milestones.get_kind(*id);
-                            let date = days_to_local(week.0 as i32).format("%y-%m-%d");
+                            let date = week_label(week.0 as i32);
                             let cats = app
                                 .milestones
                                 .get_categories(*id)
@@ -1032,7 +1032,7 @@ pub(crate) fn build_minuta(
             out.push_str("_(nessuna nota)_\n\n");
         } else {
             for (w, text, wn) in weeks {
-                let label = days_to_local(w.0 as i32).format("%y-%m-%d");
+                let label = week_label(w.0 as i32);
                 out.push_str(&format!("**{label}**\n\n"));
                 if !text.trim().is_empty() {
                     out.push_str(&format!("{}\n\n", text.trim_end()));

@@ -222,7 +222,7 @@ pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut U
     let q = state.matrix_worker_search.trim().to_lowercase();
     let listed: Vec<&(WorkerId, String)> = candidates
         .iter()
-        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .filter(|(_, n)| search_matches(&q, n))
         .collect();
 
     let mut open = true;

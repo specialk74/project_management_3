@@ -12,7 +12,7 @@ pub(crate) use crate::app::App;
 pub(crate) use crate::categories::CategoryId;
 pub(crate) use crate::date_utils::dates::{
     current_monday_days, days_to_local, local_to_days, parse_date_str,
-    primo_giorno_settimana_corrente, today, today_days,
+    primo_giorno_settimana_corrente, today, today_days, week_label,
 };
 pub(crate) use crate::dev_utils::dev::DevId;
 pub(crate) use crate::milestones::{MilestoneCategory, MilestoneId, MilestoneKind, MilestoneScope};
@@ -1432,16 +1432,10 @@ fn combine_issues(err: Option<String>, warnings: Vec<String>) -> Option<String> 
 /// tripletta è vuota, o infine l'id. Condivisa da minuta, gestore milestone e
 /// ovunque serva nominare un progetto in una riga.
 pub(crate) fn project_label(app: &App, proj: ProjectId) -> String {
-    let trip = app.projects.get_tripletta(proj);
-    if !trip.is_empty() {
-        return trip;
-    }
-    let name = app.projects.get_info(proj);
-    if !name.trim().is_empty() {
-        name
-    } else {
-        format!("Progetto {}", proj.0)
-    }
+    app.projects
+        .get(proj)
+        .map(|p| p.label(proj))
+        .unwrap_or_else(|| format!("Progetto {}", proj.0))
 }
 
 /// Nome file predefinito per gli export, con la **data corrente** (locale)
@@ -2408,12 +2402,10 @@ impl PjmApp {
             } => {
                 self.app.projects.reset_effort(proj, dev, week);
                 for (text, note) in rows.iter().zip(notes.iter()) {
-                    let parts: Vec<&str> = text.split('|').collect();
-                    if parts.len() != 2 {
+                    let Some((name, e)) = parse_cell(text) else {
                         continue;
-                    }
-                    if let Some(wid) = self.app.workers.get_id_by_name(parts[0].trim()) {
-                        let e = parts[1].trim().parse::<usize>().unwrap_or(0);
+                    };
+                    if let Some(wid) = self.app.workers.get_id_by_name(name) {
                         self.app
                             .projects
                             .add_effort(proj, dev, week, wid, Effort(e));
@@ -3328,6 +3320,9 @@ fn dev_block_height(max_rows: usize, compact: bool, merged: bool) -> f32 {
 
 /// Slot (testo "nome|effort", nota) per ogni riga della settimana, riempiti con vuoti.
 /// Con filtro attivo include solo i worker selezionati.
+/// Righe di una cella-settimana del dev: `(testo "Worker|ore", nota, worker)`,
+/// ordinate per testo e completate con righe vuote fino a `max_rows`. Il worker
+/// viaggia con il testo, così chi disegna non deve ricavarlo di nuovo dal nome.
 fn gather_slots(
     app: &App,
     proj: ProjectId,
@@ -3335,20 +3330,24 @@ fn gather_slots(
     week: i32,
     max_rows: usize,
     filter: &Filter,
-) -> Vec<(String, String)> {
-    let mut slots: Vec<(String, String)> = app
+) -> Vec<(String, String, Option<WorkerId>)> {
+    let mut slots: Vec<(String, String, Option<WorkerId>)> = app
         .projects
         .get_single_dev(proj, dev)
         .and_then(|sd| sd.get_all(WeekId(week as usize)))
         .map(|sew| {
-            let mut v: Vec<(String, String)> = sew
+            let mut v: Vec<(String, String, Option<WorkerId>)> = sew
                 .worker_id
                 .iter()
                 .filter(|(wid, _)| **wid != WORKER_ID_ZERO)
                 .filter(|(wid, _)| worker_shown(filter, app.workers.get_name_by_id(**wid)))
                 .map(|(wid, se)| {
                     let name = app.workers.get_name_by_id(*wid);
-                    (format!("{}|{}", name, se.get_effort().0), se.get_note())
+                    (
+                        format!("{}|{}", name, se.get_effort().0),
+                        se.get_note(),
+                        Some(*wid),
+                    )
                 })
                 .collect();
             v.sort_by(|a, b| a.0.cmp(&b.0));
@@ -3356,7 +3355,7 @@ fn gather_slots(
         })
         .unwrap_or_default();
     while slots.len() < max_rows {
-        slots.push((String::new(), String::new()));
+        slots.push((String::new(), String::new(), None));
     }
     slots
 }
@@ -3660,19 +3659,15 @@ const STATUS_TRI_INSET: f32 = 3.0;
 
 fn dev_color(app: &App, dev: DevId) -> Color32 {
     app.devs
-        .list_full()
-        .into_iter()
-        .find(|(id, _, _, _)| *id == dev)
-        .map(|(_, _, bg, _)| from_hex(bg as u32))
+        .get(dev)
+        .map(|d| from_hex(d.bg_color() as u32))
         .unwrap_or(g(Color32::from_rgb(0x00, 0x99, 0xFF)))
 }
 
 fn dev_text_color(app: &App, dev: DevId) -> Color32 {
     app.devs
-        .list_full()
-        .into_iter()
-        .find(|(id, _, _, _)| *id == dev)
-        .map(|(_, _, _, font)| from_hex(font as u32))
+        .get(dev)
+        .map(|d| from_hex(d.font_color() as u32))
         .unwrap_or(text())
 }
 
@@ -3795,12 +3790,7 @@ fn bulk_fill_effort(
 }
 
 fn dev_name(app: &App, dev: DevId) -> String {
-    app.devs
-        .list()
-        .into_iter()
-        .find(|(id, _)| *id == dev)
-        .map(|(_, n)| n)
-        .unwrap_or_default()
+    app.devs.get(dev).map(|d| d.get_name()).unwrap_or_default()
 }
 
 // ── Colonna sinistra ────────────────────────────────────────────────────────
@@ -4831,6 +4821,103 @@ mod tests {
 
     /// Col cursore sul footer: riga delle date → solo la data; cella di un
     /// worker → data + worker; nome del worker (parte sinistra) → solo il worker.
+    #[test]
+    fn remaining_hours_follow_the_year_and_the_null_filter() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let weeks = weeks_vec(&app);
+        let this_week = weeks[3];
+        let year = days_to_local(this_week).year();
+        // anno corrente: dalla settimana corrente in poi, solo settimane dell'anno
+        let cur = remaining_weeks(&app, year, this_week);
+        assert!(cur.iter().all(|w| *w >= this_week && days_to_local(*w).year() == year));
+        assert_eq!(cur.first(), Some(&this_week));
+        // anno successivo: tutto l'anno, anche prima di `this_week` nel calendario
+        let next = remaining_weeks(&app, year + 1, this_week);
+        assert!(!next.is_empty() && next.iter().all(|w| days_to_local(*w).year() == year + 1));
+
+        let full = worker_remaining_hours(&app, alice, &cur, false);
+        assert_eq!(full, cur.len() as i32 * DEFAULT_MAX_HOURS as i32);
+        // con «Nulli» una settimana già assegnata non conta
+        app.sovra.insert((WeekId(cur[0] as usize), alice), Effort(8));
+        assert_eq!(
+            worker_remaining_hours(&app, alice, &cur, true),
+            full - DEFAULT_MAX_HOURS as i32
+        );
+        assert_eq!(worker_remaining_hours(&app, alice, &cur, false), full);
+    }
+
+    #[test]
+    fn confirm_window_reports_ok_cancel_or_still_open() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // Un frame; se `click` è dato, clicca il pulsante con quel testo (trovato
+        // nel frame precedente).
+        let frame = |events: Vec<egui::Event>| {
+            let mut answer = None;
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ui| answer = confirm_window(ui.ctx(), "Titolo", "Sì", |ui| {
+                    ui.label("Testo");
+                }),
+            );
+            (answer, out)
+        };
+        let pos_of = |out: &egui::FullOutput, label: &str| {
+            out.shapes.iter().find_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == label => {
+                    Some(t.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+        };
+        let click = |pos: egui::Pos2| {
+            let mut last = None;
+            for ev in [
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ] {
+                last = frame(vec![ev]).0.or(last);
+            }
+            last
+        };
+        let _ = frame(vec![]);
+        let (answer, out) = frame(vec![]);
+        assert_eq!(answer, None, "senza scelta resta aperta");
+        assert_eq!(click(pos_of(&out, "Annulla").unwrap()), Some(false));
+        let (_, out) = frame(vec![]);
+        assert_eq!(click(pos_of(&out, "Sì").unwrap()), Some(true));
+    }
+
+    #[test]
+    fn cell_text_parsing_matches_the_old_split_rules() {
+        // vecchia regola: `split('|')` → esattamente 2 parti, nome trim, ore o 0
+        fn old(t: &str) -> Option<(&str, usize)> {
+            let parts: Vec<&str> = t.split('|').collect();
+            (parts.len() == 2)
+                .then(|| (parts[0].trim(), parts[1].trim().parse::<usize>().unwrap_or(0)))
+        }
+        for t in ["Alice|8", " Alice | 8 ", "Alice|", "|8", "Alice", "", "A|b|c", "Al|x", "A||"] {
+            assert_eq!(parse_cell(t), old(t), "{t:?}");
+            assert_eq!(cell_worker(t), t.split('|').next().unwrap_or("").trim(), "{t:?}");
+        }
+    }
+
     #[test]
     fn grid_and_footer_share_the_same_current_week() {
         // La griglia (`current_week_id`) e footer/saturazione (`this_week`,

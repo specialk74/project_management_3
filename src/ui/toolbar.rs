@@ -457,9 +457,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                     cell_bg = blend(cell_bg, wk);
                 }
                 // etichetta = data della prima settimana del gruppo
-                let txt = primo_giorno_settimana_corrente(&days_to_local(w))
-                    .format("%y-%m-%d")
-                    .to_string();
+                let txt = week_label(w);
                 // Click sulla data → popup limite ore settimana per TUTTI i worker.
                 let mut resp = ui
                     .interact(cell, egui::Id::new(("hdr", w)), Sense::click())
@@ -486,9 +484,7 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 if merged {
                     // gruppo mergiato: sola lettura. Tooltip con l'intervallo di date.
                     if let Some(last) = ws.last().copied() {
-                        let end = primo_giorno_settimana_corrente(&days_to_local(last))
-                            .format("%y-%m-%d")
-                            .to_string();
+                        let end = week_label(last);
                         resp.on_hover_text(format!("{txt} … {end}"));
                     }
                 } else if resp.clicked() {

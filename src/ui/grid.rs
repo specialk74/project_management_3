@@ -356,9 +356,7 @@ pub(crate) fn draw_compact_date_marker(
         return;
     };
     let cx = left + col_x_offset(cols, ci, cw) + cw / 2.0;
-    let date = primo_giorno_settimana_corrente(&days_to_local(week))
-        .format("%y-%m-%d")
-        .to_string();
+    let date = week_label(week);
     let galley = ui.painter().layout_no_wrap(date, mono(9.0), text());
     let pos = egui::pos2(cx - galley.size().x / 2.0, top_y + 1.0);
     let bgrect = Rect::from_min_size(pos, galley.size()).expand(1.5);
@@ -504,7 +502,7 @@ pub(crate) fn grid(
     // Cella in modifica: ha la precedenza sul cursore. Il worker segue il nome
     // mentre lo si digita (nessuno finché non corrisponde a un worker).
     if let Some(e) = &state.editing {
-        let wname = e.buf.split('|').next().unwrap_or("").trim();
+        let wname = cell_worker(&e.buf);
         state.grid_hl_next = GridHighlight {
             week: Some(e.week),
             worker: app.workers.get_id_by_name(wname),
@@ -672,7 +670,7 @@ pub(crate) fn draw_dev_cells(
         }
 
         let slots = gather_slots(app, proj, dev, *w, max_rows, filter);
-        for (row, (text, note)) in slots.iter().enumerate() {
+        for (row, (text, note, wid)) in slots.iter().enumerate() {
             let y = rect.top() + (row as f32 + 1.0) * ROW_H;
             let cell = Rect::from_min_size(egui::pos2(x, y), Vec2::new(cw, ROW_H));
             let cx = CellCtx {
@@ -691,10 +689,25 @@ pub(crate) fn draw_dev_cells(
             if is_editing {
                 draw_cell_editor(ui, app, state, actions, &cx, cell, note);
             } else {
-                draw_cell_static(ui, app, state, actions, &cx, cell, text, note);
+                draw_cell_static(ui, app, state, actions, &cx, cell, text, note, *wid);
             }
         }
     }
+}
+
+/// Nome del worker di una cella `"Worker|ore"` (tutto prima del `|`, senza spazi).
+pub(crate) fn cell_worker(text: &str) -> &str {
+    text.split('|').next().unwrap_or("").trim()
+}
+
+/// Interpreta una cella `"Worker|ore"`: `None` se non c'è esattamente un `|`;
+/// nome senza spazi, ore 0 se non sono un numero.
+pub(crate) fn parse_cell(text: &str) -> Option<(&str, usize)> {
+    let (name, effort) = text.split_once('|')?;
+    if effort.contains('|') {
+        return None;
+    }
+    Some((name.trim(), effort.trim().parse().unwrap_or(0)))
 }
 
 /// Coordinate della cella worker su cui agiscono editing, click e tasto destro.
@@ -1004,9 +1017,7 @@ fn draw_compact_bar(
     );
     ui.painter().rect_filled(bar, 0.0, dcolor);
     // tooltip con data + effort della settimana
-    let date = primo_giorno_settimana_corrente(&days_to_local(w))
-        .format("%y-%m-%d")
-        .to_string();
+    let date = week_label(w);
     ui.interact(
         col_rect,
         egui::Id::new(("cbar", proj.0, dev.0, w)),
@@ -1233,6 +1244,7 @@ fn draw_cell_static(
     cell: Rect,
     text: &str,
     note: &str,
+    wid: Option<WorkerId>,
 ) {
     let resp = ui.interact(
         cell,
@@ -1244,8 +1256,7 @@ fn draw_cell_static(
     let secondary = resp.secondary_clicked();
     // Cella con un worker sotto il cursore: anche il worker va evidenziato.
     if hovered && !text.is_empty() {
-        let wname = text.split('|').next().unwrap_or("").trim();
-        state.grid_hl_next.worker = app.workers.get_id_by_name(wname);
+        state.grid_hl_next.worker = wid;
     }
 
     if hovered {
@@ -1256,8 +1267,6 @@ fn draw_cell_static(
         draw_note_triangle(ui, cell);
     }
     if !text.is_empty() {
-        let wname = text.split('|').next().unwrap_or("").trim();
-        let wid = app.workers.get_id_by_name(wname);
         let hidden = wid.map_or(false, |id| app.workers.is_hidden_in_footer(id));
         let is_ghost = wid.map_or(false, |id| app.workers.is_ghost(id));
         let sovra = wid
@@ -1302,7 +1311,7 @@ fn draw_cell_static(
         if let Some(old) = state.editing.take() {
             actions.push(commit_editing(app, &old));
         }
-        let orig_worker = text.split('|').next().unwrap_or("").trim().to_string();
+        let orig_worker = cell_worker(text).to_string();
         state.editing = Some(Editing {
             proj: cx.proj,
             dev: cx.dev,
@@ -1334,7 +1343,7 @@ fn draw_cell_static(
             });
             state.bulk_fill_was_open = false;
         } else {
-            let wname = text.split('|').next().unwrap_or("").trim().to_string();
+            let wname = cell_worker(text).to_string();
             state.note_editor = Some(NoteEditing {
                 target: NoteTarget::Effort {
                     proj: cx.proj,
@@ -1383,11 +1392,9 @@ pub(crate) fn commit_editing(app: &App, ed: &Editing) -> Action {
         entries.retain(|(n, _, _)| n != &ed.orig_worker);
     }
     // interpreta il nuovo contenuto "worker|effort"
-    let parts: Vec<&str> = ed.buf.split('|').collect();
-    if parts.len() == 2 {
-        let wname = parts[0].trim().to_string();
+    if let Some((wname, eff)) = parse_cell(&ed.buf) {
+        let wname = wname.to_string();
         if !wname.is_empty() {
-            let eff = parts[1].trim().parse::<usize>().unwrap_or(0);
             let note = ed.paste_note.clone().unwrap_or_else(|| {
                 if wname == ed.orig_worker {
                     ed.orig_note.clone()
@@ -1735,9 +1742,7 @@ pub(crate) fn draw_project_info(
         .projects
         .get_project_start_week(proj)
         .map(|wk| {
-            primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32))
-                .format("%y-%m-%d")
-                .to_string()
+            week_label(wk.0 as i32)
         })
         .unwrap_or_default();
     let start_txt = if start_date.is_empty() {
@@ -1768,9 +1773,7 @@ pub(crate) fn draw_project_info(
         .projects
         .get_project_end_week(proj)
         .map(|wk| {
-            primo_giorno_settimana_corrente(&days_to_local(wk.0 as i32))
-                .format("%y-%m-%d")
-                .to_string()
+            week_label(wk.0 as i32)
         })
         .unwrap_or_default();
     let end_txt = if end_date.is_empty() {
@@ -1889,13 +1892,23 @@ pub(crate) fn draw_left_devs(
     let x0 = rect.left() + LEFT_INFO_W + DEV_STRIP_W;
     let mut y = rect.top();
 
+    // Per la voce «Cancella gli effort di tutti i dev…»: calcolato una volta per
+    // progetto, non per ogni dev.
+    let project_has_cells = app.projects.list_devs(proj).iter().any(|d| {
+        app.projects
+            .get_single_dev(proj, *d)
+            .is_some_and(|sd| sd.has_cells())
+    });
+
     for (dev, max_rows) in devs {
         let max_rows = *max_rows;
+        // Dati del dev letti una volta sola per tutto il blocco.
+        let sd = app.projects.get_single_dev(proj, *dev);
         let color = dev_color(app, *dev);
         let tcol = dev_text_color(app, *dev);
         // Se il dev contiene un worker "ghost" (con effort), il suo nome lampeggia
         // fra il colore normale e il porpora (~0.5s per fase) come segnale d'allarme.
-        let has_ghost = app.projects.get_single_dev(proj, *dev).map_or(false, |sd| {
+        let has_ghost = sd.map_or(false, |sd| {
             sd.has_worker_matching(|id| app.workers.is_ghost(id))
         });
         let name_col = if has_ghost {
@@ -1927,7 +1940,7 @@ pub(crate) fn draw_left_devs(
         let used_pct = if compact {
             None
         } else {
-            app.projects.get_single_dev(proj, *dev).and_then(|sd| {
+            sd.and_then(|sd| {
                 let planned = sd.planned_effort().0;
                 (planned != 0).then(|| {
                     let used = sd.effort_up_to(current_week_id()).0;
@@ -1968,28 +1981,17 @@ pub(crate) fn draw_left_devs(
                 );
             }
         }
-        let dev_note = app
-            .projects
-            .get_single_dev(proj, *dev)
+        let dev_note = sd
             .map(|sd| sd.get_note())
             .unwrap_or_default();
-        let hide_effort = app
-            .projects
-            .get_single_dev(proj, *dev)
+        let hide_effort = sd
             .map(|sd| sd.get_hide_effort())
             .unwrap_or(false);
         if !dev_note.is_empty() {
             draw_note_triangle(ui, name_rect);
         }
-        let has_cells = app
-            .projects
-            .get_single_dev(proj, *dev)
+        let has_cells = sd
             .is_some_and(|sd| sd.has_cells());
-        let project_has_cells = app.projects.list_devs(proj).iter().any(|d| {
-            app.projects
-                .get_single_dev(proj, *d)
-                .is_some_and(|sd| sd.has_cells())
-        });
         let nresp = ui.interact(
             name_rect,
             egui::Id::new(("devname", proj.0, dev.0)),
@@ -2062,9 +2064,7 @@ pub(crate) fn draw_left_devs(
         // e quando l'effort pianificato è 0 (`used_pct` è `Some` sse pianificato
         // ≠ 0): in tal caso il campo non compare e non è modificabile.
         if !compact && used_pct.is_some() {
-            let declared = app
-                .projects
-                .get_single_dev(proj, *dev)
+            let declared = sd
                 .map(|sd| sd.declared_pct())
                 .unwrap_or(0);
             let bg = used_pct.map(|presumed| {
@@ -2116,9 +2116,7 @@ pub(crate) fn draw_left_devs(
 
         if !compact {
             // effort pianificato (editabile)
-            let planned = app
-                .projects
-                .get_single_dev(proj, *dev)
+            let planned = sd
                 .map(|sd| sd.planned_effort().0)
                 .unwrap_or(0);
             let eff_rect =
@@ -2149,9 +2147,7 @@ pub(crate) fn draw_left_devs(
             }
 
             // remains
-            let total = app
-                .projects
-                .get_single_dev(proj, *dev)
+            let total = sd
                 .map(|sd| sd.get_effort_tot().0 as i32)
                 .unwrap_or(0);
             let remains = planned as i32 - total;

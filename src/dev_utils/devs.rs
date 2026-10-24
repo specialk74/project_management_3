@@ -26,6 +26,11 @@ impl Devs {
         id
     }
 
+    /// Il dev con questo id, senza costruire l'elenco.
+    pub fn get(&self, id: DevId) -> Option<&Dev> {
+        self.dev_id.get(&id)
+    }
+
     pub fn list(&self) -> Vec<(DevId, String)> {
         let mut items: Vec<(DevId, String)> = self
             .dev_id

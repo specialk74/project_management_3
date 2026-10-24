@@ -24,7 +24,7 @@ pub(crate) fn saturation_columns(app: &App, monthly: bool) -> Vec<SatCol> {
             out.push(SatCol {
                 year,
                 label: d.format("%m-%d").to_string(),
-                full: d.format("%y-%m-%d").to_string(),
+                full: week_label(w),
                 weeks: vec![w],
             });
             continue;
@@ -239,12 +239,23 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
         columns.retain(|c| c.weeks.iter().any(|&w| w >= this_week));
     }
 
+    // (allocato, capacità) per worker × colonna, calcolati una volta per frame:
+    // li leggono riepilogo, colonna Σ e celle.
+    let cells: Vec<Vec<(i32, i32)>> = workers
+        .iter()
+        .map(|(wid, _)| {
+            columns
+                .iter()
+                .map(|c| saturation_cell(app, *wid, &c.weeks))
+                .collect()
+        })
+        .collect();
+
     // Riepilogo (sovra-allocazioni e ore in eccesso) sui dati mostrati.
     let mut over_n = 0;
     let mut total_excess = 0;
-    for (wid, _) in &workers {
-        for c in &columns {
-            let (a, cap) = saturation_cell(app, *wid, &c.weeks);
+    for row in &cells {
+        for &(a, cap) in row {
             if a > cap && a > 0 {
                 over_n += 1;
                 total_excess += a - cap;
@@ -343,12 +354,11 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                     // Nomi cliccabili senza padding verticale extra:
                                     // così la loro altezza non supera `SAT_RH`.
                                     ui.spacing_mut().button_padding.y = 0.0;
-                                    for (wid, wname) in &workers {
+                                    for ((wid, wname), row) in workers.iter().zip(&cells) {
                                         let mut tot_a = 0;
                                         let mut tot_c = 0;
                                         let mut over_w = 0;
-                                        for c in &columns {
-                                            let (a, cap) = saturation_cell(app, *wid, &c.weeks);
+                                        for &(a, cap) in row {
                                             tot_a += a;
                                             tot_c += cap;
                                             if a > cap {
@@ -433,10 +443,10 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                 .min_col_width(SAT_CW)
                                 .spacing(egui::vec2(SAT_GAP, SAT_GAP))
                                 .show(ui, |ui| {
-                                    for (wid, wname) in &workers {
+                                    for ((wid, wname), row) in workers.iter().zip(&cells) {
                                         let sel = state.sat_selected.contains(wid);
                                         for (ci, c) in columns.iter().enumerate() {
-                                            let (alloc, cap) = saturation_cell(app, *wid, &c.weeks);
+                                            let (alloc, cap) = row[ci];
                                             let (bgc, fg) = heat_colors(alloc, cap);
                                             let is_cur = c.weeks.contains(&this_week);
                                             let txt = if alloc == 0 {

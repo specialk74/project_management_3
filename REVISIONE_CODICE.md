@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~28.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | 53 (stile → E3) |
-| Test | 275 verdi | 280 verdi |
+| Test | 275 verdi | 285 verdi |
 
 ## Ordine consigliato
 
@@ -28,7 +28,8 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 2. ~~**D1, D2** — bug latenti~~ ✅ fatto
 3. ~~**C1, C2** — il guadagno di velocità più visibile~~ ✅ fatto
 4. ~~**A2** — migrazione API egui deprecate~~ ✅ fatto
-5. **B2–B7, C3–C5** — duplicati e ottimizzazioni minori
+5. ~~**B2–B7, C3–C5** — duplicati e ottimizzazioni minori, in due blocchi:
+   5a: B2–B7 (duplicati) · 5b: C3–C5 (ottimizzazioni)~~ ✅ fatto
 6. **B1, B9, E1–E3** — riordino
 7. **B10** — a parte: la modifica più invasiva
 
@@ -96,27 +97,54 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `PdfDocument`, salvataggio) è ripetuta **6 volte** in `pdf_export.rs`. Proposta:
   helper `new_doc()` / `save_doc(pages)` e un unico `build_pdf_filtered`.
 
-- [ ] **B2. Data della settimana** — `primo_giorno_settimana_corrente(&days_to_local(w)).format("%y-%m-%d")`
+- [x] **B2. Data della settimana** — `primo_giorno_settimana_corrente(&days_to_local(w)).format("%y-%m-%d")`
   ripetuto **21 volte** in 8 file. Proposta: helper `week_label(w)`.
+  _(fatto: `date_utils::dates::week_label(days)` (lunedì in `yy-mm-dd`, inverso di
+  `parse_date_str`) usato nei 15 punti dell'applicazione; restano a parte il titolo
+  della minuta (è la data di oggi, non una settimana) e i test, che formattano da
+  sé per controllare in modo indipendente. Test
+  `week_label_is_the_monday_and_round_trips_with_parse`)_
 
-- [ ] **B3. Lettura di `"Worker|ore"`** — `split('|')` ripetuto 7 volte (6 in
+- [x] **B3. Lettura di `"Worker|ore"`** — `split('|')` ripetuto 7 volte (6 in
   `grid.rs`). Proposta: helper `cell_worker(text)` / `parse_cell(text)`.
+  _(fatto: `cell_worker(text)` (nome) nei 5 punti di `grid.rs` e `parse_cell(text)`
+  (nome + ore, `None` se non c'è esattamente un `|`) in `commit_editing` e
+  nell'azione `CommitCell`; i controlli propri di ciascuno (nome non vuoto, worker
+  esistente) restano lì. Test `cell_text_parsing_matches_the_old_split_rules`
+  confronta i due helper con la vecchia regola su 9 casi limite)_
 
-- [ ] **B4. Ricerca per testo** — `matches(q, hay)` esiste in `filters.rs` ma è
+- [x] **B4. Ricerca per testo** — `matches(q, hay)` esiste in `filters.rs` ma è
   riscritto a mano in `dialogs.rs` (inserimento multiplo, clona progetto, finestra
   Worker) e in `matrix.rs`. Proposta: renderlo condiviso.
+  _(fatto: `search_matches(q, testo)` in `filters.rs`, condivisa; usata da tutti i
+  filtri, dall'inserimento multiplo, da «Clona progetto», dalla finestra Worker,
+  dalla matrice e dalla ricerca nel manuale)_
 
-- [ ] **B5. Finestre di conferma** — rimozione dev, cancella effort, cancella
+- [x] **B5. Finestre di conferma** — rimozione dev, cancella effort, cancella
   milestone hanno lo stesso scheletro. Proposta: unico
   `confirm_window(ctx, titolo, testo, etichetta_ok) -> Option<bool>`.
+  _(fatto: `confirm_window(ctx, titolo, etichetta_ok, contenuto) -> Option<bool>`
+  in `dialogs.rs` (`Some(true)` conferma, `Some(false)` Annulla o ✕, `None` ancora
+  aperta); ci passano rimozione dev, cancella effort, cancella milestone e anche
+  `bound_move_window`. Test `confirm_window_reports_ok_cancel_or_still_open` più i
+  test esistenti delle quattro finestre)_
 
-- [ ] **B6. Ricerca nomi tramite liste complete** — `dev_name` ordina **tutti** i
+- [x] **B6. Ricerca nomi tramite liste complete** — `dev_name` ordina **tutti** i
   dev per trovarne uno; `pdf_export::project_name` fa lo stesso con tutti i progetti.
   Proposta: accesso diretto per id (`Devs::get_name(id)`, `get_info(proj)`).
+  _(fatto: nuovo `Devs::get(id)`; `dev_name`, e anche `dev_color` e
+  `dev_text_color` che facevano lo stesso con `list_full`, leggono il dev
+  direttamente; `pdf_export::project_name` usa `Projects::get_info`)_
 
-- [ ] **B7. Due `project_label` con regole diverse** (`ui/mod.rs` e
+- [x] **B7. Due `project_label` con regole diverse** (`ui/mod.rs` e
   `sync_merge.rs`): lo stesso progetto può avere nomi diversi in finestre diverse.
   Proposta: una sola funzione.
+  _(fatto: regola unica `Project::label(id)`: tripletta → prima riga non vuota
+  della descrizione → «Progetto N». `ui::project_label` e i messaggi di conflitto
+  di `sync_merge` la usano. Effetti: negli elenchi un progetto senza tripletta e
+  con descrizione su più righe mostra solo la prima; i messaggi di conflitto
+  nominano sempre il progetto (prima potevano restare senza nome). Test
+  `label_is_tripletta_then_first_description_line_then_number`)_
 
 - [ ] **B8. Conversioni per jiff** (richiesto dal date-picker di egui) sparse tra
   `ui/mod.rs` e `matrix.rs`. Proposta: riunirle in `date_utils`.
@@ -154,17 +182,32 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   `left_column`, `grid` e al salto a progetto; `grid` non riceve più `dev_filter`,
   che gli serviva solo per il layout)_
 
-- [ ] **C3. Ricerche ripetute per cella** — `get_id_by_name` scorre tutti i worker,
+- [x] **C3. Ricerche ripetute per cella** — `get_id_by_name` scorre tutti i worker,
   due volte per cella; in `draw_left_devs` lo stesso dev viene cercato ~5 volte;
   `dev_name` ordina la lista dei dev a ogni chiamata. Proposta: mappa nome→id per
   frame, una sola lettura di `get_single_dev`.
+  _(fatto, senza mappa: la causa era che `gather_slots` costruiva il testo
+  «Worker|ore» **dall'id** e `draw_cell_static` ricavava di nuovo l'id **dal
+  nome**. Ora `gather_slots` restituisce anche l'id e la cella lo usa: zero
+  ricerche per nome. In `draw_left_devs` il dev si legge una volta per blocco
+  (erano 9 letture) e `project_has_cells` (voce «Cancella gli effort di tutti i
+  dev») si calcola una volta per progetto invece che per ogni dev (costo che
+  cresceva col quadrato dei dev). `dev_name` già risolto con B6)_
 
-- [ ] **C4. Saturazione** — `saturation_cell` calcolata **3 volte** per ogni
+- [x] **C4. Saturazione** — `saturation_cell` calcolata **3 volte** per ogni
   worker × colonna a ogni frame (riepilogo, Σ, celle). Proposta: una matrice per frame.
+  _(fatto: matrice `cells[worker][colonna]` calcolata una volta per frame e letta
+  da riepilogo, colonna Σ e celle)_
 
-- [ ] **C5. Footer** — `worker_remaining_hours` ricostruisce `weeks_vec` per ogni
+- [x] **C5. Footer** — `worker_remaining_hours` ricostruisce `weeks_vec` per ogni
   worker a ogni frame; `Workers::list()` copia e ordina tutti i nomi a ogni
   chiamata. Proposta: settimane calcolate una volta per frame.
+  _(fatto: `remaining_weeks(app, anno, this_week)` calcola le settimane una volta
+  per frame; `worker_remaining_hours` riceve l'elenco e somma solo le ore del
+  worker. `Workers::list()` lasciata com'è: nel footer è chiamata una volta per
+  frame, altrove solo da finestre aperte, quindi una cache non vale la
+  complessità. Test `remaining_hours_follow_the_year_and_the_null_filter`, che
+  prima non c'era)_
 
 ## D. Incoerenze e possibili bug
 
@@ -240,3 +283,7 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   280 test verdi (+2).
 - **2026-10-24** — Fatto il punto 4 dell'ordine consigliato (A2), compresi gli usi
   deprecati nei test. Warning build 61 → **0**, clippy 114 → 53, 280 test verdi.
+- **2026-10-24** — Punto 5, blocco 5a (B2–B7, duplicati). Build 0 warning, clippy
+  53, 284 test verdi (+4).
+- **2026-10-24** — Punto 5, blocco 5b (C3–C5, ottimizzazioni). Build 0 warning,
+  clippy 53, 285 test verdi (+1). Punto 5 completato.

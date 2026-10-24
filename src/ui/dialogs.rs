@@ -104,9 +104,7 @@ pub(crate) fn bulk_fill_window(
 
     let bf = state.bulk_fill.as_mut().unwrap();
     let dev_label = dev_name(app, bf.dev);
-    let start_label = primo_giorno_settimana_corrente(&days_to_local(bf.week))
-        .format("%y-%m-%d")
-        .to_string();
+    let start_label = week_label(bf.week);
 
     // Worker elencabili (come la dialog dei filtri) filtrati dalla ricerca.
     let q = bf.search.trim().to_lowercase();
@@ -115,7 +113,7 @@ pub(crate) fn bulk_fill_window(
         .list()
         .into_iter()
         .filter(|(id, _)| app.workers.is_shown_in_find(*id))
-        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .filter(|(_, n)| search_matches(&q, n))
         .collect();
 
     // Valori inseriti: effort (ore/settimana) e numero di settimane.
@@ -214,9 +212,7 @@ pub(crate) fn bulk_fill_window(
             }
             if let (Some(e), Some(n)) = (effort, weeks) {
                 let last = bf.week + (effective.saturating_sub(1) * WEEK_STEP) as i32;
-                let last_label = primo_giorno_settimana_corrente(&days_to_local(last))
-                    .format("%y-%m-%d")
-                    .to_string();
+                let last_label = week_label(last);
                 ui.label(format!(
                     "{} worker × {} h × {} settimane ({} → {})",
                     bf.selected.len(),
@@ -351,32 +347,17 @@ pub(crate) fn confirm_del_dev_window(
     let Some((proj, dev)) = state.confirm_del_dev else {
         return;
     };
-    let mut open = true;
-    let mut close = false;
-
-    egui::Window::new("Conferma rimozione")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-        .open(&mut open)
-        .show(ctx, |ui| {
-            ui.label("Questo dev ha già dati inseriti.\nRimuovere comunque?");
-            ui.horizontal(|ui| {
-                if ui.button("Sì, rimuovi").clicked() {
-                    actions.push(Action::AddDevToProject {
-                        proj,
-                        dev,
-                        add: false,
-                    });
-                    close = true;
-                }
-                if ui.button("Annulla").clicked() {
-                    close = true;
-                }
+    let answer = confirm_window(ctx, "Conferma rimozione", "Sì, rimuovi", |ui| {
+        ui.label("Questo dev ha già dati inseriti.\nRimuovere comunque?");
+    });
+    if let Some(ok) = answer {
+        if ok {
+            actions.push(Action::AddDevToProject {
+                proj,
+                dev,
+                add: false,
             });
-        });
-
-    if close || !open {
+        }
         state.confirm_del_dev = None;
     }
 }
@@ -392,40 +373,26 @@ pub(crate) fn clear_efforts_window(
     let Some(req) = state.confirm_clear_efforts else {
         return;
     };
-    let mut open = true;
-    let mut close = false;
     let project = project_label(app, req.proj);
     let what = match req.dev {
         Some(d) => format!("del dev «{}» nel progetto «{project}»", dev_name(app, d)),
         None => format!("di tutti i dev del progetto «{project}»"),
     };
 
-    egui::Window::new("Cancella gli effort")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-        .open(&mut open)
-        .show(ctx, |ui| {
-            ui.label(format!(
-                "Cancellare tutti gli effort {what}?\n\
-                 Le celle della griglia (worker, ore e note di cella) verranno svuotate;\n\
-                 l'effort pianificato resta invariato."
-            ));
-            ui.horizontal(|ui| {
-                if ui.button("Sì, cancella").clicked() {
-                    actions.push(Action::ClearEfforts {
-                        proj: req.proj,
-                        dev: req.dev,
-                    });
-                    close = true;
-                }
-                if ui.button("Annulla").clicked() {
-                    close = true;
-                }
+    let answer = confirm_window(ctx, "Cancella gli effort", "Sì, cancella", |ui| {
+        ui.label(format!(
+            "Cancellare tutti gli effort {what}?\n\
+             Le celle della griglia (worker, ore e note di cella) verranno svuotate;\n\
+             l'effort pianificato resta invariato."
+        ));
+    });
+    if let Some(ok) = answer {
+        if ok {
+            actions.push(Action::ClearEfforts {
+                proj: req.proj,
+                dev: req.dev,
             });
-        });
-
-    if close || !open {
+        }
         state.confirm_clear_efforts = None;
     }
 }
@@ -442,48 +409,34 @@ pub(crate) fn clear_milestones_window(
     let Some(proj) = state.confirm_clear_milestones else {
         return;
     };
-    let mut open = true;
-    let mut close = false;
     let mut placed = app.projects.list_project_milestones(proj);
     placed.sort_by_key(|(id, w)| (*w, *id));
 
-    egui::Window::new("Cancella tutte le milestone")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-        .open(&mut open)
-        .show(ctx, |ui| {
-            ui.label(format!(
-                "Togliere dal progetto «{}» tutte le milestone ({})?",
-                project_label(app, proj),
-                placed.len()
-            ));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for (id, week) in &placed {
-                        let name = app.milestones.get_name(*id).unwrap_or_default();
-                        let icon = app.milestones.get_kind(*id).icon();
-                        let date = days_to_local(week.0 as i32).format("%y-%m-%d");
-                        ui.label(format!("• {icon} {name} — {date}"));
-                    }
-                });
-            ui.label(
-                "Le milestone restano definite e si possono ricollocare;\n\
-                 vengono solo tolte da questo progetto.",
-            );
-            ui.horizontal(|ui| {
-                if ui.button("Sì, cancella").clicked() {
-                    actions.push(Action::ClearProjectMilestones { proj });
-                    close = true;
-                }
-                if ui.button("Annulla").clicked() {
-                    close = true;
+    let answer = confirm_window(ctx, "Cancella tutte le milestone", "Sì, cancella", |ui| {
+        ui.label(format!(
+            "Togliere dal progetto «{}» tutte le milestone ({})?",
+            project_label(app, proj),
+            placed.len()
+        ));
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for (id, week) in &placed {
+                    let name = app.milestones.get_name(*id).unwrap_or_default();
+                    let icon = app.milestones.get_kind(*id).icon();
+                    let date = week_label(week.0 as i32);
+                    ui.label(format!("• {icon} {name} — {date}"));
                 }
             });
-        });
-
-    if close || !open {
+        ui.label(
+            "Le milestone restano definite e si possono ricollocare;\n\
+             vengono solo tolte da questo progetto.",
+        );
+    });
+    if let Some(ok) = answer {
+        if ok {
+            actions.push(Action::ClearProjectMilestones { proj });
+        }
         state.confirm_clear_milestones = None;
     }
 }
@@ -500,9 +453,7 @@ pub(crate) fn bound_move_window(
     let Some(bm) = state.bound_move.as_ref() else {
         return;
     };
-    let mut open = true;
-    let mut close = false;
-    let fmt = |w: WeekId| days_to_local(w.0 as i32).format("%y-%m-%d").to_string();
+    let fmt = |w: WeekId| week_label(w.0 as i32);
     let what = match bm.bound {
         ProjectBound::Start => "l'inizio",
         ProjectBound::End => "la fine",
@@ -517,82 +468,104 @@ pub(crate) fn bound_move_window(
         }
     }
 
-    egui::Window::new("Conferma spostamento")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-        .open(&mut open)
-        .show(ctx, |ui| {
-            ui.label(format!(
-                "Spostando {what} di {} alla settimana {} resterebbero fuori dal \
-                 progetto i dati qui sotto.",
-                project_label(app, bm.proj),
-                fmt(bm.week)
-            ));
-            ui.label("Vuoi cancellarli e spostare la data?");
-            ui.separator();
-            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                if !per_dev.is_empty() {
-                    ui.label(egui::RichText::new("Effort").strong());
-                    for (dev, ws) in &per_dev {
-                        let hours: usize = app
-                            .projects
-                            .get_single_dev(bm.proj, *dev)
-                            .map(|sd| ws.iter().map(|w| sd.get_effort_by_week(*w).0).sum())
-                            .unwrap_or(0);
-                        let first = ws.iter().min().copied().unwrap_or(bm.week);
-                        let last = ws.iter().max().copied().unwrap_or(bm.week);
-                        let range = if first == last {
-                            fmt(first)
-                        } else {
-                            format!("{} … {}", fmt(first), fmt(last))
-                        };
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "≡  {}: {} settiman{}, {hours} h ({range})",
-                                dev_name(app, *dev),
-                                ws.len(),
-                                if ws.len() == 1 { "a" } else { "e" },
-                            ))
-                            .color(dev_color(app, *dev)),
-                        );
-                    }
+    let answer = confirm_window(ctx, "Conferma spostamento", "Cancella e sposta", |ui| {
+        ui.label(format!(
+            "Spostando {what} di {} alla settimana {} resterebbero fuori dal \
+             progetto i dati qui sotto.",
+            project_label(app, bm.proj),
+            fmt(bm.week)
+        ));
+        ui.label("Vuoi cancellarli e spostare la data?");
+        ui.separator();
+        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+            if !per_dev.is_empty() {
+                ui.label(egui::RichText::new("Effort").strong());
+                for (dev, ws) in &per_dev {
+                    let hours: usize = app
+                        .projects
+                        .get_single_dev(bm.proj, *dev)
+                        .map(|sd| ws.iter().map(|w| sd.get_effort_by_week(*w).0).sum())
+                        .unwrap_or(0);
+                    let first = ws.iter().min().copied().unwrap_or(bm.week);
+                    let last = ws.iter().max().copied().unwrap_or(bm.week);
+                    let range = if first == last {
+                        fmt(first)
+                    } else {
+                        format!("{} … {}", fmt(first), fmt(last))
+                    };
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "≡  {}: {} settiman{}, {hours} h ({range})",
+                            dev_name(app, *dev),
+                            ws.len(),
+                            if ws.len() == 1 { "a" } else { "e" },
+                        ))
+                        .color(dev_color(app, *dev)),
+                    );
                 }
-                if !bm.loss.milestones.is_empty() {
-                    ui.label(egui::RichText::new("Milestone").strong());
-                    for (id, w) in &bm.loss.milestones {
-                        let name = app.milestones.get_name(*id).unwrap_or("?");
-                        let icon = app.milestones.get_kind(*id).icon();
-                        ui.label(
-                            egui::RichText::new(format!("{icon} {name}  —  {}", fmt(*w))).color(
-                                u32_to_color(app.milestones.get_color(*id).unwrap_or(0x808080)),
-                            ),
-                        );
-                    }
+            }
+            if !bm.loss.milestones.is_empty() {
+                ui.label(egui::RichText::new("Milestone").strong());
+                for (id, w) in &bm.loss.milestones {
+                    let name = app.milestones.get_name(*id).unwrap_or("?");
+                    let icon = app.milestones.get_kind(*id).icon();
+                    ui.label(
+                        egui::RichText::new(format!("{icon} {name}  —  {}", fmt(*w))).color(
+                            u32_to_color(app.milestones.get_color(*id).unwrap_or(0x808080)),
+                        ),
+                    );
                 }
-            });
-            ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button("Cancella e sposta").clicked() {
-                    actions.push(Action::MoveProjectBound {
-                        proj: bm.proj,
-                        bound: bm.bound,
-                        week: bm.week,
-                    });
-                    close = true;
-                }
-                if ui.button("Annulla").clicked() {
-                    close = true;
-                }
-            });
+            }
         });
-
-    if close || !open {
+        ui.separator();
+    });
+    if let Some(ok) = answer {
+        if ok {
+            actions.push(Action::MoveProjectBound {
+                proj: bm.proj,
+                bound: bm.bound,
+                week: bm.week,
+            });
+        }
         state.bound_move = None;
     }
 }
 
 // ── Utility comuni alle finestre ────────────────────────────────────────────
+
+/// Finestra di conferma centrata e non ridimensionabile: `body` disegna il
+/// contenuto, sotto vanno i pulsanti `ok_label` e «Annulla». Ritorna
+/// `Some(true)` se confermata, `Some(false)` se annullata o chiusa con la ✕,
+/// `None` finché resta aperta in attesa di una scelta.
+pub(crate) fn confirm_window(
+    ctx: &egui::Context,
+    title: &str,
+    ok_label: &str,
+    body: impl FnOnce(&mut egui::Ui),
+) -> Option<bool> {
+    let mut open = true;
+    let mut answer = None;
+    egui::Window::new(title)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            body(ui);
+            ui.horizontal(|ui| {
+                if ui.button(ok_label).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button("Annulla").clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+    if !open {
+        answer = Some(false);
+    }
+    answer
+}
 
 /// Larghezza (in punti) del titolo della finestra, più lo spazio per il
 /// pulsante di chiusura, così da poter dare al contenuto una larghezza minima
@@ -843,7 +816,7 @@ pub(crate) fn clone_project_window(
         .list_full()
         .into_iter()
         .map(|(id, _, _)| id)
-        .filter(|id| q.is_empty() || project_label(app, *id).to_lowercase().contains(&q))
+        .filter(|id| search_matches(&q, &project_label(app, *id)))
         .collect();
     let rows_key = egui::Id::new("clone_project_rows");
     let mut open = true;
@@ -1009,7 +982,7 @@ pub(crate) fn worker_visibility_window(
         .workers
         .list()
         .into_iter()
-        .filter(|(_, n)| q.is_empty() || n.to_lowercase().contains(&q))
+        .filter(|(_, n)| search_matches(&q, n))
         .collect();
 
     let resp = egui::Window::new("Worker")
@@ -1440,8 +1413,7 @@ pub(crate) fn popup_window(
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             for (i, (week, text)) in weeks.iter_mut().enumerate() {
-                                let label =
-                                    days_to_local(week.0 as i32).format("%y-%m-%d").to_string();
+                                let label = week_label(week.0 as i32);
                                 let is_current = *week == *current;
                                 if i > 0 {
                                     ui.add_space(8.0);

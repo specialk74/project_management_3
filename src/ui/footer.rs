@@ -146,13 +146,32 @@ pub(crate) fn footer_combo(
 /// Con il filtro "Nulli" attivo (`only_null`) si contano solo le settimane in cui
 /// il worker non ha ancora effort assegnato (sovra = 0): il valore diventa così la
 /// somma delle ore che potrebbero ancora essergli destinate.
+///
+/// `weeks` sono le settimane del periodo, da `remaining_weeks` (calcolate una
+/// volta per frame, non per worker).
 pub(crate) fn worker_remaining_hours(
     app: &App,
     wid: WorkerId,
-    year: i32,
-    this_week: i32,
+    weeks: &[i32],
     only_null: bool,
 ) -> i32 {
+    weeks
+        .iter()
+        .filter(|w| {
+            !only_null
+                || app
+                    .sovra
+                    .get(&(WeekId(**w as usize), wid))
+                    .map_or(0, |e| e.0)
+                    == 0
+        })
+        .map(|w| app.workers.get_effective_max_hours(wid, *w as usize) as i32)
+        .sum()
+}
+
+/// Settimane su cui `worker_remaining_hours` conta le ore rimanenti di `year`:
+/// dall'attuale se `year` è l'anno corrente, altrimenti tutto l'anno.
+pub(crate) fn remaining_weeks(app: &App, year: i32, this_week: i32) -> Vec<i32> {
     let start = if year == days_to_local(this_week).year() {
         this_week
     } else {
@@ -161,16 +180,7 @@ pub(crate) fn worker_remaining_hours(
     weeks_vec(app)
         .into_iter()
         .filter(|w| *w >= start && days_to_local(*w).year() == year)
-        .filter(|w| {
-            !only_null
-                || app
-                    .sovra
-                    .get(&(WeekId(*w as usize), wid))
-                    .map_or(0, |e| e.0)
-                    == 0
-        })
-        .map(|w| app.workers.get_effective_max_hours(wid, w as usize) as i32)
-        .sum()
+        .collect()
 }
 
 pub(crate) fn draw_left_footer(
@@ -320,6 +330,13 @@ pub(crate) fn draw_left_footer(
         text(),
     );
 
+    // Settimane per le ore rimanenti: una volta per frame, uguali per tutti.
+    let year_weeks = if year != 0 {
+        remaining_weeks(app, year, state.this_week)
+    } else {
+        Vec::new()
+    };
+
     // ── Sezione worker: nomi (allineati col sovra a destra) ──
     // Click sinistro sul nome → evidenzia/toglie il worker nelle celle dei dev;
     // tasto destro → menù con «Ore max…» (limite settimanale globale) e «Ghost».
@@ -364,8 +381,7 @@ pub(crate) fn draw_left_footer(
             let remaining = worker_remaining_hours(
                 app,
                 *wid,
-                year,
-                state.this_week,
+                &year_weeks,
                 state.effort_filter_mode == 1,
             );
             ui.painter().text(
@@ -497,9 +513,7 @@ pub(crate) fn draw_right_footer(
         }
 
         // header: data settimana (evidenziata se la colonna è puntata nella griglia)
-        let date = primo_giorno_settimana_corrente(&days_to_local(w))
-            .format("%y-%m-%d")
-            .to_string();
+        let date = week_label(w);
         let hl_week = state.grid_hl.week == Some(w);
         if hl_week {
             paint_highlight(ui, hdr, &date);

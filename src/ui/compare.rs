@@ -634,7 +634,7 @@ fn compare_view_stage(
                 continue;
             }
             // Etichetta identica alla griglia originale: primo giorno settimana %y-%m-%d.
-            let lbl = days_to_local(*w).format("%y-%m-%d").to_string();
+            let lbl = week_label(*w);
             hp.text(
                 egui::pos2(cx + CW / 2.0, r.top() + HEADER_H / 2.0),
                 Align2::CENTER_CENTER,

@@ -62,8 +62,9 @@ fn search_field(ui: &mut egui::Ui, hint: &str, text: &mut String) -> egui::Respo
     )
 }
 
-/// Vero se `q` (già in minuscolo, già trimmato) è vuoto o contenuto in `hay`.
-fn matches(q: &str, hay: &str) -> bool {
+/// Vero se `q` (già in minuscolo, già trimmato) è vuoto o contenuto in `hay`,
+/// senza distinguere maiuscole. Regola unica dei campi di ricerca delle liste.
+pub(crate) fn search_matches(q: &str, hay: &str) -> bool {
     q.is_empty() || hay.to_lowercase().contains(q)
 }
 
@@ -85,7 +86,7 @@ pub(crate) fn filters_window(
         .into_iter()
         .filter(|(id, _)| app.workers.is_shown_in_find(*id))
         .map(|(_, n)| n)
-        .filter(|n| matches(&qw, n))
+        .filter(|n| search_matches(&qw, n))
         .collect();
     let counts = worker_project_counts(app, state.worker_filter_current_week);
 
@@ -99,10 +100,7 @@ pub(crate) fn filters_window(
         .filter(|(id, _, _)| !app.projects.is_closed(*id))
         .filter_map(|(id, name, en)| {
             let trip = app.projects.get_tripletta(id);
-            if !(qp.is_empty()
-                || trip.to_lowercase().contains(&qp)
-                || name.to_lowercase().contains(&qp))
-            {
+            if !(search_matches(&qp, &trip) || search_matches(&qp, &name)) {
                 return None;
             }
             let label = if trip.is_empty() { name } else { trip };
@@ -116,21 +114,21 @@ pub(crate) fn filters_window(
         .devs
         .list()
         .into_iter()
-        .filter(|(_, n)| matches(&qd, n))
+        .filter(|(_, n)| search_matches(&qd, n))
         .collect();
 
     // Categorie: «Senza categoria» (None) in testa, poi quelle definite.
     let qc = state.category_search.trim().to_lowercase();
     let cats: Vec<(Option<CategoryId>, String)> = all_category_items(app)
         .into_iter()
-        .filter(|(_, n)| matches(&qc, n))
+        .filter(|(_, n)| search_matches(&qc, n))
         .collect();
 
     // Anni: quelli delle date di inizio/fine dei progetti.
     let qy = state.year_search.trim().to_lowercase();
     let years: Vec<i32> = available_years(app)
         .into_iter()
-        .filter(|y| matches(&qy, &y.to_string()))
+        .filter(|y| search_matches(&qy, &y.to_string()))
         .collect();
 
     // ── Toggle "Select All" richiesti dalle scorciatoie ──────────────────────

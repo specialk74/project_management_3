@@ -39,6 +39,15 @@ pub fn current_monday_days() -> i32 {
     local_to_days(&primo_giorno_settimana_corrente(&today()))
 }
 
+/// Label of the week containing `days`: its Monday as "yy-mm-dd", the format
+/// used by the grid header, the footer and the dialogs (inverse of
+/// `parse_date_str`).
+pub fn week_label(days: i32) -> String {
+    primo_giorno_settimana_corrente(&days_to_local(days))
+        .format("%y-%m-%d")
+        .to_string()
+}
+
 /// Parses a date string in "yy-mm-dd" or "yyyy-mm-dd" format and returns the
 /// Monday of that week as days since Unix epoch. Returns None on parse failure.
 pub fn parse_date_str(s: &str) -> Option<i32> {
@@ -73,6 +82,14 @@ pub fn get_default_weeks(start: Option<i32>) -> (i32, i32, i32) {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+
+    #[test]
+    fn week_label_is_the_monday_and_round_trips_with_parse() {
+        // mercoledì 3 gennaio 2024 → lunedì 1° gennaio
+        let wed = local_to_days(&NaiveDate::from_ymd_opt(2024, 1, 3).unwrap());
+        assert_eq!(week_label(wed), "24-01-01");
+        assert_eq!(parse_date_str(&week_label(wed)), Some(wed - 2));
+    }
 
     #[test]
     fn today_and_current_monday_agree() {

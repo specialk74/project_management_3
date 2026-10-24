@@ -1539,12 +1539,7 @@ fn dev_info_map(app: &App) -> DevInfo {
 
 /// Nome (descrizione) di un progetto.
 fn project_name(app: &App, proj: ProjectId) -> String {
-    app.projects
-        .list_full()
-        .into_iter()
-        .find(|(id, _, _)| *id == proj)
-        .map(|(_, n, _)| n)
-        .unwrap_or_default()
+    app.projects.get_info(proj)
 }
 
 /// Primitive di disegno di una pagina Gantt per un progetto. `order`:

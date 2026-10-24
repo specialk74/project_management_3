@@ -546,6 +546,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   after starting ticked) = drop Ferie and restore the global max, then limit;
   `None` = limit only. Tests `bulk_week_holiday_keeps_the_typed_hours_and_spares_sick_workers`,
   `bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice`.
+- **Grid cell data**: `gather_slots` returns `(text "Worker|ore", note,
+  Option<WorkerId>)`; `draw_cell_static` receives the id, so never look a worker up
+  by name again in the cell path. Parse a typed `"Worker|ore"` only with
+  `parse_cell` / `cell_worker` (`grid.rs`). Search fields filter with
+  `search_matches(q, text)` (`filters.rs`); confirmation dialogs go through
+  `confirm_window(ctx, title, ok_label, body) -> Option<bool>` (`dialogs.rs`);
+  week labels come from `date_utils::dates::week_label(days)`; the project's
+  display name is `Project::label(id)` (via `ui::project_label`).
 - **Cell editing**: left-click a grid cell to edit; typing triggers worker-name
   autocomplete; `Enter`/`Tab` commit, `Esc` cancels. Cell value is `"Worker|effort"`.
   `Cmd/Ctrl+C/X/V` copy/cut/paste (carrying the cell note for internal paste).

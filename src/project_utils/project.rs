@@ -309,6 +309,19 @@ impl Project {
         self.info.clone()
     }
 
+    /// Etichetta leggibile, regola unica per elenchi, finestre e messaggi di
+    /// conflitto: la tripletta; senza tripletta la prima riga della
+    /// descrizione; senza nemmeno quella «Progetto N».
+    pub fn label(&self, id: ProjectId) -> String {
+        if let Some(t) = self.tripletta.as_deref().filter(|t| !t.trim().is_empty()) {
+            return t.to_string();
+        }
+        match self.info.lines().map(str::trim).find(|l| !l.is_empty()) {
+            Some(line) => line.to_string(),
+            None => format!("Progetto {}", id.0),
+        }
+    }
+
     pub fn get_order(&self) -> usize {
         self.order
     }
@@ -633,6 +646,18 @@ impl Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_is_tripletta_then_first_description_line_then_number() {
+        let id = ProjectId(7);
+        let mut p = Project::new("\n  Prima riga  \nSeconda riga");
+        assert_eq!(p.label(id), "Prima riga", "senza tripletta: prima riga non vuota");
+        p.set_tripletta("ABC");
+        assert_eq!(p.label(id), "ABC");
+        p.set_tripletta("   ");
+        p.set_info("");
+        assert_eq!(p.label(id), "Progetto 7", "niente tripletta né descrizione");
+    }
 
     #[test]
     fn enable_not_serialized_and_defaults_true() {

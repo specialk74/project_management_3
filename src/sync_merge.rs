@@ -28,14 +28,6 @@ pub struct MergeOutcome {
     pub conflicts: Vec<String>,
 }
 
-/// Etichetta leggibile di un progetto (tripletta, altrimenti prima riga info).
-fn project_label(p: &Project) -> String {
-    match p.get_tripletta() {
-        Some(t) if !t.is_empty() => t.to_string(),
-        _ => p.get_info().lines().next().unwrap_or("").to_string(),
-    }
-}
-
 fn opt_content_eq(a: Option<&Project>, b: Option<&Project>) -> bool {
     match (a, b) {
         (None, None) => true,
@@ -47,6 +39,7 @@ fn opt_content_eq(a: Option<&Project>, b: Option<&Project>) -> bool {
 /// Fonde due versioni dello stesso progetto (entrambe modificate rispetto alla
 /// base) a livello di intestazione e di singolo dev.
 fn merge_one_project(
+    id: ProjectId,
     base: &Project,
     mine: &Project,
     theirs: &Project,
@@ -60,7 +53,7 @@ fn merge_one_project(
     let header_src = if h_mine && h_theirs && !mine.header_eq(theirs) {
         conflicts.push(format!(
             "Progetto «{}» — dati generali",
-            project_label(mine)
+            mine.label(id)
         ));
         mine
     } else if h_theirs {
@@ -90,7 +83,7 @@ fn merge_one_project(
             if dm != dt {
                 conflicts.push(format!(
                     "Progetto «{}» — dev {}",
-                    project_label(mine),
+                    mine.label(id),
                     dev_name(did)
                 ));
             }
@@ -108,6 +101,7 @@ fn merge_one_project(
 
 /// Decide il progetto risultante per un dato id. `None` = da rimuovere.
 fn decide_project(
+    id: ProjectId,
     base: Option<&Project>,
     mine: Option<&Project>,
     theirs: Option<&Project>,
@@ -123,15 +117,15 @@ fn decide_project(
         return theirs.cloned(); // solo il collega → prendo il suo
     }
     match (base, mine, theirs) {
-        (Some(b), Some(m), Some(t)) => Some(merge_one_project(b, m, t, dev_name, conflicts)),
+        (Some(b), Some(m), Some(t)) => Some(merge_one_project(id, b, m, t, dev_name, conflicts)),
         _ => {
             // Aggiunta/rimozione dello stesso progetto da entrambi: conflitto,
             // tengo la mia versione (che può essere una rimozione).
             let label = mine
                 .or(theirs)
                 .or(base)
-                .map(project_label)
-                .unwrap_or_default();
+                .map(|p| p.label(id))
+                .unwrap_or_else(|| format!("Progetto {}", id.0));
             conflicts.push(format!("Progetto «{label}» (aggiunto/rimosso da entrambi)"));
             mine.cloned()
         }
@@ -154,6 +148,7 @@ fn merge_projects(
     ids.extend(theirs.ids());
     for id in ids {
         match decide_project(
+            id,
             base.get(id),
             mine.get(id),
             theirs.get(id),

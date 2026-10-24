@@ -49,7 +49,7 @@ pub(crate) fn help_window(ctx: &egui::Context, state: &mut UiState) {
                     .show(ui, |ui| {
                         let mut any = false;
                         for sec in &sections {
-                            if sec.to_lowercase().contains(&q) {
+                            if search_matches(&q, sec) {
                                 any = true;
                                 CommonMarkViewer::new().show(ui, &mut state.help_md_cache, sec);
                                 ui.separator();
