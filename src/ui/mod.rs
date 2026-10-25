@@ -35,6 +35,7 @@ mod footer;
 mod grid;
 mod help;
 mod matrix;
+mod pies;
 mod saturation;
 mod toasts;
 mod toolbar;
@@ -46,6 +47,7 @@ pub(crate) use footer::*;
 pub(crate) use grid::*;
 pub(crate) use help::*;
 pub(crate) use matrix::*;
+pub(crate) use pies::*;
 pub(crate) use saturation::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
@@ -924,6 +926,19 @@ pub struct UiState {
     // matrice: stati mostrati (Attivi / On-Hold / Closed; vuoto = tutti),
     // solo sessione
     matrix_statuses: std::collections::BTreeSet<ProjectStatus>,
+    // Torte dev/categorie per worker (Vista ▸ Torte dev/categorie per
+    // worker…): come la matrice, dialog dei worker + finestra con l'intervallo
+    // (`None` = oggi) e la combo anni. Solo sessione.
+    pies_select_open: bool,
+    show_pies: bool,
+    pies_workers: HashSet<WorkerId>,
+    pies_worker_search: String,
+    pies_from: Option<i32>,
+    pies_to: Option<i32>,
+    pies_years: std::collections::BTreeSet<i32>,
+    // torte: categorie scelte nella combo (`None` = «Senza categoria»; vuoto =
+    // tutte), solo sessione
+    pies_categories: std::collections::BTreeSet<Option<CategoryId>>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -1328,6 +1343,16 @@ pub(crate) enum Action {
         /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo.
         years: Vec<i32>,
     },
+    /// Torte dev/categorie dei worker scelti (`UiState.pies_workers`) nel
+    /// periodo: PDF (una pagina per worker) o SVG (un file per worker).
+    ExportWorkerPies {
+        from: i32,
+        to: i32,
+        /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo
+        /// insieme alle categorie (`UiState.pies_categories`).
+        years: Vec<i32>,
+        svg: bool,
+    },
     GenerateMinuta {
         projects: Vec<ProjectId>,
         only_current: bool,
@@ -1623,6 +1648,19 @@ fn path_with_suffix(path: &std::path::Path, suffix: &str, ext: &str) -> std::pat
     path.with_file_name(format!("{stem}_{suffix}.{e}"))
 }
 
+/// `name` utilizzabile in un nome di file: i caratteri non ammessi dai file
+/// system più comuni (e gli spazi) diventano `_`.
+fn file_safe(name: &str) -> String {
+    name.trim()
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_whitespace() || c.is_control() => '_',
+            c => c,
+        })
+        .collect()
+}
+
 /// Mostra il dialog di salvataggio PDF e scrive i byte nel file scelto.
 fn save_pdf_dialog(state: &mut UiState, bytes: Vec<u8>, default_name: &str) {
     save_export_dialog(state, "PDF", "pdf", default_name, bytes);
@@ -1888,6 +1926,8 @@ impl eframe::App for PjmApp {
             saturation_window(ui.ctx(), app, state);
             matrix_select_window(ui.ctx(), app, state);
             matrix_window(ui.ctx(), app, state, &mut actions);
+            pies_select_window(ui.ctx(), app, state);
+            pies_window(ui.ctx(), app, state, &mut actions);
             compare_window(ui.ctx(), app, state, &mut actions);
             // Sopra a tutto: le notifiche in-app.
             toasts_layer(ui.ctx(), state);
@@ -2821,6 +2861,62 @@ impl PjmApp {
                     None => self
                         .ui
                         .toast_warn("Nessun progetto da esportare: matrice non creata."),
+                }
+            }
+            Action::ExportWorkerPies {
+                from,
+                to,
+                years,
+                svg,
+            } => {
+                let pies = crate::worker_pies::build(
+                    &self.app,
+                    &self.ui.pies_workers,
+                    from,
+                    to,
+                    &self.ui.pies_categories,
+                );
+                let categories: Vec<Option<CategoryId>> =
+                    self.ui.pies_categories.iter().copied().collect();
+                if svg {
+                    let items: Vec<(String, Vec<u8>)> =
+                        crate::pdf_export::build_pies_svgs(
+                            &self.app,
+                            &pies,
+                            from,
+                            to,
+                            &years,
+                            &categories,
+                        )
+                            .into_iter()
+                            .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
+                            .collect();
+                    if items.is_empty() {
+                        self.ui.toast_warn("Nessun worker con ore nel periodo: niente da esportare.");
+                    }
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "SVG",
+                        "svg",
+                        &dated_file_name("torte", "svg"),
+                        items,
+                    );
+                } else {
+                    match crate::pdf_export::build_pies_pdf(
+                        &self.app,
+                        &pies,
+                        from,
+                        to,
+                        &years,
+                        &categories,
+                    ) {
+                        Some(bytes) => {
+                            save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("torte", "pdf"))
+                        }
+                        None => self
+                            .ui
+                            .toast_warn("Nessun worker con ore nel periodo: niente da esportare."),
+                    }
                 }
             }
             Action::GenerateReport { projects } => {

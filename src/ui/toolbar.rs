@@ -365,6 +365,10 @@ pub(crate) fn toolbar(
                 state.matrix_select_open = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
+            if ui.button("Torte dev/categorie per worker…").clicked() {
+                state.pies_select_open = true;
+                ui.close_kind(egui::UiKind::Menu);
+            }
         });
 
         // ── Aiuto ────────────────────────────────────────────────────────────

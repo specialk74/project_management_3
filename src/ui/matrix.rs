@@ -11,7 +11,7 @@ use crate::worker_matrix::{
 
 /// Intervallo `[1 gennaio dell'anno più vecchio, 31 dicembre del più recente]`
 /// (giorni) degli anni scelti nella combo; `None` se nessun anno è scelto.
-fn years_range(years: &std::collections::BTreeSet<i32>) -> Option<(i32, i32)> {
+pub(crate) fn years_range(years: &std::collections::BTreeSet<i32>) -> Option<(i32, i32)> {
     let (first, last) = (years.first()?, years.last()?);
     let from = chrono::NaiveDate::from_ymd_opt(*first, 1, 1)?;
     let to = chrono::NaiveDate::from_ymd_opt(*last, 12, 31)?;
@@ -20,8 +20,14 @@ fn years_range(years: &std::collections::BTreeSet<i32>) -> Option<(i32, i32)> {
 
 /// Combo degli anni (anni di inizio/fine dei progetti, come il filtro Anni):
 /// scegliendone uno o più, Da/A diventano 1/1 del più vecchio → 31/12 del più
-/// recente. Ritorna `true` se la selezione è cambiata.
-fn years_combo(ui: &mut egui::Ui, app: &App, years: &mut std::collections::BTreeSet<i32>) -> bool {
+/// recente. Ritorna `true` se la selezione è cambiata. `salt` distingue le
+/// combo di finestre diverse (matrice, torte).
+pub(crate) fn years_combo(
+    ui: &mut egui::Ui,
+    app: &App,
+    salt: &str,
+    years: &mut std::collections::BTreeSet<i32>,
+) -> bool {
     let mut changed = false;
     let text = if years.is_empty() {
         "Anni: —".to_string()
@@ -29,7 +35,7 @@ fn years_combo(ui: &mut egui::Ui, app: &App, years: &mut std::collections::BTree
         let list: Vec<String> = years.iter().map(i32::to_string).collect();
         format!("Anni: {}", list.join(", "))
     };
-    egui::ComboBox::from_id_salt("matrix_years")
+    egui::ComboBox::from_id_salt(salt)
         .selected_text(text)
         .width(MX_YEARS_W)
         .show_ui(ui, |ui| {
@@ -66,9 +72,11 @@ fn years_combo(ui: &mut egui::Ui, app: &App, years: &mut std::collections::BTree
 
 /// Combo delle categorie (prima «Senza categoria», poi le categorie per id):
 /// con almeno una scelta la matrice mostra solo i progetti di quelle categorie.
-fn categories_combo(
+/// `salt` distingue le combo di finestre diverse (matrice, torte).
+pub(crate) fn categories_combo(
     ui: &mut egui::Ui,
     app: &App,
+    salt: &str,
     cats: &mut std::collections::BTreeSet<Option<CategoryId>>,
 ) {
     let all: Vec<(Option<CategoryId>, String)> = std::iter::once((None, category_name(app, None)))
@@ -89,7 +97,7 @@ fn categories_combo(
             .collect();
         format!("Categorie: {}", names.join(", "))
     };
-    egui::ComboBox::from_id_salt("matrix_categories")
+    egui::ComboBox::from_id_salt(salt)
         .selected_text(text)
         .width(MX_YEARS_W)
         .show_ui(ui, |ui| {
@@ -168,7 +176,7 @@ fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<P
 
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
 /// `value`: `None` = oggi. Ritorna `true` se l'utente l'ha cambiato.
-fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) -> bool {
+pub(crate) fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: &mut Option<i32>) -> bool {
     let before = *value;
     ui.label(egui::RichText::new(label).strong());
     if ui.radio(value.is_none(), "Oggi").clicked() {
@@ -203,43 +211,55 @@ fn matrix_candidates(app: &App) -> Vec<(WorkerId, String)> {
         .collect()
 }
 
-/// Dialog di scelta dei worker da mostrare nella matrice. La selezione vive in
-/// `UiState.matrix_workers` e resta valida finché l'app è aperta.
-pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
-    if !state.matrix_select_open {
-        return;
-    }
+/// Esito di `worker_pick_window` in questo frame.
+#[derive(PartialEq)]
+pub(crate) enum WorkerPick {
+    /// Ancora aperta.
+    Open,
+    /// «Mostra …»: aprire la finestra che usa la selezione.
+    Show,
+    /// Annulla o chiusura.
+    Closed,
+}
+
+/// Dialog di scelta dei worker (quelli con `show_in_find`): ricerca, Select
+/// All sui worker elencati e un pulsante `show_label (n)` attivo con almeno un
+/// worker scelto. Condivisa da matrice e torte.
+pub(crate) fn worker_pick_window(
+    ctx: &egui::Context,
+    app: &App,
+    title: &str,
+    show_label: &str,
+    selected: &mut HashSet<WorkerId>,
+    search: &mut String,
+) -> WorkerPick {
     let candidates = matrix_candidates(app);
-    let q = state.matrix_worker_search.trim().to_lowercase();
+    let q = search.trim().to_lowercase();
     let listed: Vec<&(WorkerId, String)> = candidates
         .iter()
         .filter(|(_, n)| search_matches(&q, n))
         .collect();
 
     let mut open = true;
-    let mut show = false;
-    let mut cancel = false;
-    egui::Window::new("Matrice progetti × worker — scegli i worker")
+    let mut result = WorkerPick::Open;
+    egui::Window::new(title)
         .collapsible(false)
         .resizable(false)
         .default_pos(egui::pos2(120.0, 80.0))
         .open(&mut open)
         .show(ctx, |ui| {
             ui.add(
-                egui::TextEdit::singleline(&mut state.matrix_worker_search)
+                egui::TextEdit::singleline(search)
                     .hint_text("Cerca worker…")
                     .desired_width(240.0),
             );
-            let all = !listed.is_empty()
-                && listed
-                    .iter()
-                    .all(|(id, _)| state.matrix_workers.contains(id));
+            let all = !listed.is_empty() && listed.iter().all(|(id, _)| selected.contains(id));
             if let Some(on) = select_all_checkbox(ui, all) {
                 for (id, _) in &listed {
                     if on {
-                        state.matrix_workers.insert(*id);
+                        selected.insert(*id);
                     } else {
-                        state.matrix_workers.remove(id);
+                        selected.remove(id);
                     }
                 }
             }
@@ -249,38 +269,56 @@ pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut U
                 .max_height(360.0)
                 .show(ui, |ui| {
                     for (id, name) in &listed {
-                        let mut on = state.matrix_workers.contains(id);
+                        let mut on = selected.contains(id);
                         if ui.checkbox(&mut on, name).changed() {
                             if on {
-                                state.matrix_workers.insert(*id);
+                                selected.insert(*id);
                             } else {
-                                state.matrix_workers.remove(id);
+                                selected.remove(id);
                             }
                         }
                     }
                 });
             ui.separator();
-            let n = candidates
-                .iter()
-                .filter(|(id, _)| state.matrix_workers.contains(id))
-                .count();
+            let n = candidates.iter().filter(|(id, _)| selected.contains(id)).count();
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(n > 0, egui::Button::new(format!("Mostra matrice ({n})")))
+                    .add_enabled(n > 0, egui::Button::new(format!("{show_label} ({n})")))
                     .clicked()
                 {
-                    show = true;
+                    result = WorkerPick::Show;
                 }
                 if ui.button("Annulla").clicked() {
-                    cancel = true;
+                    result = WorkerPick::Closed;
                 }
             });
         });
-    if show {
-        state.show_matrix = true;
+    if !open && result == WorkerPick::Open {
+        result = WorkerPick::Closed;
     }
-    if show || cancel || !open {
-        state.matrix_select_open = false;
+    result
+}
+
+/// Dialog di scelta dei worker da mostrare nella matrice. La selezione vive in
+/// `UiState.matrix_workers` e resta valida finché l'app è aperta.
+pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    if !state.matrix_select_open {
+        return;
+    }
+    match worker_pick_window(
+        ctx,
+        app,
+        "Matrice progetti × worker — scegli i worker",
+        "Mostra matrice",
+        &mut state.matrix_workers,
+        &mut state.matrix_worker_search,
+    ) {
+        WorkerPick::Open => {}
+        WorkerPick::Show => {
+            state.show_matrix = true;
+            state.matrix_select_open = false;
+        }
+        WorkerPick::Closed => state.matrix_select_open = false,
     }
 }
 
@@ -329,11 +367,11 @@ fn fit_text(ui: &egui::Ui, s: &str, font: &egui::FontId, max_w: f32) -> String {
 }
 
 /// `0xRRGGBB` → colore egui (passato per il filtro B/N).
-fn rgb_color(c: u32) -> Color32 {
+pub(crate) fn rgb_color(c: u32) -> Color32 {
     g(Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8))
 }
 
-fn category_name(app: &App, cat: Option<CategoryId>) -> String {
+pub(crate) fn category_name(app: &App, cat: Option<CategoryId>) -> String {
     cat.and_then(|c| app.categories.get_name(c))
         .map(str::to_string)
         .unwrap_or_else(|| "Senza categoria".to_string())
@@ -866,7 +904,7 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
 
 /// Fondo dell'intestazione di un worker senza ore nel periodo (solo
 /// assegnazioni a effort 0): grigio neutro, uguale nei due temi.
-fn mx_no_hours_bg() -> Color32 {
+pub(crate) fn mx_no_hours_bg() -> Color32 {
     g(Color32::from_gray(0xA0))
 }
 
@@ -944,8 +982,8 @@ pub(crate) fn matrix_window(
                     let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
                     statuses_combo(ui, &mut state.matrix_statuses);
-                    categories_combo(ui, app, &mut state.matrix_categories);
-                    years_changed = years_combo(ui, app, &mut state.matrix_years);
+                    categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories);
+                    years_changed = years_combo(ui, app, "matrix_years", &mut state.matrix_years);
                 });
             });
             if years_changed {

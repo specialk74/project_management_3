@@ -2803,3 +2803,9 @@ fn keyboard_navigation_scrolls_the_cell_into_view() {
     assert!(cell_left >= 0.0 && cell_left + COL_W <= 1200.0 - LEFT_W, "cella fuori vista: {cell_left}");
 }
 
+#[test]
+fn file_safe_replaces_characters_not_allowed_in_file_names() {
+    assert_eq!(file_safe(" Mario Rossi "), "Mario_Rossi");
+    assert_eq!(file_safe("a/b:c*d?"), "a_b_c_d_");
+    assert_eq!(file_safe("Élodie"), "Élodie");
+}

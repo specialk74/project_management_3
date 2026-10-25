@@ -497,6 +497,41 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `pdf_export::build_matrix_pdf` (A4 orizzontale, inglese; colonne in blocchi da
   `MATRIX_COL_MIN`, in ogni blocco solo le righe dei suoi worker, righe paginate con
   intestazione ripetuta, riepilogo in coda al blocco).
+  **Torte dev/categorie per worker…** (`src/ui/pies.rs`, data/geometry in
+  `src/worker_pies.rs`): same flow as the matrix, with its **own** session state
+  (`pies_select_open`/`show_pies`/`pies_workers`/`pies_worker_search`/`pies_from`/
+  `pies_to`/`pies_years`/`pies_categories`). The worker dialog is the shared
+  `worker_pick_window(…) -> WorkerPick { Open, Show, Closed }` (`matrix.rs`, also
+  behind `matrix_select_window`); `years_combo` and `categories_combo` take an
+  id salt, and
+  `range_end_picker`/`years_range` are shared too. `worker_pies::build(app,
+  &workers, from, to, &cats) -> Vec<WorkerPie>` (`cats` empty = all, else only
+  projects of those categories — totals and % follow): **hours** (effort 0 ignored) of all
+  projects in weeks overlapping `[from, to]` (`week_overlaps`), per dev → per
+  category (by id, «Senza» last) plus per category; `total` 0 ⇒ «Nessuna ora nel
+  periodo.» and skipped by exports. Rings as `Seg { key, hours, from, to }`
+  (fractions of the worker total): `dev_ring`, `dev_category_ring` (each dev's
+  categories inside its slice), `category_ring`. Geometry shared GUI/PDF with a
+  `y_up` flag: angle 0 at 12 o'clock, clockwise (`arc_point`, `arc`, `sector`),
+  `label_pos` = label centre only if the text fits (chord × ring thickness),
+  `hit` for hover tooltips. GUI slices are **`egui::Mesh`** triangle strips
+  (`paint_sector`) — a ring slice isn't convex, so no filled polygon; PDF uses
+  `Shape::Poly`. Percentages via `pct_label` (`<1%` for hours that round to 0).
+  **Grid gotcha**: the tables' numeric cells (`num`) are a fixed `NUM_W` rect
+  with the text painted `RIGHT_CENTER` — a `right_to_left` layout inside an
+  `egui::Grid` cell doesn't right-align, and in the **last** column (no width
+  bound) it stretched to the window edge, pushing «% del dev» out of the table
+  (test `table_values_stay_under_their_headers`).
+  Export: `Action::ExportWorkerPies { from, to, years, svg }` →
+  `pdf_export::build_pies_pdf` (one A4 page per worker, `pies_page`: two
+  panels, each with a big pie centred under its title and the table **below**,
+  scaled down by `pie_table_scale` when too long; subtitle from `pies_subtitle`
+  with years + categories) or
+  `build_pies_svgs` (one SVG per worker, no footer) → `save_multi_export_dialog`
+  with the worker name made safe by `file_safe` as suffix. Tests
+  `pies_sum_hours_by_dev_and_category`, `pie_geometry_labels_and_hit`,
+  `worker_pies_draw_slices_labels_and_tables`,
+  `pies_pdf_has_a_page_per_worker_with_hours`.
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
 ### Dialogs / windows

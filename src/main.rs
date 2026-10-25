@@ -13,6 +13,7 @@ mod sync_merge;
 mod ui;
 mod ui_style;
 mod worker_matrix;
+mod worker_pies;
 mod workers_utils;
 
 use app::{App, SAVE_PATH};
