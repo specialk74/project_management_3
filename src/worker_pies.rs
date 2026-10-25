@@ -11,6 +11,11 @@
 //!
 //! Le frazioni sono tutte sul totale del worker. Angoli: 0 in alto (ore 12),
 //! senso orario.
+//!
+//! Ogni valore porta anche le ore **fatte** (settimane fino a quella corrente
+//! compresa, come l'avanzamento presunto); il resto sono ore **pianificate**.
+//! Le torte usano solo il totale; fatte/pianificate vanno nelle tabelle quando
+//! il periodo arriva oltre la settimana corrente (`split_shown`).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -20,12 +25,41 @@ use crate::dev_utils::dev::DevId;
 use crate::worker_matrix::week_overlaps;
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
+/// Ore totali di una voce e, di queste, quelle fatte (fino alla settimana
+/// corrente compresa).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Hours {
+    pub total: u32,
+    pub done: u32,
+}
+
+impl Hours {
+    /// Ore pianificate: dopo la settimana corrente.
+    pub fn planned(&self) -> u32 {
+        self.total - self.done
+    }
+
+    fn add(&mut self, h: u32, done: bool) {
+        self.total += h;
+        if done {
+            self.done += h;
+        }
+    }
+}
+
+impl std::ops::AddAssign for Hours {
+    fn add_assign(&mut self, o: Hours) {
+        self.total += o.total;
+        self.done += o.done;
+    }
+}
+
 /// Ore di un dev del worker, divise per categoria.
 pub struct DevHours {
     pub dev: DevId,
-    pub hours: u32,
+    pub hours: Hours,
     /// Ordine delle categorie: per id, «Senza categoria» in fondo; solo > 0.
-    pub categories: Vec<(Option<CategoryId>, u32)>,
+    pub categories: Vec<(Option<CategoryId>, Hours)>,
 }
 
 /// Dati delle due torte di un worker.
@@ -34,10 +68,19 @@ pub struct WorkerPie {
     pub name: String,
     /// Ore totali nel periodo (0 = niente torte).
     pub total: u32,
+    /// Di `total`, le ore fatte (fino alla settimana corrente compresa).
+    pub done: u32,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
     /// Categorie (stesso ordine di `DevHours::categories`), solo > 0.
-    pub categories: Vec<(Option<CategoryId>, u32)>,
+    pub categories: Vec<(Option<CategoryId>, Hours)>,
+}
+
+/// Le colonne fatte/pianificate servono solo se il periodo (che finisce a
+/// `to`) contiene settimane dopo quella corrente (lunedì `now`): altrimenti
+/// tutto è «fatto».
+pub fn split_shown(to: i32, now: i32) -> bool {
+    to >= now + 7
 }
 
 /// Una fetta: `from`/`to` frazioni 0..1 del giro, sul totale del worker.
@@ -85,7 +128,7 @@ fn segs<K: Clone>(items: &[(K, u32)], total: u32, start: u32) -> Vec<Seg<K>> {
 impl WorkerPie {
     /// Anello interno della prima torta: un fetta per dev.
     pub fn dev_ring(&self) -> Vec<Seg<DevId>> {
-        let items: Vec<(DevId, u32)> = self.devs.iter().map(|d| (d.dev, d.hours)).collect();
+        let items: Vec<(DevId, u32)> = self.devs.iter().map(|d| (d.dev, d.hours.total)).collect();
         segs(&items, self.total, 0)
     }
 
@@ -95,16 +138,17 @@ impl WorkerPie {
         let mut out = Vec::new();
         let mut start = 0;
         for d in &self.devs {
-            let items: Vec<_> = d.categories.iter().map(|&(c, h)| ((d.dev, c), h)).collect();
+            let items: Vec<_> = d.categories.iter().map(|&(c, h)| ((d.dev, c), h.total)).collect();
             out.extend(segs(&items, self.total, start));
-            start += d.hours;
+            start += d.hours.total;
         }
         out
     }
 
     /// Seconda torta: una fetta per categoria.
     pub fn category_ring(&self) -> Vec<Seg<Option<CategoryId>>> {
-        segs(&self.categories, self.total, 0)
+        let items: Vec<_> = self.categories.iter().map(|&(c, h)| (c, h.total)).collect();
+        segs(&items, self.total, 0)
     }
 }
 
@@ -112,12 +156,15 @@ impl WorkerPie {
 /// senza ore nel periodo (`total` 0). `cats` limita ai progetti di quelle
 /// categorie (`None` nel set = «Senza categoria»; vuoto = tutte), come la
 /// combo della matrice: totale e percentuali contano solo quei progetti.
+/// `now` = lunedì della settimana corrente (giorni): le settimane che iniziano
+/// entro quel giorno sono «fatte».
 pub fn build(
     app: &App,
     selected: &HashSet<WorkerId>,
     from: i32,
     to: i32,
     cats: &BTreeSet<Option<CategoryId>>,
+    now: i32,
 ) -> Vec<WorkerPie> {
     let workers: Vec<(WorkerId, String)> = app
         .workers
@@ -127,7 +174,7 @@ pub fn build(
         .collect();
     // hours[w][dev][categoria]; la chiave di categoria mette «Senza» in fondo.
     type CatKey = (bool, Option<CategoryId>);
-    let mut hours: Vec<BTreeMap<DevId, BTreeMap<CatKey, u32>>> =
+    let mut hours: Vec<BTreeMap<DevId, BTreeMap<CatKey, Hours>>> =
         vec![BTreeMap::new(); workers.len()];
     for (proj, _) in app.projects.list() {
         let cat = app.projects.get_category(proj);
@@ -146,11 +193,12 @@ pub fn build(
                 for (wi, (wid, _)) in workers.iter().enumerate() {
                     let h = sew.worker_id.get(wid).map_or(0, |se| se.get_effort().0 as u32);
                     if h > 0 {
-                        *hours[wi]
+                        hours[wi]
                             .entry(dev)
                             .or_default()
                             .entry((cat.is_none(), cat))
-                            .or_default() += h;
+                            .or_default()
+                            .add(h, wk.0 as i32 <= now);
                     }
                 }
             }
@@ -160,16 +208,20 @@ pub fn build(
         .into_iter()
         .zip(hours)
         .map(|((worker, name), by_dev)| {
-            let mut cats: BTreeMap<CatKey, u32> = BTreeMap::new();
+            let mut cats: BTreeMap<CatKey, Hours> = BTreeMap::new();
+            let mut all = Hours::default();
             let devs: Vec<DevHours> = by_dev
                 .into_iter()
                 .map(|(dev, by_cat)| {
+                    let mut hours = Hours::default();
                     for (k, h) in &by_cat {
-                        *cats.entry(*k).or_default() += h;
+                        *cats.entry(*k).or_default() += *h;
+                        hours += *h;
                     }
+                    all += hours;
                     DevHours {
                         dev,
-                        hours: by_cat.values().sum(),
+                        hours,
                         categories: by_cat.into_iter().map(|((_, c), h)| (c, h)).collect(),
                     }
                 })
@@ -177,7 +229,8 @@ pub fn build(
             WorkerPie {
                 worker,
                 name,
-                total: devs.iter().map(|d| d.hours).sum(),
+                total: all.total,
+                done: all.done,
                 devs,
                 categories: cats.into_iter().map(|((_, c), h)| (c, h)).collect(),
             }
@@ -291,13 +344,23 @@ mod tests {
         app.projects.add_effort(p1, be, WeekId(20100), mario, Effort(99)); // fuori
         app.projects.add_effort(p2, be, WeekId(20000), luigi, Effort(0));
         let sel: HashSet<_> = [mario, luigi].into_iter().collect();
-        let pies = build(&app, &sel, 20000, 20013, &BTreeSet::new());
+        // «Oggi» nella seconda settimana: la prima e la seconda sono fatte.
+        let pies = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20007);
         let m = pies.iter().find(|p| p.worker == mario).unwrap();
-        assert_eq!(m.total, 40);
+        let h = |total, done| Hours { total, done };
+        assert_eq!((m.total, m.done), (40, 40));
         assert_eq!(m.devs.len(), 2);
-        assert_eq!((m.devs[0].dev, m.devs[0].hours), (fe, 30));
-        assert_eq!(m.devs[0].categories, [(Some(ca), 20), (None, 10)]);
-        assert_eq!(m.categories, [(Some(ca), 30), (None, 10)]);
+        assert_eq!((m.devs[0].dev, m.devs[0].hours), (fe, h(30, 30)));
+        assert_eq!(m.devs[0].categories, [(Some(ca), h(20, 20)), (None, h(10, 10))]);
+        assert_eq!(m.categories, [(Some(ca), h(30, 30)), (None, h(10, 10))]);
+        // «Oggi» nella prima settimana: le 10h di Backend della seconda sono
+        // pianificate.
+        let early = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20000);
+        let e = early.iter().find(|p| p.worker == mario).unwrap();
+        assert_eq!((e.total, e.done), (40, 30));
+        assert_eq!(e.devs[1].hours, h(10, 0));
+        assert_eq!(e.devs[1].hours.planned(), 10);
+        assert_eq!(e.categories[0].1, h(30, 20));
         let inner = m.dev_ring();
         assert_eq!((inner[0].from, inner[0].to), (0.0, 0.75));
         assert_eq!((inner[1].from, inner[1].to), (0.75, 1.0));
@@ -315,17 +378,21 @@ mod tests {
         // Filtro categoria: solo i progetti di «Cliente A» (P1); il totale e
         // le percentuali seguono.
         let only_a: BTreeSet<_> = [Some(ca)].into();
-        let f = build(&app, &sel, 20000, 20013, &only_a);
+        let f = build(&app, &sel, 20000, 20013, &only_a, 20007);
         let m = f.iter().find(|p| p.worker == mario).unwrap();
         assert_eq!(m.total, 30);
-        assert_eq!(m.categories, [(Some(ca), 30)]);
+        assert_eq!(m.categories, [(Some(ca), h(30, 30))]);
         assert_eq!(m.dev_ring()[0].to, 20.0 / 30.0);
         let no_cat: BTreeSet<_> = [None].into();
-        let f = build(&app, &sel, 20000, 20013, &no_cat);
+        let f = build(&app, &sel, 20000, 20013, &no_cat, 20007);
         assert_eq!(f.iter().find(|p| p.worker == mario).unwrap().total, 10);
         assert_eq!(pct_label(4, 1380), "<1%");
         assert_eq!(pct_label(0, 1380), "0%");
         assert_eq!(pct_label(1, 4), "25%");
+        // Colonne fatte/pianificate solo se il periodo va oltre la settimana
+        // corrente.
+        assert!(!split_shown(20006, 20000));
+        assert!(split_shown(20007, 20000));
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette

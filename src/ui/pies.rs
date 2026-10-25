@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::worker_matrix::category_color;
-use crate::worker_pies::{Seg, WorkerPie, label_pos, pct_label};
+use crate::worker_pies::{Hours, Seg, WorkerPie, label_pos, pct_label};
 
 /// Diametro dell'area di una torta (px).
 const PIE_D: f32 = 340.0;
@@ -16,8 +16,11 @@ const PIE_R: f32 = 162.0;
 /// (categorie) parte da qui + `PIE_GAP`.
 const PIE_R_IN: f32 = 100.0;
 const PIE_GAP: f32 = 4.0;
-/// Spazio fra la prima torta (con la sua tabella) e la seconda.
-const PIE_SPACING: f32 = 32.0;
+/// Spazio fra il primo blocco (torta con la sua tabella) e il secondo.
+const PIE_SPACING: f32 = 72.0;
+/// Larghezza massima della colonna «Categoria» delle tabelle (quadratino
+/// compreso): i nomi più lunghi sono troncati con «…», intero nel tooltip.
+const CAT_W: f32 = 110.0;
 
 pub(crate) fn pies_select_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
     if !state.pies_select_open {
@@ -113,8 +116,9 @@ fn seg_tip(name: &str, hours: u32, total: u32) -> String {
 }
 
 /// Prima torta: anello interno per dev, esterno per categoria dentro ogni dev.
-fn dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(PIE_D, PIE_D), Sense::hover());
+/// `width` = larghezza del blocco: la torta sta al centro.
+fn dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, PIE_D), Sense::hover());
     let c = rect.center();
     let inner = pie.dev_ring();
     let outer = pie.dev_category_ring();
@@ -150,8 +154,9 @@ fn dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
 }
 
 /// Seconda torta: una fetta per categoria.
-fn category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(PIE_D, PIE_D), Sense::hover());
+/// `width` = larghezza del blocco: la torta sta al centro.
+fn category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, PIE_D), Sense::hover());
     let c = rect.center();
     let segs = pie.category_ring();
     let hit = resp
@@ -171,8 +176,33 @@ fn swatch(ui: &mut egui::Ui, color: Color32) {
 }
 
 /// Larghezza delle colonne numeriche delle tabelle: ci sta l'intestazione più
-/// larga («% del dev»).
-const NUM_W: f32 = 72.0;
+/// larga («Pianificate»).
+const NUM_W: f32 = 84.0;
+
+/// Cella «Categoria»: quadratino del colore e nome, al più `CAT_W` di
+/// larghezza (nome troncato con «…» e intero nel tooltip se non ci sta).
+fn category_cell(ui: &mut egui::Ui, app: &App, cat: Option<CategoryId>) {
+    const SW: f32 = 12.0;
+    const GAP: f32 = 6.0;
+    let name = category_name(app, cat);
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let shown = fit_text(ui, &name, &font, CAT_W - SW - GAP);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(shown.clone(), font, ui.visuals().text_color());
+    let size = egui::vec2(SW + GAP + galley.size().x, ui.spacing().interact_size.y);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    let sw = Rect::from_center_size(
+        egui::pos2(rect.left() + SW / 2.0, rect.center().y),
+        egui::vec2(SW, SW),
+    );
+    ui.painter().rect_filled(sw, 2.0, category_rgb(cat));
+    let at = egui::pos2(rect.left() + SW + GAP, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, ui.visuals().text_color());
+    if shown != name {
+        resp.on_hover_text(name);
+    }
+}
 
 /// Cella numerica larga `NUM_W` col testo allineato a destra. Disegnato col
 /// painter: un layout destra→sinistra dentro la griglia non allinea a destra
@@ -192,17 +222,46 @@ fn num(ui: &mut egui::Ui, s: String, strong: bool) {
     ui.painter().text(rect.right_center(), Align2::RIGHT_CENTER, s, font, color);
 }
 
+/// Celle delle ore: fatte, pianificate e totale se `split`, altrimenti solo
+/// il totale.
+fn hour_cells(ui: &mut egui::Ui, h: Hours, split: bool, strong: bool) {
+    if split {
+        num(ui, format!("{}h", h.done), strong);
+        num(ui, format!("{}h", h.planned()), strong);
+    }
+    num(ui, format!("{}h", h.total), strong);
+}
+
+/// Intestazioni delle colonne delle ore (vedi `hour_cells`).
+fn hour_heads(ui: &mut egui::Ui, split: bool) {
+    let heads: &[&str] = if split { &["Fatte", "Pianificate", "Totale"] } else { &["Ore"] };
+    for h in heads {
+        num(ui, h.to_string(), true);
+    }
+}
+
+/// Ore totali e fatte del worker.
+fn pie_hours(pie: &WorkerPie) -> Hours {
+    Hours {
+        total: pie.total,
+        done: pie.done,
+    }
+}
+
 /// Tabella della prima torta: per ogni dev una riga (ore, % sul totale), poi
-/// le sue categorie (ore, % sul totale, % del dev); in fondo il totale.
-fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
+/// le sue categorie (ore, % sul totale, % del dev); in fondo il totale. Con
+/// `split` le ore sono divise in fatte, pianificate e totale.
+/// Ritorna la larghezza della tabella.
+fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_dev_table", pie.worker))
         .striped(true)
-        .num_columns(5)
+        .num_columns(if split { 7 } else { 5 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Dev").strong());
             ui.label(egui::RichText::new("Categoria").strong());
-            for h in ["Ore", "% totale", "% del dev"] {
+            hour_heads(ui, split);
+            for h in ["% totale", "% del dev"] {
                 num(ui, h.to_string(), true);
             }
             ui.end_row();
@@ -213,86 +272,149 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
                     ui.label(egui::RichText::new(name).strong());
                 });
                 ui.label("");
-                num(ui, format!("{}h", d.hours), true);
-                num(ui, pct_label(d.hours, pie.total), true);
+                hour_cells(ui, d.hours, split, true);
+                num(ui, pct_label(d.hours.total, pie.total), true);
                 ui.label("");
                 ui.end_row();
                 for &(cat, h) in &d.categories {
                     ui.label("");
-                    ui.horizontal(|ui| {
-                        swatch(ui, category_rgb(cat));
-                        ui.label(category_name(app, cat));
-                    });
-                    num(ui, format!("{h}h"), false);
-                    num(ui, pct_label(h, pie.total), false);
-                    num(ui, pct_label(h, d.hours), false);
+                    category_cell(ui, app, cat);
+                    hour_cells(ui, h, split, false);
+                    num(ui, pct_label(h.total, pie.total), false);
+                    num(ui, pct_label(h.total, d.hours.total), false);
                     ui.end_row();
                 }
             }
             ui.label(egui::RichText::new("Totale").strong());
             ui.label("");
-            num(ui, format!("{}h", pie.total), true);
+            hour_cells(ui, pie_hours(pie), split, true);
             num(ui, "100%".to_string(), true);
             ui.label("");
             ui.end_row();
-        });
+        })
+        .response
+        .rect
+        .width()
 }
 
 /// Tabella della seconda torta: ore e % sul totale per categoria.
-fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
+/// Ritorna la larghezza della tabella.
+fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_cat_table", pie.worker))
         .striped(true)
-        .num_columns(3)
+        .num_columns(if split { 5 } else { 3 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Categoria").strong());
-            for h in ["Ore", "% totale"] {
-                num(ui, h.to_string(), true);
-            }
+            hour_heads(ui, split);
+            num(ui, "% totale".to_string(), true);
             ui.end_row();
             for &(cat, h) in &pie.categories {
-                ui.horizontal(|ui| {
-                    swatch(ui, category_rgb(cat));
-                    ui.label(category_name(app, cat));
-                });
-                num(ui, format!("{h}h"), false);
-                num(ui, pct_label(h, pie.total), false);
+                category_cell(ui, app, cat);
+                hour_cells(ui, h, split, false);
+                num(ui, pct_label(h.total, pie.total), false);
                 ui.end_row();
             }
             ui.label(egui::RichText::new("Totale").strong());
-            num(ui, format!("{}h", pie.total), true);
+            hour_cells(ui, pie_hours(pie), split, true);
             num(ui, "100%".to_string(), true);
             ui.end_row();
-        });
+        })
+        .response
+        .rect
+        .width()
 }
 
-/// Le due torte di un worker, ciascuna con la sua tabella a destra.
-fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie) {
+/// Un blocco: titolo, torta e tabella sotto, centrate l'una sull'altra. Il
+/// blocco è largo quanto la più larga fra torta e tabella; la tabella si
+/// disegna dopo la torta, quindi si usa la sua larghezza misurata nel frame
+/// precedente (memoria temporanea di egui, chiave `key`) e, se cambia, si
+/// ridisegna.
+fn pie_block(
+    ui: &mut egui::Ui,
+    key: impl std::hash::Hash + std::fmt::Debug,
+    title: &str,
+    draw_pie: impl FnOnce(&mut egui::Ui, f32),
+    draw_table: impl FnOnce(&mut egui::Ui) -> f32,
+) {
+    let id = ui.make_persistent_id(key);
+    let table_w = ui.data(|d| d.get_temp::<f32>(id));
+    let width = table_w.unwrap_or(PIE_D).max(PIE_D);
+    ui.vertical(|ui| {
+        ui.label(egui::RichText::new(title).strong());
+        draw_pie(ui, width);
+        // Tabella più stretta della torta: centrata sotto la torta.
+        let pad = ((width - table_w.unwrap_or(width)) / 2.0).max(0.0);
+        let measured = ui
+            .horizontal_top(|ui| {
+                ui.add_space(pad);
+                draw_table(ui)
+            })
+            .inner;
+        if table_w.is_none_or(|w| (w - measured).abs() > 0.5) {
+            ui.data_mut(|d| d.insert_temp(id, measured));
+            ui.ctx().request_repaint();
+        }
+    });
+}
+
+/// Larghezza sotto la quale i due blocchi (torta con sotto la tabella) vanno
+/// uno sotto l'altro invece che affiancati: ogni blocco è largo quanto la sua
+/// tabella, e con le colonne fatte/pianificate le tabelle sono più larghe.
+fn side_by_side_min_w(split: bool) -> f32 {
+    if split { 1300.0 } else { 1000.0 }
+}
+
+/// Le due torte di un worker, ciascuna con la sua tabella sotto (come nel
+/// PDF); i due blocchi affiancati se c'è spazio, altrimenti uno sotto l'altro.
+fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(&pie.name).strong().size(16.0));
-        ui.label(egui::RichText::new(format!("{}h nel periodo", pie.total)).color(text_dim()));
+        let summary = if split {
+            format!(
+                "{}h nel periodo: {}h fatte, {}h pianificate",
+                pie.total,
+                pie.done,
+                pie.total - pie.done
+            )
+        } else {
+            format!("{}h nel periodo", pie.total)
+        };
+        ui.label(egui::RichText::new(summary).color(text_dim()));
     });
     if pie.total == 0 {
         ui.label(egui::RichText::new("Nessuna ora nel periodo.").color(text_dim()));
         return;
     }
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            ui.label(egui::RichText::new("Dev e categorie").strong());
-            ui.horizontal_top(|ui| {
-                dev_category_pie(ui, app, pie);
-                dev_category_table(ui, app, pie);
-            });
+    let first = |ui: &mut egui::Ui| {
+        pie_block(
+            ui,
+            ("pies_dev_block", pie.worker),
+            "Dev e categorie",
+            |ui, w| dev_category_pie(ui, app, pie, w),
+            |ui| dev_category_table(ui, app, pie, split),
+        );
+    };
+    let second = |ui: &mut egui::Ui| {
+        pie_block(
+            ui,
+            ("pies_cat_block", pie.worker),
+            "Categorie",
+            |ui, w| category_pie(ui, app, pie, w),
+            |ui| category_table(ui, app, pie, split),
+        );
+    };
+    if ui.available_width() >= side_by_side_min_w(split) {
+        ui.horizontal_top(|ui| {
+            first(ui);
+            ui.add_space(PIE_SPACING);
+            second(ui);
         });
-        ui.add_space(PIE_SPACING);
-        ui.vertical(|ui| {
-            ui.label(egui::RichText::new("Categorie").strong());
-            ui.horizontal_top(|ui| {
-                category_pie(ui, app, pie);
-                category_table(ui, app, pie);
-            });
-        });
-    });
+    } else {
+        first(ui);
+        ui.add_space(PIE_SPACING / 2.0);
+        second(ui);
+    }
 }
 
 pub(crate) fn pies_window(
@@ -308,8 +430,16 @@ pub(crate) fn pies_window(
     let from = state.pies_from.unwrap_or(today);
     let to = state.pies_to.unwrap_or(today);
     let valid = from <= to;
-    let pies =
-        crate::worker_pies::build(app, &state.pies_workers, from, to, &state.pies_categories);
+    let now = current_monday_days();
+    let pies = crate::worker_pies::build(
+        app,
+        &state.pies_workers,
+        from,
+        to,
+        &state.pies_categories,
+        now,
+    );
+    let split = crate::worker_pies::split_shown(to, now);
     let with_hours = pies.iter().filter(|p| p.total > 0).count();
 
     let mut open = true;
@@ -380,7 +510,7 @@ pub(crate) fn pies_window(
                         if i > 0 {
                             ui.separator();
                         }
-                        draw_worker_pies(ui, app, pie);
+                        draw_worker_pies(ui, app, pie, split);
                     }
                 });
         });
@@ -419,7 +549,7 @@ mod tests {
     fn table_values_stay_under_their_headers() {
         let (app, mario, _) = sample();
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default());
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1400.0, 900.0)),
@@ -429,8 +559,8 @@ mod tests {
         // La griglia misura le colonne al primo frame e le usa dal secondo.
         for _ in 0..2 {
             out = Some(ctx.run_ui_test(input.clone(), |ui| {
-                dev_category_table(ui, &app, &pies[0]);
-                category_table(ui, &app, &pies[0]);
+                dev_category_table(ui, &app, &pies[0], false);
+                category_table(ui, &app, &pies[0], false);
             }));
         }
         let out = out.unwrap();
@@ -453,6 +583,172 @@ mod tests {
         assert!(rights("100%").iter().all(|x| *x < 600.0), "fuori tabella: {:?}", rights("100%"));
     }
 
+    /// Periodo oltre la settimana corrente: intestazione con fatte e
+    /// pianificate e, nelle tabelle, le colonne Fatte / Pianificate / Totale.
+    #[test]
+    fn planned_hours_split_shows_done_and_planned_columns() {
+        let (mut app, mario, _) = sample();
+        let fe = app.devs.list()[0].0;
+        let p = app.projects.list()[0].0;
+        app.projects.add_effort(p, fe, WeekId(20007), mario, Effort(20));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        // «Oggi» nella prima settimana: le 20h della seconda sono pianificate.
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20013, &Default::default(), 20000);
+        assert!(crate::worker_pies::split_shown(20013, 20000));
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1400.0, 900.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_worker_pies(ui, &app, &pies[0], true));
+        let texts = drawn_texts(&out);
+        for t in ["60h nel periodo: 40h fatte, 20h pianificate", "Fatte", "Pianificate", "Totale", "20h", "50h"] {
+            assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+        }
+        // Frontend: 30h fatte + 20h pianificate = 50h.
+        let without = ctx.run_ui_test(egui::RawInput::default(), |ui| {
+            draw_worker_pies(ui, &app, &pies[0], false)
+        });
+        assert!(!drawn_texts(&without).iter().any(|s| s == "Pianificate"));
+    }
+
+    /// Colonna «Categoria» stretta: un nome lungo è troncato entro `CAT_W`;
+    /// fra le due tabelle c'è almeno `PIE_SPACING`.
+    #[test]
+    fn category_column_is_capped_and_tables_are_spaced() {
+        let (mut app, mario, _) = sample();
+        let long = app.categories.add("Categoria dal nome molto molto lungo");
+        let p = app.projects.add("x", Some("P2"), None);
+        let fe = app.devs.list()[0].0;
+        app.projects.set_category(p, Some(long));
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(5));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 1200.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..3 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                draw_worker_pies(ui, &app, &pies[0], false)
+            }));
+        }
+        let out = out.unwrap();
+        let texts: Vec<(String, f32, f32)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) => {
+                    Some((t.galley.text().to_string(), t.pos.x, t.galley.size().x))
+                }
+                _ => None,
+            })
+            .collect();
+        let cut: Vec<_> = texts.iter().filter(|(s, ..)| s.starts_with("Categoria dal")).collect();
+        assert_eq!(cut.len(), 2, "nome lungo in tutte e due le tabelle: {texts:?}");
+        assert!(cut.iter().all(|(s, _, w)| s.ends_with('…') && *w <= CAT_W));
+        // Fine del primo blocco (ultima colonna della sua tabella) e inizio
+        // del secondo (il suo titolo «Categorie»).
+        let second = texts.iter().find(|(s, ..)| s == "Categorie").unwrap().1;
+        let first_end = texts
+            .iter()
+            .filter(|(_, x, _)| *x < second)
+            .map(|(_, x, w)| x + w)
+            .fold(0.0, f32::max);
+        assert!(second - first_end >= PIE_SPACING, "tabelle troppo vicine: {first_end} → {second}");
+    }
+
+    /// La torta è centrata sopra la sua tabella (dal secondo frame, quando
+    /// la larghezza della tabella è nota).
+    #[test]
+    fn pie_is_centered_over_its_table() {
+        let (app, mario, _) = sample();
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 1200.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..3 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                draw_worker_pies(ui, &app, &pies[0], false)
+            }));
+        }
+        let out = out.unwrap();
+        // Centro orizzontale della prima torta (le mesh a sinistra del
+        // secondo blocco) e della prima tabella (da «Dev» a «% del dev»).
+        let texts: Vec<(String, f32, f32)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) => {
+                    Some((t.galley.text().to_string(), t.pos.x, t.galley.size().x))
+                }
+                _ => None,
+            })
+            .collect();
+        let find = |s: &str| texts.iter().find(|t| t.0 == s).unwrap().clone();
+        let (_, dev_x, _) = find("Dev");
+        let (_, pd_x, pd_w) = find("% del dev");
+        let table_mid = (dev_x + pd_x + pd_w) / 2.0;
+        let second_x = find("Categorie").1;
+        let xs: Vec<f32> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Mesh(m) => Some(m.vertices.iter().map(|v| v.pos.x)),
+                _ => None,
+            })
+            .flatten()
+            .filter(|x| *x < second_x)
+            .collect();
+        let pie_mid = (xs.iter().copied().fold(f32::MAX, f32::min)
+            + xs.iter().copied().fold(f32::MIN, f32::max))
+            / 2.0;
+        assert!((pie_mid - table_mid).abs() < 2.0, "torta {pie_mid} / tabella {table_mid}");
+    }
+
+    /// Ogni tabella sta **sotto** la sua torta (come nel PDF): l'intestazione
+    /// «Categoria» delle tabelle è più in basso dell'area della torta.
+    #[test]
+    fn tables_are_drawn_below_the_pies() {
+        let (app, mario, _) = sample();
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1400.0, 1200.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_worker_pies(ui, &app, &pies[0], false));
+        let pie_bottom = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Mesh(m) => {
+                    m.vertices.iter().map(|v| v.pos.y).reduce(f32::max)
+                }
+                _ => None,
+            })
+            .reduce(f32::max)
+            .expect("torte disegnate");
+        let heads: Vec<f32> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Text(t) if t.galley.text() == "Categoria" => Some(t.pos.y),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(heads.len(), 2, "due tabelle");
+        assert!(heads.iter().all(|y| *y > pie_bottom), "tabelle sotto le torte: {heads:?} / {pie_bottom}");
+    }
+
     /// Per ogni worker: due torte (fette disegnate come mesh) con percentuali
     /// dentro e tabelle con ore e percentuali; un worker senza ore ha solo
     /// l'avviso.
@@ -460,7 +756,7 @@ mod tests {
     fn worker_pies_draw_slices_labels_and_tables() {
         let (app, mario, luigi) = sample();
         let sel: HashSet<_> = [mario, luigi].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default());
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1400.0, 900.0)),
@@ -468,7 +764,7 @@ mod tests {
         };
         let out = ctx.run_ui_test(input, |ui| {
             for p in &pies {
-                draw_worker_pies(ui, &app, p);
+                draw_worker_pies(ui, &app, p, false);
             }
         });
         let texts = drawn_texts(&out);

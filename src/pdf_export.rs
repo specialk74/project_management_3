@@ -12,7 +12,8 @@ use printpdf::*;
 
 use crate::app::App;
 use crate::date_utils::dates::{
-    days_to_local, local_to_days, primo_giorno_settimana_corrente, today, today_days,
+    current_monday_days, days_to_local, local_to_days, primo_giorno_settimana_corrente, today,
+    today_days,
 };
 use crate::dev_utils::dev::DevId;
 use crate::milestones::{MilestoneId, MilestoneScope};
@@ -3391,17 +3392,77 @@ fn pie_table_scale(rows: usize) -> (f32, f32) {
     (PIE_ROW_H * k, (PIE_FONT * k).max(3.5))
 }
 
+/// Riga di una tabella delle torte: valori allineati alle intestazioni
+/// numeriche (stringa vuota = cella vuota).
+struct PieRow {
+    swatch: Option<(f32, f32, f32)>,
+    name: String,
+    indent: bool,
+    bold: bool,
+    vals: Vec<String>,
+}
+
+/// Larghezza di una colonna numerica delle tabelle delle torte (mm).
+const PIE_NUM_W: f32 = 17.0;
+
+/// Celle delle ore: `fatte, pianificate, totale` se `split`, altrimenti solo il
+/// totale.
+fn pie_hour_cells(h: crate::worker_pies::Hours, split: bool) -> Vec<String> {
+    if split {
+        vec![format!("{}h", h.done), format!("{}h", h.planned()), format!("{}h", h.total)]
+    } else {
+        vec![format!("{}h", h.total)]
+    }
+}
+
+/// Intestazioni delle colonne delle ore (vedi `pie_hour_cells`).
+fn pie_hour_heads(split: bool) -> Vec<&'static str> {
+    if split { vec!["Done", "Planned", "Total"] } else { vec!["Hours"] }
+}
+
+/// Tabella sotto una torta, fra `x0` e `right`: intestazione, righe e riga del
+/// totale, con riga e font ridotti se non entrano (`pie_table_scale`).
+fn pie_table(x0: f32, right: f32, first: &str, heads: &[&str], rows: &[PieRow], total: &PieRow) -> Vec<Shape> {
+    let n = heads.len();
+    let cols: Vec<f32> = (0..n).map(|i| right - (n - 1 - i) as f32 * PIE_NUM_W).collect();
+    let name_w = cols[0] - PIE_NUM_W - x0;
+    let (rh, font) = pie_table_scale(rows.len() + 2);
+    let cells = |vals: &[String]| -> Vec<(f32, String)> {
+        cols.iter()
+            .zip(vals)
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(x, v)| (*x, v.clone()))
+            .collect()
+    };
+    let mut out = Vec::new();
+    let mut y = PIE_TABLE_TOP;
+    let head: Vec<String> = heads.iter().map(|h| h.to_string()).collect();
+    out.extend(pie_table_row(x0, y, font, None, first, name_w, &cells(&head), true));
+    out.extend(line(x0, y - rh * 0.35, right, y - rh * 0.35, 0.3, GRAY_DK));
+    y -= rh;
+    for r in rows {
+        let ind = if r.indent { 3.0 } else { 0.0 };
+        out.extend(pie_table_row(x0 + ind, y, font, r.swatch, &r.name, name_w - ind, &cells(&r.vals), r.bold));
+        y -= rh;
+    }
+    out.extend(line(x0, y + rh * 0.65, right, y + rh * 0.65, 0.3, GRAY_DK));
+    out.extend(pie_table_row(x0, y, font, None, &total.name, name_w, &cells(&total.vals), true));
+    out
+}
+
 /// Pagina di un worker: titolo e periodo, a sinistra la torta dev/categorie con
 /// la sua tabella, a destra quella delle categorie con la sua. `created` =
 /// `None` per l'SVG (niente footer).
+/// `split`: colonne fatte/pianificate (periodo oltre la settimana corrente).
 fn pies_page(
     app: &App,
     pie: &crate::worker_pies::WorkerPie,
     subtitle: &str,
+    split: bool,
     created: Option<&str>,
 ) -> Vec<Shape> {
     use crate::worker_matrix::category_color;
-    use crate::worker_pies::pct_label;
+    use crate::worker_pies::{Hours, pct_label};
     let cat_rgb = |c: Option<crate::categories::CategoryId>| u32_rgb(category_color(c));
     let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
     let mut out = Vec::new();
@@ -3416,7 +3477,16 @@ fn pies_page(
     out.extend(text_left(
         X_LABEL,
         PAGE_H - 21.0,
-        &format!("{subtitle}  ·  Total: {}h", pie.total),
+        &if split {
+            format!(
+                "{subtitle}  ·  Total: {}h ({}h done, {}h planned)",
+                pie.total,
+                pie.done,
+                pie.total - pie.done
+            )
+        } else {
+            format!("{subtitle}  ·  Total: {}h", pie.total)
+        },
         10.0,
         false,
         BLACK,
@@ -3435,40 +3505,47 @@ fn pies_page(
         pie.total,
         |(_, c)| cat_rgb(*c),
     ));
-    let tx = x0;
-    let right = x0 + PIE_PANEL_W;
-    let cols = [right - 36.0, right - 18.0, right];
-    let rows = 2 + pie.devs.len() + pie.devs.iter().map(|d| d.categories.len()).sum::<usize>();
-    let (rh, font) = pie_table_scale(rows);
-    let mut y = PIE_TABLE_TOP;
-    let head = |a: &str, b: &str, c: &str| {
-        vec![(cols[0], a.to_string()), (cols[1], b.to_string()), (cols[2], c.to_string())]
+    let total_cells = |pct_dev: bool| {
+        let mut v = pie_hour_cells(Hours { total: pie.total, done: pie.done }, split);
+        v.push("100%".to_string());
+        if pct_dev {
+            v.push(String::new());
+        }
+        v
     };
-    let name_w = cols[0] - 10.0 - tx;
-    out.extend(pie_table_row(tx, y, font, None, "Dev / Category", name_w, &head("Hours", "% total", "% dev"), true));
-    out.extend(line(tx, y - rh * 0.35, right, y - rh * 0.35, 0.3, GRAY_DK));
-    y -= rh;
+    let mut heads = pie_hour_heads(split);
+    heads.extend(["% total", "% dev"]);
+    let mut rows = Vec::new();
     for d in &pie.devs {
-        let vals = vec![
-            (cols[0], format!("{}h", d.hours)),
-            (cols[1], pct_label(d.hours, pie.total)),
-        ];
-        out.extend(pie_table_row(tx, y, font, Some(dev_rgb(app, d.dev)), &dev_name(d.dev), name_w, &vals, true));
-        y -= rh;
+        let mut vals = pie_hour_cells(d.hours, split);
+        vals.extend([pct_label(d.hours.total, pie.total), String::new()]);
+        rows.push(PieRow {
+            swatch: Some(dev_rgb(app, d.dev)),
+            name: dev_name(d.dev),
+            indent: false,
+            bold: true,
+            vals,
+        });
         for &(c, h) in &d.categories {
-            let vals = vec![
-                (cols[0], format!("{h}h")),
-                (cols[1], pct_label(h, pie.total)),
-                (cols[2], pct_label(h, d.hours)),
-            ];
-            let name = matrix_category_name(app, c);
-            out.extend(pie_table_row(tx + 3.0, y, font, Some(cat_rgb(c)), &name, name_w - 3.0, &vals, false));
-            y -= rh;
+            let mut vals = pie_hour_cells(h, split);
+            vals.extend([pct_label(h.total, pie.total), pct_label(h.total, d.hours.total)]);
+            rows.push(PieRow {
+                swatch: Some(cat_rgb(c)),
+                name: matrix_category_name(app, c),
+                indent: true,
+                bold: false,
+                vals,
+            });
         }
     }
-    out.extend(line(tx, y + rh * 0.65, right, y + rh * 0.65, 0.3, GRAY_DK));
-    let vals = vec![(cols[0], format!("{}h", pie.total)), (cols[1], "100%".to_string())];
-    out.extend(pie_table_row(tx, y, font, None, "Total", name_w, &vals, true));
+    let total = PieRow {
+        swatch: None,
+        name: "Total".into(),
+        indent: false,
+        bold: true,
+        vals: total_cells(true),
+    };
+    out.extend(pie_table(x0, x0 + PIE_PANEL_W, "Dev / Category", &heads, &rows, &total));
 
     // Pannello destro: categorie.
     let x0 = X_LABEL + PIE_PANEL_W + 5.0;
@@ -3476,23 +3553,31 @@ fn pies_page(
     let cx = (x0 + right) / 2.0;
     out.extend(text_left(x0, PIE_TITLE_Y, "By category", 10.0, true, BLACK));
     out.extend(pie_ring(cx, 0.0, PIE_R_MM, &pie.category_ring(), pie.total, |c| cat_rgb(*c)));
-    let tx = x0;
-    let cols = [right - 18.0, right];
-    let (rh, font) = pie_table_scale(2 + pie.categories.len());
-    let name_w = cols[0] - 10.0 - tx;
-    let mut y = PIE_TABLE_TOP;
-    let vals = vec![(cols[0], "Hours".to_string()), (cols[1], "% total".to_string())];
-    out.extend(pie_table_row(tx, y, font, None, "Category", name_w, &vals, true));
-    out.extend(line(tx, y - rh * 0.35, right, y - rh * 0.35, 0.3, GRAY_DK));
-    y -= rh;
-    for &(c, h) in &pie.categories {
-        let vals = vec![(cols[0], format!("{h}h")), (cols[1], pct_label(h, pie.total))];
-        out.extend(pie_table_row(tx, y, font, Some(cat_rgb(c)), &matrix_category_name(app, c), name_w, &vals, false));
-        y -= rh;
-    }
-    out.extend(line(tx, y + rh * 0.65, right, y + rh * 0.65, 0.3, GRAY_DK));
-    let vals = vec![(cols[0], format!("{}h", pie.total)), (cols[1], "100%".to_string())];
-    out.extend(pie_table_row(tx, y, font, None, "Total", name_w, &vals, true));
+    let mut heads = pie_hour_heads(split);
+    heads.push("% total");
+    let rows: Vec<PieRow> = pie
+        .categories
+        .iter()
+        .map(|&(c, h)| {
+            let mut vals = pie_hour_cells(h, split);
+            vals.push(pct_label(h.total, pie.total));
+            PieRow {
+                swatch: Some(cat_rgb(c)),
+                name: matrix_category_name(app, c),
+                indent: false,
+                bold: false,
+                vals,
+            }
+        })
+        .collect();
+    let total = PieRow {
+        swatch: None,
+        name: "Total".into(),
+        indent: false,
+        bold: true,
+        vals: total_cells(false),
+    };
+    out.extend(pie_table(x0, right, "Category", &heads, &rows, &total));
 
     if let Some(created) = created {
         out.extend(rect_fill(X_LABEL, FOOTER_BOT, PAGE_W - X_LABEL, FOOTER_TOP, GRAY_FOOTER));
@@ -3535,11 +3620,12 @@ pub fn build_pies_pdf(
     categories: &[Option<crate::categories::CategoryId>],
 ) -> Option<Vec<u8>> {
     let subtitle = pies_subtitle(app, from, to, years, categories);
+    let split = crate::worker_pies::split_shown(to, current_monday_days());
     let created = self::today().format(US_DATE).to_string();
     let pages: Vec<Vec<Shape>> = pies
         .iter()
         .filter(|p| p.total > 0)
-        .map(|p| pies_page(app, p, &subtitle, Some(&created)))
+        .map(|p| pies_page(app, p, &subtitle, split, Some(&created)))
         .collect();
     pdf_document("Hours by dev and category", &pages)
 }
@@ -3554,9 +3640,10 @@ pub fn build_pies_svgs(
     categories: &[Option<crate::categories::CategoryId>],
 ) -> Vec<(String, String)> {
     let subtitle = pies_subtitle(app, from, to, years, categories);
+    let split = crate::worker_pies::split_shown(to, current_monday_days());
     pies.iter()
         .filter(|p| p.total > 0)
-        .map(|p| (p.name.clone(), render_svg(&pies_page(app, p, &subtitle, None))))
+        .map(|p| (p.name.clone(), render_svg(&pies_page(app, p, &subtitle, split, None))))
         .collect()
 }
 
@@ -3678,9 +3765,9 @@ mod tests {
         app.projects.add_effort(p, fe, WeekId(20000), anna, Effort(8));
         app.projects.add_effort(p, be, WeekId(20000), luigi, Effort(0));
         let sel: std::collections::HashSet<_> = [mario, luigi, anna].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default());
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
         let m = pies.iter().find(|p| p.worker == mario).unwrap();
-        let page = pies_page(&app, m, "From x to y", Some("created"));
+        let page = pies_page(&app, m, "From x to y", false, Some("created"));
         let t = texts(&page);
         for s in ["Hours by dev and category — Mario", "Frontend", "Backend", "Cliente A", "30h", "75%", "25%", "% dev", "created"] {
             assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
@@ -3703,8 +3790,17 @@ mod tests {
             20000,
             20006,
             &Default::default(),
+            20000,
         );
         assert!(build_pies_pdf(&app, &none, 20000, 20006, &[], &[]).is_none());
+        // Con il periodo oltre la settimana corrente: colonne Done / Planned /
+        // Total e sottotitolo con la divisione.
+        let split = pies_page(&app, m, "From x to y", true, None);
+        let t = texts(&split);
+        for s in ["Done", "Planned", "Total", "From x to y  ·  Total: 40h (40h done, 0h planned)"] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        assert!(!texts(&page).iter().any(|x| x == "Planned"));
     }
 
     #[test]

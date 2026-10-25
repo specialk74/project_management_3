@@ -523,6 +523,26 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   bound) it stretched to the window edge, pushing «% del dev» out of the table
   (test `table_values_stay_under_their_headers`).
   Export: `Action::ExportWorkerPies { from, to, years, svg }` →
+  **Done / planned**: every value is a `worker_pies::Hours { total, done }`
+  (`planned()` = rest; `WorkerPie` keeps `total`/`done` fields); `build` takes
+  `now` = current Monday (`current_monday_days()`), weeks starting `<= now` are
+  done. Pies use `total` only; the tables get Fatte/Pianificate/Totale (PDF
+  Done/Planned/Total, `pie_hour_cells`/`pie_hour_heads`, GUI `hour_cells`/
+  `hour_heads`) only when `split_shown(to, now)` (period past the current week).
+  GUI layout = PDF layout: each block is title, pie, table **below**
+  (`draw_worker_pies`, test `tables_are_drawn_below_the_pies`), built by
+  `pie_block`: block width = max(`PIE_D`, table width), pie centred in it (the
+  pie fns take that `width`), a narrower table padded to the centre. The table
+  is drawn after the pie, so its width comes from the **previous frame** (egui
+  temp data, the table fns return `Grid` width; `request_repaint` on change —
+  test `pie_is_centered_over_its_table`); the two blocks
+  sit side by side (`PIE_SPACING` 72 px apart), stacked when narrower than
+  `side_by_side_min_w(split)`; the «Categoria» cells are `category_cell` —
+  swatch + name in an exact-size rect capped at `CAT_W` (110 px, `fit_text`
+  ellipsis, full name in the tooltip; test
+  `category_column_is_capped_and_tables_are_spaced`); the PDF tables go through `pie_table` (columns
+  `PIE_NUM_W` apart from the right edge). Test
+  `planned_hours_split_shows_done_and_planned_columns`.
   `pdf_export::build_pies_pdf` (one A4 page per worker, `pies_page`: two
   panels, each with a big pie centred under its title and the table **below**,
   scaled down by `pie_table_scale` when too long; subtitle from `pies_subtitle`

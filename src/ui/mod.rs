@@ -2875,6 +2875,7 @@ impl PjmApp {
                     from,
                     to,
                     &self.ui.pies_categories,
+                    current_monday_days(),
                 );
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.pies_categories.iter().copied().collect();

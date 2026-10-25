@@ -1195,11 +1195,29 @@ date: su quali dev e, dentro ogni dev, per quali categorie di progetto.
 4. **Prima torta, «Dev e categorie»** — il **cerchio interno** è diviso per **dev**
    (col colore del dev); l'**anello esterno** divide ogni spicchio di dev nelle
    **categorie** dei progetti (col colore della categoria, lo stesso della matrice),
-   proprio sopra il suo dev. Accanto, la tabella: per ogni dev le ore e la % sul
+   proprio sopra il suo dev. Sotto la torta, la tabella: per ogni dev le ore e la % sul
    totale del worker, poi le sue categorie con ore, % sul totale e **% del dev**; in
    fondo il totale.
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
    (ore e % sul totale).
+
+**Ore fatte e pianificate** — se l'intervallo arriva **oltre la settimana
+corrente**, accanto al nome del worker compare la divisione (es. «1380h nel
+periodo: 1100h fatte, 280h pianificate») e nelle tabelle la colonna delle ore
+diventa tre: **Fatte** (settimane fino a quella corrente compresa, come
+l'avanzamento presunto), **Pianificate** (quelle dopo) e **Totale**. Così si vede
+quale dev o categoria ha ancora ore davanti. Le torte e le percentuali restano sul
+totale. Se l'intervallo finisce entro la settimana corrente è tutto «fatto» e la
+tabella mostra solo «Ore».
+
+Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
+la tabella è più stretta della torta, è la tabella a essere centrata), e le due
+torte stanno una
+accanto all'altra; se la finestra non è abbastanza larga (con le colonne
+fatte/pianificate le tabelle sono più larghe), la seconda torta con la sua tabella
+va sotto la prima. La colonna «Categoria» delle tabelle è stretta: un nome di
+categoria troppo lungo finisce con «…» e, passandoci sopra col mouse, compare per
+intero.
 
 Dentro una fetta è scritta la **percentuale sul totale del worker**, solo se il
 testo ci sta; le fette piccole hanno comunque il loro valore nella tabella, e
@@ -1210,7 +1228,9 @@ sono arrotondate: una fetta con poche ore che arrotonda a zero è indicata «<1%
 inglese: «Hours by dev and category», con l'intervallo, gli anni e le categorie
 scelti nel sottotitolo): a sinistra la prima torta con sotto la sua tabella, a
 destra la seconda. Se un worker ha molte righe di tabella, il testo della tabella
-si rimpicciolisce per restare nella pagina.
+si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne sono
+«Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
+1380h (1100h done, 280h planned)`).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un
 file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I

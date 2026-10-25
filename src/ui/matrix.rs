@@ -344,7 +344,7 @@ fn mx_row_h(lines: usize) -> f32 {
 }
 
 /// Tronca `s` (con ellissi) finché non entra in `max_w` px col font dato.
-fn fit_text(ui: &egui::Ui, s: &str, font: &egui::FontId, max_w: f32) -> String {
+pub(crate) fn fit_text(ui: &egui::Ui, s: &str, font: &egui::FontId, max_w: f32) -> String {
     let w = |t: &str| {
         ui.painter()
             .layout_no_wrap(t.to_string(), font.clone(), Color32::BLACK)
