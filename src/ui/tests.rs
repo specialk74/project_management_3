@@ -1000,14 +1000,34 @@ fn remaining_hours_follow_the_year_and_the_null_filter() {
 /// settimane vuote.
 #[test]
 fn remaining_hours_tooltip_explains_the_number() {
-    let t = remaining_tooltip("Alice", 2026, true, false, 10, 376);
+    let t = remaining_tooltip("Alice", 2026, true, false, 10, 376, Some(35));
     assert!(t.starts_with("376h: ore disponibili di Alice da questa settimana alla fine del 2026 (10 settimane"));
     assert!(t.contains("limite impostato per quella settimana"));
     assert!(t.contains("non sono sottratte"));
+    assert!(t.ends_with("Già assegnate: 35h, quindi libere: 341h."), "{t}");
     assert!(!t.contains("Nulli"));
-    let t = remaining_tooltip("Alice", 2027, false, true, 4, 160);
+    let t = remaining_tooltip("Alice", 2026, true, false, 10, 40, Some(50));
+    assert!(t.ends_with("Già assegnate: 50h, quindi 10h oltre la capacità."), "{t}");
+    // Con «Nulli» niente riga delle ore libere.
+    let t = remaining_tooltip("Alice", 2027, false, true, 4, 160, None);
     assert!(t.contains("in tutto il 2027 (4 settimane"));
     assert!(t.contains("Filtro «Nulli»"));
+    assert!(!t.contains("Già assegnate"));
+}
+
+/// Ore già assegnate del tooltip: somma di `sovra` nelle settimane contate,
+/// di tutti i progetti (le stesse delle ore pianificate delle torte senza
+/// filtro).
+#[test]
+fn assigned_hours_sum_sovra_over_the_weeks() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let weeks = weeks_vec(&app);
+    let cur: Vec<i32> = weeks[3..6].to_vec();
+    app.sovra.insert((WeekId(cur[0] as usize), alice), Effort(8));
+    app.sovra.insert((WeekId(cur[2] as usize), alice), Effort(30));
+    app.sovra.insert((WeekId(weeks[0] as usize), alice), Effort(99)); // fuori
+    assert_eq!(worker_assigned_hours(&app, alice, &cur), 38);
 }
 
 #[test]

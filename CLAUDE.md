@@ -728,8 +728,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   current one, else the whole year; grid weeks only), filtered by
   `remaining_counted_weeks` (with «Nulli», `effort_filter_mode == 1`, only weeks
   with `sovra` 0). Week limits lower it; **assigned hours are not subtracted**.
-  Hover tooltip from `remaining_tooltip(...)` (test
-  `remaining_hours_tooltip_explains_the_number`).
+  Hover tooltip from `remaining_tooltip(..., assigned)` (test
+  `remaining_hours_tooltip_explains_the_number`): with `assigned =
+  Some(worker_assigned_hours(app, w, &year_weeks))` (Σ `sovra` = cells of all
+  projects) it adds «Già assegnate: Ah, quindi libere: Fh» / «… oltre la
+  capacità» — the same free hours as the pies' «Da qui a fine periodo» line
+  (period to 31/12, no category filter; verified equal on real data). `None`
+  with «Nulli» (counted weeks have no assigned hours by definition). Test
+  `assigned_hours_sum_sovra_over_the_weeks`.
 - **Footer date row** (`draw_right_footer`): left-click on a non-merged date opens
   the same `Popup::BulkWeekMax` as the header date (→ `Action::SetBulkWeekLimit`,
   all workers). Test `footer_date_click_opens_the_bulk_week_limit`.

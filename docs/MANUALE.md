@@ -796,8 +796,13 @@ Il footer si può nascondere/mostrare con la maniglia (triangolino) sul bordo.
   griglia). I limiti settimanali lo riducono, ma le **ore già assegnate non sono
   sottratte**: è la capacità che resta, non le ore libere. Con il filtro **«Nulli»**
   si contano solo le settimane in cui il worker non ha ancora ore assegnate.
-  Passando col mouse sul numero, un tooltip spiega il calcolo e dice quante
-  settimane sono state contate.
+  Passando col mouse sul numero, un tooltip spiega il calcolo, dice quante
+  settimane sono state contate e riporta le **ore libere**: «Già assegnate: 35h,
+  quindi libere: 341h» (ore già assegnate in quelle settimane, su tutti i
+  progetti), oppure «… quindi 10h oltre la capacità». Sono le stesse ore libere
+  della riga «Da qui a fine periodo» delle Torte con periodo fino al 31/12 e
+  senza filtro Categorie. Con «Nulli» la riga non c'è: lì si contano già solo le
+  settimane senza ore assegnate.
 
 ### Footer destro (per worker × settimana)
 Per ogni worker e ogni settimana mostra il valore **sovra** (ore allocate), con:

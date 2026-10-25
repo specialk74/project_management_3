@@ -182,6 +182,9 @@ pub(crate) fn remaining_counted_weeks<'a>(
 /// `year`): spiega che cosa somma, da quando (`current` = `year` è l'anno in
 /// corso) e, con `only_null` («Nulli»), che conta solo le settimane ancora
 /// vuote; `weeks` = settimane contate.
+/// `assigned` = ore già assegnate al worker nelle stesse settimane (somma di
+/// `sovra`, tutti i progetti): aggiunge la riga delle ore libere. `None` con
+/// «Nulli», dove le settimane contate sono proprio quelle senza ore assegnate.
 pub(crate) fn remaining_tooltip(
     name: &str,
     year: i32,
@@ -189,6 +192,7 @@ pub(crate) fn remaining_tooltip(
     only_null: bool,
     weeks: usize,
     hours: i32,
+    assigned: Option<i32>,
 ) -> String {
     let span = if current {
         format!("da questa settimana alla fine del {year}")
@@ -200,12 +204,32 @@ pub(crate) fn remaining_tooltip(
     } else {
         ""
     };
+    let free = match assigned {
+        Some(a) if hours - a >= 0 => {
+            format!("\nGià assegnate: {a}h, quindi libere: {}h.", hours - a)
+        }
+        Some(a) => format!(
+            "\nGià assegnate: {a}h, quindi {}h oltre la capacità.",
+            a - hours
+        ),
+        None => String::new(),
+    };
     format!(
         "{hours}h: ore disponibili di {name} {span} ({weeks} settimane della griglia).\n\
          Per ogni settimana conta il suo massimo ore effettivo: il limite impostato \
          per quella settimana, se c'è, altrimenti il suo massimo.{null}\n\
-         Le ore già assegnate non sono sottratte."
+         Le ore già assegnate non sono sottratte dal numero.{free}"
     )
+}
+
+/// Ore già assegnate al worker nelle settimane `weeks` (somma di `sovra`, cioè
+/// delle celle di tutti i progetti): con `worker_remaining_hours` dà le ore
+/// libere del tooltip del footer.
+pub(crate) fn worker_assigned_hours(app: &App, wid: WorkerId, weeks: &[i32]) -> i32 {
+    weeks
+        .iter()
+        .map(|w| app.sovra.get(&(WeekId(*w as usize), wid)).map_or(0, |e| e.0 as i32))
+        .sum()
 }
 
 /// Settimane su cui `worker_remaining_hours` conta le ore rimanenti di `year`:
@@ -440,6 +464,7 @@ pub(crate) fn draw_left_footer(
                     only_null,
                     counted,
                     remaining,
+                    (!only_null).then(|| worker_assigned_hours(app, *wid, &year_weeks)),
                 ));
         }
 
