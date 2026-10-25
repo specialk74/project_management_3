@@ -3295,10 +3295,10 @@ pub fn build_matrix_pdf(
 /// Pannelli della pagina (sinistra: dev e categorie, destra: categorie): in
 /// ognuno il titolo, la torta centrata e sotto la sua tabella.
 const PIE_PANEL_W: f32 = 140.0;
-const PIE_TITLE_Y: f32 = 180.0;
+const PIE_TITLE_Y: f32 = 173.5;
 /// Centro verticale, raggio esterno e raggio dell'anello dei dev (mm).
 const PIE_R_MM: f32 = 44.0;
-const PIE_CY: f32 = 176.0 - PIE_R_MM;
+const PIE_CY: f32 = PIE_TITLE_Y - 4.0 - PIE_R_MM;
 const PIE_R_IN_MM: f32 = 27.5;
 const PIE_GAP_MM: f32 = 1.1;
 /// Percentuali dentro le fette.
@@ -3474,28 +3474,41 @@ fn pies_page(
         true,
         BLACK,
     ));
-    out.extend(text_left(
-        X_LABEL,
-        PAGE_H - 21.0,
-        &format!(
-            "{subtitle}  ·  {}  ·  Capacity: {}h ({} used)",
-            if split {
-                format!(
-                    "Total: {}h ({}h done, {}h planned)",
-                    pie.total,
-                    pie.done,
-                    pie.total - pie.done
-                )
-            } else {
-                format!("Total: {}h", pie.total)
-            },
-            pie.capacity,
-            pct_label(pie.total, pie.capacity)
-        ),
-        10.0,
-        false,
-        BLACK,
-    ));
+    // Sottotitolo: periodo e filtri; poi le ore (totale e capacità) e, con un
+    // periodo oltre la settimana corrente, una riga per le ore libere (rossa se
+    // oltre la capacità). Righe intere e non pezzi accostati: la larghezza dei
+    // testi è solo stimata (`text_w_mm`).
+    out.extend(text_left(X_LABEL, PAGE_H - 20.0, subtitle, 10.0, false, BLACK));
+    let mut hours = if split {
+        format!(
+            "Total: {}h ({}h done, {}h planned)",
+            pie.total,
+            pie.done,
+            pie.planned()
+        )
+    } else {
+        format!("Total: {}h", pie.total)
+    };
+    hours = format!(
+        "{hours}  ·  Capacity: {}h ({} used)",
+        pie.capacity,
+        pct_label(pie.total, pie.capacity)
+    );
+    out.extend(text_left(X_LABEL, PAGE_H - 25.5, &hours, 9.0, false, BLACK));
+    if split {
+        let free = pie.free_hours();
+        let head = format!(
+            "From now to the end: {}h planned of {}h available, ",
+            pie.planned(),
+            pie.future_capacity
+        );
+        let (line, bold, color) = if free >= 0 {
+            (format!("{head}{free}h free"), false, BLACK)
+        } else {
+            (format!("{head}{}h over capacity", -free), true, RED)
+        };
+        out.extend(text_left(X_LABEL, PAGE_H - 30.5, &line, 9.0, bold, color));
+    }
 
     // Pannello sinistro: dev (anello interno) e categorie di ogni dev.
     let x0 = X_LABEL;
@@ -3807,7 +3820,8 @@ mod tests {
             "Planned",
             "Total",
             // 20000..20006 non parte di lunedì: tocca due settimane da 40h.
-            "From x to y  ·  Total: 40h (40h done, 0h planned)  ·  Capacity: 80h (50% used)",
+            "From x to y",
+            "Total: 40h (40h done, 0h planned)  ·  Capacity: 80h (50% used)",
         ] {
             assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
         }

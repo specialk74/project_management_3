@@ -788,8 +788,16 @@ Il footer si può nascondere/mostrare con la maniglia (triangolino) sul bordo.
   spunta ciascuno (più **Select All**): togli la spunta per escludere, rimettila
   per far tornare il dev. È l'unico punto da cui si può rimettere un dev già
   nascosto. La scelta è **salvata nel file**.
-- **Ore rimanenti per worker**: a destra di ogni riga worker, le ore ancora
-  disponibili (colore verde).
+- **Ore rimanenti per worker**: a destra di ogni riga worker, in verde, le ore
+  ancora **disponibili** nell'anno scelto nel selettore: per ogni settimana il
+  **massimo ore effettivo** del worker (il limite impostato per quella settimana,
+  se c'è, altrimenti il suo massimo), sommato dalla settimana corrente al 31/12 se
+  è l'anno in corso, oppure su tutto l'anno se è un altro (solo le settimane della
+  griglia). I limiti settimanali lo riducono, ma le **ore già assegnate non sono
+  sottratte**: è la capacità che resta, non le ore libere. Con il filtro **«Nulli»**
+  si contano solo le settimane in cui il worker non ha ancora ore assegnate.
+  Passando col mouse sul numero, un tooltip spiega il calcolo e dice quante
+  settimane sono state contate.
 
 ### Footer destro (per worker × settimana)
 Per ogni worker e ogni settimana mostra il valore **sovra** (ore allocate), con:
@@ -1221,6 +1229,14 @@ hanno abbassato il limite della settimana (come fa «Metti tutti i worker in
 ferie»); il flag ghost non conta. Con il filtro Categorie l'occupazione è la parte
 delle ore disponibili spesa in quelle categorie.
 
+**Ore libere da qui a fine periodo** — se l'intervallo va oltre la settimana
+corrente, sotto il nome del worker c'è una riga per le **settimane future** (quelle
+dopo la corrente, le stesse delle ore «pianificate»): «Da qui a fine periodo: 280h
+pianificate su 520h disponibili, 240h libere». Le ore disponibili sono calcolate
+come sopra, solo su quelle settimane; se le ore pianificate le superano la riga
+dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
+lavoro da qui in avanti?».
+
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
 torte stanno una
@@ -1242,7 +1258,9 @@ destra la seconda. Se un worker ha molte righe di tabella, il testo della tabell
 si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
 1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
-`Capacity: 1720h (80% used)`).
+`Capacity: 1720h (80% used)`); con un periodo oltre la settimana corrente una
+terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
+available, 240h free`, oppure `…, 40h over capacity` in rosso).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un
 file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I

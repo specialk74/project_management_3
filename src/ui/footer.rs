@@ -155,18 +155,57 @@ pub(crate) fn worker_remaining_hours(
     weeks: &[i32],
     only_null: bool,
 ) -> i32 {
-    weeks
-        .iter()
-        .filter(|w| {
-            !only_null
-                || app
-                    .sovra
-                    .get(&(WeekId(**w as usize), wid))
-                    .map_or(0, |e| e.0)
-                    == 0
-        })
-        .map(|w| app.workers.get_effective_max_hours(wid, *w as usize) as i32)
+    remaining_counted_weeks(app, wid, weeks, only_null)
+        .map(|w| app.workers.get_effective_max_hours(wid, w as usize) as i32)
         .sum()
+}
+
+/// Settimane di `weeks` che `worker_remaining_hours` conta: tutte, o con
+/// «Nulli» (`only_null`) solo quelle in cui il worker non ha ore assegnate.
+pub(crate) fn remaining_counted_weeks<'a>(
+    app: &'a App,
+    wid: WorkerId,
+    weeks: &'a [i32],
+    only_null: bool,
+) -> impl Iterator<Item = i32> + 'a {
+    weeks.iter().copied().filter(move |w| {
+        !only_null
+            || app
+                .sovra
+                .get(&(WeekId(*w as usize), wid))
+                .map_or(0, |e| e.0)
+                == 0
+    })
+}
+
+/// Tooltip del numero verde accanto al nome del worker (ore rimanenti di
+/// `year`): spiega che cosa somma, da quando (`current` = `year` è l'anno in
+/// corso) e, con `only_null` («Nulli»), che conta solo le settimane ancora
+/// vuote; `weeks` = settimane contate.
+pub(crate) fn remaining_tooltip(
+    name: &str,
+    year: i32,
+    current: bool,
+    only_null: bool,
+    weeks: usize,
+    hours: i32,
+) -> String {
+    let span = if current {
+        format!("da questa settimana alla fine del {year}")
+    } else {
+        format!("in tutto il {year}")
+    };
+    let null = if only_null {
+        " Filtro «Nulli»: solo le settimane in cui non ha ancora ore assegnate."
+    } else {
+        ""
+    };
+    format!(
+        "{hours}h: ore disponibili di {name} {span} ({weeks} settimane della griglia).\n\
+         Per ogni settimana conta il suo massimo ore effettivo: il limite impostato \
+         per quella settimana, se c'è, altrimenti il suo massimo.{null}\n\
+         Le ore già assegnate non sono sottratte."
+    )
 }
 
 /// Settimane su cui `worker_remaining_hours` conta le ore rimanenti di `year`:
@@ -384,13 +423,24 @@ pub(crate) fn draw_left_footer(
                 &year_weeks,
                 state.effort_filter_mode == 1,
             );
-            ui.painter().text(
+            let num = ui.painter().text(
                 rem_rect.right_center() - Vec2::new(12.0, 0.0),
                 Align2::RIGHT_CENTER,
                 remaining.to_string(),
                 cell_font(),
                 g(ok_green()),
             );
+            let only_null = state.effort_filter_mode == 1;
+            let counted = remaining_counted_weeks(app, *wid, &year_weeks, only_null).count();
+            ui.interact(num.expand(2.0), ui.scope_id().with(("wrem", wid.0)), Sense::hover())
+                .on_hover_text(remaining_tooltip(
+                    name,
+                    year,
+                    year == days_to_local(state.this_week).year(),
+                    only_null,
+                    counted,
+                    remaining,
+                ));
         }
 
         let resp = ui

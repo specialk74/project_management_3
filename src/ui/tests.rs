@@ -991,6 +991,23 @@ fn remaining_hours_follow_the_year_and_the_null_filter() {
         full - DEFAULT_MAX_HOURS as i32
     );
     assert_eq!(worker_remaining_hours(&app, alice, &cur, false), full);
+    assert_eq!(remaining_counted_weeks(&app, alice, &cur, true).count(), cur.len() - 1);
+}
+
+/// Tooltip del numero verde accanto al worker nel footer: dice che sono le
+/// ore disponibili (massimo effettivo per settimana), da quando, che le ore
+/// assegnate non sono sottratte e, con «Nulli», che contano solo le
+/// settimane vuote.
+#[test]
+fn remaining_hours_tooltip_explains_the_number() {
+    let t = remaining_tooltip("Alice", 2026, true, false, 10, 376);
+    assert!(t.starts_with("376h: ore disponibili di Alice da questa settimana alla fine del 2026 (10 settimane"));
+    assert!(t.contains("limite impostato per quella settimana"));
+    assert!(t.contains("non sono sottratte"));
+    assert!(!t.contains("Nulli"));
+    let t = remaining_tooltip("Alice", 2027, false, true, 4, 160);
+    assert!(t.contains("in tutto il 2027 (4 settimane"));
+    assert!(t.contains("Filtro «Nulli»"));
 }
 
 #[test]

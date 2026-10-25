@@ -365,6 +365,24 @@ fn side_by_side_min_w(split: bool) -> f32 {
     if split { 1300.0 } else { 1000.0 }
 }
 
+/// Riga «da qui a fine periodo»: ore pianificate, disponibili e libere (o,
+/// se negative, oltre la capacità, in rosso).
+fn future_text(pie: &WorkerPie) -> egui::RichText {
+    let free = pie.free_hours();
+    let head = format!(
+        "Da qui a fine periodo: {}h pianificate su {}h disponibili, ",
+        pie.planned(),
+        pie.future_capacity
+    );
+    if free >= 0 {
+        egui::RichText::new(format!("{head}{free}h libere")).color(text_dim())
+    } else {
+        egui::RichText::new(format!("{head}{}h oltre la capacità", -free))
+            .color(error_red())
+            .strong()
+    }
+}
+
 /// Le due torte di un worker, ciascuna con la sua tabella sotto (come nel
 /// PDF); i due blocchi affiancati se c'è spazio, altrimenti uno sotto l'altro.
 fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) {
@@ -375,7 +393,7 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
                 "{}h nel periodo: {}h fatte, {}h pianificate",
                 pie.total,
                 pie.done,
-                pie.total - pie.done
+                pie.planned()
             )
         } else {
             format!("{}h nel periodo", pie.total)
@@ -397,6 +415,12 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
                  hanno abbassato il limite della settimana.",
             );
     });
+    if split {
+        ui.label(future_text(pie)).on_hover_text(
+            "Settimane dopo quella corrente: ore disponibili meno ore già \
+             pianificate.",
+        );
+    }
     if pie.total == 0 {
         ui.label(egui::RichText::new("Nessuna ora nel periodo.").color(text_dim()));
         return;
@@ -622,6 +646,8 @@ mod tests {
         for t in [
             "60h nel periodo: 40h fatte, 20h pianificate",
             "· disponibili 120h, occupazione 50%",
+            // Future: le due settimane dopo la prima, 80h; pianificate 20h.
+            "Da qui a fine periodo: 20h pianificate su 80h disponibili, 60h libere",
             "Fatte",
             "Pianificate",
             "Totale",

@@ -536,6 +536,13 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   «· disponibili Nh, occupazione P%» (red + strong when > 100%) and in the PDF
   subtitle as `Capacity: Nh (P% used)`. Test
   `capacity_sums_the_effective_max_of_the_period_weeks`.
+  **Free hours** (only with `split`): `WorkerPie.future_capacity` = capacity of
+  the period weeks **after** `now` (the planned ones), `free_hours()` =
+  `future_capacity − planned()` (`i64`, negative = over capacity). GUI: a line
+  under the worker summary (`future_text`, red + strong when negative); PDF: the
+  subtitle is three whole lines (filters / totals+capacity / free hours, red
+  bold when over) — never pieces placed side by side, `text_w_mm` is only an
+  estimate. Test `free_hours_are_future_capacity_minus_planned`.
   GUI layout = PDF layout: each block is title, pie, table **below**
   (`draw_worker_pies`, test `tables_are_drawn_below_the_pies`), built by
   `pie_block`: block width = max(`PIE_D`, table width), pie centred in it (the
@@ -670,6 +677,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `Popup::WorkerMax`, formerly on left-click) and «Ghost». Tests
   `footer_click_toggles_and_switches_the_selected_worker`,
   `selected_worker_is_highlighted_in_the_dev_cells`.
+- **Footer remaining hours** (green number right of each worker name in
+  `draw_left_footer`): `worker_remaining_hours` = Σ `get_effective_max_hours`
+  over `remaining_weeks` (current week → 31/12 if the selected year is the
+  current one, else the whole year; grid weeks only), filtered by
+  `remaining_counted_weeks` (with «Nulli», `effort_filter_mode == 1`, only weeks
+  with `sovra` 0). Week limits lower it; **assigned hours are not subtracted**.
+  Hover tooltip from `remaining_tooltip(...)` (test
+  `remaining_hours_tooltip_explains_the_number`).
 - **Footer date row** (`draw_right_footer`): left-click on a non-merged date opens
   the same `Popup::BulkWeekMax` as the header date (→ `Action::SetBulkWeekLimit`,
   all workers). Test `footer_date_click_opens_the_bulk_week_limit`.

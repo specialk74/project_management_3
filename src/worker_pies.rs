@@ -77,6 +77,9 @@ pub struct WorkerPie {
     pub done: u32,
     /// Ore disponibili nel periodo (vedi la nota del modulo).
     pub capacity: u32,
+    /// Di `capacity`, quelle delle settimane **dopo** la corrente: le stesse in
+    /// cui le ore sono «pianificate».
+    pub future_capacity: u32,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
     /// Categorie (stesso ordine di `DevHours::categories`), solo > 0.
@@ -104,6 +107,19 @@ pub fn capacity(app: &App, worker: WorkerId, weeks: &[i32]) -> u32 {
         .iter()
         .map(|&w| app.workers.get_effective_max_hours(worker, w as usize))
         .sum()
+}
+
+impl WorkerPie {
+    /// Ore pianificate (dopo la settimana corrente).
+    pub fn planned(&self) -> u32 {
+        self.total - self.done
+    }
+
+    /// Ore ancora libere da qui a fine periodo: capacità delle settimane future
+    /// meno le ore pianificate. Negativo = oltre la capacità.
+    pub fn free_hours(&self) -> i64 {
+        self.future_capacity as i64 - self.planned() as i64
+    }
 }
 
 /// Le colonne fatte/pianificate servono solo se il periodo (che finisce a
@@ -235,6 +251,7 @@ pub fn build(
         }
     }
     let weeks = period_weeks(from, to);
+    let future: Vec<i32> = weeks.iter().copied().filter(|w| *w > now).collect();
     workers
         .into_iter()
         .zip(hours)
@@ -259,6 +276,7 @@ pub fn build(
                 .collect();
             WorkerPie {
                 capacity: capacity(app, worker, &weeks),
+                future_capacity: capacity(app, worker, &future),
                 worker,
                 name,
                 total: all.total,
@@ -449,6 +467,38 @@ mod tests {
         let sel: HashSet<_> = [mario].into_iter().collect();
         let pies = build(&app, &sel, monday, monday + 20, &BTreeSet::new(), monday);
         assert_eq!(pies[0].capacity, 96);
+        // «Oggi» nella prima settimana: future le altre due (80h).
+        assert_eq!(pies[0].future_capacity, 80);
+        assert_eq!(pies[0].free_hours(), 80);
+    }
+
+    /// Ore libere da qui a fine periodo: capacità delle settimane future meno
+    /// le ore pianificate; negative se oltre la capacità.
+    #[test]
+    fn free_hours_are_future_capacity_minus_planned() {
+        use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
+        use crate::single_dev_utils::single_dev::WeekId;
+        use crate::single_effort_utils::single_effort::Effort;
+        let monday = local_to_days(&primo_giorno_settimana_corrente(
+            &chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
+        ));
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        let wk = |i: i32| WeekId((monday + 7 * i) as usize);
+        app.projects.add_effort(p, fe, wk(0), mario, Effort(40)); // fatta
+        app.projects.add_effort(p, fe, wk(1), mario, Effort(30));
+        app.projects.add_effort(p, fe, wk(2), mario, Effort(20));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let to = monday + 20;
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), monday)[0];
+        assert_eq!((m.planned(), m.future_capacity, m.free_hours()), (50, 80, 30));
+        // Oltre la capacità: 60h in una settimana da 40h.
+        app.projects.add_effort(p, fe, wk(2), mario, Effort(60));
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), monday)[0];
+        assert_eq!(m.free_hours(), -10);
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette
