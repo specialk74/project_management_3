@@ -3497,10 +3497,11 @@ fn pies_page(
     out.extend(text_left(X_LABEL, PAGE_H - 25.5, &hours, 9.0, false, BLACK));
     if split {
         let free = pie.free_hours();
+        // Ore pianificate di tutte le categorie, anche con il filtro.
+        let all = if pie.filtered { " (all categories)" } else { "" };
         let head = format!(
-            "From now to the end: {}h planned of {}h available, ",
-            pie.planned(),
-            pie.future_capacity
+            "From now to the end{all}: {}h planned of {}h available, ",
+            pie.planned_all, pie.future_capacity
         );
         let (line, bold, color) = if free >= 0 {
             (format!("{head}{free}h free"), false, BLACK)

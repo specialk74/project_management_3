@@ -1238,7 +1238,11 @@ periodo: 280h pianificate su 520h disponibili, 240h libere». Le ore disponibili
 sono calcolate come sopra, solo su quelle settimane: con il periodo fino al 31/12
 dell'anno in corso coincidono con il **numero verde** accanto al worker nel footer; se le ore pianificate le superano la riga
 dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
-lavoro da qui in avanti?».
+lavoro da qui in avanti?». Le ore pianificate di questa riga sono **sempre di
+tutte le categorie**, anche con il filtro Categorie attivo (la riga lo segnala con
+«tutte le categorie»): il lavoro delle categorie escluse occupa comunque il
+worker, e senza contarlo le ore libere risulterebbero più del vero. Torte,
+tabelle, totale e occupazione invece seguono il filtro.
 
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
@@ -1263,7 +1267,8 @@ si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne so
 1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
 `Capacity: 1720h (80% used)`); con un periodo che arriva alla settimana corrente una
 terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
-available, 240h free`, oppure `…, 40h over capacity` in rosso).
+available, 240h free`, oppure `…, 40h over capacity` in rosso; con il filtro
+Categorie `From now to the end (all categories): …`).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un
 file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I

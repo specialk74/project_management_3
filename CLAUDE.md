@@ -72,7 +72,9 @@ references; the UI lives entirely in the `src/ui/` module.
     `bar_format_selector`/`draw_bar_format_preview`), `help.rs` (manual window + parsing),
     `saturation.rs` (worker-saturation dashboard), `filters.rs` (dialog unica dei
     filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app), `matrix.rs` (matrice
-    progetti × worker: `matrix_select_window` + `matrix_window`).
+    progetti × worker: `matrix_select_window` + `matrix_window`, plus the shared
+    `worker_pick_window`), `pies.rs` (torte dev/categorie per worker:
+    `pies_select_window` + `pies_window`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
     a column lives in a **private** helper of `grid.rs` (not re-exported) —
     `draw_year_end_cell`, `milestones_in_group` + `draw_milestone_strip` (the milestone /
@@ -91,6 +93,8 @@ references; the UI lives entirely in the `src/ui/` module.
     `private_interfaces` warns). Note the `include_str!` for the manual is `../../docs/…` now.
 - `src/ui_style.rs` — sizes, fonts, colors, theme (light/dark) and B/W mode, `cumulative_color`.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
+- `src/worker_matrix.rs` / `src/worker_pies.rs` — data shared by the matrix / pies
+  windows and their PDF (and SVG) exports.
 - Data modules: `workers_utils/`, `dev_utils/`, `project_utils/`, `single_dev_utils/`, `single_effort_utils/`, `categories.rs`, `milestones.rs`, `date_utils/`, `sync_merge.rs`.
 
 ### Data Model
@@ -542,7 +546,11 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   **Free hours** (only with `split`): `WorkerPie.future_capacity` = capacity of
   the period weeks **from** `now` on (the planned ones; = the footer's green
   number when the period ends on 31/12 of the current year), `free_hours()` =
-  `future_capacity − planned()` (`i64`, negative = over capacity). GUI: a line
+  `future_capacity − planned_all` (`i64`, negative = over capacity).
+  `WorkerPie.planned_all` = planned hours of **all** categories, counted in
+  `build` even for projects the category filter excludes (`shown` gates only the
+  pie data), so free hours don't overstate; `WorkerPie.filtered` makes the line
+  say «(tutte le categorie)» / «(all categories)». GUI: a line
   under the worker summary (`future_text`, red + strong when negative); PDF: the
   subtitle is three whole lines (filters / totals+capacity / free hours, red
   bold when over) — never pieces placed side by side, `text_w_mm` is only an

@@ -83,6 +83,13 @@ pub struct WorkerPie {
     /// Di `capacity`, quelle delle settimane **dalla corrente** in poi: le
     /// stesse in cui le ore sono «pianificate».
     pub future_capacity: u32,
+    /// Ore pianificate di **tutte** le categorie, anche con il filtro: le ore
+    /// libere si calcolano su queste, perché il lavoro delle categorie escluse
+    /// occupa comunque il worker.
+    pub planned_all: u32,
+    /// Il filtro Categorie era attivo: `planned_all` può differire da
+    /// `planned()` e la riga delle ore libere lo dice.
+    pub filtered: bool,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
     /// Categorie (stesso ordine di `DevHours::categories`), solo > 0.
@@ -119,9 +126,10 @@ impl WorkerPie {
     }
 
     /// Ore ancora libere da qui a fine periodo: capacità delle settimane future
-    /// meno le ore pianificate. Negativo = oltre la capacità.
+    /// meno le ore pianificate di tutte le categorie (`planned_all`). Negativo =
+    /// oltre la capacità.
     pub fn free_hours(&self) -> i64 {
-        self.future_capacity as i64 - self.planned() as i64
+        self.future_capacity as i64 - self.planned_all as i64
     }
 }
 
@@ -225,11 +233,11 @@ pub fn build(
     type CatKey = (bool, Option<CategoryId>);
     let mut hours: Vec<BTreeMap<DevId, BTreeMap<CatKey, Hours>>> =
         vec![BTreeMap::new(); workers.len()];
+    // Ore pianificate di tutte le categorie, filtro o no (per le ore libere).
+    let mut planned_all = vec![0u32; workers.len()];
     for (proj, _) in app.projects.list() {
         let cat = app.projects.get_category(proj);
-        if !cats.is_empty() && !cats.contains(&cat) {
-            continue;
-        }
+        let shown = cats.is_empty() || cats.contains(&cat);
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
                 continue;
@@ -241,32 +249,38 @@ pub fn build(
                 let Some(sew) = sd.get_all(wk) else { continue };
                 for (wi, (wid, _)) in workers.iter().enumerate() {
                     let h = sew.worker_id.get(wid).map_or(0, |se| se.get_effort().0 as u32);
-                    if h > 0 {
+                    let done = (wk.0 as i32) < now;
+                    if !done {
+                        planned_all[wi] += h;
+                    }
+                    if h > 0 && shown {
                         hours[wi]
                             .entry(dev)
                             .or_default()
                             .entry((cat.is_none(), cat))
                             .or_default()
-                            .add(h, (wk.0 as i32) < now);
+                            .add(h, done);
                     }
                 }
             }
         }
     }
     let weeks = period_weeks(from, to);
+    let filtered = !cats.is_empty();
     let future: Vec<i32> = weeks.iter().copied().filter(|w| *w >= now).collect();
     workers
         .into_iter()
         .zip(hours)
-        .map(|((worker, name), by_dev)| {
-            let mut cats: BTreeMap<CatKey, Hours> = BTreeMap::new();
+        .zip(planned_all)
+        .map(|(((worker, name), by_dev), planned_all)| {
+            let mut by_cat_all: BTreeMap<CatKey, Hours> = BTreeMap::new();
             let mut all = Hours::default();
             let devs: Vec<DevHours> = by_dev
                 .into_iter()
                 .map(|(dev, by_cat)| {
                     let mut hours = Hours::default();
                     for (k, h) in &by_cat {
-                        *cats.entry(*k).or_default() += *h;
+                        *by_cat_all.entry(*k).or_default() += *h;
                         hours += *h;
                     }
                     all += hours;
@@ -280,12 +294,14 @@ pub fn build(
             WorkerPie {
                 capacity: capacity(app, worker, &weeks),
                 future_capacity: capacity(app, worker, &future),
+                planned_all,
+                filtered,
                 worker,
                 name,
                 total: all.total,
                 done: all.done,
                 devs,
-                categories: cats.into_iter().map(|((_, c), h)| (c, h)).collect(),
+                categories: by_cat_all.into_iter().map(|((_, c), h)| (c, h)).collect(),
             }
         })
         .collect()
@@ -511,6 +527,22 @@ mod tests {
         app.projects.add_effort(p, fe, wk(2), mario, Effort(60));
         let m = &build(&app, &sel, monday, to, &BTreeSet::new(), now)[0];
         assert_eq!(m.free_hours(), -10);
+        // Filtro Categorie: le ore libere contano comunque il lavoro delle
+        // categorie escluse (P1 è senza categoria, il filtro tiene solo «A»).
+        let ca = app.categories.add("Cliente A");
+        let pa = app.projects.add("x", Some("PA"), None);
+        app.projects.set_category(pa, Some(ca));
+        app.projects.add_dev(pa, fe);
+        app.projects.add_effort(pa, fe, wk(1), mario, Effort(5));
+        let only_a: BTreeSet<_> = [Some(ca)].into();
+        let m = &build(&app, &sel, monday, to, &only_a, now)[0];
+        assert_eq!(m.planned(), 5, "le tabelle seguono il filtro");
+        assert_eq!(m.planned_all, 95, "30 + 60 di P1 e 5 di PA");
+        assert_eq!(m.free_hours(), 80 - 95);
+        assert!(m.filtered);
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), now)[0];
+        assert!(!m.filtered, "senza filtro");
+        assert_eq!(m.planned(), m.planned_all);
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette

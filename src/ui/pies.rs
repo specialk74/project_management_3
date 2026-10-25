@@ -365,14 +365,15 @@ fn side_by_side_min_w(split: bool) -> f32 {
     if split { 1300.0 } else { 1000.0 }
 }
 
-/// Riga «da qui a fine periodo»: ore pianificate, disponibili e libere (o,
-/// se negative, oltre la capacità, in rosso).
+/// Riga «da qui a fine periodo»: ore pianificate (di tutte le categorie, anche
+/// con il filtro: `planned_all`), disponibili e libere (o, se negative, oltre
+/// la capacità, in rosso).
 fn future_text(pie: &WorkerPie) -> egui::RichText {
     let free = pie.free_hours();
+    let all = if pie.filtered { " (tutte le categorie)" } else { "" };
     let head = format!(
-        "Da qui a fine periodo: {}h pianificate su {}h disponibili, ",
-        pie.planned(),
-        pie.future_capacity
+        "Da qui a fine periodo{all}: {}h pianificate su {}h disponibili, ",
+        pie.planned_all, pie.future_capacity
     );
     if free >= 0 {
         egui::RichText::new(format!("{head}{free}h libere")).color(text_dim())
@@ -419,7 +420,9 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
         ui.label(future_text(pie)).on_hover_text(
             "Dalla settimana corrente (compresa) a fine periodo: ore disponibili \
              (come il numero verde accanto al worker nel footer) meno ore già \
-             pianificate.",
+             pianificate. Le ore pianificate sono sempre di tutte le categorie, \
+             anche con il filtro Categorie: il lavoro delle categorie escluse \
+             occupa comunque il worker.",
         );
     }
     if pie.total == 0 {
