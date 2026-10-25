@@ -12,10 +12,13 @@
 //! Le frazioni sono tutte sul totale del worker. Angoli: 0 in alto (ore 12),
 //! senso orario.
 //!
-//! Ogni valore porta anche le ore **fatte** (settimane fino a quella corrente
-//! compresa, come l'avanzamento presunto); il resto sono ore **pianificate**.
-//! Le torte usano solo il totale; fatte/pianificate vanno nelle tabelle quando
-//! il periodo arriva oltre la settimana corrente (`split_shown`).
+//! Ogni valore porta anche le ore **fatte** (settimane già concluse, prima di
+//! quella corrente); il resto, **dalla settimana corrente** in poi, sono ore
+//! **pianificate**: a metà settimana quelle ore non sono ancora fatte, e così
+//! le ore libere partono dalla stessa settimana del numero verde del footer
+//! (`worker_remaining_hours`). Le torte usano solo il totale; fatte/pianificate
+//! vanno nelle tabelle quando il periodo arriva alla settimana corrente
+//! (`split_shown`).
 //!
 //! La **capacità** del worker nel periodo è la somma, sulle settimane del
 //! periodo, del suo massimo ore effettivo (limite della settimana se c'è,
@@ -30,8 +33,8 @@ use crate::dev_utils::dev::DevId;
 use crate::worker_matrix::week_overlaps;
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
-/// Ore totali di una voce e, di queste, quelle fatte (fino alla settimana
-/// corrente compresa).
+/// Ore totali di una voce e, di queste, quelle fatte (settimane prima di
+/// quella corrente).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Hours {
     pub total: u32,
@@ -39,7 +42,7 @@ pub struct Hours {
 }
 
 impl Hours {
-    /// Ore pianificate: dopo la settimana corrente.
+    /// Ore pianificate: dalla settimana corrente in poi.
     pub fn planned(&self) -> u32 {
         self.total - self.done
     }
@@ -73,12 +76,12 @@ pub struct WorkerPie {
     pub name: String,
     /// Ore totali nel periodo (0 = niente torte).
     pub total: u32,
-    /// Di `total`, le ore fatte (fino alla settimana corrente compresa).
+    /// Di `total`, le ore fatte (settimane prima di quella corrente).
     pub done: u32,
     /// Ore disponibili nel periodo (vedi la nota del modulo).
     pub capacity: u32,
-    /// Di `capacity`, quelle delle settimane **dopo** la corrente: le stesse in
-    /// cui le ore sono «pianificate».
+    /// Di `capacity`, quelle delle settimane **dalla corrente** in poi: le
+    /// stesse in cui le ore sono «pianificate».
     pub future_capacity: u32,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
@@ -110,7 +113,7 @@ pub fn capacity(app: &App, worker: WorkerId, weeks: &[i32]) -> u32 {
 }
 
 impl WorkerPie {
-    /// Ore pianificate (dopo la settimana corrente).
+    /// Ore pianificate (dalla settimana corrente in poi).
     pub fn planned(&self) -> u32 {
         self.total - self.done
     }
@@ -123,10 +126,10 @@ impl WorkerPie {
 }
 
 /// Le colonne fatte/pianificate servono solo se il periodo (che finisce a
-/// `to`) contiene settimane dopo quella corrente (lunedì `now`): altrimenti
-/// tutto è «fatto».
+/// `to`) arriva alla settimana corrente (lunedì `now`): altrimenti tutto è
+/// «fatto».
 pub fn split_shown(to: i32, now: i32) -> bool {
-    to >= now + 7
+    to >= now
 }
 
 /// Una fetta: `from`/`to` frazioni 0..1 del giro, sul totale del worker.
@@ -203,7 +206,7 @@ impl WorkerPie {
 /// categorie (`None` nel set = «Senza categoria»; vuoto = tutte), come la
 /// combo della matrice: totale e percentuali contano solo quei progetti.
 /// `now` = lunedì della settimana corrente (giorni): le settimane che iniziano
-/// entro quel giorno sono «fatte».
+/// prima sono «fatte», quella corrente e le successive «pianificate».
 pub fn build(
     app: &App,
     selected: &HashSet<WorkerId>,
@@ -244,14 +247,14 @@ pub fn build(
                             .or_default()
                             .entry((cat.is_none(), cat))
                             .or_default()
-                            .add(h, wk.0 as i32 <= now);
+                            .add(h, (wk.0 as i32) < now);
                     }
                 }
             }
         }
     }
     let weeks = period_weeks(from, to);
-    let future: Vec<i32> = weeks.iter().copied().filter(|w| *w > now).collect();
+    let future: Vec<i32> = weeks.iter().copied().filter(|w| *w >= now).collect();
     workers
         .into_iter()
         .zip(hours)
@@ -394,8 +397,8 @@ mod tests {
         app.projects.add_effort(p1, be, WeekId(20100), mario, Effort(99)); // fuori
         app.projects.add_effort(p2, be, WeekId(20000), luigi, Effort(0));
         let sel: HashSet<_> = [mario, luigi].into_iter().collect();
-        // «Oggi» nella seconda settimana: la prima e la seconda sono fatte.
-        let pies = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20007);
+        // «Oggi» nella terza settimana: le prime due sono concluse, fatte.
+        let pies = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20014);
         let m = pies.iter().find(|p| p.worker == mario).unwrap();
         let h = |total, done| Hours { total, done };
         assert_eq!((m.total, m.done), (40, 40));
@@ -403,9 +406,9 @@ mod tests {
         assert_eq!((m.devs[0].dev, m.devs[0].hours), (fe, h(30, 30)));
         assert_eq!(m.devs[0].categories, [(Some(ca), h(20, 20)), (None, h(10, 10))]);
         assert_eq!(m.categories, [(Some(ca), h(30, 30)), (None, h(10, 10))]);
-        // «Oggi» nella prima settimana: le 10h di Backend della seconda sono
-        // pianificate.
-        let early = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20000);
+        // «Oggi» nella seconda settimana: la settimana corrente è ancora
+        // pianificata, quindi le sue 10h di Backend lo sono.
+        let early = build(&app, &sel, 20000, 20013, &BTreeSet::new(), 20007);
         let e = early.iter().find(|p| p.worker == mario).unwrap();
         assert_eq!((e.total, e.done), (40, 30));
         assert_eq!(e.devs[1].hours, h(10, 0));
@@ -431,7 +434,8 @@ mod tests {
         let f = build(&app, &sel, 20000, 20013, &only_a, 20007);
         let m = f.iter().find(|p| p.worker == mario).unwrap();
         assert_eq!(m.total, 30);
-        assert_eq!(m.categories, [(Some(ca), h(30, 30))]);
+        // Le 10h della settimana corrente (20007) sono pianificate.
+        assert_eq!(m.categories, [(Some(ca), h(30, 20))]);
         assert_eq!(m.dev_ring()[0].to, 20.0 / 30.0);
         let no_cat: BTreeSet<_> = [None].into();
         let f = build(&app, &sel, 20000, 20013, &no_cat, 20007);
@@ -441,8 +445,8 @@ mod tests {
         assert_eq!(pct_label(1, 4), "25%");
         // Colonne fatte/pianificate solo se il periodo va oltre la settimana
         // corrente.
-        assert!(!split_shown(20006, 20000));
-        assert!(split_shown(20007, 20000));
+        assert!(!split_shown(19999, 20000), "periodo concluso: tutto fatto");
+        assert!(split_shown(20000, 20000), "arriva alla settimana corrente");
     }
 
     /// Capacità: massimo effettivo di ogni settimana del periodo (limite della
@@ -467,9 +471,12 @@ mod tests {
         let sel: HashSet<_> = [mario].into_iter().collect();
         let pies = build(&app, &sel, monday, monday + 20, &BTreeSet::new(), monday);
         assert_eq!(pies[0].capacity, 96);
-        // «Oggi» nella prima settimana: future le altre due (80h).
+        // «Oggi» nella prima settimana: conta già lei (come il footer).
+        assert_eq!(pies[0].future_capacity, 96);
+        assert_eq!(pies[0].free_hours(), 96);
+        // «Oggi» nella seconda: la prima è conclusa, restano le altre due.
+        let pies = build(&app, &sel, monday, monday + 20, &BTreeSet::new(), monday + 7);
         assert_eq!(pies[0].future_capacity, 80);
-        assert_eq!(pies[0].free_hours(), 80);
     }
 
     /// Ore libere da qui a fine periodo: capacità delle settimane future meno
@@ -488,16 +495,21 @@ mod tests {
         let p = app.projects.add("x", Some("P1"), None);
         app.projects.add_dev(p, fe);
         let wk = |i: i32| WeekId((monday + 7 * i) as usize);
-        app.projects.add_effort(p, fe, wk(0), mario, Effort(40)); // fatta
+        app.projects.add_effort(p, fe, wk(0), mario, Effort(40));
         app.projects.add_effort(p, fe, wk(1), mario, Effort(30));
         app.projects.add_effort(p, fe, wk(2), mario, Effort(20));
         let sel: HashSet<_> = [mario].into_iter().collect();
         let to = monday + 20;
+        // «Oggi» nella prima settimana: è già tra le pianificate e disponibili.
         let m = &build(&app, &sel, monday, to, &BTreeSet::new(), monday)[0];
+        assert_eq!((m.planned(), m.future_capacity, m.free_hours()), (90, 120, 30));
+        // «Oggi» nella seconda: la prima (40h) è fatta e fuori dal conto.
+        let now = monday + 7;
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), now)[0];
         assert_eq!((m.planned(), m.future_capacity, m.free_hours()), (50, 80, 30));
         // Oltre la capacità: 60h in una settimana da 40h.
         app.projects.add_effort(p, fe, wk(2), mario, Effort(60));
-        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), monday)[0];
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), now)[0];
         assert_eq!(m.free_hours(), -10);
     }
 

@@ -417,7 +417,8 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
     });
     if split {
         ui.label(future_text(pie)).on_hover_text(
-            "Settimane dopo quella corrente: ore disponibili meno ore già \
+            "Dalla settimana corrente (compresa) a fine periodo: ore disponibili \
+             (come il numero verde accanto al worker nel footer) meno ore già \
              pianificate.",
         );
     }
@@ -631,8 +632,9 @@ mod tests {
         let p = app.projects.list()[0].0;
         app.projects.add_effort(p, fe, WeekId(20007), mario, Effort(20));
         let sel: HashSet<_> = [mario].into_iter().collect();
-        // «Oggi» nella prima settimana: le 20h della seconda sono pianificate.
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20013, &Default::default(), 20000);
+        // «Oggi» nella seconda settimana: la prima è conclusa (fatta), le 20h
+        // della seconda sono pianificate.
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20013, &Default::default(), 20007);
         assert!(crate::worker_pies::split_shown(20013, 20000));
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -646,8 +648,9 @@ mod tests {
         for t in [
             "60h nel periodo: 40h fatte, 20h pianificate",
             "· disponibili 120h, occupazione 50%",
-            // Future: le due settimane dopo la prima, 80h; pianificate 20h.
-            "Da qui a fine periodo: 20h pianificate su 80h disponibili, 60h libere",
+            // Dalla settimana corrente: solo l'ultima del periodo (lunedì
+            // 20011) è ≥ 20007, 40h; pianificate 20h.
+            "Da qui a fine periodo: 20h pianificate su 40h disponibili, 20h libere",
             "Fatte",
             "Pianificate",
             "Totale",

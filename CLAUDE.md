@@ -525,10 +525,13 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   Export: `Action::ExportWorkerPies { from, to, years, svg }` →
   **Done / planned**: every value is a `worker_pies::Hours { total, done }`
   (`planned()` = rest; `WorkerPie` keeps `total`/`done` fields); `build` takes
-  `now` = current Monday (`current_monday_days()`), weeks starting `<= now` are
-  done. Pies use `total` only; the tables get Fatte/Pianificate/Totale (PDF
-  Done/Planned/Total, `pie_hour_cells`/`pie_hour_heads`, GUI `hour_cells`/
-  `hour_heads`) only when `split_shown(to, now)` (period past the current week).
+  `now` = current Monday (`current_monday_days()`): weeks starting `< now` are
+  done, the **current week is planned** (unlike the grid's presumed progress) so
+  that the free hours start from the same week as the footer's green number
+  (`worker_remaining_hours`). Pies use `total` only; the tables get
+  Fatte/Pianificate/Totale (PDF Done/Planned/Total, `pie_hour_cells`/
+  `pie_hour_heads`, GUI `hour_cells`/`hour_heads`) only when
+  `split_shown(to, now)` (`to >= now`: the period reaches the current week).
   **Capacity**: `WorkerPie.capacity` = `worker_pies::capacity(app, w,
   &period_weeks(from, to))` = Σ `get_effective_max_hours` over the Mondays of
   the weeks overlapping the period — the **Saturazione** rule (ferie/malattia
@@ -537,7 +540,8 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   subtitle as `Capacity: Nh (P% used)`. Test
   `capacity_sums_the_effective_max_of_the_period_weeks`.
   **Free hours** (only with `split`): `WorkerPie.future_capacity` = capacity of
-  the period weeks **after** `now` (the planned ones), `free_hours()` =
+  the period weeks **from** `now` on (the planned ones; = the footer's green
+  number when the period ends on 31/12 of the current year), `free_hours()` =
   `future_capacity − planned()` (`i64`, negative = over capacity). GUI: a line
   under the worker summary (`future_text`, red + strong when negative); PDF: the
   subtitle is three whole lines (filters / totals+capacity / free hours, red

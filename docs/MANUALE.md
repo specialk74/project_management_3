@@ -1209,14 +1209,16 @@ date: su quali dev e, dentro ogni dev, per quali categorie di progetto.
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
    (ore e % sul totale).
 
-**Ore fatte e pianificate** — se l'intervallo arriva **oltre la settimana
-corrente**, accanto al nome del worker compare la divisione (es. «1380h nel
+**Ore fatte e pianificate** — se l'intervallo arriva **alla settimana corrente**
+(o oltre), accanto al nome del worker compare la divisione (es. «1380h nel
 periodo: 1100h fatte, 280h pianificate») e nelle tabelle la colonna delle ore
-diventa tre: **Fatte** (settimane fino a quella corrente compresa, come
-l'avanzamento presunto), **Pianificate** (quelle dopo) e **Totale**. Così si vede
-quale dev o categoria ha ancora ore davanti. Le torte e le percentuali restano sul
-totale. Se l'intervallo finisce entro la settimana corrente è tutto «fatto» e la
-tabella mostra solo «Ore».
+diventa tre: **Fatte** (settimane già concluse), **Pianificate** (dalla settimana
+corrente compresa in poi: a metà settimana quelle ore non sono ancora tutte
+fatte) e **Totale**. Così si vede quale dev o categoria ha ancora ore davanti. Le
+torte e le percentuali restano sul totale. Se l'intervallo finisce prima della
+settimana corrente è tutto «fatto» e la tabella mostra solo «Ore». (Nota: nella
+griglia l'avanzamento presunto conta invece la settimana corrente come già
+consumata.)
 
 **Ore disponibili e occupazione** — accanto al nome del worker compaiono anche le
 ore **disponibili** nel periodo e l'**occupazione** (ore del periodo ÷ ore
@@ -1229,11 +1231,12 @@ hanno abbassato il limite della settimana (come fa «Metti tutti i worker in
 ferie»); il flag ghost non conta. Con il filtro Categorie l'occupazione è la parte
 delle ore disponibili spesa in quelle categorie.
 
-**Ore libere da qui a fine periodo** — se l'intervallo va oltre la settimana
-corrente, sotto il nome del worker c'è una riga per le **settimane future** (quelle
-dopo la corrente, le stesse delle ore «pianificate»): «Da qui a fine periodo: 280h
-pianificate su 520h disponibili, 240h libere». Le ore disponibili sono calcolate
-come sopra, solo su quelle settimane; se le ore pianificate le superano la riga
+**Ore libere da qui a fine periodo** — se l'intervallo arriva alla settimana
+corrente, sotto il nome del worker c'è una riga per le settimane **dalla corrente
+compresa** a fine periodo (le stesse delle ore «pianificate»): «Da qui a fine
+periodo: 280h pianificate su 520h disponibili, 240h libere». Le ore disponibili
+sono calcolate come sopra, solo su quelle settimane: con il periodo fino al 31/12
+dell'anno in corso coincidono con il **numero verde** accanto al worker nel footer; se le ore pianificate le superano la riga
 dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
 lavoro da qui in avanti?».
 
@@ -1258,7 +1261,7 @@ destra la seconda. Se un worker ha molte righe di tabella, il testo della tabell
 si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
 1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
-`Capacity: 1720h (80% used)`); con un periodo oltre la settimana corrente una
+`Capacity: 1720h (80% used)`); con un periodo che arriva alla settimana corrente una
 terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
 available, 240h free`, oppure `…, 40h over capacity` in rosso).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un

@@ -3783,7 +3783,8 @@ mod tests {
         app.projects.add_effort(p, fe, WeekId(20000), anna, Effort(8));
         app.projects.add_effort(p, be, WeekId(20000), luigi, Effort(0));
         let sel: std::collections::HashSet<_> = [mario, luigi, anna].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        // «Oggi» la settimana dopo: le ore di 20000 sono fatte.
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20007);
         let m = pies.iter().find(|p| p.worker == mario).unwrap();
         let page = pies_page(&app, m, "From x to y", false, Some("created"));
         let t = texts(&page);
