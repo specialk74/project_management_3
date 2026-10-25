@@ -74,9 +74,12 @@ pub struct MatrixData {
     pub statuses: Vec<usize>,
     /// Per ogni worker (stesso ordine di `workers`): ore per dev, sommate su
     /// tutti i progetti della matrice nelle settimane che si sovrappongono al
-    /// periodo, in ordine di id del dev e solo i dev con ore > 0. Colora
-    /// l'intestazione del worker (vedi `dev_bands`).
+    /// periodo, in ordine di id del dev e solo i dev con ore > 0 (righe «ore
+    /// per dev» e percentuali delle celle).
     pub dev_hours: Vec<Vec<(DevId, u32)>>,
+    /// Righe ordinate per le ore di questo worker (indice in `workers`), vedi
+    /// `sort_by_worker`; `None` = ordine dei progetti.
+    pub sorted_by: Option<usize>,
     /// Tutti i dev del file (ordine di id): le righe «ore per dev» in fondo
     /// alla matrice, anche quelli senza ore per nessun worker.
     pub devs: Vec<(DevId, String)>,
@@ -100,25 +103,23 @@ pub fn dev_share_label(hours: u32, pct: u32) -> String {
     format!("{hours}h · {pct}%")
 }
 
-/// Bande dell'intestazione di un worker: `(dev, da, a)` con `da`/`a` frazioni
-/// 0..1 della larghezza, proporzionali alle ore, nell'ordine dato. Vuoto se non
-/// ci sono ore (il worker è solo assegnato a effort 0): l'intestazione è grigia.
-/// Condiviso da finestra e PDF, così le proporzioni coincidono.
-pub fn dev_bands(hours: &[(DevId, u32)]) -> Vec<(DevId, f32, f32)> {
-    let total: u32 = hours.iter().map(|(_, h)| h).sum();
-    if total == 0 {
-        return Vec::new();
-    }
-    let mut acc = 0u32;
-    hours
-        .iter()
-        .filter(|(_, h)| *h > 0)
-        .map(|&(dev, h)| {
-            let from = acc as f32 / total as f32;
-            acc += h;
-            (dev, from, acc as f32 / total as f32)
-        })
-        .collect()
+/// Ordina le righe di ogni categoria per le ore del worker `worker` nella
+/// riga, dalla più alta; le righe in cui non compare vanno in fondo al gruppo.
+/// L'ordine dei gruppi (categorie) non cambia e a parità resta quello dei
+/// progetti (ordinamento stabile). Nessun effetto se il worker non è fra le
+/// colonne.
+pub fn sort_by_worker(m: &mut MatrixData, worker: WorkerId) {
+    let Some(wi) = m.workers.iter().position(|(id, _)| *id == worker) else {
+        return;
+    };
+    m.rows.sort_by_key(|r| {
+        (
+            (r.category.is_none(), r.category),
+            r.cells[wi].is_empty(),
+            std::cmp::Reverse(r.hours[wi].iter().sum::<u32>()),
+        )
+    });
+    m.sorted_by = Some(wi);
 }
 
 /// La settimana che inizia il giorno `week_start` (lunedì, 7 giorni) si
@@ -282,6 +283,7 @@ pub fn build_filtered(
             .map(|m| m.into_iter().filter(|(_, h)| *h > 0).collect())
             .collect(),
         devs: app.devs.list(),
+        sorted_by: None,
     }
 }
 
@@ -441,15 +443,6 @@ mod tests {
         assert_eq!(m.statuses, [0, 2]);
     }
 
-    #[test]
-    fn dev_bands_are_proportional_to_hours() {
-        let (a, b) = (DevId(1), DevId(2));
-        assert_eq!(dev_bands(&[(a, 8), (b, 8)]), [(a, 0.0, 0.5), (b, 0.5, 1.0)]);
-        assert_eq!(dev_bands(&[(a, 30), (b, 10)]), [(a, 0.0, 0.75), (b, 0.75, 1.0)]);
-        assert!(dev_bands(&[]).is_empty(), "nessuna ora: nessuna banda (grigio)");
-        assert!(dev_bands(&[(a, 0)]).is_empty());
-    }
-
     /// Righe «ore per dev»: ore nel dev e percentuale arrotondata sul totale
     /// del worker; dev senza ore (o worker senza ore) → cella vuota.
     #[test]
@@ -491,8 +484,7 @@ mod tests {
         let col = |w| m.workers.iter().position(|(id, _)| *id == w).unwrap();
         // 8 h Frontend (P1) + 8 h Backend (P2, due settimane): metà e metà
         assert_eq!(m.dev_hours[col(mario)], [(fe, 8), (be, 8)]);
-        assert_eq!(dev_bands(&m.dev_hours[col(mario)]), [(fe, 0.0, 0.5), (be, 0.5, 1.0)]);
-        // Luigi è assegnato ma a 0 ore: intestazione grigia
+        // Luigi è assegnato ma a 0 ore: nessuna ora per dev
         assert!(m.dev_hours[col(luigi)].is_empty());
         assert_eq!(worker_hours(&m.dev_hours[col(mario)]), 16);
         assert_eq!(dev_share(&m.dev_hours[col(mario)], fe), Some((8, 50)));
@@ -554,6 +546,48 @@ mod tests {
         assert!(week_overlaps(100, 90, 100)); // tocca solo il lunedì
         assert!(!week_overlaps(100, 107, 120));
         assert!(!week_overlaps(100, 80, 99));
+    }
+
+    /// Ordinamento per le ore di un worker: dentro ogni categoria dalla riga
+    /// con più ore, le righe senza di lui in fondo; i gruppi restano al loro
+    /// posto e il riepilogo non cambia.
+    #[test]
+    fn sort_by_worker_orders_rows_within_each_category() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let anna = app.workers.add("Anna");
+        let fe = app.devs.add("Frontend");
+        let cat = app.categories.add("A");
+        let w = WeekId(20000);
+        let mut add = |t: &str, c: Option<CategoryId>, hm: Option<usize>, ha: usize| {
+            let p = app.projects.add("x", Some(t), None);
+            app.projects.set_category(p, c);
+            app.projects.add_dev(p, fe);
+            if let Some(h) = hm {
+                app.projects.add_effort(p, fe, w, mario, Effort(h));
+            }
+            app.projects.add_effort(p, fe, w, anna, Effort(ha));
+        };
+        add("A1", Some(cat), Some(5), 1);
+        add("A2", Some(cat), None, 1);
+        add("A3", Some(cat), Some(20), 1);
+        add("N1", None, Some(0), 1);
+        add("N2", None, Some(9), 1);
+        let sel: HashSet<_> = [mario, anna].into_iter().collect();
+        let mut m = build(&app, &sel, 20000, 20006);
+        let order = |m: &MatrixData| -> Vec<String> {
+            m.rows.iter().map(|r| r.tripletta.clone()).collect()
+        };
+        assert_eq!(order(&m), ["A1", "A2", "A3", "N1", "N2"]);
+        let summary = m.summary.clone();
+        sort_by_worker(&mut m, mario);
+        assert_eq!(order(&m), ["A3", "A1", "A2", "N2", "N1"], "A2 senza Mario in fondo");
+        assert_eq!(m.sorted_by, m.workers.iter().position(|(id, _)| *id == mario));
+        assert_eq!(m.summary, summary);
+        // Worker non fra le colonne: nessun effetto.
+        let mut m = build(&app, &[anna].into_iter().collect(), 20000, 20006);
+        sort_by_worker(&mut m, mario);
+        assert_eq!((order(&m).len(), m.sorted_by), (5, None));
     }
 
     #[test]

@@ -472,7 +472,18 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   ripetuta) — test `matrix_summary_breaks_across_pages`.
   GUI: `draw_matrix` ridisegna la riga dei worker **in fondo**, a
   `clip_rect().top().max(rect.top())`, così resta fissa in cima scorrendo
-  (test `worker_header_stays_visible_when_scrolled`). Hover: `mx_hit(pos, …,
+  (test `worker_header_stays_visible_when_scrolled`). The **label column is
+  sticky too** (horizontal scroll): labels, label-only fills, the label borders
+  and the label hover slot are drawn at `lx = clip_rect().left().max(x0)` with
+  `p`, while every worker-column item (cell texts, cell veil slot, worker
+  separators, header names, inverted hovered name, sort click rects) uses `pc`
+  = `p` clipped to the right of `lx + MX_LABEL_W`, so scrolled columns slide
+  under it. **Gotcha**: `Painter::set` applies the clip of the painter that
+  calls it, so each slot (`reserve` keeps a label slot and a cells slot,
+  `HiText` picks by `col`) is filled with the painter that created it; a
+  pointer over the label column never hits a worker (`hit.col = None` when
+  `pos.x < lx + MX_LABEL_W`). Test
+  `label_column_stays_visible_when_scrolled_horizontally`. Hover: `mx_hit(pos, …,
   rows)` → `MxHit { row, col }` (righe progetto + riepilogo raccolte in `rows`,
   le intestazioni di categoria escluse); velo `mx_veil()` (nero nel tema chiaro,
   bianco nel tema scuro) su tutta la colonna (non la riga intera); etichetta
@@ -487,16 +498,23 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   a fine disegno, calcolato `mx_hit`, si riempiono con `p.set` (test
   `hover_highlight_is_yellow_on_dark_in_dark_theme`).
   Nome del worker puntato a colori invertiti (fondo `text()`, nome `bg()`).
-  **Worker header split by dev hours** (GUI and PDF): `MatrixData.dev_hours[w]` =
-  hours per dev (DevId order, >0 only) summed over the matrix's rows (category/
-  status filters apply) in the weeks overlapping `[from, to]`;
-  `worker_matrix::dev_bands(&hours) -> Vec<(DevId, from, to)>` gives the width
-  fractions, shared by `draw_matrix`'s `header` and `matrix_pages`' `header`, so
-  screen and PDF match. No hours (only effort-0 assignments) → grey
-  (`mx_no_hours_bg` / `MATRIX_NO_HOURS_BG`). The name uses `contrast_text` /
-  `text_on` against the band under its centre. Tests
-  `dev_hours_sum_projects_in_the_period_and_filters`,
-  `worker_header_is_split_by_dev_hours`, `matrix_pdf_worker_header_is_split_by_dev_hours`.
+  **Worker header**: plain names on the neutral strip, **no dev colours** (they
+  were removed — the dev split lives in the pies; tests
+  `worker_header_has_no_dev_colors`, `matrix_pdf_worker_header_has_no_dev_colors`).
+  `MatrixData.dev_hours[w]` = hours per dev (DevId order, >0 only) summed over
+  the matrix's rows (category/status filters apply) in the weeks overlapping
+  `[from, to]`, still used by the «Ore per dev» rows and the cell %.
+  **Sort by a worker's hours**: clicking a worker name (`ui.interact` on the
+  sticky header cells) makes `draw_matrix_sorted` return that worker;
+  `matrix_window` toggles `UiState.matrix_sort: Option<WorkerId>` (session) and
+  applies `worker_matrix::sort_by_worker(&mut m, w)` after `build_filtered` —
+  stable sort by (category group, worker absent, hours desc), sets
+  `MatrixData.sorted_by` (index), which draws «▼ » before the name
+  (`mx_head_name`) and adds `Sorted by hours of …` to the PDF subtitle; the
+  export handler applies the same sort. `draw_matrix` is a `#[cfg(test)]`
+  wrapper (the test helper wants a closure returning `()`). Tests
+  `sort_by_worker_orders_rows_within_each_category`,
+  `clicking_a_worker_name_asks_to_sort_by_his_hours`.
   **Worker separators**: the vertical border between label column/workers and
   between workers is thick (`MX_SEP_W` 2.5 px, `mx_sep_color()` = `text()`; PDF
   `MATRIX_SEP_W` 0.6 mm black), the left edge stays thin; in the GUI the header's

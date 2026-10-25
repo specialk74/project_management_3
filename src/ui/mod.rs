@@ -926,6 +926,9 @@ pub struct UiState {
     // matrice: stati mostrati (Attivi / On-Hold / Closed; vuoto = tutti),
     // solo sessione
     matrix_statuses: std::collections::BTreeSet<ProjectStatus>,
+    // matrice: righe ordinate per le ore di questo worker (clic sul suo nome;
+    // di nuovo = ordine dei progetti), solo sessione; segue anche l'export
+    matrix_sort: Option<WorkerId>,
     // Torte dev/categorie per worker (Vista ▸ Torte dev/categorie per
     // worker…): come la matrice, dialog dei worker + finestra con l'intervallo
     // (`None` = oggi) e la combo anni. Solo sessione.
@@ -2837,7 +2840,7 @@ impl PjmApp {
                 }
             }
             Action::ExportWorkerMatrix { from, to, years } => {
-                let m = crate::worker_matrix::build_filtered(
+                let mut m = crate::worker_matrix::build_filtered(
                     &self.app,
                     &self.ui.matrix_workers,
                     from,
@@ -2845,6 +2848,10 @@ impl PjmApp {
                     &self.ui.matrix_categories,
                     &self.ui.matrix_statuses,
                 );
+                // Stesso ordine della finestra.
+                if let Some(w) = self.ui.matrix_sort {
+                    crate::worker_matrix::sort_by_worker(&mut m, w);
+                }
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.matrix_categories.iter().copied().collect();
                 match crate::pdf_export::build_matrix_pdf(

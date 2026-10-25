@@ -2863,9 +2863,6 @@ fn matrix_subtitle(from: i32, to: i32, today: i32, years: &[i32], categories: &[
     out
 }
 
-/// Fondo dell'intestazione di un worker senza ore nel periodo.
-const MATRIX_NO_HOURS_BG: (f32, f32, f32) = (0.63, 0.63, 0.63);
-
 /// Testo nero o bianco, quello che si legge meglio sul fondo `bg`.
 fn text_on(bg: (f32, f32, f32)) -> (f32, f32, f32) {
     let lum = 0.299 * bg.0 + 0.587 * bg.1 + 0.114 * bg.2;
@@ -2993,6 +2990,10 @@ fn matrix_pages(
         let names: Vec<&str> = m.statuses.iter().map(|&i| MATRIX_STATUS_EN[i]).collect();
         subtitle = format!("{subtitle}  ·  Status: {}", names.join(", "));
     }
+    // Righe ordinate per le ore di un worker (clic sul nome nella finestra).
+    if let Some(wi) = m.sorted_by {
+        subtitle = format!("{subtitle}  ·  Sorted by hours of {}", m.workers[wi].1);
+    }
     let row_h = |r: &crate::worker_matrix::MatrixRow, cols: &[usize]| -> f32 {
         let lines = cols
             .iter()
@@ -3052,24 +3053,9 @@ fn matrix_pages(
         let header = |shapes: &mut Vec<Shape>, y: f32, label: &str| -> f32 {
             shapes.extend(rect_fill(MATRIX_X0, y - MATRIX_HEAD_H, x1, y, GRAY_FOOTER));
             shapes.extend(text_left(MATRIX_X0 + 1.5, y - 4.6, label, 8.0, true, BLACK));
+            // Nomi dei worker sullo sfondo neutro della riga (la divisione
+            // delle ore fra i dev è nel PDF delle torte).
             for (i, &c) in cols.iter().enumerate() {
-                // Sfondo diviso fra i dev del worker in proporzione alle ore
-                // (stesse bande della finestra); grigio senza ore.
-                let (cx0, cx1) = (col_x(i), col_x(i) + col_w);
-                let bands = crate::worker_matrix::dev_bands(&m.dev_hours[c]);
-                let mut under_name = MATRIX_NO_HOURS_BG;
-                if bands.is_empty() {
-                    shapes.extend(rect_fill(cx0, y - MATRIX_HEAD_H, cx1, y, under_name));
-                }
-                for (dev, from, to) in &bands {
-                    let color = dev_rgb(*dev);
-                    let bx0 = cx0 + (cx1 - cx0) * from;
-                    let bx1 = cx0 + (cx1 - cx0) * to;
-                    shapes.extend(rect_fill(bx0, y - MATRIX_HEAD_H, bx1, y, color));
-                    if (*from..=*to).contains(&0.5) {
-                        under_name = color;
-                    }
-                }
                 let name = truncate_to_font_w(&m.workers[c].1, 8.0, true, col_w - 2.0);
                 shapes.extend(text_center_font(
                     col_x(i) + col_w / 2.0,
@@ -3077,7 +3063,7 @@ fn matrix_pages(
                     &name,
                     8.0,
                     true,
-                    text_on(under_name),
+                    BLACK,
                 ));
             }
             vlines(shapes, y - MATRIX_HEAD_H, y);
@@ -3790,10 +3776,10 @@ mod tests {
     /// progetti nell'intervallo → `None`.
     /// Riepilogo lungo (molte categorie × 4 righe): continua sulle pagine
     /// successive e nessuna riga della tabella scende sotto il margine.
-    /// Intestazione del worker nel PDF della matrice: a 50/50 fra due dev, due
-    /// bande dei colori dei dev larghe uguali; senza ore, fondo grigio.
+    /// Intestazione del worker nel PDF della matrice: nessun colore dei dev
+    /// (la divisione delle ore fra i dev è nel PDF delle torte).
     #[test]
-    fn matrix_pdf_worker_header_is_split_by_dev_hours() {
+    fn matrix_pdf_worker_header_has_no_dev_colors() {
         let mut app = App::new();
         let mario = app.workers.add("Mario");
         let luigi = app.workers.add("Luigi");
@@ -3832,9 +3818,12 @@ mod tests {
                 .collect()
         };
         let (wf, wb) = (widths(color(fe)), widths(color(be)));
-        assert_eq!((wf.len(), wb.len()), (1, 1), "una banda per dev");
-        assert!((wf[0] - wb[0]).abs() < 0.01, "metà e metà: {wf:?} {wb:?}");
-        assert_eq!(widths(MATRIX_NO_HOURS_BG).len(), 1, "Luigi senza ore: grigio");
+        assert!(wf.is_empty() && wb.is_empty(), "bande dei dev: {wf:?} {wb:?}");
+        // Ordinamento per le ore di un worker: riportato nel sottotitolo.
+        let mut m = m;
+        crate::worker_matrix::sort_by_worker(&mut m, mario);
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        assert!(texts(&pages[0]).iter().any(|t| t.ends_with("  ·  Sorted by hours of Mario")));
     }
 
     /// PDF della matrice: righe «Hours by dev» (ore del worker, poi ogni dev

@@ -1143,14 +1143,15 @@ progetto**.
    sempre intere. Anche nel PDF, dove le colonne sono più strette: del nome restano
    almeno i primi 4 caratteri («Test…», «Manu…») e, se non basta, il testo di quella
    cella è scritto più piccolo.
-   **Intestazione dei worker** — lo sfondo della casella col nome è diviso fra i
-   **colori dei dev** su cui il worker ha lavorato, **in proporzione alle ore**:
-   chi ha fatto metà ore su un dev e metà su un altro ha la casella metà di un
-   colore e metà dell'altro. Contano le ore di tutti i progetti della matrice
-   (quindi con i filtri di categoria e stato) nelle settimane dell'intervallo; lo
-   stesso dev in più progetti fa una sola fetta. Se il worker nell'intervallo è
-   solo assegnato a effort 0, la casella è **grigia**. Il nome è scritto nero o
-   bianco, quello che si legge meglio. Anche nel PDF.
+   **Intestazione dei worker** — i nomi sono su sfondo neutro: come si dividono le
+   ore di un worker fra i dev lo mostrano le **Torte dev/categorie per worker**.
+   **Clic sul nome** di un worker: i progetti di **ogni categoria** si ordinano per
+   le **sue ore** nell'intervallo, dalla riga con più ore; quelli in cui non compare
+   vanno in fondo al gruppo. Il nome ordinato ha davanti «▼»; un altro clic sullo
+   stesso nome torna all'ordine dei progetti, un clic su un altro worker ordina per
+   lui. Le categorie restano nello stesso ordine e il riepilogo non cambia. La
+   scelta vale finché l'app è aperta e l'**Esporta PDF…** usa lo stesso ordine
+   (il sottotitolo lo riporta: `Sorted by hours of Mario`).
    Fra un worker e l'altro il bordo verticale è **più spesso e scuro** degli altri,
    su tutta l'altezza (intestazione, righe e riepilogo), così con i colori dei dev
    si vede subito dove finisce una colonna e inizia la successiva.
@@ -1169,7 +1170,9 @@ progetto**.
    assegnazioni a effort 0 non contano. Le percentuali sono arrotondate, quindi la
    somma può fare 99% o 101%. Nel PDF la sezione si chiama «Hours by dev».
 6. **Lettura** — la riga con i **nomi dei worker resta sempre visibile** in cima
-   mentre scorri la matrice in verticale. Passando col mouse su una **cella**:
+   mentre scorri la matrice in verticale, e la **prima colonna** (triplette,
+   categorie, etichette del riepilogo) resta sempre visibile a sinistra mentre la
+   scorri in orizzontale: le colonne dei worker le passano sotto. Passando col mouse su una **cella**:
    - **tutta la colonna** del worker, riepilogo compreso, ha un velo leggero
      (scuro col tema chiaro, chiaro col tema scuro);
    - la **tripletta** della riga (o l'intestazione a sinistra, nelle righe del
