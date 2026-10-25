@@ -101,7 +101,6 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let (n_week, start, end) = get_default_weeks(None);
-        println!("new -> {} {} {}", n_week, start, end);
         Self {
             start_week: WeekId(start as usize),
             week_color: default_week_color(),

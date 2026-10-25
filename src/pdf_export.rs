@@ -2872,6 +2872,104 @@ fn text_on(bg: (f32, f32, f32)) -> (f32, f32, f32) {
     if lum > 0.55 { BLACK } else { WHITE }
 }
 
+/// Larghezza **vera** di un testo in mm, dalle metriche del font incorporato
+/// (DejaVu Sans, normale o grassetto). `text_w_mm` dà a ogni carattere la
+/// stessa larghezza: va bene per impaginare, ma nelle celle strette della
+/// matrice «MCSW 226h» sconfinava e «Test SYS 50h» veniva troncato senza
+/// bisogno.
+fn font_text_w_mm(s: &str, size_pt: f32, bold: bool) -> f32 {
+    use std::sync::OnceLock;
+    static REGULAR: OnceLock<Option<ttf_parser::Face<'static>>> = OnceLock::new();
+    static BOLD: OnceLock<Option<ttf_parser::Face<'static>>> = OnceLock::new();
+    let face = if bold {
+        BOLD.get_or_init(|| ttf_parser::Face::parse(FONT_BOLD, 0).ok())
+    } else {
+        REGULAR.get_or_init(|| ttf_parser::Face::parse(FONT_REGULAR, 0).ok())
+    };
+    let Some(face) = face else {
+        return text_w_mm(s, size_pt);
+    };
+    let em = face.units_per_em() as f32;
+    let units: f32 = s
+        .chars()
+        .map(|c| {
+            face.glyph_index(c)
+                .and_then(|g| face.glyph_hor_advance(g))
+                .map_or(em * 0.5, f32::from)
+        })
+        .sum();
+    units / em * size_pt * 0.352_778
+}
+
+/// Come `truncate_to_w`, ma con la larghezza vera del font
+/// (`font_text_w_mm`).
+fn truncate_to_font_w(s: &str, size: f32, bold: bool, max_w: f32) -> String {
+    if font_text_w_mm(s, size, bold) <= max_w {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for ch in s.chars() {
+        if font_text_w_mm(&format!("{out}{ch}…"), size, bold) > max_w {
+            break;
+        }
+        out.push(ch);
+    }
+    format!("{out}…")
+}
+
+/// Testo centrato su `x` con la larghezza vera del font.
+fn text_center_font(
+    x: f32,
+    y: f32,
+    s: &str,
+    size: f32,
+    bold: bool,
+    color: (f32, f32, f32),
+) -> Vec<Shape> {
+    text_left(x - font_text_w_mm(s, size, bold) / 2.0, y, s, size, bold, color)
+}
+
+/// Caratteri del nome del dev che restano sempre in una cella della matrice
+/// («MCSW», «Test…»): sotto, il dev non si riconoscerebbe più.
+const MATRIX_MIN_NAME_CHARS: usize = 4;
+/// Font minimo di una riga di cella rimpicciolita per starci.
+const MATRIX_MIN_CELL_FONT: f32 = 5.5;
+
+/// Nome del dev accorciato al minimo che resta sempre: i primi
+/// `MATRIX_MIN_NAME_CHARS` caratteri e «…».
+fn matrix_short_name(dev: &str) -> String {
+    if dev.chars().count() > MATRIX_MIN_NAME_CHARS {
+        dev.chars().take(MATRIX_MIN_NAME_CHARS).collect::<String>() + "…"
+    } else {
+        dev.to_string()
+    }
+}
+
+/// Font di una riga di cella della matrice (nome del dev + `tail`, cioè ore e
+/// percentuale) entro `max_w` mm: `MATRIX_FONT` se ci sta il nome accorciato
+/// (`matrix_short_name`), altrimenti più piccolo, fino a
+/// `MATRIX_MIN_CELL_FONT`. Una cella usa il minimo fra le sue righe, così le
+/// righe hanno tutte la stessa dimensione.
+fn matrix_cell_font(dev: &str, tail: &str, max_w: f32) -> f32 {
+    let short = matrix_short_name(dev);
+    let mut size = MATRIX_FONT;
+    while size > MATRIX_MIN_CELL_FONT
+        && font_text_w_mm(&format!("{short}{tail}"), size, false) > max_w
+    {
+        size -= 0.25;
+    }
+    size
+}
+
+/// Testo di una riga di cella al font `size`: il nome del dev si accorcia con
+/// «…» quanto serve (ma mai sotto `matrix_short_name`), `tail` resta intero.
+fn matrix_cell_text(dev: &str, tail: &str, max_w: f32, size: f32) -> String {
+    let short = matrix_short_name(dev);
+    let name_w = (max_w - font_text_w_mm(tail, size, false))
+        .max(font_text_w_mm(&short, size, false));
+    format!("{}{tail}", truncate_to_font_w(dev, size, false, name_w))
+}
+
 /// Nomi degli stati nel PDF della matrice (ordine di `ProjectStatus::ALL`).
 const MATRIX_STATUS_EN: [&str; 3] = ["Active", "On-Hold", "Closed"];
 
@@ -2972,8 +3070,8 @@ fn matrix_pages(
                         under_name = color;
                     }
                 }
-                let name = truncate_to_w(&m.workers[c].1, 8.0, col_w - 2.0);
-                shapes.extend(text_center(
+                let name = truncate_to_font_w(&m.workers[c].1, 8.0, true, col_w - 2.0);
+                shapes.extend(text_center_font(
                     col_x(i) + col_w / 2.0,
                     y - 4.6,
                     &name,
@@ -3078,13 +3176,26 @@ fn matrix_pages(
                 shapes.extend(text_left(x, base, tag, MATRIX_FONT, false, fg));
             }
             for (i, &c) in cols.iter().enumerate() {
-                for (l, dev) in r.cells[c].iter().enumerate() {
-                    let s = truncate_to_w(dev, MATRIX_FONT, col_w - 2.0);
-                    shapes.extend(text_center(
+                // Dev con le ore: si tronca il nome, mai le ore.
+                // Una sola dimensione di font per cella: la più piccola che
+                // serve fra le sue righe.
+                let total = crate::worker_matrix::worker_hours(&m.dev_hours[c]);
+                let tails: Vec<String> = r.hours[c]
+                    .iter()
+                    .map(|h| crate::worker_matrix::cell_hours_label(*h, total))
+                    .collect();
+                let size = r.cells[c]
+                    .iter()
+                    .zip(&tails)
+                    .map(|(dev, tail)| matrix_cell_font(dev, tail, col_w - 2.0))
+                    .fold(MATRIX_FONT, f32::min);
+                for (l, (dev, hours)) in r.cells[c].iter().zip(&tails).enumerate() {
+                    let s = matrix_cell_text(dev, hours, col_w - 2.0, size);
+                    shapes.extend(text_center_font(
                         col_x(i) + col_w / 2.0,
                         base - l as f32 * MATRIX_LINE_H,
                         &s,
-                        MATRIX_FONT,
+                        size,
                         false,
                         fg,
                     ));
@@ -3828,6 +3939,57 @@ mod tests {
             assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
         }
         assert!(!texts(&page).iter().any(|x| x == "Planned"));
+    }
+
+    /// Larghezza vera dal font: le lettere larghe pesano più di quelle strette
+    /// (la stima `text_w_mm` le considera uguali), il grassetto è più largo.
+    #[test]
+    fn font_width_follows_the_glyphs() {
+        let wide = font_text_w_mm("MMMM", 10.0, false);
+        let thin = font_text_w_mm("iiii", 10.0, false);
+        assert!(wide > 2.5 * thin, "{wide} / {thin}");
+        assert!(font_text_w_mm("Test", 10.0, true) > font_text_w_mm("Test", 10.0, false));
+        let cut = truncate_to_font_w("Sviluppo firmware", 7.5, false, 10.0);
+        assert!(cut.ends_with('…') && font_text_w_mm(&cut, 7.5, false) <= 10.0);
+        assert_eq!(truncate_to_font_w("ELE", 7.5, false, 10.0), "ELE");
+    }
+
+    /// Riga di cella: il nome tiene almeno 4 caratteri, poi si rimpicciolisce
+    /// il font; ore e percentuale restano intere; se c'è spazio, tutto intero.
+    #[test]
+    fn matrix_cell_keeps_part_of_the_dev_name() {
+        let size = matrix_cell_font("Test SYS", " 226h 50%", 16.7);
+        assert!((MATRIX_MIN_CELL_FONT..MATRIX_FONT).contains(&size), "{size}");
+        let s = matrix_cell_text("Test SYS", " 226h 50%", 16.7, size);
+        assert!(s.starts_with("Test") && s.ends_with(" 226h 50%"), "{s}");
+        assert!(font_text_w_mm(&s, size, false) <= 16.7 || size == MATRIX_MIN_CELL_FONT);
+        assert_eq!(matrix_cell_font("ELE", " 3h 1%", 16.7), MATRIX_FONT);
+        assert_eq!(matrix_cell_text("ELE", " 3h 1%", 16.7, MATRIX_FONT), "ELE 3h 1%");
+        // Allo stesso font più piccolo di un'altra riga, un nome corto resta
+        // intero.
+        assert_eq!(matrix_cell_text("SMS", " 32h 6%", 16.7, size), "SMS 32h 6%");
+    }
+
+    /// PDF della matrice: dev con le ore nella cella; il nome lungo si tronca,
+    /// le ore restano.
+    #[test]
+    fn matrix_pdf_cells_show_hours() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let long = app.devs.add("Sviluppo firmware di sistema");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, long);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        app.projects.add_effort(p, long, WeekId(20000), mario, Effort(120));
+        let sel = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build(&app, &sel, 20000, 20006);
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        let t: Vec<String> = pages.iter().flat_map(|pg| texts(pg)).collect();
+        // Percentuali sulle 150h di Mario; i nomi si accorciano, ore e % no.
+        assert!(t.iter().any(|s| s.starts_with("Fron") && s.ends_with(" 30h 20%")), "{t:?}");
+        assert!(t.iter().any(|s| s.starts_with("Svil") && s.ends_with("… 120h 80%")), "{t:?}");
     }
 
     #[test]

@@ -31,6 +31,22 @@ pub struct MatrixRow {
     /// Per ogni worker (stesso ordine di `MatrixData.workers`): i nomi dei dev
     /// con cui è assegnato nell'intervallo, nell'ordine dei dev del progetto.
     pub cells: Vec<Vec<String>>,
+    /// Ore di ogni dev della cella nell'intervallo, stesso ordine di `cells`
+    /// (0 = solo assegnato a effort 0).
+    pub hours: Vec<Vec<u32>>,
+}
+
+/// Parte fissa di una riga di cella, dopo il nome del dev: ` 120h 18%`, con la
+/// percentuale sulle ore del worker nell'intervallo (`worker_total`, quelle di
+/// `worker_hours`: le percentuali di una colonna sommano a 100%). Con 0 ore
+/// (solo assegnato) solo ` 0h`. Il nome del dev si tronca (a video e nel PDF),
+/// questa parte mai.
+pub fn cell_hours_label(hours: u32, worker_total: u32) -> String {
+    if hours == 0 {
+        " 0h".to_string()
+    } else {
+        format!(" {hours}h {}", crate::worker_pies::pct_label(hours, worker_total))
+    }
 }
 
 pub struct MatrixData {
@@ -149,6 +165,8 @@ pub fn build_filtered(
             continue;
         }
         let mut cells: Vec<Vec<String>> = vec![Vec::new(); workers.len()];
+        // Dev di ogni cella, nell'ordine dei nomi in `cells` (per le ore).
+        let mut cell_devs: Vec<Vec<DevId>> = vec![Vec::new(); workers.len()];
         let mut proj_hours: Vec<BTreeMap<DevId, u32>> = vec![BTreeMap::new(); workers.len()];
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
@@ -162,8 +180,9 @@ pub fn build_filtered(
                 for (wi, (wid, _)) in workers.iter().enumerate() {
                     if let Some(se) = sew.worker_id.get(wid) {
                         let name = dev_names.get(&dev).cloned().unwrap_or_default();
-                        if !cells[wi].contains(&name) {
+                        if !cell_devs[wi].contains(&dev) {
                             cells[wi].push(name);
+                            cell_devs[wi].push(dev);
                         }
                         *proj_hours[wi].entry(dev).or_default() += se.get_effort().0 as u32;
                     }
@@ -173,6 +192,11 @@ pub fn build_filtered(
         if cells.iter().all(|c| c.is_empty()) {
             continue;
         }
+        let row_hours: Vec<Vec<u32>> = cell_devs
+            .iter()
+            .zip(&proj_hours)
+            .map(|(devs, h)| devs.iter().map(|d| h.get(d).copied().unwrap_or(0)).collect())
+            .collect();
         for (total, proj) in hours.iter_mut().zip(proj_hours) {
             for (dev, h) in proj {
                 *total.entry(dev).or_default() += h;
@@ -186,6 +210,7 @@ pub fn build_filtered(
             closed: app.projects.is_closed(proj),
             status: app.projects.status(proj),
             cells,
+            hours: row_hours,
         });
     }
 
@@ -473,6 +498,18 @@ mod tests {
         assert_eq!(dev_share(&m.dev_hours[col(mario)], fe), Some((8, 50)));
         assert_eq!(dev_share(&m.dev_hours[col(luigi)], fe), None, "senza ore: vuota");
         assert_eq!(m.devs.len(), app.devs.list().len(), "tutti i dev");
+        // Ore nelle celle: per progetto e dev, nell'intervallo; 0 = solo
+        // assegnato. (P2 ha anche 99h di Frontend fuori periodo: non c'è.)
+        let row = |t: &str| m.rows.iter().find(|r| r.tripletta == t).unwrap();
+        assert_eq!(row("P1").cells[col(mario)], ["Frontend"]);
+        assert_eq!(row("P1").hours[col(mario)], [8]);
+        assert_eq!(row("P2").cells[col(mario)], ["Backend"]);
+        assert_eq!(row("P2").hours[col(mario)], [8], "due settimane da 4h");
+        assert_eq!(row("P1").hours[col(luigi)], [0], "assegnato a effort 0");
+        // Percentuale sulle ore di Mario nell'intervallo (16h): metà e metà.
+        assert_eq!(cell_hours_label(8, 16), " 8h 50%");
+        assert_eq!(cell_hours_label(0, 16), " 0h", "solo assegnato: niente %");
+        assert_eq!(cell_hours_label(1, 300), " 1h <1%");
         // Filtro categoria che esclude P2: restano solo le ore di P1
         let cat = app.categories.add("Cat");
         app.projects.set_category(p1, Some(cat));
@@ -558,6 +595,9 @@ mod tests {
         let wi_anna = m.workers.iter().position(|(id, _)| *id == anna).unwrap();
         assert_eq!(m.rows[1].cells[wi_mario], ["Frontend", "QA"]);
         assert_eq!(m.rows[0].cells[wi_anna], ["QA"]);
+        // Ore di ogni dev della cella, allineate ai nomi.
+        assert_eq!(m.rows[1].hours[wi_mario].len(), 2);
+        assert_eq!(m.rows[0].hours[wi_anna].len(), 1);
         assert_eq!(m.summary[0][wi_anna], 1);
         assert_eq!(m.summary[0][wi_mario], 0);
         assert_eq!(m.summary[1][wi_mario], 1);

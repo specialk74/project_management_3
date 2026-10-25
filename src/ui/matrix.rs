@@ -5,8 +5,8 @@
 
 use super::*;
 use crate::worker_matrix::{
-    MatrixData, category_color, closed_colors, dev_share, dev_share_label, hatch_segments,
-    worker_hours,
+    MatrixData, category_color, cell_hours_label, closed_colors, dev_share, dev_share_label,
+    hatch_segments, worker_hours,
 };
 
 /// Intervallo `[1 gennaio dell'anno più vecchio, 31 dicembre del più recente]`
@@ -324,7 +324,9 @@ pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut U
 
 // Geometria della matrice a schermo (px).
 const MX_LABEL_W: f32 = 144.0;
-const MX_COL_W: f32 = 84.0;
+/// Larga abbastanza per «Frontend 120h 18%» (dev con ore e percentuale nella
+/// cella).
+const MX_COL_W: f32 = 124.0;
 const MX_HEAD_H: f32 = 24.0;
 const MX_GROUP_H: f32 = 20.0;
 const MX_LINE_H: f32 = 15.0;
@@ -651,14 +653,18 @@ fn draw_matrix(ui: &mut egui::Ui, app: &App, m: &MatrixData) {
         )
         .on_hover_text(tip);
 
+        // Ogni dev con le sue ore nell'intervallo: si tronca il nome, mai le ore.
         for (i, devs) in r.cells.iter().enumerate() {
             for (l, dev) in devs.iter().enumerate() {
+                let hours = cell_hours_label(r.hours[i][l], worker_hours(&m.dev_hours[i]));
+                let hours_w = p.layout_no_wrap(hours.clone(), font.clone(), fg).size().x;
+                let name = fit_text(ui, dev, &font, MX_COL_W - 2.0 * MX_PAD - hours_w);
                 put(
                     band,
                     Some(i),
                     egui::pos2(col_x(i) + MX_COL_W / 2.0, ty + l as f32 * MX_LINE_H),
                     Align2::CENTER_CENTER,
-                    fit_text(ui, dev, &font, MX_COL_W - 2.0 * MX_PAD),
+                    format!("{name}{hours}"),
                     &font,
                     fg,
                 );
@@ -1151,6 +1157,44 @@ mod tests {
         assert_eq!(thick.len(), 3, "un bordo marcato per confine: {thick:?}");
     }
 
+    /// Nella cella ogni dev ha le sue ore; con un nome lungo si tronca il
+    /// nome, non le ore.
+    #[test]
+    fn cells_show_hours_and_truncate_the_dev_name_not_the_hours() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let long = app.devs.add("Sviluppo firmware di sistema");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(p, long);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        app.projects.add_effort(p, long, WeekId(20000), mario, Effort(120));
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 600.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_matrix(ui, &app, &m));
+        let texts = drawn_texts(&out);
+        // Percentuali sulle 150h di Mario nell'intervallo.
+        assert!(texts.iter().any(|t| t == "Frontend 30h 20%"), "{texts:?}");
+        let cut = texts
+            .iter()
+            .find(|t| t.starts_with("Svilupp") && t.ends_with(" 120h 80%"))
+            .expect("nome troncato, ore e percentuale intere");
+        assert!(cut.contains('…'), "il nome lungo va troncato: {cut}");
+    }
+
     #[test]
     fn years_range_spans_oldest_to_newest() {
         let d = |y, m, dd| local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap());
@@ -1279,13 +1323,15 @@ mod tests {
 
         // Cella di un progetto: il dev diventa giallo su fondo scuro, come la
         // tripletta della riga.
-        let (_, dev) = find(&v, "Frontend").expect("dev nella cella");
+        // La cella mostra il dev con le sue ore (8h, tutte quelle di Mario);
+        // «Frontend» da solo è l'etichetta della riga «Ore per dev» in fondo.
+        let (_, dev) = find(&v, "Frontend 8h 100%").expect("dev nella cella");
         assert_eq!(dev.fallback_color, Color32::BLACK, "dev non puntato: nero");
         let mut hover = input.clone();
         hover.events.push(egui::Event::PointerMoved(dev.visual_bounding_rect().center()));
         frame(hover);
         let v = frame(input.clone());
-        let (_, dev) = find(&v, "Frontend").unwrap();
+        let (_, dev) = find(&v, "Frontend 8h 100%").unwrap();
         assert_eq!(dev.fallback_color, mx_hi_text(), "dev non giallo");
         let (_, trip) = find(&v, "T01").unwrap();
         assert_eq!(trip.fallback_color, mx_hi_text(), "tripletta non gialla");

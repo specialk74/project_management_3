@@ -440,7 +440,22 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   colonne = worker, righe = **tutti** i progetti (aperti e chiusi, ignora Vista e
   filtri) in cui un worker è **assegnato, anche a effort 0**, in una settimana che
   si **sovrappone** a `[from, to]` (`week_overlaps`: lunedì..domenica); cella =
-  nomi dei dev; righe raggruppate per categoria (per id, «Senza categoria» in
+  nomi dei dev **con ore e %** (`MatrixRow.hours`, parallel to `cells`, 0 = only
+  assigned; text `name + cell_hours_label(h, worker_hours(&dev_hours[w]))` =
+  `Frontend 120h 18%`, % of the worker's hours in the period, just ` 0h` for 0;
+  the name is truncated, never hours/%; GUI `MX_COL_W` = 124 for it). PDF cells:
+  `matrix_cell_font` keeps at least `MATRIX_MIN_NAME_CHARS` (4) of the name
+  (`matrix_short_name`) by shrinking the font down to `MATRIX_MIN_CELL_FONT`
+  (5.5 pt), **one size per cell** (min over its lines), then
+  `matrix_cell_text` truncates the name at that size (test
+  `matrix_cell_keeps_part_of_the_dev_name`). In the PDF
+  the cells and the worker names are measured with the **real font metrics**
+  (`font_text_w_mm` via the `ttf-parser` crate — already in egui's tree, now a
+  direct dependency — plus `truncate_to_font_w`/`text_center_font`): the
+  per-char estimate `text_w_mm` let «MCSW 226h» overflow and truncated «Test SYS
+  50h» needlessly. The rest of the PDFs still use `text_w_mm`. Tests
+  `cells_show_hours_and_truncate_the_dev_name_not_the_hours`,
+  `matrix_pdf_cells_show_hours`, `font_width_follows_the_glyphs`; righe raggruppate per categoria (per id, «Senza categoria» in
   fondo) colorate con `category_color` (palette fissa per id, le categorie non
   hanno un colore nel file); i progetti chiusi (`MatrixRow.closed`) restano nel
   gruppo, riga con la tinta della categoria spenta verso il grigio

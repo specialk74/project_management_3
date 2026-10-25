@@ -1134,7 +1134,15 @@ progetto**.
    l'indicazione «chiuso» (oppure «on-hold», se il progetto è on-hold) accanto
    alla tripletta; conta comunque nel riepilogo.
 4. **Celle** — all'incrocio progetto × worker ci sono i **dev** con cui il worker è
-   assegnato nell'intervallo, **uno per riga** se sono più d'uno.
+   assegnato nell'intervallo, **uno per riga** se sono più d'uno, ciascuno con le
+   **ore** del worker su quel dev nell'intervallo e la loro **percentuale sul
+   totale delle ore del worker** nell'intervallo (es. `Frontend 120h 18%`: il 18%
+   del suo lavoro nel periodo è andato lì; le percentuali di una colonna sommano a
+   100%, arrotondamenti a parte). Con un'assegnazione a effort 0 c'è solo `0h`. Se
+   la cella è stretta si accorcia il nome del dev con «…», ore e percentuale restano
+   sempre intere. Anche nel PDF, dove le colonne sono più strette: del nome restano
+   almeno i primi 4 caratteri («Test…», «Manu…») e, se non basta, il testo di quella
+   cella è scritto più piccolo.
    **Intestazione dei worker** — lo sfondo della casella col nome è diviso fra i
    **colori dei dev** su cui il worker ha lavorato, **in proporzione alle ore**:
    chi ha fatto metà ore su un dev e metà su un altro ha la casella metà di un
