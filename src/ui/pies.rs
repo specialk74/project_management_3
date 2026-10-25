@@ -381,6 +381,21 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
             format!("{}h nel periodo", pie.total)
         };
         ui.label(egui::RichText::new(summary).color(text_dim()));
+        // Capacità: occupazione oltre il 100% in rosso.
+        let over = pie.total > pie.capacity;
+        let cap = format!(
+            "· disponibili {}h, occupazione {}",
+            pie.capacity,
+            pct_label(pie.total, pie.capacity)
+        );
+        let cap = egui::RichText::new(cap);
+        ui.label(if over { cap.color(error_red()).strong() } else { cap.color(text_dim()) })
+            .on_hover_text(
+                "Ore disponibili: somma, sulle settimane del periodo, del massimo ore \
+                 effettivo del worker (limite della settimana se c'è, altrimenti il suo \
+                 massimo), come nella Saturazione. Ferie e malattia contano solo se \
+                 hanno abbassato il limite della settimana.",
+            );
     });
     if pie.total == 0 {
         ui.label(egui::RichText::new("Nessuna ora nel periodo.").color(text_dim()));
@@ -602,7 +617,17 @@ mod tests {
         };
         let out = ctx.run_ui_test(input, |ui| draw_worker_pies(ui, &app, &pies[0], true));
         let texts = drawn_texts(&out);
-        for t in ["60h nel periodo: 40h fatte, 20h pianificate", "Fatte", "Pianificate", "Totale", "20h", "50h"] {
+        // 20000..20013 non parte di lunedì: tocca tre settimane da 40h, 120h
+        // disponibili, 60h → 50%.
+        for t in [
+            "60h nel periodo: 40h fatte, 20h pianificate",
+            "· disponibili 120h, occupazione 50%",
+            "Fatte",
+            "Pianificate",
+            "Totale",
+            "20h",
+            "50h",
+        ] {
             assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
         }
         // Frontend: 30h fatte + 20h pianificate = 50h.

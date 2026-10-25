@@ -16,6 +16,11 @@
 //! compresa, come l'avanzamento presunto); il resto sono ore **pianificate**.
 //! Le torte usano solo il totale; fatte/pianificate vanno nelle tabelle quando
 //! il periodo arriva oltre la settimana corrente (`split_shown`).
+//!
+//! La **capacità** del worker nel periodo è la somma, sulle settimane del
+//! periodo, del suo massimo ore effettivo (limite della settimana se c'è,
+//! altrimenti il massimo del worker): la stessa regola della Saturazione,
+//! quindi ferie e malattia contano solo attraverso il limite della settimana.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -70,10 +75,35 @@ pub struct WorkerPie {
     pub total: u32,
     /// Di `total`, le ore fatte (fino alla settimana corrente compresa).
     pub done: u32,
+    /// Ore disponibili nel periodo (vedi la nota del modulo).
+    pub capacity: u32,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
     /// Categorie (stesso ordine di `DevHours::categories`), solo > 0.
     pub categories: Vec<(Option<CategoryId>, Hours)>,
+}
+
+/// Lunedì (giorni) delle settimane che si sovrappongono a `[from, to]`: le
+/// stesse settimane di cui si contano le ore.
+pub fn period_weeks(from: i32, to: i32) -> Vec<i32> {
+    use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
+    if from > to {
+        return Vec::new();
+    }
+    let first = local_to_days(&primo_giorno_settimana_corrente(&days_to_local(from)));
+    (0..)
+        .map(|i| first + 7 * i)
+        .take_while(|w| week_overlaps(*w, from, to))
+        .collect()
+}
+
+/// Ore disponibili del worker nelle settimane `weeks` (vedi la nota del
+/// modulo).
+pub fn capacity(app: &App, worker: WorkerId, weeks: &[i32]) -> u32 {
+    weeks
+        .iter()
+        .map(|&w| app.workers.get_effective_max_hours(worker, w as usize))
+        .sum()
 }
 
 /// Le colonne fatte/pianificate servono solo se il periodo (che finisce a
@@ -204,6 +234,7 @@ pub fn build(
             }
         }
     }
+    let weeks = period_weeks(from, to);
     workers
         .into_iter()
         .zip(hours)
@@ -227,6 +258,7 @@ pub fn build(
                 })
                 .collect();
             WorkerPie {
+                capacity: capacity(app, worker, &weeks),
                 worker,
                 name,
                 total: all.total,
@@ -393,6 +425,30 @@ mod tests {
         // corrente.
         assert!(!split_shown(20006, 20000));
         assert!(split_shown(20007, 20000));
+    }
+
+    /// Capacità: massimo effettivo di ogni settimana del periodo (limite della
+    /// settimana se c'è, altrimenti il massimo del worker, 40h di default).
+    #[test]
+    fn capacity_sums_the_effective_max_of_the_period_weeks() {
+        use crate::date_utils::dates::{local_to_days, primo_giorno_settimana_corrente};
+        let monday = local_to_days(&primo_giorno_settimana_corrente(
+            &chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
+        ));
+        // Da mercoledì a martedì della settimana dopo: due settimane.
+        assert_eq!(period_weeks(monday + 2, monday + 8), [monday, monday + 7]);
+        assert_eq!(period_weeks(monday, monday + 6), [monday]);
+        assert!(period_weeks(monday + 7, monday).is_empty());
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let weeks = period_weeks(monday, monday + 20);
+        assert_eq!(weeks.len(), 3);
+        assert_eq!(capacity(&app, mario, &weeks), 120, "40h di default");
+        app.workers.set_week_override(mario, monday as usize, 16);
+        assert_eq!(capacity(&app, mario, &weeks), 96);
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = build(&app, &sel, monday, monday + 20, &BTreeSet::new(), monday);
+        assert_eq!(pies[0].capacity, 96);
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette

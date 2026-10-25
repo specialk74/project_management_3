@@ -1210,6 +1210,17 @@ quale dev o categoria ha ancora ore davanti. Le torte e le percentuali restano s
 totale. Se l'intervallo finisce entro la settimana corrente è tutto «fatto» e la
 tabella mostra solo «Ore».
 
+**Ore disponibili e occupazione** — accanto al nome del worker compaiono anche le
+ore **disponibili** nel periodo e l'**occupazione** (ore del periodo ÷ ore
+disponibili), es. «· disponibili 1720h, occupazione 80%»; **in rosso** se supera
+il 100%. Le ore disponibili si calcolano come nella **Saturazione worker**: per
+ogni settimana dell'intervallo il massimo ore del worker in quella settimana (il
+limite impostato per la settimana, se c'è, altrimenti il suo massimo; 40h se non
+ne ha uno), sommato su tutte le settimane. **Ferie e malattia** contano solo se
+hanno abbassato il limite della settimana (come fa «Metti tutti i worker in
+ferie»); il flag ghost non conta. Con il filtro Categorie l'occupazione è la parte
+delle ore disponibili spesa in quelle categorie.
+
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
 torte stanno una
@@ -1230,7 +1241,8 @@ scelti nel sottotitolo): a sinistra la prima torta con sotto la sua tabella, a
 destra la seconda. Se un worker ha molte righe di tabella, il testo della tabella
 si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
-1380h (1100h done, 280h planned)`).
+1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
+`Capacity: 1720h (80% used)`).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un
 file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I

@@ -3477,16 +3477,21 @@ fn pies_page(
     out.extend(text_left(
         X_LABEL,
         PAGE_H - 21.0,
-        &if split {
-            format!(
-                "{subtitle}  ·  Total: {}h ({}h done, {}h planned)",
-                pie.total,
-                pie.done,
-                pie.total - pie.done
-            )
-        } else {
-            format!("{subtitle}  ·  Total: {}h", pie.total)
-        },
+        &format!(
+            "{subtitle}  ·  {}  ·  Capacity: {}h ({} used)",
+            if split {
+                format!(
+                    "Total: {}h ({}h done, {}h planned)",
+                    pie.total,
+                    pie.done,
+                    pie.total - pie.done
+                )
+            } else {
+                format!("Total: {}h", pie.total)
+            },
+            pie.capacity,
+            pct_label(pie.total, pie.capacity)
+        ),
         10.0,
         false,
         BLACK,
@@ -3797,7 +3802,13 @@ mod tests {
         // Total e sottotitolo con la divisione.
         let split = pies_page(&app, m, "From x to y", true, None);
         let t = texts(&split);
-        for s in ["Done", "Planned", "Total", "From x to y  ·  Total: 40h (40h done, 0h planned)"] {
+        for s in [
+            "Done",
+            "Planned",
+            "Total",
+            // 20000..20006 non parte di lunedì: tocca due settimane da 40h.
+            "From x to y  ·  Total: 40h (40h done, 0h planned)  ·  Capacity: 80h (50% used)",
+        ] {
             assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
         }
         assert!(!texts(&page).iter().any(|x| x == "Planned"));

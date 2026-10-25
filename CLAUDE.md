@@ -529,6 +529,13 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   done. Pies use `total` only; the tables get Fatte/Pianificate/Totale (PDF
   Done/Planned/Total, `pie_hour_cells`/`pie_hour_heads`, GUI `hour_cells`/
   `hour_heads`) only when `split_shown(to, now)` (period past the current week).
+  **Capacity**: `WorkerPie.capacity` = `worker_pies::capacity(app, w,
+  &period_weeks(from, to))` = Σ `get_effective_max_hours` over the Mondays of
+  the weeks overlapping the period — the **Saturazione** rule (ferie/malattia
+  only via the week limit, ghost ignored). Shown after the worker summary as
+  «· disponibili Nh, occupazione P%» (red + strong when > 100%) and in the PDF
+  subtitle as `Capacity: Nh (P% used)`. Test
+  `capacity_sums_the_effective_max_of_the_period_weeks`.
   GUI layout = PDF layout: each block is title, pie, table **below**
   (`draw_worker_pies`, test `tables_are_drawn_below_the_pies`), built by
   `pie_block`: block width = max(`PIE_D`, table width), pie centred in it (the
