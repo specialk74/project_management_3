@@ -74,7 +74,8 @@ references; the UI lives entirely in the `src/ui/` module.
     filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app), `matrix.rs` (matrice
     progetti × worker: `matrix_select_window` + `matrix_window`, plus the shared
     `worker_pick_window`), `pies.rs` (torte dev/categorie per worker:
-    `pies_select_window` + `pies_window`).
+    `pies_select_window` + `pies_window`), `worker_effort.rs` (finestra «Effort per
+    worker», vedi Vista; data in `src/worker_effort.rs`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
     a column lives in a **private** helper of `grid.rs` (not re-exported) —
     `draw_year_end_cell`, `milestones_in_group` + `draw_milestone_strip` (the milestone /
@@ -93,8 +94,9 @@ references; the UI lives entirely in the `src/ui/` module.
     `private_interfaces` warns). Note the `include_str!` for the manual is `../../docs/…` now.
 - `src/ui_style.rs` — sizes, fonts, colors, theme (light/dark) and B/W mode, `cumulative_color`.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
-- `src/worker_matrix.rs` / `src/worker_pies.rs` — data shared by the matrix / pies
-  windows and their PDF (and SVG) exports.
+- `src/worker_matrix.rs` / `src/worker_pies.rs` / `src/worker_effort.rs` — data
+  shared by the matrix / pies / effort-per-worker windows and their PDF (and SVG)
+  exports.
 - Data modules: `workers_utils/`, `dev_utils/`, `project_utils/`, `single_dev_utils/`, `single_effort_utils/`, `categories.rs`, `milestones.rs`, `date_utils/`, `sync_merge.rs`.
 
 ### Data Model
@@ -615,6 +617,38 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `pies_sum_hours_by_dev_and_category`, `pie_geometry_labels_and_hit`,
   `worker_pies_draw_slices_labels_and_tables`,
   `pies_pdf_has_a_page_per_worker_with_hours`.
+  **Effort per worker…** (`src/ui/worker_effort.rs`, data in `src/worker_effort.rs`;
+  `UiState.show_worker_effort` + `worker_effort_range: Option<(i32, i32)>`, `None` =
+  `default_range()` = current Monday → today + 12 months, button «Da oggi a un anno»,
+  session only): read-only, one table per worker
+  (`show_in_find`, stacked in one `ScrollArea::both` with `drag_scroll()`), **painted
+  at coordinates** by `draw_worker_table` (an `egui::Grid` can't span columns). Header
+  = three rows: year and month **grouped** over their weeks (`worker_effort::spans`
+  with `year_of` / `month_of`; a week belongs to its Monday's month; GUI months
+  `MONTHS_IT`), then `day_label` (Monday's day, current week bold via `HI_BOLD_DX`) —
+  so a column is only `WE_CELL_W` = 24 px (PDF 4.9 mm, font 6 pt; label column `WE_LABEL_W` 21 mm so that 53 weeks — the default one-year period — fit on a page, test `a_year_of_weeks_fits_on_one_worker_effort_page`). Rows = project × dev
+  (`WeWorker::row_label` = «tripletta – Dev», or just «tripletta» when
+  `single_dev()`: every row of that worker has the same dev; GUI and PDF — that
+  dev, `WeWorker::only_dev()`, then goes beside the worker name: GUI «Name — Dev»,
+  PDF title «Effort by worker — Name (Dev)»). Labels never truncate: they
+  **wrap** and the row grows — GUI lays them out with `painter().layout(…, WE_LABEL_W -
+  8)` before allocating (row h = max(`WE_ROW_H`, galley + 4)); PDF uses
+  `wrap_to_font_w` (words, then chars for an over-long word), `we_row_h(lines)` (+
+  `WE_LINE_H` per extra line, hours vertically centred) and paginates rows by height
+  with `we_row_chunks` where the worker is **assigned, effort 0
+  included**; cells = hours (empty = not assigned). `WeWorker.status` (per week,
+  `Workers::get_week_status`) paints the **whole week column** of that worker blue for
+  Ferie / red for Malattia (`we_status_fill`, footer colors; PDF `WE_VACATION` /
+  `WE_SICK`), hours stay written in white. GUI colour tests compare **unmultiplied RGB**:
+  a new egui window fades in, so the first frames have a low alpha. Projects = `worker_effort_projects` = `body_projects(app,
+  project_view, ProjectFilter::from_state)`, shared with the export. No totals.
+  **Esporta PDF…** → `Action::ExportWorkerEffort { from, to }` →
+  `pdf_export::build_worker_effort_pdf(&data, &weeks, from, to)`: A4 landscape,
+  English (`MONTHS_EN`), one page per worker **with rows** (others skipped, `None` if
+  nobody); `worker_effort_pages` splits into blocks of `we_weeks_per_page()` weeks ×
+  `we_rows_per_page()` rows, repeating title «Effort by worker — Name (k/n)», header and
+  label column. Tests in both modules and
+  `worker_effort_pdf_has_a_page_per_worker_and_splits_when_too_big`.
 - **Aiuto**: Manuale d'uso… (opens `help_window`).
 
 ### Dialogs / windows

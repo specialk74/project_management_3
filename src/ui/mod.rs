@@ -39,6 +39,7 @@ mod pies;
 mod saturation;
 mod toasts;
 mod toolbar;
+mod worker_effort;
 pub(crate) use compare::*;
 pub(crate) use dialogs::*;
 pub(crate) use export::*;
@@ -51,6 +52,7 @@ pub(crate) use pies::*;
 pub(crate) use saturation::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
+pub(crate) use worker_effort::*;
 
 // ── Stato di sola UI ────────────────────────────────────────────────────────
 
@@ -930,6 +932,10 @@ pub struct UiState {
     // la sessione, non persistiti) e intervallo di date (`None` = oggi).
     matrix_select_open: bool,
     show_matrix: bool,
+    // Effort per worker (Vista ▸ Effort per worker…): finestra aperta e periodo
+    // Da/A in giorni (`None` = da oggi a fine griglia). Solo sessione.
+    show_worker_effort: bool,
+    worker_effort_range: Option<(i32, i32)>,
     matrix_workers: HashSet<WorkerId>,
     matrix_worker_search: String,
     matrix_from: Option<i32>,
@@ -1372,6 +1378,12 @@ pub(crate) enum Action {
         /// insieme alle categorie (`UiState.pies_categories`).
         years: Vec<i32>,
         svg: bool,
+    },
+    /// PDF «Effort per worker» del periodo `[from, to]` (giorni), con gli
+    /// stessi progetti della finestra.
+    ExportWorkerEffort {
+        from: i32,
+        to: i32,
     },
     GenerateMinuta {
         projects: Vec<ProjectId>,
@@ -1953,6 +1965,7 @@ impl eframe::App for PjmApp {
             matrix_window(ui.ctx(), app, state, &mut actions);
             pies_select_window(ui.ctx(), app, state);
             pies_window(ui.ctx(), app, state, &mut actions);
+            worker_effort_window(ui.ctx(), app, state, &mut actions);
             compare_window(ui.ctx(), app, state, &mut actions);
             // Sopra a tutto: le notifiche in-app.
             toasts_layer(ui.ctx(), state);
@@ -2884,6 +2897,21 @@ impl PjmApp {
                     None => self
                         .ui
                         .toast_warn("Nessun progetto da esportare: matrice non creata."),
+                }
+            }
+            Action::ExportWorkerEffort { from, to } => {
+                let weeks = crate::worker_effort::weeks(from, to);
+                let projects = worker_effort_projects(&self.app, &self.ui);
+                let data = crate::worker_effort::build(&self.app, &projects, &weeks);
+                match crate::pdf_export::build_worker_effort_pdf(&data, &weeks, from, to) {
+                    Some(bytes) => save_pdf_dialog(
+                        &mut self.ui,
+                        bytes,
+                        &dated_file_name("effort_per_worker", "pdf"),
+                    ),
+                    None => self
+                        .ui
+                        .toast_warn("Nessun worker con effort nel periodo: PDF non creato."),
                 }
             }
             Action::ExportWorkerPies {

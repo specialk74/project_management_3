@@ -354,6 +354,8 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
   export PDF (vedi §15).
 - **Torte dev/categorie per worker…** — per ogni worker, su quali dev e categorie
   ha lavorato in un intervallo di date, con export PDF/SVG (vedi §15).
+- **Effort per worker…** — per ogni worker, le ore settimana per settimana su
+  ciascun progetto e dev, con export PDF (vedi §15).
 
 ---
 
@@ -1310,6 +1312,53 @@ Categorie `From now to the end (all categories): …`).
 file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I
 worker senza ore nel periodo sono saltati.
+
+### Effort per worker (Vista ▸ Effort per worker…)
+Finestra di sola lettura con **una tabella per ogni worker**, una sotto l'altra
+(tutti i worker con la spunta **Elenchi** di «Filtri ▸ Worker (visibilità e
+ghost)…»):
+
+- **in alto** le settimane del periodo, su **tre righe** per tenere strette le
+  colonne: l'**anno** e il **mese** (scritti una volta sopra tutte le loro
+  settimane) e sotto il **giorno del lunedì** («02», «09»…), in grassetto per la
+  settimana corrente. Una settimana a cavallo di due mesi sta nel mese del suo
+  lunedì;
+- **a sinistra** una riga per ogni **progetto × dev** in cui il worker è assegnato
+  in almeno una settimana del periodo, come «ABC – Frontend». Se il worker lavora
+  su **un solo dev** (anche in progetti diversi) le righe mostrano solo la
+  tripletta («ABC») e il dev è scritto una volta accanto al nome del worker
+  («franco — PJM»; nel PDF nel titolo, «Effort by worker — franco (PJM)»). Un nome
+  che non sta nella colonna **va a capo** e la riga si alza quanto serve (nella
+  finestra e nel PDF), invece di essere accorciato;
+- **in mezzo** le ore della settimana. Una cella **vuota** significa che il worker
+  non è assegnato quella settimana, **0** che è assegnato a zero ore (anche una
+  riga di soli zeri compare).
+- le settimane in cui il worker è in **ferie** hanno l'intera colonna **blu**, quelle
+  di **malattia** l'intera colonna **rossa** (su tutte le sue righe, anche quelle
+  senza assegnazione); le ore, se ci sono, restano scritte in bianco. Ferie e
+  malattia sono quelle segnate per settimana nel footer (tasto destro sulla cella
+  del worker ▸ Ferie / Malattia).
+
+Il periodo si sceglie con i calendari **Da** / **A** (ogni data vale la settimana
+che la contiene); all'apertura va dalla settimana corrente a **un anno da oggi**, e
+**Da oggi a un anno** lo rimette così. Il periodo è ricordato finché il
+programma è aperto.
+
+I progetti sono quelli **del corpo centrale**: modalità Vista ▸ Progetti
+(`Cmd/Ctrl+1…4`) e filtri Progetti, Categorie e Anni. Un worker senza nessuna
+riga mostra «Nessun effort nel periodo.». Per modificare le ore si usa la
+griglia principale.
+
+**Esporta PDF…** crea un PDF (A4 orizzontale, in inglese come gli altri export)
+con **una pagina per ogni worker** che ha effort nel periodo; quelli senza effort
+sono saltati. La pagina riporta il nome del worker, il periodo e la stessa tabella
+(anno / mese / giorno in alto, ferie in blu e malattia in rosso). Se le settimane
+non entrano in larghezza (53 per pagina: un anno, come il periodo di partenza,
+sta in una pagina sola; per questo la colonna dei nomi è stretta e i nomi lunghi
+vanno a capo) o le righe in altezza (circa 40), la
+tabella del worker **continua su
+altre pagine**, ripetendo intestazione e colonna dei progetti, e il titolo dice
+quale pagina è («(1/2)»).
 
 ---
 

@@ -350,6 +350,10 @@ pub(crate) fn toolbar(
                 state.pies_select_open = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
+            if ui.button("Effort per worker…").clicked() {
+                state.show_worker_effort = true;
+                ui.close_kind(egui::UiKind::Menu);
+            }
         });
 
         // ── Aiuto ────────────────────────────────────────────────────────────

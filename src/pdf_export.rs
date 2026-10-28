@@ -19,6 +19,7 @@ use crate::dev_utils::dev::DevId;
 use crate::milestones::{MilestoneId, MilestoneScope};
 use crate::project_utils::project::ProjectId;
 use crate::single_dev_utils::single_dev::{DeclaredPoint, WeekId};
+use crate::workers_utils::worker::WeekStatus;
 
 /// Scelte dell'utente per un export Gantt (PDF/SVG), fatte nelle dialog e
 /// passate esplicitamente a ogni `build_*`. I default sono quelli delle dialog
@@ -3387,6 +3388,280 @@ pub fn build_matrix_pdf(
     pdf_document("Projects x workers", &pages)
 }
 
+// --- Effort per worker ---------------------------------------------------------
+
+const WE_X0: f32 = X_LABEL;
+/// Colonna progetto × dev e colonna di una settimana (mm): stretta quanto
+/// basta perché il periodo di default della finestra (da questa settimana a
+/// un anno da oggi, 53 colonne) stia in una pagina; i nomi lunghi si troncano.
+const WE_LABEL_W: f32 = 21.0;
+const WE_CELL_W: f32 = 4.9;
+/// Prima riga della tabella (sotto titolo e sottotitolo) e fondo utile.
+const WE_TOP: f32 = PAGE_H - 26.0;
+const WE_BOT: f32 = FOOTER_TOP + 4.0;
+/// Altezza di una riga dell'intestazione (anno, mese, giorno) e di una riga ore.
+const WE_HEAD_H: f32 = 3.6;
+const WE_ROW_H: f32 = 3.6;
+const WE_FONT: f32 = 6.0;
+/// Distanza della baseline dal fondo della riga.
+const WE_BASE: f32 = 1.05;
+const WE_STRIPE: (f32, f32, f32) = (0.96, 0.96, 0.96);
+/// Settimane di ferie / malattia (come i triangoli del footer della GUI).
+const WE_VACATION: (f32, f32, f32) = (0.2, 0.6, 1.0);
+const WE_SICK: (f32, f32, f32) = (0.86, 0.15, 0.15);
+
+/// Settimane che entrano in larghezza in una pagina.
+fn we_weeks_per_page() -> usize {
+    (((PAGE_W - X_LABEL) - WE_X0 - WE_LABEL_W) / WE_CELL_W).floor() as usize
+}
+
+/// Righe di una riga etichetta in più quando il nome va a capo (mm).
+const WE_LINE_H: f32 = 2.4;
+
+/// Righe di una sola riga di testo che entrano in altezza in una pagina
+/// (sotto le tre di intestazione).
+#[cfg(test)]
+fn we_rows_per_page() -> usize {
+    ((WE_TOP - WE_BOT - 3.0 * WE_HEAD_H) / WE_ROW_H).floor() as usize
+}
+
+/// Va a capo per stare in `max_w` mm: fra le parole e, se una parola da sola
+/// non ci sta, anche dentro la parola.
+fn wrap_to_font_w(s: &str, size: f32, bold: bool, max_w: f32) -> Vec<String> {
+    let fits = |t: &str| font_text_w_mm(t, size, bold) <= max_w;
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in s.split_whitespace() {
+        let joined = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
+        if fits(&joined) {
+            cur = joined;
+            continue;
+        }
+        if !cur.is_empty() {
+            lines.push(std::mem::take(&mut cur));
+        }
+        // Parola più larga della colonna: spezzata per caratteri.
+        for ch in word.chars() {
+            if !cur.is_empty() && !fits(&format!("{cur}{ch}")) {
+                lines.push(std::mem::take(&mut cur));
+            }
+            cur.push(ch);
+        }
+    }
+    if !cur.is_empty() || lines.is_empty() {
+        lines.push(cur);
+    }
+    lines
+}
+
+/// Altezza di una riga con `lines` righe di etichetta.
+fn we_row_h(lines: usize) -> f32 {
+    WE_ROW_H + lines.saturating_sub(1) as f32 * WE_LINE_H
+}
+
+/// Righe a gruppi che entrano in altezza in una pagina, date le altezze.
+fn we_row_chunks(heights: &[f32]) -> Vec<std::ops::Range<usize>> {
+    let room = WE_TOP - WE_BOT - 3.0 * WE_HEAD_H;
+    let mut out = Vec::new();
+    let (mut start, mut used) = (0, 0.0);
+    for (i, h) in heights.iter().enumerate() {
+        if i > start && used + h > room {
+            out.push(start..i);
+            (start, used) = (i, 0.0);
+        }
+        used += h;
+    }
+    if start < heights.len() {
+        out.push(start..heights.len());
+    }
+    out
+}
+
+/// Pagine di un worker: le settimane a blocchi che entrano in larghezza e,
+/// dentro ogni blocco, le righe a gruppi che entrano in altezza; in ogni
+/// pagina si ripetono titolo, intestazione delle date e colonna progetto × dev.
+fn worker_effort_pages(
+    w: &crate::worker_effort::WeWorker,
+    weeks: &[i32],
+    subtitle: &str,
+    this_week: i32,
+    created: &str,
+) -> Vec<Vec<Shape>> {
+    use crate::worker_effort::{day_label, month_of, spans, year_of};
+    let blocks: Vec<std::ops::Range<usize>> = (0..weeks.len())
+        .step_by(we_weeks_per_page().max(1))
+        .map(|a| a..(a + we_weeks_per_page().max(1)).min(weeks.len()))
+        .collect();
+    // Etichette a capo nella colonna: la riga si alza di conseguenza.
+    let labels: Vec<Vec<String>> = w
+        .rows
+        .iter()
+        .map(|r| wrap_to_font_w(&w.row_label(r), WE_FONT, false, WE_LABEL_W - 2.0))
+        .collect();
+    let heights: Vec<f32> = labels.iter().map(|l| we_row_h(l.len())).collect();
+    let row_chunks = we_row_chunks(&heights);
+    let total = blocks.len() * row_chunks.len();
+    let mut pages = Vec::new();
+    for cols in &blocks {
+        let ws = &weeks[cols.clone()];
+        let col_x = |i: usize| WE_X0 + WE_LABEL_W + i as f32 * WE_CELL_W;
+        let x1 = col_x(ws.len());
+        for rows in &row_chunks {
+            let mut out = Vec::new();
+            // Un solo dev: le righe hanno la sola tripletta, il dev va nel titolo.
+            let name = match w.only_dev() {
+                Some(dev) => format!("{} ({dev})", w.name),
+                None => w.name.clone(),
+            };
+            let title = if total > 1 {
+                format!("Effort by worker — {name} ({}/{total})", pages.len() + 1)
+            } else {
+                format!("Effort by worker — {name}")
+            };
+            out.extend(text_left(X_LABEL, PAGE_H - 14.0, &title, 14.0, true, BLACK));
+            out.extend(text_left(X_LABEL, PAGE_H - 20.0, subtitle, 9.0, false, TEXT_GRAY));
+
+            // Intestazione: anno e mese raggruppati, poi il giorno del lunedì.
+            let head_bot = WE_TOP - 3.0 * WE_HEAD_H;
+            out.extend(rect_fill(WE_X0, head_bot, x1, WE_TOP, GRAY_FOOTER));
+            // Ogni gruppo ha un'etichetta lunga e una breve («2027» / «'27»,
+            // «Jan» / «J»): si scrive la prima che ci sta, nessuna se non ci sta
+            // neanche quella breve.
+            let mut span_row = |row: usize, items: Vec<([String; 2], usize, usize)>, bold: bool| {
+                let y1 = WE_TOP - row as f32 * WE_HEAD_H;
+                for (labels, a, b) in items {
+                    let (xa, xb) = (col_x(a), col_x(b + 1));
+                    let fits = |l: &&String| font_text_w_mm(l, WE_FONT, bold) <= xb - xa - 0.4;
+                    if let Some(label) = labels.iter().find(fits) {
+                        out.extend(text_center_font(
+                            (xa + xb) / 2.0,
+                            y1 - WE_HEAD_H + WE_BASE,
+                            label,
+                            WE_FONT,
+                            bold,
+                            BLACK,
+                        ));
+                    }
+                    out.extend(line(xa, y1, xa, head_bot, 0.2, GRAY_DK));
+                }
+            };
+            span_row(
+                0,
+                spans(ws, year_of)
+                    .into_iter()
+                    .map(|(y, a, b)| ([y.to_string(), format!("'{:02}", y % 100)], a, b))
+                    .collect(),
+                true,
+            );
+            span_row(
+                1,
+                spans(ws, month_of)
+                    .into_iter()
+                    .map(|((_, m), a, b)| {
+                        let name = MONTHS_EN[(m - 1) as usize];
+                        ([name.to_string(), name[..1].to_string()], a, b)
+                    })
+                    .collect(),
+                false,
+            );
+            for (i, &wk) in ws.iter().enumerate() {
+                let bold = wk == this_week;
+                out.extend(text_center_font(
+                    col_x(i) + WE_CELL_W / 2.0,
+                    head_bot + WE_BASE,
+                    &day_label(wk),
+                    WE_FONT,
+                    bold,
+                    if bold { BLACK } else { TEXT_GRAY },
+                ));
+            }
+            out.extend(line(WE_X0, head_bot, x1, head_bot, 0.3, BLACK));
+
+            // Righe progetto × dev.
+            let mut y1 = head_bot;
+            for (k, ri) in rows.clone().enumerate() {
+                let r = &w.rows[ri];
+                let y0 = y1 - heights[ri];
+                if k % 2 == 1 {
+                    out.extend(rect_fill(WE_X0, y0, x1, y1, WE_STRIPE));
+                }
+                // Etichetta dall'alto, una riga ogni `WE_LINE_H`.
+                for (li, l) in labels[ri].iter().enumerate() {
+                    let base = y1 - WE_ROW_H + WE_BASE - li as f32 * WE_LINE_H;
+                    out.extend(text_left(WE_X0 + 1.0, base, l, WE_FONT, false, BLACK));
+                }
+                // Ore centrate in verticale nella riga.
+                let hours_base = (y0 + y1) / 2.0 - WE_ROW_H / 2.0 + WE_BASE;
+                for (i, h) in r.hours[cols.clone()].iter().enumerate() {
+                    // Ferie (blu) / malattia (rosso): tutta la cella, ore in bianco.
+                    let status = w.status.get(cols.start + i).copied().flatten();
+                    if let Some(st) = status {
+                        let fill = match st {
+                            WeekStatus::Ferie => WE_VACATION,
+                            WeekStatus::Malattia => WE_SICK,
+                        };
+                        out.extend(rect_fill(col_x(i), y0, col_x(i + 1), y1, fill));
+                    }
+                    if let Some(h) = h {
+                        out.extend(text_center_font(
+                            col_x(i) + WE_CELL_W / 2.0,
+                            hours_base,
+                            &h.to_string(),
+                            WE_FONT,
+                            false,
+                            if status.is_some() { WHITE } else { BLACK },
+                        ));
+                    }
+                }
+                y1 = y0;
+            }
+            let bottom = y1;
+            // Confini dei mesi e della colonna etichette lungo le righe.
+            for (_, a, _) in spans(ws, month_of) {
+                out.extend(line(col_x(a), head_bot, col_x(a), bottom, 0.2, GRAY_GUIDE));
+            }
+            out.extend(line(col_x(0), WE_TOP, col_x(0), bottom, 0.3, BLACK));
+            out.extend(line(WE_X0, bottom, x1, bottom, 0.3, BLACK));
+
+            out.extend(rect_fill(X_LABEL, FOOTER_BOT, PAGE_W - X_LABEL, FOOTER_TOP, GRAY_FOOTER));
+            out.extend(text_center(
+                PAGE_W / 2.0,
+                (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+                created,
+                8.0,
+                false,
+                TEXT_GRAY,
+            ));
+            pages.push(out);
+        }
+    }
+    pages
+}
+
+/// PDF «Effort per worker»: una pagina (o più, se settimane o righe non ci
+/// stanno) per ogni worker con almeno una riga nel periodo `[from, to]`;
+/// quelli senza effort sono saltati. `None` se non resta nessuno.
+pub fn build_worker_effort_pdf(
+    data: &[crate::worker_effort::WeWorker],
+    weeks: &[i32],
+    from: i32,
+    to: i32,
+) -> Option<Vec<u8>> {
+    let created = today().format(US_DATE).to_string();
+    let subtitle = format!(
+        "From {} to {} · empty cell = not assigned · blue = vacation, red = sick leave",
+        day_to_date(from).format(US_DATE),
+        day_to_date(to).format(US_DATE)
+    );
+    let this_week = current_monday_days();
+    let pages: Vec<Vec<Shape>> = data
+        .iter()
+        .filter(|w| !w.rows.is_empty())
+        .flat_map(|w| worker_effort_pages(w, weeks, &subtitle, this_week, &created))
+        .collect();
+    pdf_document("Effort by worker", &pages)
+}
+
 // --- Torte dev/categorie per worker ---------------------------------------------
 
 /// Pannelli della pagina (sinistra: dev e categorie, destra: categorie): in
@@ -3861,6 +4136,144 @@ mod tests {
             })
             .collect();
         assert_eq!(thick.len(), 3, "etichette|Mario, Mario|Luigi, dopo Luigi: {thick:?}");
+    }
+
+    /// Effort per worker: una pagina per worker con righe, intestazione su tre
+    /// righe (anno, mese, giorno) e ore; chi non ha effort è saltato; troppe
+    /// settimane o righe continuano su altre pagine.
+    #[test]
+    fn worker_effort_pdf_has_a_page_per_worker_and_splits_when_too_big() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        app.workers.add("Luigi");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("x", Some("P1"), None);
+        let d = |y, m, dd| local_to_days(&NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        let first = d(2026, 12, 21);
+        app.projects.add_effort(p, fe, WeekId(first as usize), mario, Effort(12));
+        app.projects.add_effort(p, fe, WeekId((first + 7) as usize), mario, Effort(0));
+        let weeks = crate::worker_effort::weeks(first, first + 14);
+        let data = crate::worker_effort::build(&app, &[p], &weeks);
+        // I worker sono in ordine alfabetico: Luigi prima di Mario.
+        let of_mario = |data: &[crate::worker_effort::WeWorker]| {
+            data.iter().position(|w| w.name == "Mario").unwrap()
+        };
+        let pages = worker_effort_pages(&data[of_mario(&data)], &weeks, "sub", 0, "created");
+        assert_eq!(pages.len(), 1);
+        let t = texts(&pages[0]);
+        for s in [
+            // Il 2027 ha una sola settimana: l'anno intero non ci sta, si usa «'27».
+            // Un solo dev: l'etichetta è solo la tripletta.
+            "Effort by worker — Mario (Frontend)", "P1", "12", "0", "2026", "'27", "Dec",
+            "Jan", "21", "28", "04", "created",
+        ] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        assert_eq!(t.iter().filter(|x| *x == "Dec").count(), 1, "mese una volta per gruppo");
+        assert!(build_worker_effort_pdf(&data, &weeks, first, first + 14).is_some());
+        // Luigi senza effort: nessuna pagina; nessuno con effort ⇒ niente PDF.
+        let empty = crate::worker_effort::build(&app, &[], &weeks);
+        assert!(build_worker_effort_pdf(&empty, &weeks, first, first + 14).is_none());
+
+        // Un anno di settimane e tante righe: più pagine, titolo numerato.
+        let weeks = crate::worker_effort::weeks(first, first + 7 * 60);
+        let mut app2 = app.clone();
+        for i in 0..(we_rows_per_page() + 3) {
+            let q = app2.projects.add("y", Some(&format!("Q{i}")), None);
+            app2.projects.add_effort(q, fe, WeekId(first as usize), mario, Effort(1));
+        }
+        let ids: Vec<_> = app2.projects.list().into_iter().map(|(id, _)| id).collect();
+        let data = crate::worker_effort::build(&app2, &ids, &weeks);
+        let pages = worker_effort_pages(&data[of_mario(&data)], &weeks, "sub", 0, "created");
+        let blocks = weeks.len().div_ceil(we_weeks_per_page());
+        assert_eq!(pages.len(), blocks * 2, "{} blocchi di settimane × 2 di righe", blocks);
+        let t = texts(&pages[1]);
+        assert!(t.iter().any(|x| x == &format!("Effort by worker — Mario (Frontend) (2/{})", blocks * 2)));
+    }
+
+    /// Un nome che non sta nella colonna va a capo (a parole, e dentro una
+    /// parola troppo lunga) e la riga si alza; la paginazione tiene conto
+    /// delle altezze.
+    #[test]
+    fn worker_effort_long_labels_wrap_and_rows_grow() {
+        let lines = wrap_to_font_w("OVT Incr. 2.2 – PJM", WE_FONT, false, WE_LABEL_W - 2.0);
+        assert!(lines.len() >= 2, "{lines:?}");
+        assert_eq!(lines.join(" "), "OVT Incr. 2.2 – PJM", "nessun carattere perso");
+        assert!(lines.iter().all(|l| font_text_w_mm(l, WE_FONT, false) <= WE_LABEL_W - 2.0));
+        let long = "X".repeat(40);
+        let parts = wrap_to_font_w(&long, WE_FONT, false, WE_LABEL_W - 2.0);
+        assert!(parts.len() >= 2 && parts.concat() == long, "parola spezzata: {parts:?}");
+        assert_eq!(wrap_to_font_w("P1", WE_FONT, false, WE_LABEL_W - 2.0), ["P1"]);
+        assert_eq!(we_row_h(1), WE_ROW_H);
+        assert!(we_row_h(2) > WE_ROW_H);
+
+        // Righe alte: ne entrano meno per pagina.
+        let room = WE_TOP - WE_BOT - 3.0 * WE_HEAD_H;
+        let tall = we_row_h(3);
+        let chunks = we_row_chunks(&[tall; 30]);
+        let per_page = (room / tall).floor() as usize;
+        assert_eq!(chunks[0], 0..per_page);
+        assert_eq!(chunks.iter().map(|c| c.len()).sum::<usize>(), 30);
+
+        // Nella pagina: le parti del nome su righe diverse, nessun «…».
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("x", Some("OVT Incr. 2.2"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), mario, Effort(8));
+        app.projects.add_effort(p, be, WeekId(base as usize), mario, Effort(4));
+        let weeks = crate::worker_effort::weeks(base, base);
+        let data = crate::worker_effort::build(&app, &[p], &weeks);
+        let page = &worker_effort_pages(&data[0], &weeks, "sub", 0, "c")[0];
+        let t = texts(page);
+        assert!(!t.iter().any(|x| x.ends_with('…')), "{t:?}");
+        let label_lines = wrap_to_font_w("OVT Incr. 2.2 – Frontend", WE_FONT, false, WE_LABEL_W - 2.0);
+        for l in &label_lines {
+            assert!(t.iter().any(|x| x == l), "manca «{l}»: {t:?}");
+        }
+    }
+
+    /// Un anno di settimane (53 colonne, come il periodo di default) sta in
+    /// una pagina.
+    #[test]
+    fn a_year_of_weeks_fits_on_one_worker_effort_page() {
+        assert!(we_weeks_per_page() >= 53, "{}", we_weeks_per_page());
+    }
+
+    /// Ferie (blu) e malattia (rosso) colorano tutta la colonna della settimana
+    /// del worker; le ore, se ci sono, restano scritte in bianco.
+    #[test]
+    fn worker_effort_pdf_colors_vacation_and_sick_weeks() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("x", Some("P1"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), mario, Effort(12));
+        app.projects.add_effort(p, be, WeekId((base + 7) as usize), mario, Effort(5));
+        app.workers.set_week_status(mario, base as usize, Some(WeekStatus::Ferie));
+        app.workers.set_week_status(mario, (base + 7) as usize, Some(WeekStatus::Malattia));
+        let weeks = crate::worker_effort::weeks(base, base + 14);
+        let data = crate::worker_effort::build(&app, &[p], &weeks);
+        let page = &worker_effort_pages(&data[0], &weeks, "sub", 0, "c")[0];
+        let fills = |c| {
+            page.iter()
+                .filter(|s| matches!(s, Shape::Rect { color, .. } if *color == c))
+                .count()
+        };
+        assert_eq!(fills(WE_VACATION), 2, "colonna ferie su entrambe le righe");
+        assert_eq!(fills(WE_SICK), 2, "colonna malattia su entrambe le righe");
+        let white: Vec<&str> = page
+            .iter()
+            .filter_map(|s| match s {
+                Shape::Text { s, color, .. } if *color == WHITE => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(white, ["12", "5"], "ore scritte in bianco sul colore");
     }
 
     /// Torte dei worker: una pagina per worker con ore (chi ne ha 0 è
