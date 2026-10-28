@@ -2846,3 +2846,122 @@ fn file_safe_replaces_characters_not_allowed_in_file_names() {
     assert_eq!(file_safe("a/b:c*d?"), "a_b_c_d_");
     assert_eq!(file_safe("Élodie"), "Élodie");
 }
+
+/// Fixture di «Sposta devs»: `d1` ha effort in 3 settimane consecutive da
+/// `base + 7` (un lunedì), `d2` solo in `base`; milestone in `base + 14`.
+/// Ritorna le `moves` come le costruisce il passo SelectDevs.
+#[allow(clippy::type_complexity)]
+fn move_devs_fixture() -> (App, ProjectId, usize, MilestoneId, Vec<(DevId, Vec<WeekId>)>) {
+    let mut app = App::new();
+    let w = app.workers.add("Alice");
+    let d1 = app.devs.add("Frontend");
+    let d2 = app.devs.add("Backend");
+    let proj = app.projects.add("Progetto", Some("ABC"), None);
+    let base = current_monday_days() as usize;
+    for i in 1..4 {
+        app.projects.add_effort(proj, d1, WeekId(base + i * WEEK_STEP), w, Effort(8));
+    }
+    app.projects.add_effort(proj, d2, WeekId(base), w, Effort(4));
+    let m = app.milestones.add("Rilascio");
+    app.projects.add_project_milestone(proj, m, WeekId(base + 2 * WEEK_STEP));
+    let moves = vec![
+        (d1, app.projects.dev_effort_weeks(proj, d1)),
+        (d2, app.projects.dev_effort_weeks(proj, d2)),
+    ];
+    (app, proj, base, m, moves)
+}
+
+#[test]
+fn move_devs_end_goes_to_the_clicked_week_and_dates_follow_the_weeks() {
+    let (app, proj, base, m, moves) = move_devs_fixture();
+    // Il gruppo va da `base` (d2) a `base + 21` (d1); clic su `base + 35`.
+    let MoveDialog::Params {
+        moves: m2,
+        weeks_text,
+        milestones,
+        from,
+        ..
+    } = make_move_devs_params(&app, proj, moves.clone(), WeekId(base + 5 * WEEK_STEP))
+    else {
+        panic!("atteso il passo Params");
+    };
+    assert_eq!(m2, moves, "si sposta tutto il dev");
+    assert_eq!(milestones.iter().map(|(id, _, s)| (*id, *s)).collect::<Vec<_>>(), vec![(m, true)]);
+    let f = from.expect("Sposta devs porta le date");
+    assert_eq!((f.first, f.last, f.delta), (base, base + 3 * WEEK_STEP, 2));
+    assert_eq!(weeks_text, "2", "la fine del gruppo va nella settimana cliccata");
+
+    // Un giorno qualsiasi vale la sua settimana; avanti e indietro.
+    assert_eq!(weeks_to_date(base, (base + 2 * WEEK_STEP + 3) as i32), 2);
+    assert_eq!(weeks_to_date(base, (base - 3 * WEEK_STEP + 6) as i32), -3);
+    assert_eq!(weeks_to_date(base, base as i32), 0);
+
+    // «Sposta blocco» non ha le date.
+    let MoveDialog::Params { from, .. } = make_move_params(&app, proj, moves) else {
+        panic!("atteso il passo Params");
+    };
+    assert!(from.is_none());
+}
+
+#[test]
+fn move_devs_window_shows_start_and_end_and_typing_replaces_the_weeks() {
+    let (app, proj, base, _m, moves) = move_devs_fixture();
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1000.0, 800.0)),
+        ..Default::default()
+    };
+    let mut state = UiState {
+        move_dialog: Some(make_move_devs_params(
+            &app,
+            proj,
+            moves.clone(),
+            WeekId(base + 5 * WEEK_STEP),
+        )),
+        ..Default::default()
+    };
+    let date = |w: usize| days_to_local(w as i32).format("%Y-%m-%d").to_string();
+    let mut actions = Vec::new();
+    let mut button = None;
+    let mut first_texts = Vec::new();
+    // Primo frame: il campo settimane («2») prende il focus tutto selezionato;
+    // poi si scrive «-1», che lo sostituisce.
+    for (k, ev) in [None, None, Some(egui::Event::Text("-1".into())), None]
+        .into_iter()
+        .enumerate()
+    {
+        let mut i = input.clone();
+        i.events = ev.into_iter().collect();
+        let out = ctx.run_ui_test(i, |ui| {
+            move_dialog_window(ui.ctx(), &app, &mut state, &mut actions);
+        });
+        if k == 1 {
+            first_texts = drawn_texts(&out);
+        }
+        button = text_pos(&out, "Sposta");
+    }
+    for t in ["Sposta inizio qua", "Sposta fine qua"] {
+        assert!(first_texts.iter().any(|x| x == t), "{t}: {first_texts:?}");
+    }
+    // Spostamento 2: inizio base+14, fine base+35 (la settimana cliccata).
+    for d in [date(base + 2 * WEEK_STEP), date(base + 5 * WEEK_STEP)] {
+        assert!(first_texts.iter().any(|x| x.starts_with(&d)), "{d}: {first_texts:?}");
+    }
+    let Some(MoveDialog::Params { from: Some(f), weeks_text, .. }) = &state.move_dialog else {
+        panic!("atteso il passo Params con le date");
+    };
+    assert_eq!(weeks_text, "-1", "digitando si sostituisce il valore proposto");
+    assert_eq!(f.delta, -1, "le date seguono le settimane");
+
+    for ev in click_events(button.expect("bottone «Sposta»"), egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| {
+            move_dialog_window(ui.ctx(), &app, &mut state, &mut actions);
+        });
+    }
+    match actions.as_slice() {
+        [Action::MoveEffort { moves: m, delta: -1, .. }] => assert_eq!(m, &moves),
+        other => panic!("attesa una MoveEffort, trovate {} azioni", other.len()),
+    }
+}

@@ -173,6 +173,16 @@ pub(crate) enum Popup {
     },
 }
 
+/// «Sposta devs»: prima e ultima settimana con effort del gruppo di dev e
+/// spostamento corrente, da cui il passo "Params" ricava le date «Sposta
+/// inizio/fine qua» collegate al numero di settimane.
+pub(crate) struct MoveFrom {
+    pub first: usize,
+    pub last: usize,
+    /// Settimane di spostamento (come il campo numerico, quando è valido).
+    pub delta: i64,
+}
+
 /// Flusso multi-passo per lo spostamento di effort (menù "Sposta").
 pub(crate) enum MoveDialog {
     /// Selezione dei dev da spostare (solo per "Sposta devs").
@@ -180,6 +190,8 @@ pub(crate) enum MoveDialog {
         proj: ProjectId,
         candidates: Vec<(DevId, String)>,
         selected: HashSet<DevId>,
+        /// Settimana cliccata col tasto destro: lì va la fine del gruppo.
+        week: WeekId,
     },
     /// Numero di settimane + milestone da trascinare insieme.
     Params {
@@ -187,6 +199,9 @@ pub(crate) enum MoveDialog {
         moves: Vec<(DevId, Vec<WeekId>)>,
         weeks_text: String,
         milestones: Vec<(MilestoneId, String, bool)>,
+        /// Solo per «Sposta devs»: date di inizio/fine collegate al numero
+        /// di settimane (`None` per «Sposta blocco»).
+        from: Option<MoveFrom>,
     },
     /// Conferma di uno sforamento del confine di progetto.
     Overflow {

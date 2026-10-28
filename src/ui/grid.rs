@@ -962,6 +962,7 @@ fn draw_milestone_strip(
                     proj,
                     candidates,
                     selected,
+                    week: week_id,
                 });
                 state.move_dialog_was_open = false;
                 ui.close();

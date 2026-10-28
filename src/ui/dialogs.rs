@@ -1130,7 +1130,45 @@ pub(crate) fn make_move_params(
         moves,
         weeks_text: String::new(),
         milestones,
+        from: None,
     }
+}
+
+/// Passo "Params" di «Sposta devs»: come `make_move_params`, più le date di
+/// inizio e fine del gruppo collegate al numero di settimane. All'apertura la
+/// fine del gruppo va nella settimana cliccata (`week`).
+pub(crate) fn make_move_devs_params(
+    app: &App,
+    proj: ProjectId,
+    moves: Vec<(DevId, Vec<WeekId>)>,
+    week: WeekId,
+) -> MoveDialog {
+    let mut params = make_move_params(app, proj, moves);
+    if let MoveDialog::Params {
+        moves,
+        weeks_text,
+        from,
+        ..
+    } = &mut params
+        && let Some((first, last)) = moves_span(moves)
+    {
+        let delta = weeks_to_date(last, week.0 as i32);
+        *weeks_text = delta.to_string();
+        *from = Some(MoveFrom { first, last, delta });
+    }
+    params
+}
+
+/// Settimane di cui spostare la settimana `from` (un lunedì) perché finisca
+/// in quella che contiene `day`.
+pub(crate) fn weeks_to_date(from: usize, day: i32) -> i64 {
+    let monday = local_to_days(&primo_giorno_settimana_corrente(&days_to_local(day)));
+    (monday as i64 - from as i64).div_euclid(WEEK_STEP as i64)
+}
+
+/// Settimana `w` spostata di `delta` settimane, in giorni.
+fn shifted_day(w: usize, delta: i64) -> i32 {
+    (w as i64 + delta * WEEK_STEP as i64) as i32
 }
 
 pub(crate) fn move_dialog_window(
@@ -1154,6 +1192,7 @@ pub(crate) fn move_dialog_window(
             proj,
             candidates,
             selected,
+            week,
         } => {
             egui::Window::new("Sposta devs")
                 .collapsible(false)
@@ -1196,7 +1235,7 @@ pub(crate) fn move_dialog_window(
                                     }
                                 }
                             }
-                            next = Some(make_move_params(app, *proj, moves));
+                            next = Some(make_move_devs_params(app, *proj, moves, *week));
                         }
                         if ui.button("Annulla").clicked() {
                             close = true;
@@ -1209,6 +1248,7 @@ pub(crate) fn move_dialog_window(
             moves,
             weeks_text,
             milestones,
+            from,
         } => {
             egui::Window::new("Sposta effort")
                 .collapsible(false)
@@ -1225,8 +1265,60 @@ pub(crate) fn move_dialog_window(
                     );
                     if just_opened {
                         le.request_focus();
+                        // Già compilato («Sposta devs»): tutto selezionato, così
+                        // digitando si sostituisce invece di accodare.
+                        if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), le.id) {
+                            let all = egui::text::CCursorRange::two(
+                                egui::text::CCursor::new(0),
+                                egui::text::CCursor::new(weeks_text.chars().count()),
+                            );
+                            st.cursor.set_char_range(Some(all));
+                            st.store(ui.ctx(), le.id);
+                        }
                     }
                     let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                    // «Sposta devs»: inizio e fine del gruppo dopo lo spostamento,
+                    // collegate al numero di settimane (il gruppo si sposta intero).
+                    if let Some(f) = from.as_mut() {
+                        if le.changed()
+                            && let Ok(n) = weeks_text.trim().parse::<i64>()
+                        {
+                            f.delta = n;
+                        }
+                        ui.add_space(4.0);
+                        let mut picked = None;
+                        egui::Grid::new("move_devs_dates").show(ui, |ui| {
+                            for (label, salt, w) in [
+                                ("Sposta inizio qua", "move_devs_start", f.first),
+                                ("Sposta fine qua", "move_devs_end", f.last),
+                            ] {
+                                ui.label(label);
+                                let mut date = days_to_jiff(shifted_day(w, f.delta));
+                                let r = ui.add(
+                                    egui_extras::DatePickerButton::new(&mut date)
+                                        .id_salt(salt)
+                                        .format("%Y-%m-%d"),
+                                );
+                                if r.changed()
+                                    && let Some(d) = jiff_to_days(date)
+                                {
+                                    picked = Some(weeks_to_date(w, d));
+                                }
+                                ui.end_row();
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "Settimana in cui inizia (o finisce) il gruppo dei dev dopo lo \
+                             spostamento: i dev si spostano tutti dello stesso numero di \
+                             settimane.",
+                        );
+                        if let Some(n) = picked {
+                            f.delta = n;
+                            *weeks_text = n.to_string();
+                        }
+                    }
 
                     if !milestones.is_empty() {
                         ui.separator();

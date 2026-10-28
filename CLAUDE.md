@@ -830,7 +830,15 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   discarded (history starts empty). `declared_history()` exposes the series for the
   planned dev/project progress **trend PDF** (to be built next).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
-  milestone qui** and **Sposta** (blocco / devs). Below them, **Sposta/Imposta inizio|fine
+  milestone qui** and **Sposta** (blocco / devs). «Sposta devs» (always the whole
+  devs) adds «Sposta inizio qua» / «Sposta fine qua» date pickers linked to the
+  weeks field (`MoveDialog::Params.from: Option<MoveFrom { first, last, delta }>`,
+  `None` for «Sposta blocco»; pickers show `first`/`last` shifted by `delta`).
+  `make_move_devs_params(…, week)` opens with the group's **end on the right-clicked
+  week** (`SelectDevs.week`), `delta = weeks_to_date(last, week)` pre-filled and
+  selected (typing replaces it); a picked date sets `delta = weeks_to_date(first|last,
+  day)`, typed weeks set `delta`. The group keeps its offsets (tests `move_devs_*`).
+  Below them, **Sposta/Imposta inizio|fine
   progetto qua** (`bound_menu_items(app, proj, week)` in `mod.rs`: inside the period
   both, before the start only the start, after the end only the end; «Imposta» when
   the date is missing; the no-op one disabled). `bound_move_loss` lists the cells

@@ -643,7 +643,15 @@ milestone), sottomenù **Sposta**:
   avanti, negativo = indietro) e, opzionalmente, quali **milestone** spostare
   insieme.
 - **Sposta devs** — permette di scegliere più dev del progetto (con effort) e
-  spostarli insieme.
+  spostarli insieme, **interi**. Lo spostamento si indica in tre modi, a scelta:
+  con il **numero di settimane**, con **«Sposta inizio qua»** (la settimana in cui
+  deve iniziare il gruppo, cioè il dev che oggi parte per primo) o con **«Sposta
+  fine qua»** (la settimana in cui deve finire, cioè il dev che oggi finisce per
+  ultimo). I tre campi sono collegati: cambiandone uno si aggiornano gli altri due.
+  All'apertura **«Sposta fine qua»** è già impostata sulla **settimana cliccata**,
+  quindi il numero di settimane è già calcolato e basta premere **Sposta**;
+  digitando nel campo numerico si sostituisce il valore proposto. Tutti i dev si
+  spostano dello stesso numero di settimane, quindi restano sfalsati come prima.
 
 ### Spostare inizio e fine del progetto
 
