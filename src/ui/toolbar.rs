@@ -264,41 +264,22 @@ pub(crate) fn toolbar(
             }
             ui.separator();
             // Modalità progetti: filtra il corpo centrale (e di riflesso gli
-            // export) tra soli aperti / soli chiusi / tutti. Non persistita.
+            // export) tra attivi / on-hold / attivi + on-hold / tutti. Non persistita.
             ui.label(
                 egui::RichText::new("Progetti")
                     .strong()
                     .color(g(EFFORT_ORANGE)),
             );
-            if ui
-                .selectable_label(
-                    state.project_view == ProjectViewMode::Open,
-                    "Solo progetti aperti  (⌘/Ctrl+1)",
-                )
-                .clicked()
-            {
-                state.project_view = ProjectViewMode::Open;
-                ui.close_kind(egui::UiKind::Menu);
-            }
-            if ui
-                .selectable_label(
-                    state.project_view == ProjectViewMode::Closed,
-                    "Solo progetti chiusi  (⌘/Ctrl+2)",
-                )
-                .clicked()
-            {
-                state.project_view = ProjectViewMode::Closed;
-                ui.close_kind(egui::UiKind::Menu);
-            }
-            if ui
-                .selectable_label(
-                    state.project_view == ProjectViewMode::All,
-                    "Tutti  (⌘/Ctrl+3)",
-                )
-                .clicked()
-            {
-                state.project_view = ProjectViewMode::All;
-                ui.close_kind(egui::UiKind::Menu);
+            for (mode, label) in [
+                (ProjectViewMode::Open, "Solo progetti attivi  (⌘/Ctrl+1)"),
+                (ProjectViewMode::OnHold, "Solo progetti on-hold  (⌘/Ctrl+2)"),
+                (ProjectViewMode::OpenOnHold, "Attivi + on-hold  (⌘/Ctrl+3)"),
+                (ProjectViewMode::All, "Tutti  (⌘/Ctrl+4)"),
+            ] {
+                if ui.selectable_label(state.project_view == mode, label).clicked() {
+                    state.project_view = mode;
+                    ui.close_kind(egui::UiKind::Menu);
+                }
             }
             ui.separator();
             // Tema chiaro/scuro: Auto segue il sistema (macOS "Automatico" =

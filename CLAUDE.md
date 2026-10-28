@@ -309,7 +309,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   ricerca); `Shift+…` deseleziona tutto senza aprire. **`Cmd/Ctrl+J`** →
   `reset_all_filters(app, state, actions)`: rimette `worker_filter`/`dev_filter`/
   `category_filter`/`year_filter` a `None` (il criterio anno resta), spegne `worker_filter_current_week`, svuota le ricerche e riabilita tutti
-  i progetti **non chiusi** (`Action::SetProjectEnabled`, che non marca il file come
+  i progetti, **di qualunque stato** (`Action::SetProjectEnabled`, che non marca il file come
   modificato). È **idempotente**: ripremuto non deseleziona nulla. Dettagli per colonna:
   - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
     visibilità nel footer non conta); accanto a ogni nome il conteggio progetti
@@ -325,6 +325,10 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     applicato in `project_layout`, unica sorgente di grid+left_column. Non persistito.
   - **Progetti** — visibilità enable/disable + ricerca/salto per tripletta (click sulla
     tripletta o Invio → `jump_to_project`, chiude la dialog e azzera la ricerca).
+    Elenca solo i progetti il cui stato è nella vista corrente
+    (`state.project_view.shows(status)`); la spunta vale per ogni stato. Accanto alla
+    tripletta, piccolo e `text_dim()`, lo stato (`ProjectStatus::label`). Test
+    `filters_project_list_follows_the_view_and_hides_any_status`.
   - **Dev** — `UiState.dev_filter: Option<HashSet<DevId>>`: mostra solo i progetti in cui
     un dev selezionato ha **almeno un worker assegnato** (`SingleDev::has_any_worker()`,
     anche a effort 0; resta escluso il dev mai compilato) e, dentro il progetto,
@@ -402,7 +406,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     effort_up_to(31/12) − usato` (settimane keyed per lunedì: quella che parte
     entro il 31/12 conta nell'anno) e `dal_1_1 = mancante − fino_31_12` (negativo
     ⇒ rosso). Titoli dei gruppi rimpiccioliti se non entrano.
-- **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo aperti `Cmd/Ctrl+1` / Solo chiusi `Cmd/Ctrl+2` / Tutti `Cmd/Ctrl+3` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
+- **Vista**: Vista compatta, Bianco/Nero, **Progetti** (Solo attivi `Cmd/Ctrl+1` / Solo on-hold `Cmd/Ctrl+2` / Attivi + on-hold `Cmd/Ctrl+3` / Tutti `Cmd/Ctrl+4` — `UiState.project_view: ProjectViewMode`, non persistito), **Tema** (Auto/Chiaro/Scuro), **Zoom settimane** (Normale/2/4), Saturazione worker… (dashboard read-only: `saturation_window`; mostra i worker con `show_in_find` true **o** non nascosti nel footer, ignorando il filtro Ctrl+F).
   Finestra ridimensionabile in entrambe le direzioni (gli scroll riempiono
   `available_height`). Colonne = `SatCol { year, label, full, weeks }`
   (`saturation_columns`: label `mm-dd` / `mm` senza anno, `full` col year per il
@@ -922,14 +926,17 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `Response` for that test.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
-- **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`Closed`/
-  `All`, default `Open`, **not persisted**; menu Vista + `Cmd/Ctrl+1`/`2`/`3`) filters
+- **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`OnHold`/
+  `OpenOnHold`/`All`, default `Open`, **not persisted**; menu Vista +
+  `Cmd/Ctrl+1`/`2`/`3`/`4`; there is no closed-only view) filters
   which projects the central body shows, on top of the worker filter. The predicate
   `project_in_body(app, view, proj)` is the single rule (used by `project_layout` and
-  `body_projects`). **Gotcha**: closing a project forces `enable = false`
-  (`Project::set_closed` / `reset_enable_from_closed`), so `enable` only distinguishes
-  *open* projects hidden via «Filtri ▸ Progetti…». Hence: `Open` → `!closed && enable`,
-  `Closed` → `closed` (enable ignored), `All` → `closed || enable`.
+  `body_projects`) = `view.shows(status) && enable`: `ProjectViewMode::shows` maps
+  `Open` → Active, `OnHold` → OnHold, `OpenOnHold` → not Closed, `All` → any.
+  `enable` («Filtri ▸ Progetti…», not persisted) applies to **every status**: changing
+  status (`Project::set_closed`/`set_status`) resets it to `true`, and loading/merging
+  calls `Projects::reset_enable` (all visible). Tests `body_projects_respects_view_mode_and_closed`,
+  `ctrl_1_to_4_switch_the_project_view`.
   `body_projects(app, view)` returns that set (ignoring the worker filter) and drives
   the PDF/SVG/minuta project lists so they match what's on screen. **Closed projects
   always render grayscale**: `grid`/`left_column` call

@@ -1492,32 +1492,139 @@ fn body_projects_respects_view_mode_and_closed() {
     // chiuso (set_closed forza enable = false)
     let closed = app.projects.add("Chiuso", Some("CCC"), None);
     app.projects.set_closed(closed, true);
+    // on-hold (anch'esso con enable = false)
+    let hold = app.projects.add("Sospeso", Some("DDD"), None);
+    app.projects.set_status(hold, ProjectStatus::OnHold);
 
     // ProjectId non implementa Debug: confronto sugli id interni.
-    let ids = |v: Vec<ProjectId>| v.into_iter().map(|p| p.0).collect::<Vec<_>>();
+    let ids = |view| {
+        body_projects(&app, view, &ProjectFilter::default())
+            .into_iter()
+            .map(|p| p.0)
+            .collect::<Vec<_>>()
+    };
 
-    // Solo aperti: solo l'aperto e visibile.
-    assert_eq!(
-        ids(body_projects(&app, ProjectViewMode::Open, &ProjectFilter::default())),
-        vec![open.0],
-        "Open deve mostrare solo l'aperto visibile"
-    );
+    // Ctrl+1: solo l'attivo visibile.
+    assert_eq!(ids(ProjectViewMode::Open), vec![open.0]);
+    // Ctrl+2: solo l'on-hold, malgrado enable = false.
+    assert_eq!(ids(ProjectViewMode::OnHold), vec![hold.0]);
+    // Ctrl+3: attivo visibile + on-hold, niente chiusi.
+    assert_eq!(ids(ProjectViewMode::OpenOnHold), vec![open.0, hold.0]);
+    // Ctrl+4: tutto tranne l'attivo nascosto dal filtro.
+    assert_eq!(ids(ProjectViewMode::All), vec![open.0, closed.0, hold.0]);
 
-    // Solo chiusi: solo il chiuso, malgrado enable = false.
-    assert_eq!(
-        ids(body_projects(&app, ProjectViewMode::Closed, &ProjectFilter::default())),
-        vec![closed.0],
-        "Closed deve mostrare il progetto chiuso"
-    );
-
-    // Tutti: aperto visibile + chiuso; l'aperto nascosto resta escluso.
-    assert_eq!(
-        ids(body_projects(&app, ProjectViewMode::All, &ProjectFilter::default())),
-        vec![open.0, closed.0],
-        "All: aperto visibile + chiuso"
-    );
+    // Il filtro «Progetti…» nasconde anche on-hold e chiusi.
+    app.projects.set_enable(hold, Enable(false));
+    app.projects.set_enable(closed, Enable(false));
+    let ids = |view| {
+        body_projects(&app, view, &ProjectFilter::default())
+            .into_iter()
+            .map(|p| p.0)
+            .collect::<Vec<_>>()
+    };
+    assert!(ids(ProjectViewMode::OnHold).is_empty());
+    assert_eq!(ids(ProjectViewMode::OpenOnHold), vec![open.0]);
+    assert_eq!(ids(ProjectViewMode::All), vec![open.0]);
 }
 
+#[test]
+fn filters_project_list_follows_the_view_and_hides_any_status() {
+    let mut app = App::new();
+    app.projects.add("Aperto", Some("AAA"), None);
+    let hold = app.projects.add("Sospeso", Some("HHH"), None);
+    app.projects.set_status(hold, ProjectStatus::OnHold);
+    let closed = app.projects.add("Chiuso", Some("CCC"), None);
+    app.projects.set_status(closed, ProjectStatus::Closed);
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1600.0, 900.0)),
+        ..Default::default()
+    };
+    let listed = |view| {
+        let mut state = UiState {
+            show_filters: true,
+            project_view: view,
+            ..Default::default()
+        };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut actions = Vec::new();
+            let out = ctx.run_ui_test(input.clone(), |ui| {
+                filters_window(ui.ctx(), &app, &mut state, &mut actions);
+            });
+            texts = drawn_texts(&out);
+        }
+        ["AAA", "HHH", "CCC"]
+            .into_iter()
+            .filter(|t| texts.iter().any(|x| x == t))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(listed(ProjectViewMode::Open), vec!["AAA"]);
+    assert_eq!(listed(ProjectViewMode::OnHold), vec!["HHH"]);
+    assert_eq!(listed(ProjectViewMode::OpenOnHold), vec!["AAA", "HHH"]);
+    assert_eq!(listed(ProjectViewMode::All), vec!["AAA", "HHH", "CCC"]);
+
+    // Accanto alla tripletta c'è lo stato del progetto.
+    let mut state = UiState {
+        show_filters: true,
+        project_view: ProjectViewMode::All,
+        ..Default::default()
+    };
+    let mut out = None;
+    for _ in 0..2 {
+        let mut actions = Vec::new();
+        out = Some(ctx.run_ui_test(input.clone(), |ui| {
+            filters_window(ui.ctx(), &app, &mut state, &mut actions);
+        }));
+    }
+    let out = out.unwrap();
+    for (trip, status) in [("AAA", "Attivo"), ("HHH", "On-Hold"), ("CCC", "Closed")] {
+        let t = text_pos(&out, trip).expect(trip);
+        let found = out.shapes.iter().any(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(x) => {
+                x.galley.text() == status
+                    && (x.visual_bounding_rect().center().y - t.y).abs() < 4.0
+                    && x.visual_bounding_rect().center().x > t.x
+            }
+            _ => false,
+        });
+        assert!(found, "{status} accanto a {trip}");
+    }
+
+    // Cambiare stato non nasconde il progetto: resta visibile nella sua vista.
+    assert!(app.projects.get_enable(&hold).0 && app.projects.get_enable(&closed).0);
+}
+
+#[test]
+fn ctrl_1_to_4_switch_the_project_view() {
+    let mut pjm = PjmApp { app: App::new(), ui: UiState::default() };
+    let ctx = egui::Context::default();
+    let mut frame = eframe::Frame::_new_kittest();
+    for (key, mode) in [
+        (egui::Key::Num2, ProjectViewMode::OnHold),
+        (egui::Key::Num3, ProjectViewMode::OpenOnHold),
+        (egui::Key::Num4, ProjectViewMode::All),
+        (egui::Key::Num1, ProjectViewMode::Open),
+    ] {
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            events: vec![
+                egui::Event::ModifiersChanged(egui::Modifiers::COMMAND),
+                egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::COMMAND,
+                },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui_test(input, |ui| eframe::App::ui(&mut pjm, ui, &mut frame));
+        assert!(pjm.ui.project_view == mode, "{key:?}");
+    }
+}
 
 /// Accoda gli eventi di un click "realistico" su `pos`: hover in un frame,
 /// Gli ambiti spuntati nelle dialog di export diventano l'elenco passato

@@ -378,13 +378,14 @@ impl Project {
         self.closed.unwrap_or(false)
     }
 
-    /// Imposta lo stato "chiuso". Chiudere un progetto lo rende anche
-    /// automaticamente non-enabled; riaprirlo lo rende di nuovo enabled.
-    /// Toglie sempre l'on-hold (per metterlo c'è `set_status`).
+    /// Imposta lo stato "chiuso". Cambiare stato rende il progetto visibile
+    /// (`enable`, il filtro «Filtri ▸ Progetti…», vale per ogni stato): in
+    /// quale vista compare lo decide lo stato. Toglie sempre l'on-hold (per
+    /// metterlo c'è `set_status`).
     pub fn set_closed(&mut self, closed: bool) {
         self.closed = if closed { Some(true) } else { None };
         self.on_hold = false;
-        self.enable = Enable(!closed);
+        self.enable = Enable(true);
     }
 
     /// Stato del progetto: attivo, on-hold (chiuso + `on_hold`) o chiuso.
@@ -396,8 +397,8 @@ impl Project {
         }
     }
 
-    /// Imposta lo stato: on-hold e closed chiudono il progetto (con `enable` a
-    /// false), attivo lo riapre.
+    /// Imposta lo stato: on-hold e closed chiudono il progetto, attivo lo
+    /// riapre.
     pub fn set_status(&mut self, status: ProjectStatus) {
         self.set_closed(status != ProjectStatus::Active);
         self.on_hold = status == ProjectStatus::OnHold;

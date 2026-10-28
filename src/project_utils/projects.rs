@@ -470,12 +470,12 @@ impl Projects {
             .is_some_and(|p| p.is_closed())
     }
 
-    /// Ricalcola lo stato `enable` (filtro) di tutti i progetti a partire da
-    /// `closed`: aperti = abilitati, chiusi = disabilitati. Chiamato dopo il
-    /// caricamento, dato che `enable` non è persistito.
-    pub fn reset_enable_from_closed(&mut self) {
+    /// Rende visibili (`enable`, filtro «Filtri ▸ Progetti…») tutti i
+    /// progetti, di qualunque stato. Chiamato dopo il caricamento, dato che
+    /// `enable` non è persistito.
+    pub fn reset_enable(&mut self) {
         for p in self.projects.values_mut() {
-            p.set_enable(Enable(!p.is_closed()));
+            p.set_enable(Enable(true));
         }
     }
 

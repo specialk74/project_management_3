@@ -141,9 +141,8 @@ pub(crate) fn project_layout(
     let extra_rows = if compact { 1.0 } else { 5.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
-        // Visibilità (filtro «Progetti…») + modalità Vista (Solo aperti / Solo
-        // chiusi / Tutti). Il filtro `enable` conta solo per gli aperti: i chiusi
-        // sono sempre `enable = false` (vedi `project_in_body`).
+        // Visibilità (filtro «Progetti…») + modalità Vista (stati mostrati),
+        // vedi `project_in_body`.
         if !project_in_body(app, view, proj_id) {
             continue;
         }

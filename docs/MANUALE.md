@@ -306,9 +306,10 @@ bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 ### Filtri
 Le prime sei voci aprono **la stessa dialog «Filtri»** (cinque colonne: Workers,
 Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve il focus.
-- **Progetti…** — colonna Progetti: elenco dei progetti (non chiusi) con una spunta
-  per ciascuno che attiva/disattiva la **visibilità** nella griglia, ricerca e salto
-  rapido ("Select All" per agire su tutti). Scorciatoia `Cmd/Ctrl+P`.
+- **Progetti…** — colonna Progetti: elenco dei progetti **della vista corrente**
+  (solo attivi con `Cmd/Ctrl+1`, solo on-hold con `Cmd/Ctrl+2`, e così via) con una
+  spunta per ciascuno che attiva/disattiva la **visibilità** nella griglia, ricerca e
+  salto rapido ("Select All" per agire su tutti). Scorciatoia `Cmd/Ctrl+P`.
 - **Workers…** — colonna Workers (vedi §14). La voce mostra una spunta quando un
   filtro è attivo. Scorciatoia `Cmd/Ctrl+F`.
 - **Workers (settimana corrente)…** — stessa colonna e stessa selezione del filtro
@@ -344,8 +345,8 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
 - **Vista compatta** — vista a barre compresse (vedi §15).
 - **Bianco/Nero** — resa in scala di grigi (toglie i colori).
 - **Progetti** — filtra quali progetti compaiono nel corpo centrale (vedi §15):
-  *Solo progetti aperti* (`Cmd/Ctrl+1`), *Solo progetti chiusi* (`Cmd/Ctrl+2`),
-  *Tutti* (`Cmd/Ctrl+3`).
+  *Solo progetti attivi* (`Cmd/Ctrl+1`), *Solo progetti on-hold* (`Cmd/Ctrl+2`),
+  *Attivi + on-hold* (`Cmd/Ctrl+3`), *Tutti* (`Cmd/Ctrl+4`).
 - **Tema** — *Auto (sistema)* / *Chiaro* / *Scuro* (vedi §15).
 - **Zoom settimane** — *Normale* / *2 settimane* / *4 settimane* (vedi §15).
 - **Saturazione worker…** — cruscotto di sintesi del carico (vedi §15).
@@ -425,9 +426,12 @@ su/giù nell'elenco.
 
 ### Visibilità, chiusura
 - **Abilita/disabilita** dalla finestra **Filtri ▸ Progetti…**: un progetto
-  disabilitato non è mostrato nella griglia (ma resta nell'elenco del filtro).
+  disabilitato non è mostrato nella griglia (ma resta nell'elenco del filtro). Vale
+  per **qualunque stato**: si possono nascondere anche progetti on-hold o chiusi.
 - **Chiudi o metti in on-hold** dalla finestra **Filtri ▸ Stato progetti…**: un
-  progetto chiuso (o on-hold) è escluso da elenchi attivi ed export.
+  progetto chiuso (o on-hold) è escluso da elenchi attivi ed export e compare solo
+  nelle viste che comprendono il suo stato (Vista ▸ Progetti). Cambiare lo stato
+  rende il progetto di nuovo visibile.
 
 > Nota: non esiste un'eliminazione definitiva del progetto; per toglierlo dalla
 > vista lo si disabilita o lo si chiude.
@@ -872,19 +876,23 @@ il toggle agisce sugli elementi **attualmente elencati**, cioè rispetta la rice
 `Shift+Cmd/Ctrl+F` / `+G` / `+D` / `+K` / `+Y` deselezionano tutto senza aprire la dialog.
 
 **`Cmd/Ctrl+J` azzera tutti i filtri**: worker, dev, categorie e anni tornano *tutti
-selezionati*, tutti i progetti aperti tornano visibili, la modalità «Solo settimana
-corrente» si spegne e le ricerche si svuotano — cioè si torna a vedere tutto. Non è un
-toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona nulla** e
-ripristina semplicemente lo stesso stato. Non tocca i progetti **chiusi** (restano
-nascosti finché non li riapri da «Filtri ▸ Stato progetti…») né la modalità **Vista ▸
-Progetti** (`Cmd/Ctrl+1/2/3`).
+selezionati*, tutti i progetti (di qualunque stato) tornano visibili, la modalità
+«Solo settimana corrente» si spegne e le ricerche si svuotano — cioè si torna a vedere
+tutto. Non è un toggle: premuto di nuovo, anche a dialog aperta, **non deseleziona
+nulla** e ripristina semplicemente lo stesso stato. Non cambia la modalità **Vista ▸
+Progetti** (`Cmd/Ctrl+1/2/3/4`): on-hold e chiusi si vedono solo nelle viste che li
+comprendono.
 
 ### Progetti — visibilità + salto rapido (colonna «Progetti», `Cmd/Ctrl+P`)
 La colonna contiene:
+- solo i progetti **della vista corrente** (Vista ▸ Progetti): con *Solo progetti
+  attivi* gli attivi, con *Solo progetti on-hold* gli on-hold, con *Attivi + on-hold*
+  entrambi, con *Tutti* anche i chiusi;
 - una **casella di ricerca** in cima (auto-focus): digita e l'elenco si filtra in
   tempo reale (la ricerca combacia con tripletta o nome);
 - per ogni progetto una **spunta di visibilità** (disabilitarlo lo nasconde dalla
-  griglia) e la **tripletta cliccabile**;
+  griglia), la **tripletta cliccabile** e, accanto, il suo **stato** in piccolo
+  (*Attivo*, *On-Hold* o *Closed*, come in «Stato progetti…»);
 - in elenco si mostra **solo la tripletta** (o il nome se la tripletta è assente).
 
 Fai **click sulla tripletta**, o premi **Invio** per il primo risultato, e la
@@ -1007,8 +1015,9 @@ Finestra con tutti i progetti in ordine alfabetico e, accanto a ciascuno, una
 - **Attivo** — il progetto è aperto;
 - **On-Hold** — il progetto è sospeso: **si comporta in tutto come un progetto
   chiuso** (grigio nella griglia, escluso dagli elenchi attivi e dall'export,
-  visibile con *Solo chiusi*), ma nella **matrice progetti × worker** è indicato
-  come «on-hold» invece che «chiuso»;
+  visibile con *Tutti*), ma ha viste dedicate (*Solo progetti on-hold* e *Attivi +
+  on-hold*, vedi §15) e nella **matrice progetti × worker** è indicato come
+  «on-hold» invece che «chiuso»;
 - **Closed** — il progetto è chiuso.
 
 Nel file un progetto on-hold resta registrato come chiuso più l'indicazione
@@ -1028,22 +1037,26 @@ panoramica su periodi lunghi.
 ### Bianco/Nero (Vista ▸ Bianco/Nero)
 Rende tutta l'interfaccia in scala di grigi (nessun colore).
 
-### Progetti: aperti / chiusi / tutti (Vista ▸ Progetti)
+### Progetti: attivi / on-hold / tutti (Vista ▸ Progetti)
 Sceglie quali progetti mostrare nel corpo centrale, **in aggiunta** al filtro di
 visibilità (Filtri ▸ Progetti…) e al filtro worker:
-- **Solo progetti aperti** (`Cmd/Ctrl+1`) — nasconde i progetti chiusi.
-- **Solo progetti chiusi** (`Cmd/Ctrl+2`) — mostra solo i progetti chiusi.
-- **Tutti** (`Cmd/Ctrl+3`) — mostra sia gli aperti sia i chiusi.
+- **Solo progetti attivi** (`Cmd/Ctrl+1`) — nasconde i progetti on-hold e chiusi.
+- **Solo progetti on-hold** (`Cmd/Ctrl+2`) — mostra solo i progetti on-hold.
+- **Attivi + on-hold** (`Cmd/Ctrl+3`) — mostra gli attivi e gli on-hold, non i
+  chiusi.
+- **Tutti** (`Cmd/Ctrl+4`) — mostra attivi, on-hold e chiusi.
+
+Non c'è una vista con i soli progetti chiusi: si vedono con *Tutti*.
 
 I **progetti chiusi si vedono sempre in grigio** (scala di grigi), anche quando il
 Bianco/Nero generale è spento, così si distinguono a colpo d'occhio dagli aperti.
 
 Questa scelta **non viene salvata**: a ogni avvio si riparte da *Solo progetti
-aperti*.
+attivi*.
 
 Gli elenchi di **esportazione PDF, SVG e Minuta** seguono questa modalità: propongono
-esattamente i progetti presenti nel corpo centrale (ad es. in *Solo progetti chiusi*
-esportano i progetti chiusi).
+esattamente i progetti presenti nel corpo centrale (ad es. in *Solo progetti
+on-hold* esportano i progetti on-hold).
 
 ### Tema (Vista ▸ Tema)
 Tre stati:
@@ -1322,7 +1335,8 @@ quanto, lo decide `corner_pct` nel file dati (vedi capitolo 2).
 **File ▸ Esporta…** con più progetti visibili apre una **finestra di selezione dei
 progetti**:
 
-- elenca i **progetti visibili** (abilitati e non chiusi), identificati dalla **tripletta** (o dalla descrizione se assente);
+- elenca i **progetti visibili** (quelli presenti nel corpo centrale: abilitati e
+  dello stato della vista corrente), identificati dalla **tripletta** (o dalla descrizione se assente);
 - **Select All** in cima per selezionare/deselezionare tutti;
 - **checkbox** per includere/escludere ciascun progetto. Le spunte sono **ricordate
   finché il programma è aperto**: riaprendo la finestra ritrovi le scelte

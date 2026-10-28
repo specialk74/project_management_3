@@ -200,7 +200,7 @@ pub fn merge(
     }
 
     theirs.recompute_week_range();
-    theirs.projects.reset_enable_from_closed();
+    theirs.projects.reset_enable();
     theirs.compute_sovra();
 
     MergeOutcome {
@@ -548,10 +548,11 @@ mod tests {
         assert_eq!(out.app.categories.get_name(cat), Some("Manutenzione"));
     }
 
-    /// Dopo il merge lo stato è ricalcolato: i progetti chiusi restano non
-    /// visibili (`enable = false`) come dopo un caricamento normale.
+    /// Dopo il merge lo stato è ricalcolato come dopo un caricamento normale:
+    /// il progetto chiuso resta chiuso e visibile (`enable`, il filtro
+    /// «Progetti…», vale per ogni stato; la vista decide se si vede).
     #[test]
-    fn merged_state_is_recomputed_closed_projects_stay_disabled() {
+    fn merged_state_is_recomputed_closed_projects_stay_visible() {
         let (base, pid, ..) = base_app();
         let mine = base.clone();
         let mut theirs = base.clone();
@@ -559,6 +560,6 @@ mod tests {
 
         let out = merge(&base, &mine, theirs, &no_names);
         assert!(out.app.projects.is_closed(pid));
-        assert!(!out.app.projects.get_enable(&pid).0);
+        assert!(out.app.projects.get_enable(&pid).0);
     }
 }

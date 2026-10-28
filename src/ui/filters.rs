@@ -97,7 +97,8 @@ pub(crate) fn filters_window(
         .projects
         .list_full()
         .into_iter()
-        .filter(|(id, _, _)| !app.projects.is_closed(*id))
+        // Solo i progetti degli stati della vista corrente (Ctrl+1…4).
+        .filter(|(id, _, _)| state.project_view.shows(app.projects.status(*id)))
         .filter_map(|(id, name, en)| {
             let trip = app.projects.get_tripletta(id);
             if !(search_matches(&qp, &trip) || search_matches(&qp, &name)) {
@@ -296,6 +297,12 @@ pub(crate) fn filters_window(
                                     {
                                         jump = Some(*id);
                                     }
+                                    // Stato del progetto, come in «Stato progetti…».
+                                    ui.label(
+                                        egui::RichText::new(app.projects.status(*id).label())
+                                            .small()
+                                            .color(text_dim()),
+                                    );
                                 });
                             }
                             remember_project_rows(ui, rows_key, top, projects.len());

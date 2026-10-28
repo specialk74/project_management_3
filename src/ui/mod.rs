@@ -395,12 +395,14 @@ enum ThemePref {
 /// (solo aperti) a ogni avvio.
 #[derive(Clone, Copy, PartialEq, Default)]
 pub(crate) enum ProjectViewMode {
-    /// Solo progetti aperti (non chiusi).
+    /// Solo progetti attivi (non chiusi né on-hold).
     #[default]
     Open,
-    /// Solo progetti chiusi.
-    Closed,
-    /// Tutti i progetti (aperti e chiusi).
+    /// Solo progetti on-hold.
+    OnHold,
+    /// Progetti attivi + on-hold.
+    OpenOnHold,
+    /// Tutti i progetti (attivi, on-hold e chiusi).
     All,
 }
 
@@ -472,14 +474,13 @@ pub(crate) fn reset_all_filters(app: &App, state: &mut UiState, actions: &mut Ve
     state.category_filter_toggle_all = false;
     state.year_filter_toggle_all = false;
     state.project_filter_toggle_all = false;
-    // Visibilità progetti: i chiusi restano fuori (chiudere forza `enable = false`).
+    // Visibilità progetti: tutti visibili, di qualunque stato (quali si vedono
+    // lo decide poi la modalità Vista).
     for (proj, _) in app.projects.list() {
-        if !app.projects.is_closed(proj) {
-            actions.push(Action::SetProjectEnabled {
-                proj,
-                enabled: true,
-            });
-        }
+        actions.push(Action::SetProjectEnabled {
+            proj,
+            enabled: true,
+        });
     }
 }
 
@@ -496,23 +497,24 @@ fn focus_pane(state: &mut UiState, pane: FilterPane) {
     state.filters_focus_dirty = true;
 }
 
-/// True se il progetto va mostrato nel corpo centrale in base alla modalità
-/// Vista corrente.
-///
-/// Nota importante: chiudere un progetto ne forza `enable = false` (vedi
-/// `Project::set_closed`), quindi il flag `enable` distingue solo gli **aperti**
-/// nascosti dal filtro «Filtri ▸ Progetti…». Per questo il filtro `enable` si
-/// applica ai soli progetti aperti; i chiusi vengono decisi dal solo stato
-/// `closed`.
-fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
-    let closed = app.projects.is_closed(proj);
-    let enabled = app.projects.get_enable(&proj).0;
-    match view {
-        ProjectViewMode::Open => !closed && enabled,
-        ProjectViewMode::Closed => closed,
-        // Aperti solo se non nascosti dal filtro; chiusi sempre visibili.
-        ProjectViewMode::All => closed || enabled,
+impl ProjectViewMode {
+    /// La vista comprende i progetti in questo stato? Decide anche quali
+    /// progetti elenca la colonna Progetti della dialog dei filtri.
+    pub(crate) fn shows(self, status: ProjectStatus) -> bool {
+        match self {
+            ProjectViewMode::Open => status == ProjectStatus::Active,
+            ProjectViewMode::OnHold => status == ProjectStatus::OnHold,
+            ProjectViewMode::OpenOnHold => status != ProjectStatus::Closed,
+            ProjectViewMode::All => true,
+        }
     }
+}
+
+/// True se il progetto va mostrato nel corpo centrale: il suo stato rientra
+/// nella modalità Vista corrente **e** non è nascosto dal filtro «Filtri ▸
+/// Progetti…» (`enable`, che vale per qualunque stato).
+fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
+    view.shows(app.projects.status(proj)) && app.projects.get_enable(&proj).0
 }
 
 /// Progetti attualmente presenti nel corpo centrale, coerenti con la modalità
@@ -879,7 +881,7 @@ pub struct UiState {
     footer_hidden: bool,
     // resa in bianco/nero (senza colori)
     bw_mode: bool,
-    // modalità progetti (Vista ▸ Solo aperti / Solo chiusi / Tutti). Filtro di
+    // modalità progetti (Vista ▸ Attivi / On-hold / Attivi + on-hold / Tutti). Filtro di
     // sola visualizzazione, non persistito: riparte da "Tutti" a ogni avvio.
     project_view: ProjectViewMode,
     // formato barre scelto per l'export PDF/SVG (ricordato tra un export e
@@ -1755,6 +1757,7 @@ impl eframe::App for PjmApp {
                 key_1,
                 key_2,
                 key_3,
+                key_4,
             ) = ui.ctx().input(|i| {
                     let cmd = i.modifiers.command || i.modifiers.ctrl;
                     (
@@ -1771,20 +1774,24 @@ impl eframe::App for PjmApp {
                         cmd && i.key_pressed(egui::Key::Num1),
                         cmd && i.key_pressed(egui::Key::Num2),
                         cmd && i.key_pressed(egui::Key::Num3),
+                        cmd && i.key_pressed(egui::Key::Num4),
                     )
                 });
             if key_s {
                 actions.push(Action::Save);
             }
-            // Modalità progetti (non persistita): Ctrl+1 solo aperti, Ctrl+2 solo
-            // chiusi, Ctrl+3 tutti.
+            // Modalità progetti (non persistita): Ctrl+1 solo attivi, Ctrl+2 solo
+            // on-hold, Ctrl+3 attivi + on-hold, Ctrl+4 tutti.
             if key_1 {
                 state.project_view = ProjectViewMode::Open;
             }
             if key_2 {
-                state.project_view = ProjectViewMode::Closed;
+                state.project_view = ProjectViewMode::OnHold;
             }
             if key_3 {
+                state.project_view = ProjectViewMode::OpenOnHold;
+            }
+            if key_4 {
                 state.project_view = ProjectViewMode::All;
             }
             // Ctrl+F / Ctrl+G / Ctrl+P / Ctrl+D aprono tutti la **stessa** dialog
@@ -2147,16 +2154,10 @@ impl PjmApp {
     /// resetta a ogni aggiornamento in background fatto da un collega.
     fn preserve_project_filter(&self, target: &mut App) {
         for id in target.projects.ids() {
-            // Un progetto chiuso (nel nuovo stato) resta sempre non-enabled.
-            if target.projects.is_closed(id) {
-                target.projects.set_enable(id, Enable(false));
-                continue;
-            }
             // Progetto ancora presente nel mio stato ⇒ mantengo la mia scelta di
-            // filtro. NB: NON richiamare `reset_enable_from_closed` qui, perché
-            // rimetterebbe `enable = true` su tutti i progetti aperti, azzerando
-            // il filtro. I progetti nuovi del collega restano come dal load
-            // (enabled, cioè visibili).
+            // filtro. NB: NON richiamare `reset_enable` qui, perché rimetterebbe
+            // `enable = true` su tutti i progetti, azzerando il filtro. I
+            // progetti nuovi del collega restano come dal load (visibili).
             if self.app.projects.get(id).is_some() {
                 let mine = self.app.projects.get_enable(&id);
                 target.projects.set_enable(id, mine);

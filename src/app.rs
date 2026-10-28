@@ -327,12 +327,12 @@ impl App {
     }
 
     /// Costruisce un `App` da una stringa RON, ricalcolando i campi derivati
-    /// (range settimane, `enable` dai `closed`).
+    /// (range settimane, `enable` = tutti visibili).
     pub fn from_ron_str(s: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let mut app: App = ron::from_str(s)?;
         app.recompute_week_range();
-        // `enable` è un filtro transitorio non persistito: ricalcolalo da `closed`.
-        app.projects.reset_enable_from_closed();
+        // `enable` è un filtro transitorio non persistito: tutti visibili.
+        app.projects.reset_enable();
         Ok(app)
     }
 
