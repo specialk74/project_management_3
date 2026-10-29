@@ -639,7 +639,20 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   included**; cells = hours (empty = not assigned). `WeWorker.status` (per week,
   `Workers::get_week_status`) paints the **whole week column** of that worker blue for
   Ferie / red for Malattia (`we_status_fill`, footer colors; PDF `WE_VACATION` /
-  `WE_SICK`), hours stay written in white. GUI colour tests compare **unmultiplied RGB**:
+  `WE_SICK`), hours stay written in white. Last row **Totale** (PDF «Total», on every page:
+  `we_row_chunks` reserves one `WE_ROW_H`): `WeWorker::week_total(i)` = Σ of the
+  table's rows (shown projects only); `WeWorker.max` = `get_effective_max_hours` per
+  week (week limit or worker max, ghost ignored) → `week_mark(i)`: `Over` (total >
+  max, total cell red `we_over_fill`/`WE_OVER` + white, wins even over Ferie/Malattia)
+  or `Empty` (total 0, effort-0 assignments included, **not** in a Ferie/Malattia
+  week: whole column + total yellow `we_empty_fill`/`WE_EMPTY`, black text) or
+  `Under` (`total * 5 < max * 4`, i.e. < 80%, checked in Ferie/Malattia weeks too —
+  there even total 0; never with max 0: total cell only orange
+  `we_under_fill`/`WE_UNDER`, black text, wins over the status colour). Tests
+  `week_totals_are_red_over_the_week_max_and_yellow_when_empty`,
+  `week_totals_are_red_over_max_and_empty_weeks_are_yellow`,
+  `worker_effort_pdf_has_week_totals_red_over_max_and_yellow_when_empty`.
+  GUI colour tests compare **unmultiplied RGB**:
   a new egui window fades in, so the first frames have a low alpha. Projects = `worker_effort_projects` = `body_projects(app,
   project_view, ProjectFilter::from_state)`, shared with the export. No totals.
   **Esporta PDF…** → `Action::ExportWorkerEffort { from, to }` →

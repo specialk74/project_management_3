@@ -1338,6 +1338,17 @@ ghost)…»):
   senza assegnazione); le ore, se ci sono, restano scritte in bianco. Ferie e
   malattia sono quelle segnate per settimana nel footer (tasto destro sulla cella
   del worker ▸ Ferie / Malattia).
+- **in fondo** la riga **Totale** (nel PDF «Total»): sotto ogni settimana la somma
+  delle ore delle righe della tabella, cioè dei soli progetti mostrati (vista e
+  filtri). Se il totale **supera le ore max** di quella settimana — il limite della
+  settimana se impostato, altrimenti le ore max del worker, come nel footer — la
+  cella del totale è **rossa** con il numero in bianco (anche in una settimana di
+  ferie o malattia); se resta **sotto l'80%** delle ore max è **arancione**.
+  Anche nelle settimane di ferie o malattia si guarda sempre il max della
+  settimana: lì è arancione anche un totale 0, se il max è più di 0. Se nella settimana **non c'è nessuna ora** (totale 0, anche
+  con un'assegnazione a 0 ore) l'intera colonna, totale compreso, è **gialla**;
+  nelle settimane di ferie o malattia resta invece il loro colore. Nel PDF la riga
+  dei totali chiude ogni pagina.
 
 Il periodo si sceglie con i calendari **Da** / **A** (ogni data vale la settimana
 che la contiene); all'apertura va dalla settimana corrente a **un anno da oggi**, e

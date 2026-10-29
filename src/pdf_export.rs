@@ -3409,6 +3409,11 @@ const WE_STRIPE: (f32, f32, f32) = (0.96, 0.96, 0.96);
 /// Settimane di ferie / malattia (come i triangoli del footer della GUI).
 const WE_VACATION: (f32, f32, f32) = (0.2, 0.6, 1.0);
 const WE_SICK: (f32, f32, f32) = (0.86, 0.15, 0.15);
+/// Settimana senza ore (colonna gialla) e totale oltre il max (cella rossa).
+const WE_EMPTY: (f32, f32, f32) = (1.0, 0.88, 0.36);
+const WE_OVER: (f32, f32, f32) = (0.85, 0.15, 0.15);
+/// Totale sotto l'80% delle ore max della settimana (cella arancione).
+const WE_UNDER: (f32, f32, f32) = (1.0, 0.6, 0.2);
 
 /// Settimane che entrano in larghezza in una pagina.
 fn we_weeks_per_page() -> usize {
@@ -3419,10 +3424,10 @@ fn we_weeks_per_page() -> usize {
 const WE_LINE_H: f32 = 2.4;
 
 /// Righe di una sola riga di testo che entrano in altezza in una pagina
-/// (sotto le tre di intestazione).
+/// (sotto le tre di intestazione, sopra la riga dei totali).
 #[cfg(test)]
 fn we_rows_per_page() -> usize {
-    ((WE_TOP - WE_BOT - 3.0 * WE_HEAD_H) / WE_ROW_H).floor() as usize
+    ((WE_TOP - WE_BOT - 3.0 * WE_HEAD_H) / WE_ROW_H).floor() as usize - 1
 }
 
 /// Va a capo per stare in `max_w` mm: fra le parole e, se una parola da sola
@@ -3459,9 +3464,10 @@ fn we_row_h(lines: usize) -> f32 {
     WE_ROW_H + lines.saturating_sub(1) as f32 * WE_LINE_H
 }
 
-/// Righe a gruppi che entrano in altezza in una pagina, date le altezze.
+/// Righe a gruppi che entrano in altezza in una pagina, date le altezze
+/// (ogni pagina chiude con la riga dei totali).
 fn we_row_chunks(heights: &[f32]) -> Vec<std::ops::Range<usize>> {
-    let room = WE_TOP - WE_BOT - 3.0 * WE_HEAD_H;
+    let room = WE_TOP - WE_BOT - 3.0 * WE_HEAD_H - WE_ROW_H;
     let mut out = Vec::new();
     let (mut start, mut used) = (0, 0.0);
     for (i, h) in heights.iter().enumerate() {
@@ -3479,7 +3485,8 @@ fn we_row_chunks(heights: &[f32]) -> Vec<std::ops::Range<usize>> {
 
 /// Pagine di un worker: le settimane a blocchi che entrano in larghezza e,
 /// dentro ogni blocco, le righe a gruppi che entrano in altezza; in ogni
-/// pagina si ripetono titolo, intestazione delle date e colonna progetto × dev.
+/// pagina si ripetono titolo, intestazione delle date, colonna progetto × dev
+/// e, in fondo, la riga dei totali della settimana (di tutte le righe).
 fn worker_effort_pages(
     w: &crate::worker_effort::WeWorker,
     weeks: &[i32],
@@ -3487,7 +3494,7 @@ fn worker_effort_pages(
     this_week: i32,
     created: &str,
 ) -> Vec<Vec<Shape>> {
-    use crate::worker_effort::{day_label, month_of, spans, year_of};
+    use crate::worker_effort::{WeekMark, day_label, month_of, spans, year_of};
     let blocks: Vec<std::ops::Range<usize>> = (0..weeks.len())
         .step_by(we_weeks_per_page().max(1))
         .map(|a| a..(a + we_weeks_per_page().max(1)).min(weeks.len()))
@@ -3593,14 +3600,13 @@ fn worker_effort_pages(
                 // Ore centrate in verticale nella riga.
                 let hours_base = (y0 + y1) / 2.0 - WE_ROW_H / 2.0 + WE_BASE;
                 for (i, h) in r.hours[cols.clone()].iter().enumerate() {
-                    // Ferie (blu) / malattia (rosso): tutta la cella, ore in bianco.
+                    // Ferie (blu) / malattia (rosso): tutta la cella, ore in
+                    // bianco; settimana senza ore: gialla.
                     let status = w.status.get(cols.start + i).copied().flatten();
                     if let Some(st) = status {
-                        let fill = match st {
-                            WeekStatus::Ferie => WE_VACATION,
-                            WeekStatus::Malattia => WE_SICK,
-                        };
-                        out.extend(rect_fill(col_x(i), y0, col_x(i + 1), y1, fill));
+                        out.extend(rect_fill(col_x(i), y0, col_x(i + 1), y1, we_status_rgb(st)));
+                    } else if w.week_mark(cols.start + i) == Some(WeekMark::Empty) {
+                        out.extend(rect_fill(col_x(i), y0, col_x(i + 1), y1, WE_EMPTY));
                     }
                     if let Some(h) = h {
                         out.extend(text_center_font(
@@ -3615,7 +3621,36 @@ fn worker_effort_pages(
                 }
                 y1 = y0;
             }
-            let bottom = y1;
+            // Totali: oltre il max rosso e sotto l'80% arancione (anche in
+            // ferie/malattia, è un avviso), senza ore giallo, altrimenti il
+            // colore della settimana.
+            let y0 = y1 - WE_ROW_H;
+            out.extend(rect_fill(WE_X0, y0, x1, y1, GRAY_FOOTER));
+            out.extend(line(WE_X0, y1, x1, y1, 0.3, BLACK));
+            out.extend(text_left(WE_X0 + 1.0, y0 + WE_BASE, "Total", WE_FONT, true, BLACK));
+            for i in 0..ws.len() {
+                let k = cols.start + i;
+                let status = w.status.get(k).copied().flatten();
+                let (fill, color) = match (w.week_mark(k), status) {
+                    (Some(WeekMark::Over), _) => (Some(WE_OVER), WHITE),
+                    (Some(WeekMark::Under), _) => (Some(WE_UNDER), BLACK),
+                    (_, Some(st)) => (Some(we_status_rgb(st)), WHITE),
+                    (Some(WeekMark::Empty), _) => (Some(WE_EMPTY), BLACK),
+                    (None, None) => (None, BLACK),
+                };
+                if let Some(f) = fill {
+                    out.extend(rect_fill(col_x(i), y0, col_x(i + 1), y1, f));
+                }
+                out.extend(text_center_font(
+                    col_x(i) + WE_CELL_W / 2.0,
+                    y0 + WE_BASE,
+                    &w.week_total(k).to_string(),
+                    WE_FONT,
+                    true,
+                    color,
+                ));
+            }
+            let bottom = y0;
             // Confini dei mesi e della colonna etichette lungo le righe.
             for (_, a, _) in spans(ws, month_of) {
                 out.extend(line(col_x(a), head_bot, col_x(a), bottom, 0.2, GRAY_GUIDE));
@@ -3638,6 +3673,14 @@ fn worker_effort_pages(
     pages
 }
 
+/// Colore di una settimana di ferie / malattia.
+fn we_status_rgb(st: WeekStatus) -> (f32, f32, f32) {
+    match st {
+        WeekStatus::Ferie => WE_VACATION,
+        WeekStatus::Malattia => WE_SICK,
+    }
+}
+
 /// PDF «Effort per worker»: una pagina (o più, se settimane o righe non ci
 /// stanno) per ogni worker con almeno una riga nel periodo `[from, to]`;
 /// quelli senza effort sono saltati. `None` se non resta nessuno.
@@ -3649,7 +3692,8 @@ pub fn build_worker_effort_pdf(
 ) -> Option<Vec<u8>> {
     let created = today().format(US_DATE).to_string();
     let subtitle = format!(
-        "From {} to {} · empty cell = not assigned · blue = vacation, red = sick leave",
+        "From {} to {} · empty = not assigned · blue = vacation, red = sick leave · \
+         total red = over max hours, orange = under 80% · yellow = no hours",
         day_to_date(from).format(US_DATE),
         day_to_date(to).format(US_DATE)
     );
@@ -4191,6 +4235,39 @@ mod tests {
         assert!(t.iter().any(|x| x == &format!("Effort by worker — Mario (Frontend) (2/{})", blocks * 2)));
     }
 
+    /// Riga «Total» in fondo a ogni pagina: rossa oltre il max della
+    /// settimana, gialla (con le celle della colonna) dove non ci sono ore.
+    #[test]
+    fn worker_effort_pdf_has_week_totals_red_over_max_and_yellow_when_empty() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        app.workers.set_max_hours(mario, 10);
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("x", Some("P1"), None);
+        let base = crate::date_utils::dates::current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), mario, Effort(7));
+        app.projects.add_effort(p, be, WeekId(base as usize), mario, Effort(6));
+        app.projects.add_effort(p, fe, WeekId((base + 7) as usize), mario, Effort(0));
+        app.projects.add_effort(p, fe, WeekId((base + 14) as usize), mario, Effort(5));
+        let weeks = crate::worker_effort::weeks(base, base + 14);
+        let data = crate::worker_effort::build(&app, &[p], &weeks);
+        let pages = worker_effort_pages(&data[0], &weeks, "sub", 0, "created");
+        let t = texts(&pages[0]);
+        for s in ["Total", "13", "0"] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        let fills = |c: (f32, f32, f32)| {
+            pages[0]
+                .iter()
+                .filter(|s| matches!(s, Shape::Rect { color, .. } if *color == c))
+                .count()
+        };
+        assert_eq!(fills(WE_OVER), 1, "13h > 10h: la cella del totale");
+        assert_eq!(fills(WE_EMPTY), 3, "settimana a 0: due righe + il totale");
+        assert_eq!(fills(WE_UNDER), 1, "5h < 8h (80% di 10): solo il totale");
+    }
+
     /// Un nome che non sta nella colonna va a capo (a parole, e dentro una
     /// parola troppo lunga) e la riga si alza; la paginazione tiene conto
     /// delle altezze.
@@ -4256,6 +4333,9 @@ mod tests {
         app.projects.add_effort(p, be, WeekId((base + 7) as usize), mario, Effort(5));
         app.workers.set_week_status(mario, base as usize, Some(WeekStatus::Ferie));
         app.workers.set_week_status(mario, (base + 7) as usize, Some(WeekStatus::Malattia));
+        // Limiti pari alle ore: niente arancione, il totale ha il colore della settimana.
+        app.workers.set_week_override(mario, base as usize, 12);
+        app.workers.set_week_override(mario, (base + 7) as usize, 5);
         let weeks = crate::worker_effort::weeks(base, base + 14);
         let data = crate::worker_effort::build(&app, &[p], &weeks);
         let page = &worker_effort_pages(&data[0], &weeks, "sub", 0, "c")[0];
@@ -4264,8 +4344,9 @@ mod tests {
                 .filter(|s| matches!(s, Shape::Rect { color, .. } if *color == c))
                 .count()
         };
-        assert_eq!(fills(WE_VACATION), 2, "colonna ferie su entrambe le righe");
-        assert_eq!(fills(WE_SICK), 2, "colonna malattia su entrambe le righe");
+        // Due righe più la cella del totale.
+        assert_eq!(fills(WE_VACATION), 3, "colonna ferie su entrambe le righe e il totale");
+        assert_eq!(fills(WE_SICK), 3, "colonna malattia su entrambe le righe e il totale");
         let white: Vec<&str> = page
             .iter()
             .filter_map(|s| match s {
@@ -4273,7 +4354,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(white, ["12", "5"], "ore scritte in bianco sul colore");
+        // Ore delle righe, poi i totali delle stesse settimane.
+        assert_eq!(white, ["12", "5", "12", "5"], "ore scritte in bianco sul colore");
     }
 
     /// Torte dei worker: una pagina per worker con ore (chi ne ha 0 è

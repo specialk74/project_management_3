@@ -35,9 +35,47 @@ pub struct WeWorker {
     /// Ferie / malattia per settimana del periodo (parallelo alle settimane):
     /// colora l'intera colonna della settimana.
     pub status: Vec<Option<WeekStatus>>,
+    /// Ore max effettive per settimana del periodo (limite della settimana o
+    /// ore max del worker, come il footer): oltre, il totale è rosso.
+    pub max: Vec<u32>,
+}
+
+/// Come segnalare il totale di una settimana.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WeekMark {
+    /// Totale oltre le ore max della settimana: cella del totale rossa.
+    Over,
+    /// Nessuna ora (totale 0, anche se assegnato a 0) in una settimana senza
+    /// ferie/malattia: celle della colonna gialle.
+    Empty,
+    /// Totale sotto l'80% delle ore max della settimana (anche in ferie /
+    /// malattia, dove anche 0 lo è): cella del totale arancione.
+    Under,
 }
 
 impl WeWorker {
+    /// Totale delle ore della settimana `i` sulle righe della tabella.
+    pub fn week_total(&self, i: usize) -> usize {
+        self.rows.iter().filter_map(|r| r.hours.get(i).copied().flatten()).sum()
+    }
+
+    /// Segnalazione della settimana `i`: oltre il max prima di tutto; vuota
+    /// solo se non è di ferie/malattia; poi sotto l'80% del max (con max 0
+    /// mai).
+    pub fn week_mark(&self, i: usize) -> Option<WeekMark> {
+        let total = self.week_total(i);
+        let max = self.max.get(i).copied().unwrap_or(u32::MAX) as usize;
+        if total > max {
+            Some(WeekMark::Over)
+        } else if total == 0 && self.status.get(i).copied().flatten().is_none() {
+            Some(WeekMark::Empty)
+        } else if total * 5 < max * 4 {
+            Some(WeekMark::Under)
+        } else {
+            None
+        }
+    }
+
     /// Il worker lavora su un solo dev in tutte le sue righe (anche in
     /// progetti diversi)?
     pub fn single_dev(&self) -> bool {
@@ -148,10 +186,15 @@ pub fn build(app: &App, projects: &[ProjectId], weeks: &[i32]) -> Vec<WeWorker> 
                 .iter()
                 .map(|&w| app.workers.get_week_status(wid, w as usize))
                 .collect();
+            let max = weeks
+                .iter()
+                .map(|&w| app.workers.get_effective_max_hours(wid, w as usize))
+                .collect();
             WeWorker {
                 name,
                 rows,
                 status,
+                max,
             }
         })
         .collect()
@@ -264,6 +307,62 @@ mod tests {
         assert_eq!(
             data[0].status,
             vec![Some(WeekStatus::Ferie), None, Some(WeekStatus::Malattia)]
+        );
+    }
+
+    #[test]
+    fn week_totals_are_red_over_the_week_max_and_yellow_when_empty() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        app.workers.set_max_hours(alice, 10);
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let hidden = app.projects.add("Fuori vista", Some("XYZ"), None);
+        let base = current_monday_days();
+        let wk = |i: i32| (base + 7 * i) as usize;
+        // 0: 6 + 4 = 10, al limite; 1: 6 + 5 = 11, oltre; 2: assegnato a 0;
+        // 3: niente; 4: niente ma ferie; 5: 4 con limite settimana a 3;
+        // 6: 7 < 8 (80% di 10); 7: 8, proprio l'80%; 8: 0 in ferie a limite 0.
+        // 9: 1 in ferie a limite 2 (sotto l'80%).
+        app.projects.add_effort(p, fe, WeekId(wk(0)), alice, Effort(6));
+        app.projects.add_effort(p, be, WeekId(wk(0)), alice, Effort(4));
+        app.projects.add_effort(p, fe, WeekId(wk(1)), alice, Effort(6));
+        app.projects.add_effort(p, be, WeekId(wk(1)), alice, Effort(5));
+        app.projects.add_effort(p, fe, WeekId(wk(2)), alice, Effort(0));
+        app.workers.set_week_status(alice, wk(4), Some(WeekStatus::Ferie));
+        app.projects.add_effort(p, fe, WeekId(wk(5)), alice, Effort(4));
+        app.workers.set_week_override(alice, wk(5), 3);
+        app.projects.add_effort(p, fe, WeekId(wk(6)), alice, Effort(7));
+        app.projects.add_effort(p, fe, WeekId(wk(7)), alice, Effort(8));
+        app.workers.set_week_status(alice, wk(8), Some(WeekStatus::Ferie));
+        app.workers.set_week_override(alice, wk(8), 0);
+        app.projects.add_effort(p, fe, WeekId(wk(9)), alice, Effort(1));
+        app.workers.set_week_status(alice, wk(9), Some(WeekStatus::Malattia));
+        app.workers.set_week_override(alice, wk(9), 2);
+        // Un progetto fuori dalla vista non entra nel totale.
+        app.projects.add_effort(hidden, fe, WeekId(wk(3)), alice, Effort(40));
+
+        let data = build(&app, &[p], &weeks(base, base + 63));
+        let a = &data[0];
+        let totals: Vec<usize> = (0..10).map(|i| a.week_total(i)).collect();
+        assert_eq!(totals, [10, 11, 0, 0, 0, 4, 7, 8, 0, 1]);
+        let marks: Vec<Option<WeekMark>> = (0..10).map(|i| a.week_mark(i)).collect();
+        use WeekMark::*;
+        assert_eq!(
+            marks,
+            [
+                None,
+                Some(Over),
+                Some(Empty),
+                Some(Empty),
+                Some(Under), // ferie: si controlla il max, anche con 0
+                Some(Over),
+                Some(Under),
+                None,
+                None, // ferie a limite 0: niente arancione
+                Some(Under),
+            ]
         );
     }
 }

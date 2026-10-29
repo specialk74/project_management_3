@@ -7,7 +7,7 @@
 //! l'export PDF.
 
 use super::*;
-use crate::worker_effort::{WeWorker, day_label, month_of, spans, year_of};
+use crate::worker_effort::{WeWorker, WeekMark, day_label, month_of, spans, year_of};
 
 /// Larghezza della colonna progetto × dev.
 const WE_LABEL_W: f32 = 160.0;
@@ -26,6 +26,21 @@ fn we_status_fill(s: WeekStatus) -> Color32 {
         WeekStatus::Ferie => g(Color32::from_rgb(0x33, 0x99, 0xFF)),
         WeekStatus::Malattia => g(Color32::RED),
     }
+}
+
+/// Settimana senza ore (totale 0): celle della colonna gialle.
+fn we_empty_fill() -> Color32 {
+    g(Color32::from_rgb(0xFF, 0xE0, 0x5C))
+}
+
+/// Totale oltre le ore max della settimana: cella del totale rossa.
+fn we_over_fill() -> Color32 {
+    g(Color32::from_rgb(0xD9, 0x26, 0x26))
+}
+
+/// Totale sotto l'80% delle ore max della settimana: cella del totale arancione.
+fn we_under_fill() -> Color32 {
+    g(Color32::from_rgb(0xFF, 0x99, 0x33))
 }
 
 /// Mesi abbreviati della riga mese (la GUI è in italiano).
@@ -50,7 +65,9 @@ fn default_range() -> (i32, i32) {
 
 /// Tabella di un worker, disegnata a coordinate: tre righe di intestazione
 /// (anno e mese raggruppati sulle loro settimane, poi il giorno del lunedì),
-/// poi una riga per progetto × dev con le ore.
+/// poi una riga per progetto × dev con le ore e in fondo la riga dei totali
+/// (rossa oltre il max della settimana, arancione sotto l'80%; colonne senza
+/// ore gialle).
 fn draw_worker_table(ui: &mut egui::Ui, w: &WeWorker, weeks: &[i32], this_week: i32) {
     let n = weeks.len();
     let head_h = 3.0 * WE_HEAD_H;
@@ -71,7 +88,7 @@ fn draw_worker_table(ui: &mut egui::Ui, w: &WeWorker, weeks: &[i32], this_week: 
         .collect();
     let size = egui::vec2(
         WE_LABEL_W + n as f32 * WE_CELL_W,
-        head_h + heights.iter().sum::<f32>(),
+        head_h + heights.iter().sum::<f32>() + WE_ROW_H,
     );
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter_at(rect);
@@ -158,25 +175,68 @@ fn draw_worker_table(ui: &mut egui::Ui, w: &WeWorker, weeks: &[i32], this_week: 
         let label_pos = egui::pos2(rect.left() + 4.0, row.center().y - label.size().y / 2.0);
         p.galley(label_pos, label, text());
         for (i, h) in r.hours.iter().enumerate() {
-            // Ferie (blu) / malattia (rosso): tutta la cella, ore in bianco sopra.
+            // Ferie (blu) / malattia (rosso): tutta la cella, ore in bianco
+            // sopra; settimana senza ore: gialla, testo nero.
+            let cell = Rect::from_min_max(
+                egui::pos2(col_x(i), row.top()),
+                egui::pos2(col_x(i + 1), row.bottom()),
+            );
             let status = w.status.get(i).copied().flatten();
-            if let Some(st) = status {
-                let cell = Rect::from_min_max(
-                    egui::pos2(col_x(i), row.top()),
-                    egui::pos2(col_x(i + 1), row.bottom()),
-                );
+            let color = if let Some(st) = status {
                 p.rect_filled(cell, 0.0, we_status_fill(st));
-            }
+                Color32::WHITE
+            } else if w.week_mark(i) == Some(WeekMark::Empty) {
+                p.rect_filled(cell, 0.0, we_empty_fill());
+                Color32::BLACK
+            } else {
+                text()
+            };
             if let Some(h) = h {
                 p.text(
                     egui::pos2(col_x(i) + WE_CELL_W / 2.0, row.center().y),
                     Align2::CENTER_CENTER,
                     h.to_string(),
                     cell_font.clone(),
-                    if status.is_some() { Color32::WHITE } else { text() },
+                    color,
                 );
             }
         }
+    }
+    // Riga dei totali: oltre il max rossa e sotto l'80% arancione (anche in
+    // ferie/malattia, è un avviso), senza ore gialla, altrimenti il colore
+    // della settimana.
+    let row = Rect::from_min_max(egui::pos2(rect.left(), y0), rect.max);
+    p.rect_filled(row, 0.0, strip_bg(false));
+    p.hline(rect.x_range(), y0, thin);
+    p.text(
+        egui::pos2(rect.left() + 4.0, row.center().y),
+        Align2::LEFT_CENTER,
+        "Totale",
+        cell_font.clone(),
+        text(),
+    );
+    for i in 0..n {
+        let cell = Rect::from_min_max(
+            egui::pos2(col_x(i), row.top()),
+            egui::pos2(col_x(i + 1), row.bottom()),
+        );
+        let (fill, color) = match (w.week_mark(i), w.status.get(i).copied().flatten()) {
+            (Some(WeekMark::Over), _) => (Some(we_over_fill()), Color32::WHITE),
+            (Some(WeekMark::Under), _) => (Some(we_under_fill()), Color32::BLACK),
+            (_, Some(st)) => (Some(we_status_fill(st)), Color32::WHITE),
+            (Some(WeekMark::Empty), _) => (Some(we_empty_fill()), Color32::BLACK),
+            (None, None) => (None, text()),
+        };
+        if let Some(f) = fill {
+            p.rect_filled(cell, 0.0, f);
+        }
+        p.text(
+            cell.center(),
+            Align2::CENTER_CENTER,
+            w.week_total(i).to_string(),
+            cell_font.clone(),
+            color,
+        );
     }
     // Confini dei mesi anche sulle righe, per seguire le colonne.
     for (_, a, _) in spans(weeks, month_of) {
@@ -250,7 +310,9 @@ pub(crate) fn worker_effort_window(
                 egui::RichText::new(
                     "Progetti della vista corrente (Ctrl+1…4) e dei filtri Progetti, \
                      Categorie e Anni. Celle vuote: worker non assegnato. Blu: ferie, \
-                     rosso: malattia.",
+                     rosso: malattia. Totale rosso: oltre le ore max della settimana; \
+                     arancione: sotto l'80% delle ore max; colonna gialla: nessuna ora \
+                     nella settimana.",
                 )
                 .small()
                 .color(text_dim()),
@@ -362,6 +424,9 @@ mod tests {
         app.projects.add_effort(p, be, WeekId((base + 7) as usize), alice, Effort(3));
         app.workers.set_week_status(alice, base as usize, Some(WeekStatus::Ferie));
         app.workers.set_week_status(alice, (base + 7) as usize, Some(WeekStatus::Malattia));
+        // Limiti pari alle ore: niente arancione, il totale ha il colore della settimana.
+        app.workers.set_week_override(alice, base as usize, 12);
+        app.workers.set_week_override(alice, (base + 7) as usize, 3);
         let mut state = UiState {
             show_worker_effort: true,
             worker_effort_range: Some((base, base + 7)),
@@ -392,8 +457,11 @@ mod tests {
                 .filter(|cs| matches!(&cs.shape, egui::Shape::Rect(r) if r.fill.a() > 0 && rgb(r.fill) == rgb(c)))
                 .count()
         };
-        assert_eq!(fills(we_status_fill(WeekStatus::Ferie)), 2, "ferie: due righe");
-        assert_eq!(fills(we_status_fill(WeekStatus::Malattia)), 2, "malattia: due righe");
+        // Due righe più la cella del totale.
+        assert_eq!(fills(we_status_fill(WeekStatus::Ferie)), 3, "ferie: due righe + totale");
+        assert_eq!(fills(we_status_fill(WeekStatus::Malattia)), 3, "malattia: due righe + totale");
+        // Ferie senza ore resta blu: niente giallo.
+        assert_eq!(fills(we_empty_fill()), 0);
         let white: Vec<String> = out
             .shapes
             .iter()
@@ -408,6 +476,56 @@ mod tests {
         for h in ["12", "3"] {
             assert!(white.iter().any(|t| t == h), "{h} in bianco: {white:?}");
         }
+    }
+
+    /// Riga «Totale» sotto le settimane: rossa (numero bianco) oltre le ore max,
+    /// gialla con tutta la colonna dove non ci sono ore.
+    #[test]
+    fn week_totals_are_red_over_max_and_empty_weeks_are_yellow() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        app.workers.set_max_hours(alice, 10);
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), alice, Effort(7));
+        app.projects.add_effort(p, be, WeekId(base as usize), alice, Effort(6));
+        app.projects.add_effort(p, fe, WeekId((base + 7) as usize), alice, Effort(0));
+        // 5h su 10: sotto l'80%.
+        app.projects.add_effort(p, fe, WeekId((base + 14) as usize), alice, Effort(5));
+        let ws = [base, base + 7, base + 14];
+        let data = crate::worker_effort::build(&app, &[p], &ws);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                draw_worker_table(ui, &data[0], &ws, base);
+            }));
+        }
+        let out = out.unwrap();
+        let texts = drawn_texts(&out);
+        for t in ["Totale", "13"] {
+            assert!(texts.iter().any(|x| x == t), "{t}: {texts:?}");
+        }
+        let fills = |c: Color32| {
+            out.shapes
+                .iter()
+                .filter(|cs| matches!(&cs.shape, egui::Shape::Rect(r) if r.fill == c))
+                .count()
+        };
+        assert_eq!(fills(we_over_fill()), 1, "13h > 10h: la cella del totale");
+        assert_eq!(fills(we_empty_fill()), 3, "settimana a 0: due righe + il totale");
+        assert_eq!(fills(we_under_fill()), 1, "5h < 8h: solo la cella del totale");
+        let white_13 = out.shapes.iter().any(|cs| {
+            matches!(&cs.shape, egui::Shape::Text(t)
+                if t.galley.text() == "13" && t.fallback_color == Color32::WHITE)
+        });
+        assert!(white_13, "totale oltre il max in bianco sul rosso");
     }
 
     #[test]
