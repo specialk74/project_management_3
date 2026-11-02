@@ -175,7 +175,7 @@ pub(crate) enum Popup {
     },
 }
 
-/// «Sposta devs»: prima e ultima settimana con effort del gruppo di dev e
+/// «Sposta efforts»: prima e ultima settimana con effort del gruppo di dev e
 /// spostamento corrente, da cui il passo "Params" ricava le date «Sposta
 /// inizio/fine qua» collegate al numero di settimane.
 pub(crate) struct MoveFrom {
@@ -187,7 +187,7 @@ pub(crate) struct MoveFrom {
 
 /// Flusso multi-passo per lo spostamento di effort (menù "Sposta").
 pub(crate) enum MoveDialog {
-    /// Selezione dei dev da spostare (solo per "Sposta devs").
+    /// Selezione dei dev da spostare (solo per «Sposta efforts»).
     SelectDevs {
         proj: ProjectId,
         candidates: Vec<(DevId, String)>,
@@ -201,7 +201,7 @@ pub(crate) enum MoveDialog {
         moves: Vec<(DevId, Vec<WeekId>)>,
         weeks_text: String,
         milestones: Vec<(MilestoneId, String, bool)>,
-        /// Solo per «Sposta devs»: date di inizio/fine collegate al numero
+        /// Solo per «Sposta efforts»: date di inizio/fine collegate al numero
         /// di settimane (`None` per «Sposta blocco»).
         from: Option<MoveFrom>,
     },
@@ -231,6 +231,22 @@ pub(crate) struct BulkFill {
     pub selected: HashSet<WorkerId>,
     pub effort_text: String,
     pub weeks_text: String,
+}
+
+impl BulkFill {
+    /// Dialog vuota sulla settimana `week` del dev (1 settimana proposta).
+    /// Aperta dal tasto destro su una cella vuota e da «Aggiungi efforts…».
+    pub(crate) fn new(proj: ProjectId, dev: DevId, week: i32) -> Self {
+        Self {
+            proj,
+            dev,
+            week,
+            search: String::new(),
+            selected: HashSet::new(),
+            effort_text: String::new(),
+            weeks_text: "1".to_string(),
+        }
+    }
 }
 
 /// Colonna (prima settimana del gruppo, come `Col::Weeks(ws)[0]`) e worker

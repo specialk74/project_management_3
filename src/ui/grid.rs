@@ -776,7 +776,7 @@ fn milestones_in_group(app: &App, proj: ProjectId, ws: &[i32]) -> Vec<MilestoneI
 
 /// Fascia alta della colonna-dev: tooltip con le milestone della settimana e,
 /// sulle colonne **non** mergiate, il menù col tasto destro (aggiungi/rimuovi
-/// milestone, Sposta blocco/devs). Sulle colonne mergiate resta informativa.
+/// milestone, Aggiungi efforts, Sposta blocco/efforts). Sulle colonne mergiate resta informativa.
 #[allow(clippy::too_many_arguments)]
 fn draw_milestone_strip(
     ui: &mut egui::Ui,
@@ -929,6 +929,16 @@ fn draw_milestone_strip(
             }
             });
 
+        // ── Aggiungi efforts → `bulk_fill_window` dalla settimana cliccata ──
+        if ui.button("Aggiungi efforts…").clicked() {
+            if let Some(old) = state.editing.take() {
+                actions.push(commit_editing(app, &old));
+            }
+            state.bulk_fill = Some(BulkFill::new(proj, dev, w));
+            state.bulk_fill_was_open = false;
+            ui.close();
+        }
+
         // ── Sottomenù: Sposta effort ──
         ui.menu_button("Sposta", |ui| {
             // Sposta blocco → blocco contiguo del dev attorno alla settimana.
@@ -941,10 +951,10 @@ fn draw_milestone_strip(
                 state.move_dialog_was_open = false;
                 ui.close();
             }
-            // Sposta devs → elenco dei dev del progetto con effort.
+            // Sposta efforts → elenco dei dev del progetto con effort.
             let with_effort = app.projects.devs_with_effort(proj);
             if ui
-                .add_enabled(!with_effort.is_empty(), egui::Button::new("Sposta devs"))
+                .add_enabled(!with_effort.is_empty(), egui::Button::new("Sposta efforts"))
                 .clicked()
             {
                 let names: HashMap<DevId, String> = app.devs.list().into_iter().collect();
@@ -1463,15 +1473,7 @@ fn draw_cell_static(
             if let Some(old) = state.editing.take() {
                 actions.push(commit_editing(app, &old));
             }
-            state.bulk_fill = Some(BulkFill {
-                proj: cx.proj,
-                dev: cx.dev,
-                week: cx.week,
-                search: String::new(),
-                selected: HashSet::new(),
-                effort_text: String::new(),
-                weeks_text: "1".to_string(),
-            });
+            state.bulk_fill = Some(BulkFill::new(cx.proj, cx.dev, cx.week));
             state.bulk_fill_was_open = false;
         } else {
             let wname = cell_worker(text).to_string();

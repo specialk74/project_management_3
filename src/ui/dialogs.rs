@@ -203,16 +203,43 @@ pub(crate) fn bulk_fill_window(
                 let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             });
+            // Oppure la data di fine: collegata al numero di settimane (la
+            // settimana che contiene la data scelta è l'ultima, inclusa).
+            ui.horizontal(|ui| {
+                ui.label("oppure fino al:");
+                let shown = bulk_fill_last_week(bf.week, weeks.unwrap_or(1));
+                let mut date = days_to_jiff(shown);
+                let r = ui.add(
+                    egui_extras::DatePickerButton::new(&mut date)
+                        .id_salt("bulk_fill_end")
+                        .format("%Y-%m-%d"),
+                );
+                if r.changed()
+                    && let Some(d) = jiff_to_days(date)
+                {
+                    bf.weeks_text = weeks_until(bf.week, d).to_string();
+                }
+            })
+            .response
+            .on_hover_text(
+                "Settimana in cui finisce l'inserimento (inclusa): il numero di \
+                 settimane si aggiorna da solo.",
+            );
 
             // Riepilogo / avvisi.
             if effort.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero).");
             }
             if weeks.is_none() && !bf.weeks_text.trim().is_empty() {
-                ui.colored_label(Color32::RED, "Settimane non valide (almeno 1).");
+                let msg = if bf.weeks_text.trim().parse::<i64>().is_ok_and(|n| n <= 0) {
+                    "La data di fine è prima della settimana di inizio."
+                } else {
+                    "Settimane non valide (almeno 1)."
+                };
+                ui.colored_label(Color32::RED, msg);
             }
             if let (Some(e), Some(n)) = (effort, weeks) {
-                let last = bf.week + (effective.saturating_sub(1) * WEEK_STEP) as i32;
+                let last = bulk_fill_last_week(bf.week, effective);
                 let last_label = week_label(last);
                 ui.label(format!(
                     "{} worker × {} h × {} settimane ({} → {})",
@@ -270,6 +297,18 @@ pub(crate) fn bulk_fill_window(
         state.bulk_fill = None;
         state.bulk_fill_was_open = false;
     }
+}
+
+/// Lunedì dell'ultima settimana di un inserimento di `weeks` settimane che
+/// parte dalla settimana `start` (inclusa); con 0 settimane resta `start`.
+pub(crate) fn bulk_fill_last_week(start: i32, weeks: usize) -> i32 {
+    start + (weeks.saturating_sub(1) * WEEK_STEP) as i32
+}
+
+/// Settimane da `start` (un lunedì, inclusa) fino a quella che contiene `day`
+/// (inclusa). ≤ 0 se `day` cade prima di `start`.
+pub(crate) fn weeks_until(start: i32, day: i32) -> i64 {
+    weeks_to_date(start.max(0) as usize, day) + 1
 }
 
 // ── Gestione dev del progetto (+Dev / −Dev) ─────────────────────────────────
@@ -1134,7 +1173,7 @@ pub(crate) fn make_move_params(
     }
 }
 
-/// Passo "Params" di «Sposta devs»: come `make_move_params`, più le date di
+/// Passo "Params" di «Sposta efforts»: come `make_move_params`, più le date di
 /// inizio e fine del gruppo collegate al numero di settimane. All'apertura la
 /// fine del gruppo va nella settimana cliccata (`week`).
 pub(crate) fn make_move_devs_params(
@@ -1194,7 +1233,7 @@ pub(crate) fn move_dialog_window(
             selected,
             week,
         } => {
-            egui::Window::new("Sposta devs")
+            egui::Window::new("Sposta efforts")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
@@ -1265,7 +1304,7 @@ pub(crate) fn move_dialog_window(
                     );
                     if just_opened {
                         le.request_focus();
-                        // Già compilato («Sposta devs»): tutto selezionato, così
+                        // Già compilato («Sposta efforts»): tutto selezionato, così
                         // digitando si sostituisce invece di accodare.
                         if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), le.id) {
                             let all = egui::text::CCursorRange::two(
@@ -1278,7 +1317,7 @@ pub(crate) fn move_dialog_window(
                     }
                     let entered = le.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
-                    // «Sposta devs»: inizio e fine del gruppo dopo lo spostamento,
+                    // «Sposta efforts»: inizio e fine del gruppo dopo lo spostamento,
                     // collegate al numero di settimane (il gruppo si sposta intero).
                     if let Some(f) = from.as_mut() {
                         if le.changed()

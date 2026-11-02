@@ -558,6 +558,11 @@ modo rapido per riempire un blocco di effort senza scrivere cella per cella:
 - **Per quante settimane**: il numero di settimane consecutive da riempire, a
   partire dalla settimana della cella cliccata (**inclusa**) e andando **in
   avanti**.
+- **oppure fino al**: in alternativa al numero di settimane si sceglie dal
+  calendario la **data di fine**; la settimana che la contiene è l'ultima
+  riempita (**inclusa**). I due campi sono collegati: scegliendo la data il numero
+  di settimane si aggiorna da solo, e viceversa. Una data prima della settimana
+  di partenza viene segnalata e **Inserisci** resta disattivato.
 
 Sotto ai campi c'è il riepilogo dell'operazione (`N worker × H h × S settimane`
 con la prima e l'ultima settimana). Il pulsante **Inserisci** è attivo solo se
@@ -571,6 +576,11 @@ Note importanti:
   segnala quante settimane sono effettivamente disponibili;
 - il tasto destro su una cella **non vuota** continua a fare quello di sempre,
   cioè aprire la **nota** della cella (vedi capitolo 9).
+
+La stessa finestra si apre anche dal **tasto destro sulla riga in alto** della
+colonna-dev (la fascia delle milestone) ▸ **Aggiungi efforts…**: riempie il dev
+di quella colonna a partire dalla settimana cliccata, anche quando la cella è già
+occupata (vale la regola della sovrascrittura).
 
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,
@@ -642,13 +652,14 @@ finiscono nella **Minuta** (File ▸ Minuta…, capitolo 5).
 ## 10. Spostare l'effort
 
 Dal **tasto destro sulla riga in alto** di una colonna-dev (la fascia delle
-milestone), sottomenù **Sposta**:
+milestone), sottomenù **Sposta** (nello stesso menù, la voce **Aggiungi
+efforts…** apre invece l'inserimento multiplo, capitolo 8):
 
 - **Sposta blocco** — sposta il blocco contiguo di settimane del dev attorno alla
   settimana selezionata. Si indica di **quante settimane** spostare (positivo =
   avanti, negativo = indietro) e, opzionalmente, quali **milestone** spostare
   insieme.
-- **Sposta devs** — permette di scegliere più dev del progetto (con effort) e
+- **Sposta efforts** — permette di scegliere più dev del progetto (con effort) e
   spostarli insieme, **interi**. Lo spostamento si indica in tre modi, a scelta:
   con il **numero di settimane**, con **«Sposta inizio qua»** (la settimana in cui
   deve iniziare il gruppo, cioè il dev che oggi parte per primo) o con **«Sposta
@@ -1705,7 +1716,7 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 |---|---|---|
 | Cella worker | Click sinistro | Modifica la cella |
 | Cella worker (non vuota) | Tasto destro | Nota della cella |
-| Riga alta della colonna-dev | Tasto destro | Milestone / Sposta |
+| Riga alta della colonna-dev | Tasto destro | Milestone / Aggiungi efforts / Sposta |
 | Nome dev | Tasto destro | Menù dev (righe, cancella effort, nota, nascondi effort) |
 | Tripletta / Inizio / Fine | Tasto destro | Modifica il valore |
 | Categoria progetto | Click | Scegli categoria |

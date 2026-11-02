@@ -1,6 +1,6 @@
 [package]
 name = "project_management_app_2"
-version = "0.25.0"
+version = "0.26.0"
 edition = "2024"
 
 [dependencies]
@@ -15,7 +15,7 @@ eframe = "0.37.0"
 # icone dell'interfaccia (ℹ ⚠ ⛔ ✔ ⚑ ⚡ ⌘ 🔎 🗑).
 egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
 egui_extras = { version = "0.37.0", features = ["datepicker"] }
-jiff = "0.2.38"
+jiff = "0.2.39"
 printpdf = "0.12.8"
 # Già presente fra le dipendenze di egui (stessa versione): serve per misurare
 # la larghezza vera dei testi nel PDF della matrice (celle strette).

@@ -273,6 +273,98 @@ fn bulk_fill_window_renders() {
     assert!(state.bulk_fill.is_some(), "la dialog deve restare aperta");
 }
 
+/// «oppure fino al:» della dialog di inserimento multiplo: la settimana che
+/// contiene la data scelta è l'ultima (inclusa).
+#[test]
+fn bulk_fill_end_date_counts_weeks_inclusively() {
+    let start = parse_date_str("26-11-02").unwrap(); // lunedì
+    assert_eq!(bulk_fill_last_week(start, 1), start);
+    assert_eq!(bulk_fill_last_week(start, 3), start + 14);
+    assert_eq!(bulk_fill_last_week(start, 0), start);
+    // Stessa settimana (anche di domenica) → 1; venerdì di due settimane dopo → 3.
+    assert_eq!(weeks_until(start, start), 1);
+    assert_eq!(weeks_until(start, start + 6), 1);
+    assert_eq!(weeks_until(start, start + 18), 3);
+    // Prima dell'inizio → ≤ 0 (la dialog lo segnala e disabilita Inserisci).
+    assert_eq!(weeks_until(start, start - 1), 0);
+    for n in 1..10 {
+        assert_eq!(weeks_until(start, bulk_fill_last_week(start, n)), n as i64);
+    }
+}
+
+/// La dialog mostra la data di fine collegata al numero di settimane.
+#[test]
+fn bulk_fill_window_shows_the_end_date_of_the_weeks() {
+    let mut app = App::new();
+    app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("Progetto", Some("A-B-C"), None);
+    let start = app.start_week.0 as i32;
+    let mut state = UiState {
+        bulk_fill: Some(BulkFill {
+            weeks_text: "3".to_string(),
+            ..BulkFill::new(proj, dev, start)
+        }),
+        ..Default::default()
+    };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1000.0, 800.0)),
+        ..Default::default()
+    };
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let mut actions = Vec::new();
+        let out = ctx.run_ui_test(input.clone(), |ui| {
+            bulk_fill_window(ui.ctx(), &app, &mut state, &mut actions);
+        });
+        texts = drawn_texts(&out);
+    }
+    let end = days_to_local(start + 14).format("%Y-%m-%d").to_string();
+    assert!(texts.iter().any(|t| t == "oppure fino al:"), "{texts:?}");
+    assert!(texts.iter().any(|t| t.starts_with(&end)), "{end}: {texts:?}");
+}
+
+/// Tasto destro sulla fascia milestone ▸ «Aggiungi efforts…» apre la dialog di
+/// inserimento multiplo su quel dev e su quella settimana.
+#[test]
+fn add_efforts_menu_item_opens_the_bulk_fill_on_the_clicked_week() {
+    let (app, _alice, week) = highlight_fixture();
+    let dev = app.devs.list()[0].0;
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let origin = Cell::new(egui::Pos2::ZERO);
+    let frame = |state: &mut UiState, ev: Option<egui::Event>| {
+        let mut input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 900.0)),
+            ..Default::default()
+        };
+        input.events.extend(ev);
+        let mut actions = Vec::new();
+        ctx.run_ui_test(input, |ui| {
+            origin.set(ui.cursor().min);
+            let layout = body_layout(ui, &app, state, &Filter::default(), &None);
+            grid(ui, &app, state, &mut actions, &Filter::default(), &layout);
+        })
+    };
+    let _ = frame(&mut state, None);
+    // Seconda colonna, fascia in alto.
+    let strip = egui::pos2(origin.get().x + COL_W * 1.5, origin.get().y + 1.0);
+    for ev in click_events(strip, egui::PointerButton::Secondary) {
+        let _ = frame(&mut state, Some(ev));
+    }
+    let out = frame(&mut state, None);
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "Sposta"), "{texts:?}");
+    let item = text_pos(&out, "Aggiungi efforts…").expect("voce «Aggiungi efforts…»");
+    for ev in click_events(item, egui::PointerButton::Primary) {
+        let _ = frame(&mut state, Some(ev));
+    }
+    let bf = state.bulk_fill.as_ref().expect("dialog di inserimento multiplo aperta");
+    assert_eq!((bf.proj, bf.dev, bf.week), (ProjectId(0), dev, week + WEEK_STEP as i32));
+    assert_eq!(bf.weeks_text, "1");
+}
+
 /// Progetto 20000..=20070 (11 settimane) con un dev e un worker, per i
 /// test di «Sposta inizio/fine progetto qua».
 fn bound_fixture() -> (App, ProjectId, DevId, WorkerId) {
@@ -2954,7 +3046,7 @@ fn file_safe_replaces_characters_not_allowed_in_file_names() {
     assert_eq!(file_safe("Élodie"), "Élodie");
 }
 
-/// Fixture di «Sposta devs»: `d1` ha effort in 3 settimane consecutive da
+/// Fixture di «Sposta efforts»: `d1` ha effort in 3 settimane consecutive da
 /// `base + 7` (un lunedì), `d2` solo in `base`; milestone in `base + 14`.
 /// Ritorna le `moves` come le costruisce il passo SelectDevs.
 #[allow(clippy::type_complexity)]
@@ -2994,7 +3086,7 @@ fn move_devs_end_goes_to_the_clicked_week_and_dates_follow_the_weeks() {
     };
     assert_eq!(m2, moves, "si sposta tutto il dev");
     assert_eq!(milestones.iter().map(|(id, _, s)| (*id, *s)).collect::<Vec<_>>(), vec![(m, true)]);
-    let f = from.expect("Sposta devs porta le date");
+    let f = from.expect("Sposta efforts porta le date");
     assert_eq!((f.first, f.last, f.delta), (base, base + 3 * WEEK_STEP, 2));
     assert_eq!(weeks_text, "2", "la fine del gruppo va nella settimana cliccata");
 

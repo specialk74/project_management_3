@@ -835,6 +835,16 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   forward), **overwriting** any existing value for that worker (`add_effort` keeps the
   note), and stops at `app.end_week` — the dialog shows the effective week count. Only
   on non-merged columns (merged/zoom cells `continue` before the slot loop).
+  «oppure fino al:» is a `DatePickerButton` **linked** to «Per quante settimane»
+  (no extra state: the date shown is `bulk_fill_last_week(start, n)`, a picked
+  date rewrites `weeks_text` with `weeks_until(start, day)` — inclusive, ≤ 0 ⇒
+  «data di fine prima…» and Inserisci disabled). The same dialog
+  (`BulkFill::new(proj, dev, week)`) also opens from the milestone strip's
+  context menu ▸ **Aggiungi efforts…** (top level, next to «Sposta»; not in the
+  outside-the-period menu), on the clicked week, even when cells are occupied.
+  Tests `bulk_fill_end_date_counts_weeks_inclusively`,
+  `bulk_fill_window_shows_the_end_date_of_the_weeks`,
+  `add_efforts_menu_item_opens_the_bulk_fill_on_the_clicked_week`.
 - **Cancella gli effort** (dev-name context menu, below «Elimina riga»): «Cancella
   gli effort…» (that dev) and «Cancella gli effort di tutti i dev…» (whole project)
   set `UiState.confirm_clear_efforts: Option<ClearEfforts { proj, dev: Option<DevId> }>`
@@ -881,8 +891,8 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   discarded (history starts empty). `declared_history()` exposes the series for the
   planned dev/project progress **trend PDF** (to be built next).
 - **Milestone / move**: right-click the top strip of a dev's column → **Aggiungi
-  milestone qui** and **Sposta** (blocco / devs). «Sposta devs» (always the whole
-  devs) adds «Sposta inizio qua» / «Sposta fine qua» date pickers linked to the
+  milestone qui**, **Aggiungi efforts…** (see Bulk fill) and **Sposta** (blocco /
+  efforts). «Sposta efforts» (formerly «Sposta devs»; always the whole devs) adds «Sposta inizio qua» / «Sposta fine qua» date pickers linked to the
   weeks field (`MoveDialog::Params.from: Option<MoveFrom { first, last, delta }>`,
   `None` for «Sposta blocco»; pickers show `first`/`last` shifted by `delta`).
   `make_move_devs_params(…, week)` opens with the group's **end on the right-clicked
