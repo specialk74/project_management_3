@@ -70,14 +70,57 @@ pub(crate) fn years_combo(
     changed
 }
 
+/// Spunta di `item` in un filtro a insieme dove il set **vuoto = tutti**
+/// e le voci sono mostrate **tutte spuntate** (`all` = tutte le voci): toglierne
+/// una da «tutti» lascia tutte le altre, rimettere l'ultima torna a vuoto.
+/// L'ultima voce spuntata non si può togliere (`can_untick`).
+pub(crate) fn toggle_in_all<T: Ord + Clone>(
+    set: &mut std::collections::BTreeSet<T>,
+    all: &[T],
+    item: &T,
+    on: bool,
+) {
+    if on {
+        set.insert(item.clone());
+        if all.iter().all(|x| set.contains(x)) {
+            set.clear();
+        }
+    } else {
+        if set.is_empty() {
+            set.extend(all.iter().cloned());
+        }
+        set.remove(item);
+        if set.is_empty() {
+            // Non resta nulla: non è un filtro valido, si torna a «tutti».
+            set.insert(item.clone());
+        }
+    }
+}
+
+/// La voce `item` è spuntata in un filtro con vuoto = tutti spuntati.
+pub(crate) fn ticked_in_all<T: Ord>(set: &std::collections::BTreeSet<T>, item: &T) -> bool {
+    set.is_empty() || set.contains(item)
+}
+
+/// Si può togliere la spunta a `item`: non è l'ultima rimasta (vale anche con
+/// una sola voce in tutto).
+pub(crate) fn can_untick<T: Ord>(set: &std::collections::BTreeSet<T>, all_len: usize, item: &T) -> bool {
+    let ticked = if set.is_empty() { all_len } else { set.len() };
+    !(ticked <= 1 && ticked_in_all(set, item))
+}
+
 /// Combo delle categorie (prima «Senza categoria», poi le categorie per id):
 /// con almeno una scelta la matrice mostra solo i progetti di quelle categorie.
 /// `salt` distingue le combo di finestre diverse (matrice, torte).
+/// `all_ticked`: con «tutte» le voci appaiono tutte spuntate e si tolgono una a
+/// una (`toggle_in_all`, torte); altrimenti appaiono vuote e spuntarne una
+/// filtra su quella (matrice).
 pub(crate) fn categories_combo(
     ui: &mut egui::Ui,
     app: &App,
     salt: &str,
     cats: &mut std::collections::BTreeSet<Option<CategoryId>>,
+    all_ticked: bool,
 ) {
     let all: Vec<(Option<CategoryId>, String)> = std::iter::once((None, category_name(app, None)))
         .chain(
@@ -101,17 +144,21 @@ pub(crate) fn categories_combo(
         .selected_text(text)
         .width(MX_YEARS_W)
         .show_ui(ui, |ui| {
+            let ids: Vec<Option<CategoryId>> = all.iter().map(|(c, _)| *c).collect();
             for (c, name) in &all {
+                let label = egui::RichText::new(name)
+                    .background_color(category_fill(*c, false))
+                    .color(Color32::BLACK);
+                if all_ticked {
+                    let mut on = ticked_in_all(cats, c);
+                    let enabled = can_untick(cats, ids.len(), c);
+                    if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
+                        toggle_in_all(cats, &ids, c, on);
+                    }
+                    continue;
+                }
                 let mut on = cats.contains(c);
-                if ui
-                    .checkbox(
-                        &mut on,
-                        egui::RichText::new(name)
-                            .background_color(category_fill(*c, false))
-                            .color(Color32::BLACK),
-                    )
-                    .changed()
-                {
+                if ui.checkbox(&mut on, label).changed() {
                     if on {
                         cats.insert(*c);
                     } else {
@@ -127,7 +174,11 @@ pub(crate) fn categories_combo(
             }
         })
         .response
-        .on_hover_text("Nessuna scelta = tutte le categorie.");
+        .on_hover_text(if all_ticked {
+            "Togli la spunta alle categorie da escludere."
+        } else {
+            "Nessuna scelta = tutte le categorie."
+        });
 }
 
 /// Combo degli stati dei progetti (Attivi / On-Hold / Closed): con almeno una
@@ -1038,7 +1089,7 @@ pub(crate) fn matrix_window(
                     let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
                     statuses_combo(ui, &mut state.matrix_statuses);
-                    categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories);
+                    categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories, false);
                     years_changed = years_combo(ui, app, "matrix_years", &mut state.matrix_years);
                 });
             });
@@ -1108,6 +1159,29 @@ pub(crate) fn matrix_window(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// Filtro con «tutti» = tutte le voci spuntate: togliere una voce da
+    /// «tutti» lascia le altre, rimettere l'ultima torna a «tutti» (vuoto),
+    /// l'ultima spuntata non si toglie.
+    #[test]
+    fn toggling_from_all_keeps_the_others_ticked() {
+        let all = [1, 2, 3];
+        let mut set: BTreeSet<i32> = BTreeSet::new();
+        assert!(all.iter().all(|x| ticked_in_all(&set, x)), "vuoto = tutte spuntate");
+        toggle_in_all(&mut set, &all, &2, false);
+        assert_eq!(set, [1, 3].into());
+        assert!(!ticked_in_all(&set, &2));
+        toggle_in_all(&mut set, &all, &1, false);
+        assert_eq!(set, [3].into());
+        assert!(!can_untick(&set, all.len(), &3), "l'ultima resta");
+        assert!(can_untick(&set, all.len(), &1), "si può rispuntare");
+        toggle_in_all(&mut set, &all, &3, false);
+        assert_eq!(set, [3].into(), "mai vuoto per sbaglio");
+        toggle_in_all(&mut set, &all, &1, true);
+        toggle_in_all(&mut set, &all, &2, true);
+        assert!(set.is_empty(), "tutte rispuntate = «tutti»");
+        assert!(!can_untick(&BTreeSet::new(), 1, &7), "una sola voce in tutto");
+    }
 
     /// Anni scelti → Da = 1/1 del più vecchio, A = 31/12 del più recente (anche
     /// se in mezzo c'è un anno non scelto); nessun anno → nessun intervallo.

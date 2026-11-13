@@ -56,7 +56,8 @@ const DEVS_COMBO_W: f32 = 150.0;
 
 /// Combo dei dev con le spunte (nome sul colore del dev): con almeno una
 /// scelta le torte contano solo le ore di quei dev (vuoto = tutti), come la
-/// combo Categorie.
+/// combo Categorie: con «tutti» le voci sono tutte spuntate e si tolgono una a
+/// una (`toggle_in_all`); l'ultima rimasta non si toglie.
 pub(crate) fn devs_combo(
     ui: &mut egui::Ui,
     app: &App,
@@ -78,18 +79,16 @@ pub(crate) fn devs_combo(
         .selected_text(text)
         .width(DEVS_COMBO_W)
         .show_ui(ui, |ui| {
+            let ids: Vec<DevId> = all.iter().map(|(d, _)| *d).collect();
             for (d, name) in &all {
-                let mut on = devs.contains(d);
+                let mut on = ticked_in_all(devs, d);
                 let fill = dev_color(app, *d);
                 let label = egui::RichText::new(name)
                     .background_color(fill)
                     .color(contrast_text(fill));
-                if ui.checkbox(&mut on, label).changed() {
-                    if on {
-                        devs.insert(*d);
-                    } else {
-                        devs.remove(d);
-                    }
+                let enabled = can_untick(devs, ids.len(), d);
+                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
+                    toggle_in_all(devs, &ids, d, on);
                 }
             }
             if !devs.is_empty() {
@@ -100,7 +99,7 @@ pub(crate) fn devs_combo(
             }
         })
         .response
-        .on_hover_text("Nessuna scelta = tutti i dev.");
+        .on_hover_text("Togli la spunta ai dev da escludere.");
 }
 
 /// Riempie la fetta fra i raggi `r0` e `r1` con una mesh di triangoli (la
@@ -620,7 +619,7 @@ pub(crate) fn pies_window(
                 manual |= range_end_picker(ui, "Da:", "pies_from", &mut state.pies_from);
                 ui.separator();
                 years_changed = years_combo(ui, app, "pies_years", &mut state.pies_years);
-                categories_combo(ui, app, "pies_categories", &mut state.pies_categories);
+                categories_combo(ui, app, "pies_categories", &mut state.pies_categories, true);
                 devs_combo(ui, app, "pies_devs", &mut state.pies_devs);
                 ui.separator();
                 manual |= range_end_picker(ui, "A:", "pies_to", &mut state.pies_to);

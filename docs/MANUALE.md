@@ -1243,11 +1243,14 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 2. **Intervallo e categorie** — in alto **Da** e **A** (oggi o una data) e, in
    mezzo, la combo **Anni** che li imposta dal 1° gennaio del più vecchio al 31
    dicembre del più recente, esattamente come nella matrice. Accanto, la combo
-   **Categorie** (come nella matrice, «Senza categoria» compresa; nessuna scelta =
-   tutte): con delle categorie scelte si contano **solo i progetti di quelle
+   **Categorie** («Senza categoria» compresa). Diversamente dalla matrice, qui con
+   «tutte» le voci sono **tutte spuntate**: si toglie la spunta a quelle da
+   escludere, rispuntandole tutte si torna a «tutte», l'ultima rimasta non si può
+   togliere e **Tutte** rimette tutto: con delle categorie scelte si contano **solo i progetti di quelle
    categorie**, quindi torte, tabelle, totale e percentuali si riferiscono solo a
-   quelle ore. Subito dopo, la combo **Dev** (spunte sui nomi dei dev, nei loro
-   colori; nessuna scelta = tutti, **Tutti** azzera) fa lo stesso con i dev: si
+   quelle ore. Subito dopo, la combo **Dev** (nomi dei dev nei loro colori, stesse
+   spunte della combo Categorie: con «tutti» sono tutti spuntati, **Tutti** rimette
+   tutto) fa lo stesso con i dev: si
    contano **solo le ore dei dev scelti**, in entrambe le torte, nelle tabelle, nel
    totale, nelle percentuali e nell'occupazione. Le due combo si combinano (es. solo
    «Frontend» di «Cliente A»). Le scelte restano finché l'app è aperta.

@@ -10,12 +10,12 @@ pub(crate) use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 pub(crate) use crate::app::App;
 pub(crate) use crate::categories::CategoryId;
-pub(crate) use crate::date_utils::picker::{
-    date_str_to_jiff, days_to_jiff, jiff_to_date_str, jiff_to_days, today_jiff,
-};
 pub(crate) use crate::date_utils::dates::{
     current_monday_days, days_to_local, local_to_days, parse_date_str,
     primo_giorno_settimana_corrente, today, today_days, week_label,
+};
+pub(crate) use crate::date_utils::picker::{
+    date_str_to_jiff, days_to_jiff, jiff_to_date_str, jiff_to_days, today_jiff,
 };
 pub(crate) use crate::dev_utils::dev::DevId;
 pub(crate) use crate::milestones::{MilestoneCategory, MilestoneId, MilestoneKind, MilestoneScope};
@@ -72,7 +72,14 @@ pub(crate) struct Editing {
 
 impl Editing {
     /// Cella in modifica appena aperta su `text`/`note` (click o tastiera).
-    pub(crate) fn open(proj: ProjectId, dev: DevId, week: i32, row: usize, text: &str, note: &str) -> Self {
+    pub(crate) fn open(
+        proj: ProjectId,
+        dev: DevId,
+        week: i32,
+        row: usize,
+        text: &str,
+        note: &str,
+    ) -> Self {
         Self {
             proj,
             dev,
@@ -334,7 +341,11 @@ pub(crate) fn clone_project(app: &mut App, src: ProjectId) -> Option<ProjectId> 
             continue;
         }
         let copy = app.milestones.add_owned(
-            app.milestones.get_name(mid).unwrap_or("?").to_string().as_str(),
+            app.milestones
+                .get_name(mid)
+                .unwrap_or("?")
+                .to_string()
+                .as_str(),
             app.milestones.get_kind(mid),
             app.milestones.get_categories(mid),
             Some(new),
@@ -542,11 +553,7 @@ fn project_in_body(app: &App, view: ProjectViewMode, proj: ProjectId) -> bool {
 /// conto del filtro worker (che nasconde solo dev, non progetti interi ai fini
 /// dell'export). Usato per allineare gli elenchi di PDF/SVG/minuta a ciò che si
 /// vede a schermo, in ordine di visualizzazione.
-fn body_projects(
-    app: &App,
-    view: ProjectViewMode,
-    pf: &ProjectFilter,
-) -> Vec<ProjectId> {
+fn body_projects(app: &App, view: ProjectViewMode, pf: &ProjectFilter) -> Vec<ProjectId> {
     app.projects
         .list_full()
         .into_iter()
@@ -594,7 +601,10 @@ struct ExportProjectMemory {
 /// oggi): l'export comunque richiede entrambe le date.
 pub(crate) fn project_export_range(app: &App, proj: ProjectId) -> (i32, i32) {
     const SPAN: i32 = 12 * WEEK_STEP as i32;
-    let start = app.projects.get_project_start_week(proj).map(|w| w.0 as i32);
+    let start = app
+        .projects
+        .get_project_start_week(proj)
+        .map(|w| w.0 as i32);
     let end = app.projects.get_project_end_week(proj).map(|w| w.0 as i32);
     match (start, end) {
         (Some(s), Some(e)) => (s, e),
@@ -717,7 +727,7 @@ impl Default for ExportGhost {
     fn default() -> Self {
         Self {
             show: true,
-            red: true,
+            red: false,
         }
     }
 }
@@ -1486,7 +1496,6 @@ fn install_symbol_fallback(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-
 impl PjmApp {
     pub fn new(
         app: App,
@@ -1555,8 +1564,10 @@ impl PjmApp {
         }
         if self.save_to_disk() {
             self.sync_baseline();
-            self.ui
-                .toast_info(format!("Aggiunti al file i parametri: {}", missing.join(", ")));
+            self.ui.toast_info(format!(
+                "Aggiunti al file i parametri: {}",
+                missing.join(", ")
+            ));
         }
     }
 }
@@ -1790,24 +1801,24 @@ impl eframe::App for PjmApp {
                 key_3,
                 key_4,
             ) = ui.ctx().input(|i| {
-                    let cmd = i.modifiers.command || i.modifiers.ctrl;
-                    (
-                        cmd && i.key_pressed(egui::Key::S),
-                        cmd && i.key_pressed(egui::Key::F),
-                        cmd && i.key_pressed(egui::Key::G),
-                        cmd && i.key_pressed(egui::Key::D),
-                        cmd && i.key_pressed(egui::Key::K),
-                        cmd && i.key_pressed(egui::Key::Y),
-                        cmd && i.key_pressed(egui::Key::P),
-                        cmd && i.key_pressed(egui::Key::T),
-                        cmd && i.key_pressed(egui::Key::J),
-                        i.modifiers.shift,
-                        cmd && i.key_pressed(egui::Key::Num1),
-                        cmd && i.key_pressed(egui::Key::Num2),
-                        cmd && i.key_pressed(egui::Key::Num3),
-                        cmd && i.key_pressed(egui::Key::Num4),
-                    )
-                });
+                let cmd = i.modifiers.command || i.modifiers.ctrl;
+                (
+                    cmd && i.key_pressed(egui::Key::S),
+                    cmd && i.key_pressed(egui::Key::F),
+                    cmd && i.key_pressed(egui::Key::G),
+                    cmd && i.key_pressed(egui::Key::D),
+                    cmd && i.key_pressed(egui::Key::K),
+                    cmd && i.key_pressed(egui::Key::Y),
+                    cmd && i.key_pressed(egui::Key::P),
+                    cmd && i.key_pressed(egui::Key::T),
+                    cmd && i.key_pressed(egui::Key::J),
+                    i.modifiers.shift,
+                    cmd && i.key_pressed(egui::Key::Num1),
+                    cmd && i.key_pressed(egui::Key::Num2),
+                    cmd && i.key_pressed(egui::Key::Num3),
+                    cmd && i.key_pressed(egui::Key::Num4),
+                )
+            });
             if key_s {
                 actions.push(Action::Save);
             }
@@ -1928,8 +1939,7 @@ impl eframe::App for PjmApp {
             // Evidenziazione data/worker: la griglia la raccoglie da zero.
             state.grid_hl_next = GridHighlight::default();
 
-            egui::Panel::top("toolbar")
-                .show(ui, |ui| toolbar(ui, app, state, &mut actions));
+            egui::Panel::top("toolbar").show(ui, |ui| toolbar(ui, app, state, &mut actions));
 
             egui::Panel::top("header")
                 .frame(egui::Frame::NONE.fill(bg()))
@@ -2554,14 +2564,8 @@ impl PjmApp {
                 week,
                 row,
             } => {
-                let slots = gather_slots(
-                    &self.app,
-                    proj,
-                    dev,
-                    week,
-                    row + 1,
-                    &self.ui.worker_filter,
-                );
+                let slots =
+                    gather_slots(&self.app, proj, dev, week, row + 1, &self.ui.worker_filter);
                 let (text, note, _) = &slots[row];
                 self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
             }
@@ -2952,21 +2956,21 @@ impl PjmApp {
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.pies_categories.iter().copied().collect();
                 if svg {
-                    let items: Vec<(String, Vec<u8>)> =
-                        crate::pdf_export::build_pies_svgs(
-                            &self.app,
-                            &pies,
-                            from,
-                            to,
-                            &years,
-                            &categories,
-                            &devs,
-                        )
-                            .into_iter()
-                            .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
-                            .collect();
+                    let items: Vec<(String, Vec<u8>)> = crate::pdf_export::build_pies_svgs(
+                        &self.app,
+                        &pies,
+                        from,
+                        to,
+                        &years,
+                        &categories,
+                        &devs,
+                    )
+                    .into_iter()
+                    .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
+                    .collect();
                     if items.is_empty() {
-                        self.ui.toast_warn("Nessun worker con ore nel periodo: niente da esportare.");
+                        self.ui
+                            .toast_warn("Nessun worker con ore nel periodo: niente da esportare.");
                     }
                     save_multi_export_dialog(
                         &mut self.ui,
@@ -3446,7 +3450,12 @@ pub(crate) type YearFilter = Option<HashSet<i32>>;
 /// uno** degli anni selezionati. Un progetto senza la data richiesta dal criterio
 /// (inizio per `Starts`, fine per `Ends`, entrambe per `Within`) è nascosto
 /// quando il filtro è attivo. Senza filtro attivo non nasconde nulla.
-pub(crate) fn year_shown(app: &App, proj: ProjectId, filter: &YearFilter, crit: YearCriterion) -> bool {
+pub(crate) fn year_shown(
+    app: &App,
+    proj: ProjectId,
+    filter: &YearFilter,
+    crit: YearCriterion,
+) -> bool {
     let Some(set) = filter else {
         return true;
     };
@@ -3456,7 +3465,9 @@ pub(crate) fn year_shown(app: &App, proj: ProjectId, filter: &YearFilter, crit: 
     match crit {
         YearCriterion::Starts => start.is_some_and(|y| set.contains(&y)),
         YearCriterion::Ends => end.is_some_and(|y| set.contains(&y)),
-        YearCriterion::Within => matches!((start, end), (Some(s), Some(e)) if s == e && set.contains(&s)),
+        YearCriterion::Within => {
+            matches!((start, end), (Some(s), Some(e)) if s == e && set.contains(&s))
+        }
     }
 }
 
