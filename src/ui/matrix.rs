@@ -807,13 +807,13 @@ fn draw_matrix_sorted(ui: &mut egui::Ui, app: &App, m: &MatrixData) -> Option<Wo
         &bold,
         text(),
     );
-    for wi in 0..n {
+    for (wi, hours) in m.dev_hours.iter().enumerate().take(n) {
         put(
             band,
             Some(wi),
             egui::pos2(col_x(wi) + MX_COL_W / 2.0, y + MX_SUM_H / 2.0),
             Align2::CENTER_CENTER,
-            format!("{}h", worker_hours(&m.dev_hours[wi])),
+            format!("{}h", worker_hours(hours)),
             &bold,
             text(),
         );
@@ -834,8 +834,8 @@ fn draw_matrix_sorted(ui: &mut egui::Ui, app: &App, m: &MatrixData) -> Option<Wo
             &bold,
             dev_text_color(app, *dev),
         );
-        for wi in 0..n {
-            if let Some((h, pct)) = dev_share(&m.dev_hours[wi], *dev) {
+        for (wi, hours) in m.dev_hours.iter().enumerate().take(n) {
+            if let Some((h, pct)) = dev_share(hours, *dev) {
                 put(
                     band,
                     Some(wi),

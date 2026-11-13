@@ -17,10 +17,10 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 | Misura | Inizio (2026-10-24) | Ora |
 |---|---|---|
-| Righe Rust | ~28.000 | ~28.000 |
+| Righe Rust | ~28.000 | ~34.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 290 verdi |
+| Test | 275 verdi | 347 verdi |
 
 ## Ordine consigliato
 
@@ -147,6 +147,22 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   clippy 0 warning, 290 test verdi. `cargo audit`: nessuna vulnerabilità, avvisi
   «non più mantenuto» 6 → 5 (sparito `clipboard-win`). **Prova a mano superata**
   (dialog Apri/Salva/Esporta, copia/incolla; confermata dall'utente il 2026-10-24).)_
+
+- [x] **A11. Aggiornamento rfd 0.17.2 → 0.18.0** (finestre native Apri…/Salva
+  degli export), fuori dal range di `Cargo.toml`. Nello stesso giro: `cargo
+  update` (~30 dipendenze indirette compatibili, fra cui wgpu/naga 30.0.2) e
+  minimi di `Cargo.toml` allineati (`jiff` 0.2.43, `printpdf` 0.12.9).
+  `cargo audit` (530 pacchetti): nessuna vulnerabilità, i soliti 5 avvisi «non
+  più mantenuto» (vedi A10). _Impatto: Basso · Rischio: Basso._ _(approvato il
+  2026-11-13)_ _(applicato: cambiata solo la versione in `Cargo.toml` (+
+  `Cargo.lock`), nessuna modifica al codice; build e clippy 0 warning, 347 test
+  verdi. **Da provare a mano**: File ▸ Apri…, Esporta PDF/SVG, Minuta, Report.)_
+
+- [x] **A12. Warning `needless_range_loop` del nuovo clippy (0.1.100)** in
+  `src/ui/matrix.rs` (righe «Ore per dev» della matrice: `for wi in 0..n` usato
+  per indicizzare `m.dev_hours`). _Impatto: Nullo · Rischio: Nullo._ _(approvato
+  il 2026-11-13)_ _(fatto: `m.dev_hours.iter().enumerate().take(n)`, stesso
+  comportamento; clippy di nuovo a 0 warning, 347 test verdi.)_
 
 ## B. Codice duplicato
 
@@ -428,3 +444,7 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   nell'app (allineamento, tempo di frame ~3 ms, ridisegni); risolto con
   `WGPU_POWER_PREF=low`, ora predefinito su Windows (`prefer_low_power_gpu` in
   `main.rs`, la variabile resta prioritaria). 291 test verdi.
+- **2026-11-13** — Aggiunte e approvate A11 (rfd 0.18.0, con `cargo update` e
+  minimi di `Cargo.toml` allineati) e A12 (warning del nuovo clippy nella
+  matrice). Applicate: build e clippy 0 warning, 347 test verdi. A11 in attesa
+  della prova a mano delle finestre Apri/Salva.
