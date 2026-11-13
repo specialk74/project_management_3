@@ -543,18 +543,34 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   **Torte dev/categorie per worker…** (`src/ui/pies.rs`, data/geometry in
   `src/worker_pies.rs`): same flow as the matrix, with its **own** session state
   (`pies_select_open`/`show_pies`/`pies_workers`/`pies_worker_search`/`pies_from`/
-  `pies_to`/`pies_years`/`pies_categories`). The worker dialog is the shared
+  `pies_to`/`pies_years`/`pies_categories`/`pies_devs`). The worker dialog is the shared
   `worker_pick_window(…) -> WorkerPick { Open, Show, Closed }` (`matrix.rs`, also
   behind `matrix_select_window`); `years_combo` and `categories_combo` take an
   id salt, and
   `range_end_picker`/`years_range` are shared too. `worker_pies::build(app,
-  &workers, from, to, &cats) -> Vec<WorkerPie>` (`cats` empty = all, else only
+  &workers, from, to, &cats, &devs, now) -> Vec<WorkerPie>` (`devs` = dev filter from
+  `devs_combo` in `pies.rs` → `UiState.pies_devs`, session only, empty = all,
+  AND with the categories, both pies; `filtered` = either filter on;
+  `planned_all` ignores both; exports pass the devs and `pies_subtitle` prints
+  `Dev(s): …`. `cats` empty = all, else only
   projects of those categories — totals and % follow): **hours** (effort 0 ignored) of all
   projects in weeks overlapping `[from, to]` (`week_overlaps`), per dev → per
-  category (by id, «Senza» last) plus per category; `total` 0 ⇒ «Nessuna ora nel
+  category (by id, «Senza» last) → per project (`ProjHours { project,
+  category, hours }`, `Projects::list` order inside a category:
+  `DevHours.projects` / `projects_in(cat)`, and `WorkerPie.projects` across
+  devs) plus per category; `total` 0 ⇒ «Nessuna ora nel
   periodo.» and skipped by exports. Rings as `Seg { key, hours, from, to }`
   (fractions of the worker total): `dev_ring`, `dev_category_ring` (each dev's
-  categories inside its slice), `category_ring`. Geometry shared GUI/PDF with a
+  categories inside its slice), `dev_project_ring` (outer, third ring: each
+  dev·category's projects inside it), `category_ring`. Project colour =
+  `WorkerPie::project_color(p)` = `project_shade(category_color, k, n)` (the
+  k-th of the worker's n projects in that category, darkened 8%→42%, so never
+  equal to the category and the same under every dev). Tooltips
+  (`seg_tip_projects`) of dev and dev·category slices, and of the category
+  pie, list their projects (tripletta, hours, %); tables add indented project
+  rows (`project_cell`/`swatch_cell`) under each category. GUI radii
+  `PIE_R_IN` 78 / `PIE_R_CAT` 120 / `PIE_R` 162; PDF `PIE_R_IN_MM` 21.5 /
+  `PIE_R_CAT_MM` 32.5 / `PIE_R_MM` 44. Geometry shared GUI/PDF with a
   `y_up` flag: angle 0 at 12 o'clock, clockwise (`arc_point`, `arc`, `sector`),
   `label_pos` = label centre only if the text fits (chord × ring thickness),
   `hit` for hover tooltips. GUI slices are **`egui::Mesh`** triangle strips
@@ -608,11 +624,15 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `category_column_is_capped_and_tables_are_spaced`); the PDF tables go through `pie_table` (columns
   `PIE_NUM_W` apart from the right edge). Test
   `planned_hours_split_shows_done_and_planned_columns`.
-  `pdf_export::build_pies_pdf` (one A4 page per worker, `pies_page`: two
-  panels, each with a big pie centred under its title and the table **below**,
-  scaled down by `pie_table_scale` when too long; subtitle from `pies_subtitle`
-  with years + categories) or
-  `build_pies_svgs` (one SVG per worker, no footer) → `save_multi_export_dialog`
+  `pdf_export::build_pies_pdf` (`pies_pages` → one A4 page per worker, two
+  panels, each with a big pie centred under its title and the table
+  (`PieTable`) **below**; `pie_table_layout`:
+  no shrinking (the old `pie_table_scale` is gone): rows that don't fit **continue on extra pages** —
+  title «… (cont.)», header repeated, «Total» only on the last chunk (test
+  `pies_tables_continue_on_more_pages`); subtitle from `pies_subtitle` with
+  years + categories) or
+  `build_pies_svgs` (one SVG per worker, no footer, unpaged: `created = None`
+  ⇒ one chunk at full size growing downward, `render_svg` crops) → `save_multi_export_dialog`
   with the worker name made safe by `file_safe` as suffix. Tests
   `pies_sum_hours_by_dev_and_category`, `pie_geometry_labels_and_hit`,
   `worker_pies_draw_slices_labels_and_tables`,

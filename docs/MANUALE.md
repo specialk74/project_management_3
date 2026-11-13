@@ -352,8 +352,8 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
 - **Saturazione worker…** — cruscotto di sintesi del carico (vedi §15).
 - **Matrice progetti/worker…** — chi lavora su cosa in un intervallo di date, con
   export PDF (vedi §15).
-- **Torte dev/categorie per worker…** — per ogni worker, su quali dev e categorie
-  ha lavorato in un intervallo di date, con export PDF/SVG (vedi §15).
+- **Torte dev/categorie per worker…** — per ogni worker, su quali dev, categorie e
+  progetti ha lavorato in un intervallo di date, con export PDF/SVG (vedi §15).
 - **Effort per worker…** — per ogni worker, le ore settimana per settimana su
   ciascun progetto e dev, con export PDF (vedi §15).
 
@@ -1234,7 +1234,7 @@ l'intestazione ripetuta.
 ### Torte dev/categorie per worker (Vista ▸ Torte dev/categorie per worker…)
 
 Mostra, per ogni worker scelto, **dove sono andate le sue ore** in un intervallo di
-date: su quali dev e, dentro ogni dev, per quali categorie di progetto.
+date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 
 1. **Scelta dei worker** — come per la matrice si apre prima l'elenco dei worker
    (quelli con «Elenchi» attivo), con ricerca e Select All; **Mostra torte** apre la
@@ -1246,18 +1246,28 @@ date: su quali dev e, dentro ogni dev, per quali categorie di progetto.
    **Categorie** (come nella matrice, «Senza categoria» compresa; nessuna scelta =
    tutte): con delle categorie scelte si contano **solo i progetti di quelle
    categorie**, quindi torte, tabelle, totale e percentuali si riferiscono solo a
-   quelle ore.
+   quelle ore. Subito dopo, la combo **Dev** (spunte sui nomi dei dev, nei loro
+   colori; nessuna scelta = tutti, **Tutti** azzera) fa lo stesso con i dev: si
+   contano **solo le ore dei dev scelti**, in entrambe le torte, nelle tabelle, nel
+   totale, nelle percentuali e nell'occupazione. Le due combo si combinano (es. solo
+   «Frontend» di «Cliente A»). Le scelte restano finché l'app è aperta.
 3. **Cosa si conta** — le **ore** delle celle di tutti i progetti, aperti e chiusi,
    nelle settimane che toccano l'intervallo. Le assegnazioni a effort 0 non contano:
    un worker che nel periodo ha solo quelle mostra «Nessuna ora nel periodo.».
-4. **Prima torta, «Dev e categorie»** — il **cerchio interno** è diviso per **dev**
-   (col colore del dev); l'**anello esterno** divide ogni spicchio di dev nelle
-   **categorie** dei progetti (col colore della categoria, lo stesso della matrice),
-   proprio sopra il suo dev. Sotto la torta, la tabella: per ogni dev le ore e la % sul
-   totale del worker, poi le sue categorie con ore, % sul totale e **% del dev**; in
-   fondo il totale.
+4. **Prima torta, «Dev, categorie e progetti»** — tre anelli. Il **cerchio
+   interno** è diviso per **dev** (col colore del dev); l'**anello di mezzo** divide
+   ogni spicchio di dev nelle **categorie** dei progetti (col colore della categoria,
+   lo stesso della matrice), proprio sopra il suo dev; l'**anello esterno** divide
+   ogni fetta dev·categoria nei **progetti** su cui il worker ha ore, proprio sopra
+   di essa. Ogni progetto ha una **tinta della sua categoria**, un po' più scura e
+   diversa per ogni progetto della stessa categoria (lo stesso progetto ha lo stesso
+   colore sotto tutti i dev). Sotto la torta, la tabella: per ogni dev le ore e la %
+   sul totale del worker, poi le sue categorie con ore, % sul totale e **% del dev**,
+   e sotto ogni categoria, rientrati, i suoi **progetti** (tripletta) con le stesse
+   colonne; in fondo il totale.
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
-   (ore e % sul totale).
+   (ore e % sul totale); sotto ogni categoria, rientrati, i suoi progetti (ore di
+   tutti i dev).
 
 **Ore fatte e pianificate** — se l'intervallo arriva **alla settimana corrente**
 (o oltre), accanto al nome del worker compare la divisione (es. «1380h nel
@@ -1289,10 +1299,10 @@ sono calcolate come sopra, solo su quelle settimane: con il periodo fino al 31/1
 dell'anno in corso coincidono con il **numero verde** accanto al worker nel footer; se le ore pianificate le superano la riga
 dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
 lavoro da qui in avanti?». Le ore pianificate di questa riga sono **sempre di
-tutte le categorie**, anche con il filtro Categorie attivo (la riga lo segnala con
-«tutte le categorie»): il lavoro delle categorie escluse occupa comunque il
-worker, e senza contarlo le ore libere risulterebbero più del vero. Torte,
-tabelle, totale e occupazione invece seguono il filtro.
+tutti i dev e di tutte le categorie**, anche con i filtri Dev o Categorie attivi
+(la riga lo segnala con «tutti i dev e le categorie»): il lavoro escluso occupa
+comunque il worker, e senza contarlo le ore libere risulterebbero più del vero.
+Torte, tabelle, totale e occupazione invece seguono i filtri.
 
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
@@ -1305,22 +1315,27 @@ intero.
 
 Dentro una fetta è scritta la **percentuale sul totale del worker**, solo se il
 testo ci sta; le fette piccole hanno comunque il loro valore nella tabella, e
-passando col mouse su una fetta compaiono nome, ore e percentuale. Le percentuali
+passando col mouse su una fetta compaiono nome, ore e percentuale. Il tooltip di
+una fetta di **dev** o di **categoria** elenca anche, una per riga, i **progetti**
+che la compongono con ore e percentuale; quello di una fetta di progetto riporta
+dev, categoria e tripletta. Le percentuali
 sono arrotondate: una fetta con poche ore che arrotonda a zero è indicata «<1%».
 
 **Esporta PDF…** crea un PDF con **una pagina per worker** (A4 orizzontale, in
-inglese: «Hours by dev and category», con l'intervallo, gli anni e le categorie
-scelti nel sottotitolo): a sinistra la prima torta con sotto la sua tabella, a
-destra la seconda. Se un worker ha molte righe di tabella, il testo della tabella
-si rimpicciolisce per restare nella pagina. Con le ore pianificate le colonne sono
+inglese: «Hours by dev, category and project», con l'intervallo, gli anni, le
+categorie e i dev scelti nel sottotitolo, es. `Devs: Frontend, Backend`): a sinistra la prima torta (tre anelli) con sotto
+la sua tabella, a destra la seconda; nelle tabelle ci sono anche le righe dei
+progetti (tripletta). Se un worker ha molte righe di tabella, il testo non si
+rimpicciolisce: la tabella **continua sulle pagine successive** (titolo con «(cont.)», intestazione ripetuta, totale in fondo
+all'ultima). Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
 1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
 `Capacity: 1720h (80% used)`); con un periodo che arriva alla settimana corrente una
 terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
 available, 240h free`, oppure `…, 40h over capacity` in rosso; con il filtro
-Categorie `From now to the end (all categories): …`).
-**Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data, **un
-file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
+Categorie o Dev `From now to the end (all devs and categories): …`).
+**Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data e
+senza pagine (le tabelle lunghe scendono quanto serve), **un file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I
 worker senza ore nel periodo sono saltati.
 

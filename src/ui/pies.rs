@@ -1,20 +1,24 @@
 //! Torte dev/categorie per worker (Vista ▸ Torte dev/categorie per worker…):
 //! come la matrice, prima la dialog dei worker (selezione propria, solo
 //! sessione), poi la finestra con l'intervallo di date e, per ogni worker, due
-//! torte con la tabella dei valori accanto. Dati e geometria in
+//! torte con la tabella dei valori sotto: la prima a tre anelli (dev,
+//! categorie, progetti), la seconda per categoria. I progetti (tripletta)
+//! compaiono anche nei tooltip delle fette e nelle tabelle. Dati e geometria in
 //! `crate::worker_pies`, condivisi con l'export PDF/SVG.
 
 use super::*;
 use crate::worker_matrix::category_color;
-use crate::worker_pies::{Hours, Seg, WorkerPie, label_pos, pct_label};
+use crate::worker_pies::{Hours, ProjHours, Seg, WorkerPie, label_pos, pct_label};
 
 /// Diametro dell'area di una torta (px).
 const PIE_D: f32 = 340.0;
 /// Raggio esterno delle torte.
 const PIE_R: f32 = 162.0;
-/// Raggio dell'anello interno (dev) della prima torta; l'anello esterno
-/// (categorie) parte da qui + `PIE_GAP`.
-const PIE_R_IN: f32 = 100.0;
+/// Prima torta: raggio dello spicchio dei dev; l'anello delle categorie va da
+/// qui + `PIE_GAP` a `PIE_R_CAT`, quello dei progetti da `PIE_R_CAT` +
+/// `PIE_GAP` a `PIE_R`.
+const PIE_R_IN: f32 = 78.0;
+const PIE_R_CAT: f32 = 120.0;
 const PIE_GAP: f32 = 4.0;
 /// Spazio fra il primo blocco (torta con la sua tabella) e il secondo.
 const PIE_SPACING: f32 = 72.0;
@@ -45,6 +49,58 @@ pub(crate) fn pies_select_window(ctx: &egui::Context, app: &App, state: &mut UiS
 
 fn category_rgb(cat: Option<CategoryId>) -> Color32 {
     rgb_color(category_color(cat))
+}
+
+/// Larghezza della combo dei dev (come quelle di anni e categorie).
+const DEVS_COMBO_W: f32 = 150.0;
+
+/// Combo dei dev con le spunte (nome sul colore del dev): con almeno una
+/// scelta le torte contano solo le ore di quei dev (vuoto = tutti), come la
+/// combo Categorie.
+pub(crate) fn devs_combo(
+    ui: &mut egui::Ui,
+    app: &App,
+    salt: &str,
+    devs: &mut std::collections::BTreeSet<DevId>,
+) {
+    let all = app.devs.list();
+    let text = if devs.is_empty() {
+        "Dev: tutti".to_string()
+    } else {
+        let names: Vec<&str> = all
+            .iter()
+            .filter(|(d, _)| devs.contains(d))
+            .map(|(_, n)| n.as_str())
+            .collect();
+        format!("Dev: {}", names.join(", "))
+    };
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(text)
+        .width(DEVS_COMBO_W)
+        .show_ui(ui, |ui| {
+            for (d, name) in &all {
+                let mut on = devs.contains(d);
+                let fill = dev_color(app, *d);
+                let label = egui::RichText::new(name)
+                    .background_color(fill)
+                    .color(contrast_text(fill));
+                if ui.checkbox(&mut on, label).changed() {
+                    if on {
+                        devs.insert(*d);
+                    } else {
+                        devs.remove(d);
+                    }
+                }
+            }
+            if !devs.is_empty() {
+                ui.separator();
+                if ui.button("Tutti").clicked() {
+                    devs.clear();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Nessuna scelta = tutti i dev.");
 }
 
 /// Riempie la fetta fra i raggi `r0` e `r1` con una mesh di triangoli (la
@@ -115,36 +171,68 @@ fn seg_tip(name: &str, hours: u32, total: u32) -> String {
     format!("{name}: {hours}h ({})", pct_label(hours, total))
 }
 
-/// Prima torta: anello interno per dev, esterno per categoria dentro ogni dev.
+/// Tooltip di una fetta seguito dai suoi progetti, uno per riga (tripletta,
+/// ore e % sul totale del worker).
+fn seg_tip_projects<'a>(
+    app: &App,
+    name: &str,
+    hours: u32,
+    total: u32,
+    projects: impl Iterator<Item = &'a ProjHours>,
+) -> String {
+    let mut t = seg_tip(name, hours, total);
+    for p in projects {
+        t.push_str("\n  ");
+        t.push_str(&seg_tip(&project_label(app, p.project), p.hours.total, total));
+    }
+    t
+}
+
+/// Colore del progetto nella torta del worker.
+fn project_rgb(pie: &WorkerPie, proj: ProjectId) -> Color32 {
+    rgb_color(pie.project_color(proj))
+}
+
+/// Prima torta: anello interno per dev, poi per categoria dentro ogni dev e,
+/// all'esterno, per progetto dentro ogni dev·categoria.
 /// `width` = larghezza del blocco: la torta sta al centro.
 fn dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
+    use crate::worker_pies::hit;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, PIE_D), Sense::hover());
     let c = rect.center();
     let inner = pie.dev_ring();
-    let outer = pie.dev_category_ring();
+    let middle = pie.dev_category_ring();
+    let outer = pie.dev_project_ring();
+    let (r_cat, r_proj) = (PIE_R_IN + PIE_GAP, PIE_R_CAT + PIE_GAP);
     let pos = resp.hover_pos();
-    let hit_in = pos.and_then(|q| crate::worker_pies::hit(c.x, c.y, 0.0, PIE_R_IN, &inner, q.x, q.y));
-    let hit_out = pos.and_then(|q| {
-        crate::worker_pies::hit(c.x, c.y, PIE_R_IN + PIE_GAP, PIE_R, &outer, q.x, q.y)
-    });
+    let hit_in = pos.and_then(|q| hit(c.x, c.y, 0.0, PIE_R_IN, &inner, q.x, q.y));
+    let hit_mid = pos.and_then(|q| hit(c.x, c.y, r_cat, PIE_R_CAT, &middle, q.x, q.y));
+    let hit_out = pos.and_then(|q| hit(c.x, c.y, r_proj, PIE_R, &outer, q.x, q.y));
     let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
+    let dev_hours = |d: DevId| pie.devs.iter().find(|x| x.dev == d);
     paint_ring(ui, c, 0.0, PIE_R_IN, &inner, pie.total, |d| dev_color(app, *d), hit_in);
-    paint_ring(
-        ui,
-        c,
-        PIE_R_IN + PIE_GAP,
-        PIE_R,
-        &outer,
-        pie.total,
-        |(_, cat)| category_rgb(*cat),
-        hit_out,
-    );
+    paint_ring(ui, c, r_cat, PIE_R_CAT, &middle, pie.total, |(_, cat)| category_rgb(*cat), hit_mid);
+    paint_ring(ui, c, r_proj, PIE_R, &outer, pie.total, |(_, p)| project_rgb(pie, *p), hit_out);
     let tip = if let Some(i) = hit_in {
-        Some(seg_tip(&dev_name(inner[i].key), inner[i].hours, pie.total))
+        let s = &inner[i];
+        let projects = dev_hours(s.key).into_iter().flat_map(|d| d.projects.iter());
+        Some(seg_tip_projects(app, &dev_name(s.key), s.hours, pie.total, projects))
+    } else if let Some(i) = hit_mid {
+        let s = &middle[i];
+        let (dev, cat) = s.key;
+        let name = format!("{} · {}", dev_name(dev), category_name(app, cat));
+        let projects = dev_hours(dev).into_iter().flat_map(|d| d.projects_in(cat));
+        Some(seg_tip_projects(app, &name, s.hours, pie.total, projects))
     } else {
         hit_out.map(|i| {
-            let (dev, cat) = outer[i].key;
-            let name = format!("{} · {}", dev_name(dev), category_name(app, cat));
+            let (dev, proj) = outer[i].key;
+            let cat = app.projects.get_category(proj);
+            let name = format!(
+                "{} · {} · {}",
+                dev_name(dev),
+                category_name(app, cat),
+                project_label(app, proj)
+            );
             seg_tip(&name, outer[i].hours, pie.total)
         })
     };
@@ -165,7 +253,9 @@ fn category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
     paint_ring(ui, c, 0.0, PIE_R, &segs, pie.total, |cat| category_rgb(*cat), hit);
     if let Some(i) = hit {
         let s = &segs[i];
-        resp.on_hover_text_at_pointer(seg_tip(&category_name(app, s.key), s.hours, pie.total));
+        let name = category_name(app, s.key);
+        let projects = pie.projects_in(s.key);
+        resp.on_hover_text_at_pointer(seg_tip_projects(app, &name, s.hours, pie.total, projects));
     }
 }
 
@@ -182,22 +272,34 @@ const NUM_W: f32 = 84.0;
 /// Cella «Categoria»: quadratino del colore e nome, al più `CAT_W` di
 /// larghezza (nome troncato con «…» e intero nel tooltip se non ci sta).
 fn category_cell(ui: &mut egui::Ui, app: &App, cat: Option<CategoryId>) {
+    swatch_cell(ui, category_name(app, cat), category_rgb(cat), 0.0);
+}
+
+/// Rientro delle righe dei progetti sotto la loro categoria.
+const PROJ_INDENT: f32 = 14.0;
+
+/// Cella di un progetto (riga sotto la sua categoria): rientrata, quadratino
+/// della tinta del progetto e tripletta.
+fn project_cell(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, proj: ProjectId) {
+    swatch_cell(ui, project_label(app, proj), project_rgb(pie, proj), PROJ_INDENT);
+}
+
+/// Quadratino del colore e nome dopo `indent` px, al più `CAT_W` di larghezza
+/// in tutto (nome troncato con «…» e intero nel tooltip se non ci sta).
+fn swatch_cell(ui: &mut egui::Ui, name: String, color: Color32, indent: f32) {
     const SW: f32 = 12.0;
     const GAP: f32 = 6.0;
-    let name = category_name(app, cat);
     let font = egui::TextStyle::Body.resolve(ui.style());
-    let shown = fit_text(ui, &name, &font, CAT_W - SW - GAP);
+    let shown = fit_text(ui, &name, &font, CAT_W - indent - SW - GAP);
     let galley = ui
         .painter()
         .layout_no_wrap(shown.clone(), font, ui.visuals().text_color());
-    let size = egui::vec2(SW + GAP + galley.size().x, ui.spacing().interact_size.y);
+    let size = egui::vec2(indent + SW + GAP + galley.size().x, ui.spacing().interact_size.y);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
-    let sw = Rect::from_center_size(
-        egui::pos2(rect.left() + SW / 2.0, rect.center().y),
-        egui::vec2(SW, SW),
-    );
-    ui.painter().rect_filled(sw, 2.0, category_rgb(cat));
-    let at = egui::pos2(rect.left() + SW + GAP, rect.center().y - galley.size().y / 2.0);
+    let left = rect.left() + indent;
+    let sw = Rect::from_center_size(egui::pos2(left + SW / 2.0, rect.center().y), egui::vec2(SW, SW));
+    ui.painter().rect_filled(sw, 2.0, color);
+    let at = egui::pos2(left + SW + GAP, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, ui.visuals().text_color());
     if shown != name {
         resp.on_hover_text(name);
@@ -249,7 +351,8 @@ fn pie_hours(pie: &WorkerPie) -> Hours {
 }
 
 /// Tabella della prima torta: per ogni dev una riga (ore, % sul totale), poi
-/// le sue categorie (ore, % sul totale, % del dev); in fondo il totale. Con
+/// le sue categorie (ore, % sul totale, % del dev), ognuna seguita dai suoi
+/// progetti (rientrati, stesse colonne); in fondo il totale. Con
 /// `split` le ore sono divise in fatte, pianificate e totale.
 /// Ritorna la larghezza della tabella.
 fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
@@ -283,6 +386,14 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                     num(ui, pct_label(h.total, pie.total), false);
                     num(ui, pct_label(h.total, d.hours.total), false);
                     ui.end_row();
+                    for p in d.projects_in(cat) {
+                        ui.label("");
+                        project_cell(ui, app, pie, p.project);
+                        hour_cells(ui, p.hours, split, false);
+                        num(ui, pct_label(p.hours.total, pie.total), false);
+                        num(ui, pct_label(p.hours.total, d.hours.total), false);
+                        ui.end_row();
+                    }
                 }
             }
             ui.label(egui::RichText::new("Totale").strong());
@@ -297,7 +408,8 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
         .width()
 }
 
-/// Tabella della seconda torta: ore e % sul totale per categoria.
+/// Tabella della seconda torta: ore e % sul totale per categoria, ognuna
+/// seguita dai suoi progetti (rientrati).
 /// Ritorna la larghezza della tabella.
 fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_cat_table", pie.worker))
@@ -314,6 +426,12 @@ fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) ->
                 hour_cells(ui, h, split, false);
                 num(ui, pct_label(h.total, pie.total), false);
                 ui.end_row();
+                for p in pie.projects_in(cat) {
+                    project_cell(ui, app, pie, p.project);
+                    hour_cells(ui, p.hours, split, false);
+                    num(ui, pct_label(p.hours.total, pie.total), false);
+                    ui.end_row();
+                }
             }
             ui.label(egui::RichText::new("Totale").strong());
             hour_cells(ui, pie_hours(pie), split, true);
@@ -370,7 +488,7 @@ fn side_by_side_min_w(split: bool) -> f32 {
 /// la capacità, in rosso).
 fn future_text(pie: &WorkerPie) -> egui::RichText {
     let free = pie.free_hours();
-    let all = if pie.filtered { " (tutte le categorie)" } else { "" };
+    let all = if pie.filtered { " (tutti i dev e le categorie)" } else { "" };
     let head = format!(
         "Da qui a fine periodo{all}: {}h pianificate su {}h disponibili, ",
         pie.planned_all, pie.future_capacity
@@ -420,9 +538,9 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
         ui.label(future_text(pie)).on_hover_text(
             "Dalla settimana corrente (compresa) a fine periodo: ore disponibili \
              (come il numero verde accanto al worker nel footer) meno ore già \
-             pianificate. Le ore pianificate sono sempre di tutte le categorie, \
-             anche con il filtro Categorie: il lavoro delle categorie escluse \
-             occupa comunque il worker.",
+             pianificate. Le ore pianificate sono sempre di tutti i dev e di \
+             tutte le categorie, anche con i filtri Dev e Categorie: il lavoro \
+             escluso occupa comunque il worker.",
         );
     }
     if pie.total == 0 {
@@ -433,7 +551,7 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
         pie_block(
             ui,
             ("pies_dev_block", pie.worker),
-            "Dev e categorie",
+            "Dev, categorie e progetti",
             |ui, w| dev_category_pie(ui, app, pie, w),
             |ui| dev_category_table(ui, app, pie, split),
         );
@@ -480,6 +598,7 @@ pub(crate) fn pies_window(
         from,
         to,
         &state.pies_categories,
+        &state.pies_devs,
         now,
     );
     let split = crate::worker_pies::split_shown(to, now);
@@ -493,7 +612,8 @@ pub(crate) fn pies_window(
         .default_pos(egui::pos2(80.0, 60.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            // Stessi controlli della matrice: Da / Anni / Categorie / A.
+            // Stessi controlli della matrice (Da / Anni / Categorie / A) più
+            // la scelta dei dev.
             let mut manual = false;
             let mut years_changed = false;
             ui.horizontal(|ui| {
@@ -501,6 +621,7 @@ pub(crate) fn pies_window(
                 ui.separator();
                 years_changed = years_combo(ui, app, "pies_years", &mut state.pies_years);
                 categories_combo(ui, app, "pies_categories", &mut state.pies_categories);
+                devs_combo(ui, app, "pies_devs", &mut state.pies_devs);
                 ui.separator();
                 manual |= range_end_picker(ui, "A:", "pies_to", &mut state.pies_to);
             });
@@ -592,7 +713,7 @@ mod tests {
     fn table_values_stay_under_their_headers() {
         let (app, mario, _) = sample();
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1400.0, 900.0)),
@@ -619,10 +740,10 @@ mod tests {
                 .collect()
         };
         let head = rights("% del dev")[0];
-        // «% del dev» delle categorie: Frontend 30h → Cliente A 100%;
-        // Backend 10h → Cliente A 100%.
+        // «% del dev» delle categorie e dei loro progetti: Frontend 30h →
+        // Cliente A 100% → P1 100%; Backend 10h → Cliente A 100% → P1 100%.
         let pct_dev: Vec<f32> = rights("100%").into_iter().filter(|x| (x - head).abs() < 1.0).collect();
-        assert_eq!(pct_dev.len(), 2, "valori sotto «% del dev» ({head}): {:?}", rights("100%"));
+        assert_eq!(pct_dev.len(), 4, "valori sotto «% del dev» ({head}): {:?}", rights("100%"));
         assert!(rights("100%").iter().all(|x| *x < 600.0), "fuori tabella: {:?}", rights("100%"));
     }
 
@@ -637,7 +758,7 @@ mod tests {
         let sel: HashSet<_> = [mario].into_iter().collect();
         // «Oggi» nella seconda settimana: la prima è conclusa (fatta), le 20h
         // della seconda sono pianificate.
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20013, &Default::default(), 20007);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20013, &Default::default(), &Default::default(), 20007);
         assert!(crate::worker_pies::split_shown(20013, 20000));
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -681,7 +802,7 @@ mod tests {
         app.projects.add_dev(p, fe);
         app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(5));
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1600.0, 1200.0)),
@@ -724,7 +845,7 @@ mod tests {
     fn pie_is_centered_over_its_table() {
         let (app, mario, _) = sample();
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1600.0, 1200.0)),
@@ -776,7 +897,7 @@ mod tests {
     fn tables_are_drawn_below_the_pies() {
         let (app, mario, _) = sample();
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1400.0, 1200.0)),
@@ -813,7 +934,7 @@ mod tests {
     fn worker_pies_draw_slices_labels_and_tables() {
         let (app, mario, luigi) = sample();
         let sel: HashSet<_> = [mario, luigi].into_iter().collect();
-        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), 20000);
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
         let input = egui::RawInput {
             screen_rect: Some(screen(1400.0, 900.0)),
@@ -825,7 +946,7 @@ mod tests {
             }
         });
         let texts = drawn_texts(&out);
-        for t in ["Mario", "Frontend", "Backend", "Cliente A", "30h", "10h", "40h", "75%", "25%"] {
+        for t in ["Mario", "Frontend", "Backend", "Cliente A", "P1", "30h", "10h", "40h", "75%", "25%"] {
             assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
         }
         assert!(texts.iter().any(|s| s == "Nessuna ora nel periodo."), "Luigi senza ore");
@@ -834,7 +955,32 @@ mod tests {
             .iter()
             .filter(|cs| matches!(cs.shape, egui::epaint::Shape::Mesh(_)))
             .count();
-        // anello dev (2) + anello categorie (2: FE·A, BE·A) + torta categorie (1)
-        assert_eq!(meshes, 5, "una mesh per fetta");
+        // anello dev (2) + anello categorie (2: FE·A, BE·A) + anello progetti
+        // (2: FE·P1, BE·P1) + torta categorie (1)
+        assert_eq!(meshes, 7, "una mesh per fetta");
+        // P1 nelle due tabelle: sotto FE·Cliente A, BE·Cliente A e Cliente A.
+        assert_eq!(texts.iter().filter(|s| *s == "P1").count(), 3, "{texts:?}");
+    }
+
+    /// Tooltip: le fette dei dev e delle categorie elencano i loro progetti;
+    /// quella di un progetto dice dev, categoria e tripletta.
+    #[test]
+    fn slice_tooltips_list_the_projects() {
+        let (mut app, mario, _) = sample();
+        let fe = app.devs.list()[0].0;
+        let p2 = app.projects.add("x", Some("P2"), None);
+        app.projects.add_dev(p2, fe);
+        app.projects.add_effort(p2, fe, WeekId(20000), mario, Effort(10));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
+        let pie = &pies[0];
+        let fe_hours = pie.devs.iter().find(|d| d.dev == fe).unwrap();
+        let tip = seg_tip_projects(&app, "Frontend", 40, pie.total, fe_hours.projects.iter());
+        assert_eq!(tip, "Frontend: 40h (80%)\n  P1: 30h (60%)\n  P2: 10h (20%)");
+        let tip = seg_tip_projects(&app, "Senza categoria", 10, pie.total, pie.projects_in(None));
+        assert_eq!(tip, "Senza categoria: 10h (20%)\n  P2: 10h (20%)");
+        // Colori dei progetti diversi da quello della categoria.
+        let ca = app.projects.get_category(pie.projects[0].project);
+        assert_ne!(project_rgb(pie, pie.projects[0].project), category_rgb(ca));
     }
 }

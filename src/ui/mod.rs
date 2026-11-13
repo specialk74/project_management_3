@@ -981,6 +981,8 @@ pub struct UiState {
     // torte: categorie scelte nella combo (`None` = «Senza categoria»; vuoto =
     // tutte), solo sessione
     pies_categories: std::collections::BTreeSet<Option<CategoryId>>,
+    // torte: dev scelti nella combo (vuoto = tutti), solo sessione
+    pies_devs: std::collections::BTreeSet<DevId>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -1391,7 +1393,8 @@ pub(crate) enum Action {
         from: i32,
         to: i32,
         /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo
-        /// insieme alle categorie (`UiState.pies_categories`).
+        /// insieme alle categorie e ai dev (`UiState.pies_categories` /
+        /// `pies_devs`).
         years: Vec<i32>,
         svg: bool,
     },
@@ -2942,8 +2945,10 @@ impl PjmApp {
                     from,
                     to,
                     &self.ui.pies_categories,
+                    &self.ui.pies_devs,
                     current_monday_days(),
                 );
+                let devs: Vec<DevId> = self.ui.pies_devs.iter().copied().collect();
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.pies_categories.iter().copied().collect();
                 if svg {
@@ -2955,6 +2960,7 @@ impl PjmApp {
                             to,
                             &years,
                             &categories,
+                            &devs,
                         )
                             .into_iter()
                             .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
@@ -2977,6 +2983,7 @@ impl PjmApp {
                         to,
                         &years,
                         &categories,
+                        &devs,
                     ) {
                         Some(bytes) => {
                             save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("torte", "pdf"))
