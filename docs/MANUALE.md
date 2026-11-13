@@ -1154,12 +1154,14 @@ progetto**.
    più vecchio** e **A** il **31 dicembre del più recente** (con 2024 e 2026
    l'intervallo copre anche il 2025). Da e A restano modificabili: se li cambi a mano
    la combo si svuota. Accanto c'è la combo **«Categorie»** (prima «Senza
-   categoria», poi le categorie): spuntandone una o più la matrice mostra **solo i
-   progetti di quelle categorie**, e riepilogo per categoria e «Totale progetti»
-   contano solo quelli; nessuna spunta = tutte le categorie. Ancora accanto, la
-   combo **«Stato»** (**Attivi**, **On-Hold**, **Closed**): per default mostra
-   **tutti** gli stati; spuntandone uno o più la matrice mostra solo i progetti in
-   quegli stati, e il **riepilogo** si adegua: conta solo quei progetti e ha le
+   categoria», poi le categorie): per default sono **tutte spuntate**; togliendo la
+   spunta a quelle da escludere la matrice mostra **solo i progetti delle categorie
+   rimaste**, e riepilogo per categoria e «Totale progetti» contano solo quelli.
+   Rispuntandole tutte si torna a «tutte», l'ultima rimasta non si può togliere e
+   **Tutte** rimette tutto. Ancora accanto, la
+   combo **«Stato»** (**Attivi**, **On-Hold**, **Closed**), che funziona allo stesso
+   modo: per default sono **tutti spuntati**; togliendo la spunta a quelli da
+   escludere la matrice mostra solo i progetti negli stati rimasti, e il **riepilogo** si adegua: conta solo quei progetti e ha le
    sotto-righe solo per gli stati scelti. Una settimana conta se
    **si sovrappone anche di un solo giorno** all'intervallo. Se la data iniziale è
    successiva alla finale compare un avviso e la matrice non viene mostrata.
@@ -1243,10 +1245,8 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 2. **Intervallo e categorie** — in alto **Da** e **A** (oggi o una data) e, in
    mezzo, la combo **Anni** che li imposta dal 1° gennaio del più vecchio al 31
    dicembre del più recente, esattamente come nella matrice. Accanto, la combo
-   **Categorie** («Senza categoria» compresa). Diversamente dalla matrice, qui con
-   «tutte» le voci sono **tutte spuntate**: si toglie la spunta a quelle da
-   escludere, rispuntandole tutte si torna a «tutte», l'ultima rimasta non si può
-   togliere e **Tutte** rimette tutto: con delle categorie scelte si contano **solo i progetti di quelle
+   **Categorie**, che funziona come nella matrice (tutte spuntate per default, si
+   toglie la spunta a quelle da escludere): con delle categorie scelte si contano **solo i progetti di quelle
    categorie**, quindi torte, tabelle, totale e percentuali si riferiscono solo a
    quelle ore. Subito dopo, la combo **Dev** (nomi dei dev nei loro colori, stesse
    spunte della combo Categorie: con «tutti» sono tutti spuntati, **Tutti** rimette

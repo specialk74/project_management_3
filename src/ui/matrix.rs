@@ -112,15 +112,13 @@ pub(crate) fn can_untick<T: Ord>(set: &std::collections::BTreeSet<T>, all_len: u
 /// Combo delle categorie (prima «Senza categoria», poi le categorie per id):
 /// con almeno una scelta la matrice mostra solo i progetti di quelle categorie.
 /// `salt` distingue le combo di finestre diverse (matrice, torte).
-/// `all_ticked`: con «tutte» le voci appaiono tutte spuntate e si tolgono una a
-/// una (`toggle_in_all`, torte); altrimenti appaiono vuote e spuntarne una
-/// filtra su quella (matrice).
+/// Con «tutte» (set vuoto) le voci appaiono tutte spuntate e si tolgono una a
+/// una (`toggle_in_all`); l'ultima rimasta non si toglie.
 pub(crate) fn categories_combo(
     ui: &mut egui::Ui,
     app: &App,
     salt: &str,
     cats: &mut std::collections::BTreeSet<Option<CategoryId>>,
-    all_ticked: bool,
 ) {
     let all: Vec<(Option<CategoryId>, String)> = std::iter::once((None, category_name(app, None)))
         .chain(
@@ -149,21 +147,10 @@ pub(crate) fn categories_combo(
                 let label = egui::RichText::new(name)
                     .background_color(category_fill(*c, false))
                     .color(Color32::BLACK);
-                if all_ticked {
-                    let mut on = ticked_in_all(cats, c);
-                    let enabled = can_untick(cats, ids.len(), c);
-                    if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
-                        toggle_in_all(cats, &ids, c, on);
-                    }
-                    continue;
-                }
-                let mut on = cats.contains(c);
-                if ui.checkbox(&mut on, label).changed() {
-                    if on {
-                        cats.insert(*c);
-                    } else {
-                        cats.remove(c);
-                    }
+                let mut on = ticked_in_all(cats, c);
+                let enabled = can_untick(cats, ids.len(), c);
+                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
+                    toggle_in_all(cats, &ids, c, on);
                 }
             }
             if !cats.is_empty() {
@@ -174,16 +161,12 @@ pub(crate) fn categories_combo(
             }
         })
         .response
-        .on_hover_text(if all_ticked {
-            "Togli la spunta alle categorie da escludere."
-        } else {
-            "Nessuna scelta = tutte le categorie."
-        });
+        .on_hover_text("Togli la spunta alle categorie da escludere.");
 }
 
-/// Combo degli stati dei progetti (Attivi / On-Hold / Closed): con almeno una
-/// scelta la matrice mostra solo i progetti in quegli stati, e il riepilogo
-/// conta solo quelli (vuoto = tutti).
+/// Combo degli stati dei progetti (Attivi / On-Hold / Closed): la matrice
+/// mostra solo i progetti negli stati spuntati, e il riepilogo conta solo
+/// quelli; vuoto = tutti, mostrati tutti spuntati (`toggle_in_all`).
 fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<ProjectStatus>) {
     let text = if statuses.is_empty() || statuses.len() == ProjectStatus::ALL.len() {
         "Stato: tutti".to_string()
@@ -200,17 +183,17 @@ fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<P
         .selected_text(text)
         .width(MX_STATUS_W)
         .show_ui(ui, |ui| {
+            // Come le categorie: «tutti» = tutti spuntati, si tolgono uno a
+            // uno, l'ultimo rimasto non si toglie.
             for (i, s) in ProjectStatus::ALL.iter().enumerate() {
-                let mut on = statuses.contains(s);
-                if ui.checkbox(&mut on, STATUS_LABELS[i]).changed() {
-                    if on {
-                        statuses.insert(*s);
-                    } else {
-                        statuses.remove(s);
-                    }
+                let mut on = ticked_in_all(statuses, s);
+                let enabled = can_untick(statuses, ProjectStatus::ALL.len(), s);
+                let check = egui::Checkbox::new(&mut on, STATUS_LABELS[i]);
+                if ui.add_enabled(enabled, check).changed() {
+                    toggle_in_all(statuses, &ProjectStatus::ALL, s, on);
                 }
             }
-            // Tutti spuntati = nessun filtro.
+            // Un set pieno (stato vecchio) vale «tutti».
             if statuses.len() == ProjectStatus::ALL.len() {
                 statuses.clear();
             }
@@ -222,7 +205,7 @@ fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<P
             }
         })
         .response
-        .on_hover_text("Nessuna scelta = tutti gli stati.");
+        .on_hover_text("Togli la spunta agli stati da escludere.");
 }
 
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
@@ -1089,7 +1072,7 @@ pub(crate) fn matrix_window(
                     let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
                     statuses_combo(ui, &mut state.matrix_statuses);
-                    categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories, false);
+                    categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories);
                     years_changed = years_combo(ui, app, "matrix_years", &mut state.matrix_years);
                 });
             });

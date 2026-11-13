@@ -619,7 +619,7 @@ pub(crate) fn pies_window(
                 manual |= range_end_picker(ui, "Da:", "pies_from", &mut state.pies_from);
                 ui.separator();
                 years_changed = years_combo(ui, app, "pies_years", &mut state.pies_years);
-                categories_combo(ui, app, "pies_categories", &mut state.pies_categories, true);
+                categories_combo(ui, app, "pies_categories", &mut state.pies_categories);
                 devs_combo(ui, app, "pies_devs", &mut state.pies_devs);
                 ui.separator();
                 manual |= range_end_picker(ui, "A:", "pies_to", &mut state.pies_to);

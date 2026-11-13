@@ -550,9 +550,8 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `range_end_picker`/`years_range` are shared too. `worker_pies::build(app,
   &workers, from, to, &cats, &devs, now) -> Vec<WorkerPie>` (`devs` = dev filter from
   `devs_combo` in `pies.rs` → `UiState.pies_devs`, session only, empty = all;
-  in the pies both combos show «all» as **every item ticked** —
-  `categories_combo(…, all_ticked: true)` (the matrix passes `false`: empty
-  boxes, ticking one filters on it) and `devs_combo` use `ticked_in_all` /
+  these combos show «all» as **every item ticked** — `categories_combo`
+  (matrix and pies), the matrix's `statuses_combo` and `devs_combo` use `ticked_in_all` /
   `toggle_in_all` / `can_untick` (`matrix.rs`; unticking from «all» keeps the
   others, re-ticking the last returns to empty, the last ticked one is disabled;
   test `toggling_from_all_keeps_the_others_ticked`),
