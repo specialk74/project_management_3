@@ -976,6 +976,7 @@ fn grid_keeps_drawing_the_cell_being_edited_when_scrolled_away() {
         paste_note: None,
         orig_worker: "Alice".to_string(),
         orig_note: String::new(),
+        orig_text: "Alice|4".to_string(),
     });
     let (texts, _) = culled_grid_texts(&mut state, 20);
     assert!(state.editing.is_some(), "l'editor fuori vista non deve chiudersi");
@@ -1048,6 +1049,7 @@ fn grid_hover_records_column_and_worker_to_highlight() {
         paste_note: None,
         orig_worker: String::new(),
         orig_note: String::new(),
+        orig_text: String::new(),
     });
     frame(&mut state, Some(egui::pos2(x, 890.0)));
     assert!(state.editing.is_some(), "l'editor deve restare aperto");
@@ -3454,4 +3456,192 @@ fn registry_dev_tab_has_the_in_totals_column() {
     frame(&mut state, vec![]);
     let (out, _) = frame(&mut state, vec![]);
     assert!(text_pos(&out, "Nei totali").is_none(), "solo nella scheda Dev");
+}
+
+/// Cronologia di Annulla/Ripeti: uno stato uguale non conta, annulla e
+/// ripete in ordine, una modifica nuova cancella i «ripeti», al massimo
+/// `UNDO_DEPTH` passi, `reset` riparte da zero.
+#[test]
+fn undo_history_records_undoes_and_redoes() {
+    let mut h = UndoHistory::default();
+    h.reset("A".into());
+    assert!(!h.record("A".into()), "stato uguale: niente da annullare");
+    assert!(h.record("B".into()) && h.record("C".into()));
+    assert_eq!(h.undo().as_deref(), Some("B"));
+    assert_eq!(h.undo().as_deref(), Some("A"));
+    assert_eq!(h.undo(), None, "niente prima di A");
+    assert_eq!(h.redo().as_deref(), Some("B"));
+    assert!(h.can_redo());
+    assert!(h.record("D".into()), "modifica nuova dopo un annulla");
+    assert!(!h.can_redo(), "i «ripeti» si perdono");
+    assert_eq!(h.undo().as_deref(), Some("B"));
+    for i in 0..UNDO_DEPTH + 10 {
+        h.record(format!("S{i}"));
+    }
+    let mut steps = 0;
+    while h.undo().is_some() {
+        steps += 1;
+    }
+    assert_eq!(steps, UNDO_DEPTH, "al massimo {UNDO_DEPTH} passi");
+    h.reset("Z".into());
+    assert!(!h.can_undo() && !h.can_redo());
+}
+
+/// Annulla/Ripeti sul programma: tornano i dati di prima (e poi quelli
+/// dopo), il file risulta modificato, la visibilità dei progetti (Filtri ▸
+/// Progetti, non è una modifica) resta quella attuale; con più modifiche nello
+/// stesso frame si annulla tutto il frame.
+#[test]
+fn undo_and_redo_restore_the_data_but_keep_project_visibility() {
+    let mut app = App::new();
+    let mario = app.workers.add("Mario");
+    let p = app.projects.add("x", Some("P1"), None);
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    let frame = |pjm: &mut PjmApp, acts: Vec<Action>| {
+        for a in acts {
+            pjm.apply(a);
+        }
+        pjm.record_undo();
+    };
+    frame(&mut pjm, vec![Action::RenameWorker { worker: mario, name: "Mario Rossi".into() }]);
+    frame(
+        &mut pjm,
+        vec![
+            Action::SetProjectStatus { proj: p, status: ProjectStatus::OnHold },
+            Action::RenameWorker { worker: mario, name: "M. Rossi".into() },
+        ],
+    );
+    // Filtri ▸ Progetti: non è una modifica, resta com'è.
+    pjm.apply(Action::SetProjectEnabled { proj: p, enabled: false });
+    pjm.ui.changed = false;
+
+    frame(&mut pjm, vec![Action::Undo]);
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "Mario Rossi");
+    assert_eq!(pjm.app.projects.status(p), ProjectStatus::Active, "tutto il frame annullato");
+    assert!(pjm.ui.changed, "da salvare");
+    assert!(!pjm.app.projects.get_enable(&p).0, "visibilità attuale tenuta");
+    frame(&mut pjm, vec![Action::Undo]);
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "Mario");
+    frame(&mut pjm, vec![Action::Undo]);
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "Mario", "niente prima del caricamento");
+    frame(&mut pjm, vec![Action::Redo, Action::Redo]);
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "M. Rossi");
+    assert_eq!(pjm.app.projects.status(p), ProjectStatus::OnHold);
+    assert!(!pjm.ui.undo.can_redo());
+}
+
+/// Bagliore di Annulla/Ripeti: sale, resta, svanisce entro `UNDO_FLASH_SECS`.
+#[test]
+fn undo_flash_fades_in_and_out() {
+    assert_eq!(UndoFlash::strength(0.0), 0.0);
+    assert!(UndoFlash::strength(0.1) > 0.4 && UndoFlash::strength(0.1) < 0.6);
+    assert_eq!(UndoFlash::strength(0.5), 1.0);
+    assert!(UndoFlash::strength(1.5) < 1.0 && UndoFlash::strength(1.5) > 0.0);
+    assert_eq!(UndoFlash::strength(UNDO_FLASH_SECS), 0.0);
+}
+
+/// Annulla una cella lontana (ultima settimana della griglia): la griglia ci
+/// scorre, la colonna di quel dev brilla nel colore del bagliore e la
+/// notifica dice dove; con il progetto nascosto dai filtri invece solo un
+/// avviso, senza scroll né bagliore.
+#[test]
+fn undo_scrolls_to_the_change_and_makes_it_glow() {
+    let mut app = App::new();
+    let cols = columns_vec(&app, 0);
+    let far = cols
+        .iter()
+        .rev()
+        .find_map(|c| match c {
+            Col::Weeks(ws) => Some(ws[0]),
+            Col::YearEnd(_) => None,
+        })
+        .unwrap();
+    let mario = app.workers.add("Mario");
+    let fe = app.devs.add("Frontend");
+    // Altri progetti prima, così la griglia deve scorrere anche in verticale.
+    for i in 0..15 {
+        let q = app.projects.add("y", Some(&format!("Q{i:02}")), None);
+        app.projects.add_dev(q, fe);
+        app.projects.add_effort(q, fe, WeekId(far as usize), mario, Effort(1));
+    }
+    let p = app.projects.add("z", Some("ABC"), None);
+    app.projects.add_dev(p, fe);
+    app.projects.add_effort(p, fe, WeekId(far as usize), mario, Effort(8));
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    pjm.app.projects.add_effort(p, fe, WeekId(far as usize), mario, Effort(4));
+    pjm.mark_changed();
+    pjm.record_undo();
+    pjm.apply(Action::Undo);
+    let cell = |pjm: &PjmApp| {
+        pjm.app.projects.get_single_dev(p, fe).unwrap().get_all(WeekId(far as usize)).unwrap().worker_id[&mario].get_effort().0
+    };
+    assert_eq!(cell(&pjm), 8, "tornata a 8");
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1400.0, 800.0)),
+        ..Default::default()
+    };
+    let mut out = None;
+    // Il tempo deve scorrere: il bagliore parte da 0 e sale in 0,2 s.
+    for i in 0..3 {
+        let PjmApp { app, ui: st } = &mut pjm;
+        let mut actions = Vec::new();
+        let input = egui::RawInput { time: Some(i as f64 * 0.25), ..input.clone() };
+        out = Some(ctx.run_ui_test(input, |ui| body(ui, app, st, &mut actions)));
+    }
+    let out = out.unwrap();
+    assert!(pjm.ui.scroll_x > 0.0, "la griglia è scorsa verso la settimana lontana");
+    assert!(pjm.ui.scroll_y > 0.0, "e in giù, verso il progetto in fondo");
+    let glow: Vec<Rect> = out
+        .shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Rect(r) => {
+                let [rr, gg, bb, a] = r.stroke.color.to_srgba_unmultiplied();
+                (a > 0 && [rr, gg, bb] == [0xFF, 0x2B, 0xD6]).then_some(r.rect)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(glow.len(), 1, "brilla solo la cella cambiata: {glow:?}");
+    assert!((glow[0].height() - ROW_H).abs() < 0.5, "una cella: {:?}", glow[0]);
+    let label = format!("ABC · Frontend · {}", week_label(far));
+    assert!(
+        pjm.ui.toasts.iter().any(|t| t.text == format!("Modifica annullata: {label}")),
+        "{:?}",
+        pjm.ui.toasts.iter().map(|t| &t.text).collect::<Vec<_>>()
+    );
+
+    // Ripeti con il progetto nascosto (Filtri ▸ Progetti): solo l'avviso.
+    pjm.apply(Action::SetProjectEnabled { proj: p, enabled: false });
+    let scroll_before = pjm.ui.scroll_x;
+    pjm.ui.undo_flash = None;
+    pjm.apply(Action::Redo);
+    let PjmApp { app, ui: st } = &mut pjm;
+    let mut actions = Vec::new();
+    let _ = ctx.run_ui_test(input.clone(), |ui| body(ui, app, st, &mut actions));
+    assert!(pjm.ui.undo_flash.is_none(), "niente da far brillare");
+    assert!(pjm.ui.toasts.iter().any(|t| t.text.starts_with("Modifica ripetuta: ABC")
+        && t.text.contains("non visibile")));
+    assert_eq!(pjm.ui.scroll_x, scroll_before, "nessuno scroll");
+}
+
+/// Cmd/Ctrl+Z con una cella aperta: se non ci si è scritto nulla è
+/// l'Annulla dei dati (la cella si chiude), se si è scritto annulla la
+/// digitazione; senza cella, non mentre si scrive in un altro campo.
+#[test]
+fn undo_shortcut_works_on_an_untouched_open_cell() {
+    let mut e = Editing::open(ProjectId(0), DevId(0), 20000, 0, "Alice|4", "");
+    assert!(undo_shortcut_applies(Some(&e), true), "cella appena aperta (ha il focus)");
+    e.buf = "Alice|45".to_string();
+    assert!(!undo_shortcut_applies(Some(&e), true), "ci si è scritto: annulla la digitazione");
+    e.buf = "Alice|4".to_string();
+    assert!(undo_shortcut_applies(Some(&e), true), "tornata com'era");
+    let empty = Editing::open(ProjectId(0), DevId(0), 20000, 1, "", "");
+    assert!(undo_shortcut_applies(Some(&empty), true), "cella vuota appena aperta");
+    assert!(undo_shortcut_applies(None, false));
+    assert!(!undo_shortcut_applies(None, true), "si scrive in un altro campo");
 }

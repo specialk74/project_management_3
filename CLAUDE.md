@@ -295,6 +295,49 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     con **solo** note di cella compare lo stesso, e quelle note contano anche per il
     filtro «Solo progetti con note». Le note **Dev** (`SingleDev.note`) e quelle
     **worker/settimana del footer** (`Worker.week_notes`) restano fuori dalla minuta.
+- **Modifica**: **Annulla** (`Cmd/Ctrl+Z`) / **Ripeti** (`Cmd/Ctrl+Shift+Z`) →
+  `Action::Undo/Redo`. Snapshot-based: `UiState.undo: UndoHistory { past,
+  future, current }` of `App::to_ron_string()` (`UNDO_DEPTH` 50, ~2 ms per
+  snapshot in release on a 520 KB file). `mark_changed` sets
+  `UiState.undo_dirty`; after the action loop `record_undo` (skipped while
+  `pointer.any_down()`, so a drag — colour picker etc. — is one step) pushes
+  the previous `current` if the new state differs; `apply(Undo|Redo)` first
+  calls `record_undo`, then `restore_snapshot` (`App::from_ron_str` +
+  `preserve_project_filter` — project visibility is not undone — +
+  `compute_sovra`, `changed = true`, edit buffers cleared, `editing = None`).
+  `reset_undo` at startup and on every `self.app = loaded/theirs/merged`
+  (Open, external reload/merge): no going back past a colleague's changes.
+  Shortcuts follow `undo_shortcut_applies(editing, text_focus)`: with an open
+  cell only if nothing was typed (`Editing::untouched` = `buf == orig_text`, the
+  new field set by `Editing::open`) — then the cell is closed without commit
+  (`state.editing = None` before drawing) and Undo/Redo runs; otherwise not
+  while `egui_wants_keyboard_input()` (the `TextEdit` undoes typing). Test
+  `undo_shortcut_works_on_an_untouched_open_cell`. **Show the change**: `apply(Undo|Redo)` clones
+  the app before restoring and calls `undo_diff::changes(before, after)` →
+  `Changes { cells: (proj, dev, week, worker), devs, projects, other }`, all by
+  **`PartialEq`** (`Project` derives it now; `WorkerId` derives `Ord`) — never
+  compare RON text: the data hold `HashMap`s, serialized in a random order, so
+  every project looked changed (the whole grid glowed and the scroll went to
+  the top); test `finds_cells_devs_projects_and_other_changes` re-reads the RON.
+  Workers, devs, categories, milestones, settings ⇒ `other`. Grid sites ⇒
+  `UiState.undo_flash: Option<UndoFlash>` with `pending: Some(undo)`; `body`
+  resolves it once with the layout (`resolve_undo_flash` → `undo_target`, the
+  first site in grid order, same y maths as `grid`): scrolls only if the target
+  is outside the viewport (centred: `pending_scroll_y`, and
+  `centered_scroll_x` for a cell) and toasts «Modifica annullata/ripetuta:
+  ABC · Dev · yy-mm-dd (e altri N punti)»; if hidden by filters/view it only
+  `toast_warn`s «… non visibile …» and drops the flash. `grid` collects the dev
+  blocks / project rects; `draw_dev_cells` records each changed cell's rect in
+  `UndoFlash.drawn` (cleared every frame), and `paint_undo_flash` draws
+  `UNDO_FLASH` magenta (fill + stroke) on **only those cells** (fallback: the
+  week column inside the dev when the cell is gone or the column is merged),
+  dev blocks, project rects, with `UndoFlash::strength(t)` (in 0.2 s, hold to 0.9 s, out by
+  `UNDO_FLASH_SECS` 2.2 s; `start` = first paint), then clears it. Non-grid
+  changes ⇒ just a toast. Redo stays `Cmd/Ctrl+Shift+Z` only (`Cmd/Ctrl+Y` is
+  Filtri ▸ Anni). Tests `finds_cells_devs_projects_and_other_changes`,
+  `undo_flash_fades_in_and_out`, `undo_scrolls_to_the_change_and_makes_it_glow`.
+  Tests `undo_history_records_undoes_and_redoes`,
+  `undo_and_redo_restore_the_data_but_keep_project_visibility`.
 - **Aggiungi**: + Progetto, **Clona progetto…**, **Worker, dev e categorie…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
   - **Worker, dev e categorie…** (`src/ui/registry.rs`, `registry_window`;
     `UiState.show_registry` / `registry_tab: RegistryTab` / `registry_search` /

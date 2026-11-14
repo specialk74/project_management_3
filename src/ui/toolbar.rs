@@ -111,6 +111,20 @@ pub(crate) fn toolbar(
             }
         });
 
+        // ── Modifica ─────────────────────────────────────────────────────────
+        ui.menu_button("Modifica", |ui| {
+            let undo = egui::Button::new("Annulla").shortcut_text("Cmd/Ctrl+Z");
+            if ui.add_enabled(state.undo.can_undo(), undo).clicked() {
+                actions.push(Action::Undo);
+                ui.close_kind(egui::UiKind::Menu);
+            }
+            let redo = egui::Button::new("Ripeti").shortcut_text("Cmd/Ctrl+Shift+Z");
+            if ui.add_enabled(state.undo.can_redo(), redo).clicked() {
+                actions.push(Action::Redo);
+                ui.close_kind(egui::UiKind::Menu);
+            }
+        });
+
         // ── Aggiungi ─────────────────────────────────────────────────────────
         // I campi di testo restano nel menù: non chiudiamo la tendina dopo un
         // inserimento, così si possono aggiungere più elementi di seguito.

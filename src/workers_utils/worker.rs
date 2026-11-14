@@ -4,7 +4,7 @@ use std::collections::HashMap;
 pub const WORKER_ID_ZERO: WorkerId = WorkerId(0);
 pub const DEFAULT_MAX_HOURS: u32 = 40;
 
-#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct WorkerId(pub usize);
 
 /// Stato di una settimana per un worker: ferie o malattia.

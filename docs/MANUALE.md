@@ -325,6 +325,54 @@ bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
   conferma (Salva ed esci / Esci senza salvare / Annulla).
 
+### Modifica
+- **Annulla** (`Cmd/Ctrl+Z`) — torna allo stato di prima dell'ultima modifica ai
+  dati: una cella, uno spostamento, una cancellazione, un cambio di stato, un
+  nome… Si può ripetere per tornare indietro di più passi (fino a **50**).
+- **Ripeti** (`Cmd/Ctrl+Shift+Z`) — rifà la modifica appena annullata. Facendo
+  una modifica nuova dopo un Annulla, i «Ripeti» rimasti si perdono.
+
+Dopo Annulla o Ripeti la griglia **ti porta sulla modifica**, anche se nel
+frattempo eri andato altrove: se il punto cambiato non è già in vista, la griglia
+scorre (in verticale e, per una cella, anche in orizzontale) e lo centra. Il punto
+**si accende di magenta e poi sfuma** in circa due secondi, dopo che la griglia
+si è spostata: **solo la cella cambiata** (quella del worker, in quella
+settimana). Se la cella non c'è più (es. annullando l'inserimento di un worker) o
+le settimane sono accorpate dallo zoom, brilla il riquadro di quella settimana
+dentro il dev. Per le modifiche senza celle brilla l'intera riga del dev
+(effort pianificato, nota, % dichiarata…) o del progetto (nome, date, stato,
+categoria, milestone…).
+Una notifica dice dove, es. «Modifica annullata: ABC · Frontend · 25-03-10», con
+«(e altri N punti)» se la modifica ne toccava più d'uno (la griglia va sul primo,
+brillano tutti).
+
+Se il punto è in un progetto o in un dev **nascosto da filtri o vista** (es. un
+progetto chiuso con la vista «Solo attivi»), filtri e vista non cambiano: la
+notifica lo segnala («… non visibile con i filtri o la vista attuali»). Per le
+modifiche che non stanno in griglia (nomi di worker/dev/categorie, milestone,
+impostazioni) c'è solo la notifica.
+
+Da sapere:
+- Un passo è **tutto ciò che cambia con un gesto**: un'operazione che tocca molte
+  celle (inserimento multiplo, «Sposta», «Cancella gli effort») si annulla in un
+  colpo; anche un trascinamento (es. il selettore colore di una milestone) è un
+  solo passo.
+- Con una **cella selezionata** (aperta) in cui non hai ancora scritto nulla,
+  `Cmd/Ctrl+Z` e `Cmd/Ctrl+Shift+Z` funzionano normalmente: la cella si chiude
+  senza salvare e la modifica ai dati viene annullata o ripetuta. Se invece nella
+  cella hai già scritto qualcosa, `Cmd/Ctrl+Z` annulla la **digitazione** (come in
+  ogni campo di testo): per annullare i dati premi `Esc` e poi `Cmd/Ctrl+Z`.
+- Mentre scrivi in un altro campo di testo (nome del progetto, effort
+  pianificato, ricerche…) `Cmd/Ctrl+Z` annulla la digitazione: esci dal campo e
+  premilo di nuovo.
+- La visibilità dei progetti (Filtri ▸ Progetti) e le altre scelte di vista non
+  sono modifiche al file: Annulla non le cambia.
+- Annullare segna il file come modificato: verrà salvato come al solito
+  (anche dal salvataggio automatico).
+- La cronologia vale **solo finché l'app è aperta** e riparte da capo quando apri
+  un altro file o quando arrivano le modifiche di un collega (non si può tornare
+  a uno stato di prima del loro arrivo).
+
 ### Aggiungi
 - **+ Progetto** — crea un nuovo progetto vuoto.
 - **Clona progetto…** — crea una copia completa di un progetto esistente (vedi
@@ -1751,6 +1799,8 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | Scorciatoia | Azione |
 |---|---|
 | `Cmd/Ctrl + S` | Salva il file |
+| `Cmd/Ctrl + Z` | **Annulla** l'ultima modifica (fuori dai campi di testo) |
+| `Shift + Cmd/Ctrl + Z` | **Ripeti** la modifica annullata |
 | `Cmd/Ctrl + F` | Apri la dialog «Filtri» sulla colonna Workers (tutte le settimane) |
 | `Shift + Cmd/Ctrl + F` | Deseleziona tutti i worker nel filtro |
 | `Cmd/Ctrl + G` | Come sopra ma sulla **settimana corrente** (solo progetti con il worker attivo questa settimana) |

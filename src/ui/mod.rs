@@ -70,6 +70,7 @@ pub(crate) struct Editing {
     paste_note: Option<String>, // nota incollata (Ctrl+V) da applicare al commit
     orig_worker: String,        // worker presente nella cella all'apertura (per commit mirato)
     orig_note: String,          // nota presente nella cella all'apertura
+    orig_text: String,          // testo all'apertura: uguale a `buf` = nulla digitato
 }
 
 impl Editing {
@@ -94,7 +95,24 @@ impl Editing {
             paste_note: None,
             orig_worker: cell_worker(text).to_string(),
             orig_note: note.to_string(),
+            orig_text: text.to_string(),
         }
+    }
+
+    /// Nella cella non è stato scritto nulla (è com'era all'apertura).
+    pub(crate) fn untouched(&self) -> bool {
+        self.buf == self.orig_text
+    }
+}
+
+/// Cmd/Ctrl+Z (Shift+Z) vale come Annulla/Ripeti dei dati? No mentre si scrive
+/// in un campo di testo (`text_focus`), dove annulla la digitazione; sì con
+/// una cella aperta in cui non si è ancora scritto nulla (la cella si chiude
+/// senza salvare).
+pub(crate) fn undo_shortcut_applies(editing: Option<&Editing>, text_focus: bool) -> bool {
+    match editing {
+        Some(e) => e.untouched(),
+        None => !text_focus,
     }
 }
 
@@ -795,6 +813,113 @@ impl ExportScopes {
     }
 }
 
+/// Quante modifiche si possono annullare (istantanee tenute in memoria).
+pub(crate) const UNDO_DEPTH: usize = 50;
+
+/// Cronologia di Annulla/Ripeti: istantanee RON dell'`App`. `current` è lo
+/// stato attuale; dopo ogni frame con modifiche (`mark_changed`) il precedente
+/// finisce in `past` e `future` si svuota. Solo in memoria: si azzera aprendo
+/// un file e quando arrivano le modifiche di un collega.
+#[derive(Default)]
+pub(crate) struct UndoHistory {
+    past: Vec<String>,
+    future: Vec<String>,
+    current: Option<String>,
+}
+
+impl UndoHistory {
+    /// Riparte da `now`, senza nulla da annullare o ripetere.
+    pub(crate) fn reset(&mut self, now: String) {
+        self.past.clear();
+        self.future.clear();
+        self.current = Some(now);
+    }
+
+    /// Registra lo stato `now` dopo una modifica. `false` se è uguale al
+    /// precedente (nessuna modifica vera: niente da annullare).
+    pub(crate) fn record(&mut self, now: String) -> bool {
+        let Some(prev) = self.current.take() else {
+            self.current = Some(now);
+            return false;
+        };
+        if prev == now {
+            self.current = Some(prev);
+            return false;
+        }
+        self.past.push(prev);
+        if self.past.len() > UNDO_DEPTH {
+            self.past.remove(0);
+        }
+        self.future.clear();
+        self.current = Some(now);
+        true
+    }
+
+    /// Torna allo stato precedente: lo restituisce (e lo rende attuale).
+    pub(crate) fn undo(&mut self) -> Option<String> {
+        let prev = self.past.pop()?;
+        if let Some(cur) = self.current.replace(prev.clone()) {
+            self.future.push(cur);
+        }
+        Some(prev)
+    }
+
+    /// Rifà la modifica annullata per ultima.
+    pub(crate) fn redo(&mut self) -> Option<String> {
+        let next = self.future.pop()?;
+        if let Some(cur) = self.current.replace(next.clone()) {
+            self.past.push(cur);
+        }
+        Some(next)
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        !self.past.is_empty()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        !self.future.is_empty()
+    }
+}
+
+/// Dove brilla la griglia dopo Annulla/Ripeti (vedi `undo_diff`): **solo le
+/// celle** cambiate (progetto, dev, settimana, worker) — se il worker non ha
+/// più una cella in quella settimana (cella tolta) o la colonna è accorpata
+/// dallo zoom, la colonna di quella settimana dentro il dev —, la riga di un
+/// dev o di un progetto cambiati senza celle. `drawn` = rettangoli delle celle
+/// cambiate disegnate in questo frame (`draw_dev_cells`). `start` = istante del
+/// primo disegno **dopo** lo scroll (il bagliore entra, resta e svanisce in
+/// `UNDO_FLASH_SECS`); `pending` = da fare in `body`, che conosce il layout:
+/// portarci la griglia e dirlo con una notifica (`true` = Annulla).
+pub(crate) struct UndoFlash {
+    cells: HashSet<(ProjectId, DevId, i32, WorkerId)>,
+    drawn: HashMap<(ProjectId, DevId, i32, WorkerId), Rect>,
+    devs: HashSet<(ProjectId, DevId)>,
+    projects: HashSet<ProjectId>,
+    start: Option<f64>,
+    pending: Option<bool>,
+}
+
+/// Durata del bagliore dopo Annulla/Ripeti (secondi).
+pub(crate) const UNDO_FLASH_SECS: f64 = 2.2;
+
+impl UndoFlash {
+    /// Intensità 0..1 all'istante `t` dall'inizio: sale in 0,2 s, resta fino a
+    /// 0,9 s, poi svanisce.
+    pub(crate) fn strength(t: f64) -> f32 {
+        let k = if t < 0.0 {
+            0.0
+        } else if t < 0.2 {
+            t / 0.2
+        } else if t < 0.9 {
+            1.0
+        } else {
+            1.0 - (t - 0.9) / (UNDO_FLASH_SECS - 0.9)
+        };
+        k.clamp(0.0, 1.0) as f32
+    }
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -1035,6 +1160,11 @@ pub struct UiState {
     milestone_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
+    // Annulla/Ripeti: cronologia e «c'è stata una modifica in questo frame»
+    // (messo da `mark_changed`, consumato dopo le azioni da `record_undo`).
+    undo: UndoHistory,
+    undo_dirty: bool,
+    undo_flash: Option<UndoFlash>,
     // finestra «Worker, dev e categorie» (Aggiungi ▸ …): scheda, ricerca e
     // testo dei nomi in modifica (per riga, finché non si conferma)
     show_registry: bool,
@@ -1341,6 +1471,10 @@ pub(crate) enum Action {
         worker: WorkerId,
         hidden: bool,
     },
+    /// Annulla l'ultima modifica / rifà quella annullata (Modifica ▸ …,
+    /// Cmd/Ctrl+Z e Cmd/Ctrl+Shift+Z).
+    Undo,
+    Redo,
     /// Rinomina un worker / dev / categoria (finestra «Worker, dev e
     /// categorie»); un nome non valido è segnalato con un avviso.
     RenameWorker {
@@ -1601,6 +1735,7 @@ impl PjmApp {
             },
         };
         me.write_missing_settings(&missing_settings);
+        me.reset_undo();
         me
     }
 
@@ -1869,6 +2004,21 @@ impl eframe::App for PjmApp {
             if key_s {
                 actions.push(Action::Save);
             }
+            // Annulla / Ripeti: non mentre si scrive in un campo di testo (lì
+            // Cmd/Ctrl+Z annulla la digitazione) o con una cella aperta.
+            let (key_z, key_shift_z) = ui.ctx().input(|i| {
+                let cmd = i.modifiers.command || i.modifiers.ctrl;
+                let z = cmd && i.key_pressed(egui::Key::Z);
+                (z && !i.modifiers.shift, z && i.modifiers.shift)
+            });
+            let applies =
+                undo_shortcut_applies(state.editing.as_ref(), ui.ctx().egui_wants_keyboard_input());
+            if (key_z || key_shift_z) && applies {
+                // Una cella aperta (non toccata) si chiude senza salvare: non
+                // più disegnata, non conferma da sola.
+                state.editing = None;
+                actions.push(if key_z { Action::Undo } else { Action::Redo });
+            }
             // Modalità progetti (non persistita): Ctrl+1 solo attivi, Ctrl+2 solo
             // on-hold, Ctrl+3 attivi + on-hold, Ctrl+4 tutti.
             if key_1 {
@@ -2059,6 +2209,12 @@ impl eframe::App for PjmApp {
         for a in actions {
             self.apply(a);
         }
+        // Durante un trascinamento (selettore colore, valori trascinati…) i
+        // dati cambiano a ogni frame: l'istantanea si prende al rilascio, così
+        // tutto il trascinamento è un solo passo di Annulla.
+        if !ui.ctx().input(|i| i.pointer.any_down()) {
+            self.record_undo();
+        }
 
         let ctx = ui.ctx().clone();
         self.poll_background_errors();
@@ -2148,6 +2304,43 @@ impl PjmApp {
         self.app.recompute_week_range();
         self.app.compute_sovra();
         self.ui.changed = true;
+        self.ui.undo_dirty = true;
+    }
+
+    /// Dopo le azioni del frame: se qualcosa è cambiato, l'istantanea va nella
+    /// cronologia di Annulla/Ripeti.
+    fn record_undo(&mut self) {
+        if std::mem::take(&mut self.ui.undo_dirty) {
+            let now = self.app.to_ron_string();
+            self.ui.undo.record(now);
+        }
+    }
+
+    /// Cronologia da capo sullo stato attuale (file aperto, modifiche di un
+    /// collega): non si può tornare a uno stato di prima.
+    fn reset_undo(&mut self) {
+        self.ui.undo_dirty = false;
+        let now = self.app.to_ron_string();
+        self.ui.undo.reset(now);
+    }
+
+    /// Rimette lo stato `ron` (Annulla/Ripeti). La visibilità dei progetti
+    /// (Filtri ▸ Progetti, non è una modifica del file) resta quella attuale.
+    fn restore_snapshot(&mut self, ron: &str) {
+        match App::from_ron_str(ron) {
+            Ok(mut app) => {
+                self.preserve_project_filter(&mut app);
+                app.compute_sovra();
+                self.app = app;
+                self.ui.changed = true;
+                self.ui.name_buffers.clear();
+                self.ui.effort_buffers.clear();
+                self.ui.declared_buffers.clear();
+                self.ui.registry_names.clear();
+                self.ui.editing = None;
+            }
+            Err(e) => self.ui.toast_error(format!("Annulla/Ripeti non riuscito: {e}")),
+        }
     }
 
     /// Salva su disco e, se la cartella del file è un repo git, committa e pusha
@@ -2262,6 +2455,7 @@ impl PjmApp {
         self.preserve_project_filter(&mut theirs);
         self.ui.base_ron = theirs.to_ron_string();
         self.app = theirs;
+        self.reset_undo();
         self.ui.file_mtime = Some(mtime);
         self.ui.changed = false;
         self.ui.name_buffers.clear();
@@ -2329,6 +2523,7 @@ impl PjmApp {
             let mut merged = outcome.app;
             self.preserve_project_filter(&mut merged);
             self.app = merged;
+            self.reset_undo();
             self.ui.base_ron = theirs.to_ron_string();
             self.ui.file_mtime = Some(disk_mtime);
             self.ui
@@ -2382,6 +2577,7 @@ impl PjmApp {
                     let mut merged = p.merged; // sovra già ricalcolata nel merge
                     self.preserve_project_filter(&mut merged);
                     self.app = merged;
+                    self.reset_undo();
                     self.ui.base_ron = p.theirs.to_ron_string();
                     self.ui.changed = true;
                     self.ui.toast_info(notice_now(
@@ -2396,6 +2592,7 @@ impl PjmApp {
                     self.ui.base_ron = theirs.to_ron_string();
                     self.preserve_project_filter(&mut theirs);
                     self.app = theirs;
+                    self.reset_undo();
                     self.ui.changed = false;
                     self.ui.name_buffers.clear();
                     self.ui.effort_buffers.clear();
@@ -2412,6 +2609,37 @@ impl PjmApp {
 
     fn apply(&mut self, a: Action) {
         match a {
+            Action::Undo | Action::Redo => {
+                // Prima chiude nella cronologia le modifiche già fatte in
+                // questo frame, così si annulla davvero l'ultima.
+                self.record_undo();
+                let undo = matches!(a, Action::Undo);
+                let snap = if undo { self.ui.undo.undo() } else { self.ui.undo.redo() };
+                if let Some(ron) = snap {
+                    let before = self.app.clone();
+                    self.restore_snapshot(&ron);
+                    let c = crate::undo_diff::changes(&before, &self.app);
+                    let in_grid = !(c.cells.is_empty() && c.devs.is_empty() && c.projects.is_empty());
+                    if in_grid {
+                        // La griglia ci va e brilla; la notifica la dà `body`.
+                        self.ui.undo_flash = Some(UndoFlash {
+                            cells: c.cells.iter().map(|&(p, d, w, k)| (p, d, w.0 as i32, k)).collect(),
+                            drawn: HashMap::new(),
+                            devs: c.devs.into_iter().collect(),
+                            projects: c.projects.into_iter().collect(),
+                            start: None,
+                            pending: Some(undo),
+                        });
+                    } else {
+                        let what = if undo { "Modifica annullata" } else { "Modifica ripetuta" };
+                        self.ui.toast_info(if c.other {
+                            format!("{what}: worker, dev, categorie, milestone o impostazioni")
+                        } else {
+                            what.to_string()
+                        });
+                    }
+                }
+            }
             Action::Save => {
                 // Solo un salvataggio riuscito azzera "modificato": altrimenti il
                 // file resterebbe segnato come allineato al disco senza esserlo.
@@ -2430,6 +2658,7 @@ impl PjmApp {
                     match App::load_reporting_missing(&path) {
                         Ok((loaded, missing)) => {
                             self.app = loaded;
+                            self.reset_undo();
                             self.ui.current_file = path;
                             self.ui.name_buffers.clear();
                             self.ui.effort_buffers.clear();

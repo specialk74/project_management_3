@@ -65,7 +65,7 @@ fn enable_default() -> Enable {
     Enable(true)
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Project {
     info: String,
     // `enable` è lo stato del filtro "Progetti ▼": puramente di visualizzazione,

@@ -29,6 +29,10 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
         }
     }
 
+    // Annulla/Ripeti: porta la griglia sulla modifica (se non si vede già) e
+    // lo dice con una notifica.
+    resolve_undo_flash(ui, app, state, &layout);
+
     // Colonna sinistra: larghezza fissa, scroll verticale che segue la griglia.
     egui::Panel::left("leftcol")
         .exact_size(LEFT_W)
@@ -77,6 +81,179 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &
             state.scroll_x = offset.x;
             state.scroll_y = offset.y;
         });
+}
+
+/// Il punto della griglia da mostrare dopo Annulla/Ripeti: il primo, in ordine
+/// di griglia, fra celle, dev e progetti cambiati. Rettangolo in coordinate
+/// del contenuto (0,0 = angolo in alto a sinistra della griglia), più il
+/// progetto, il dev e la settimana per la notifica.
+struct UndoTarget {
+    proj: ProjectId,
+    dev: Option<DevId>,
+    week: Option<i32>,
+    y: egui::Rangef,
+}
+
+/// Cerca il primo punto cambiato in `layout` (stessi conti di `grid`).
+fn undo_target(state: &UiState, f: &UndoFlash, layout: &[ProjLayout]) -> Option<UndoTarget> {
+    let compact = state.compact_mode;
+    let merged = !compact && state.zoom_level > 0;
+    let mut y = DEV_BORDER;
+    for p in layout {
+        let proj_top = y;
+        let mut dy = y;
+        for (dev, rows) in &p.devs {
+            dy += DEV_BORDER;
+            let h = dev_inner_h(*rows, compact, merged);
+            let week = f
+                .cells
+                .iter()
+                .filter(|(pp, d, _, _)| *pp == p.proj && d == dev)
+                .map(|(_, _, w, _)| *w)
+                .min();
+            if week.is_some() || f.devs.contains(&(p.proj, *dev)) {
+                return Some(UndoTarget {
+                    proj: p.proj,
+                    dev: Some(*dev),
+                    week,
+                    y: egui::Rangef::new(dy, dy + h),
+                });
+            }
+            dy += h + DEV_BORDER;
+        }
+        if f.projects.contains(&p.proj) {
+            return Some(UndoTarget {
+                proj: p.proj,
+                dev: None,
+                week: None,
+                y: egui::Rangef::new(proj_top, proj_top + p.proj_h),
+            });
+        }
+        y = proj_top + p.proj_h + DEV_BORDER;
+    }
+    None
+}
+
+/// «ABC · Frontend · 25-03-10» del punto cambiato.
+fn undo_place(app: &App, proj: ProjectId, dev: Option<DevId>, week: Option<i32>) -> String {
+    let mut parts = vec![project_label(app, proj)];
+    if let Some(d) = dev.and_then(|d| app.devs.get(d)) {
+        parts.push(d.get_name());
+    }
+    if let Some(w) = week {
+        parts.push(week_label(w));
+    }
+    parts.join(" · ")
+}
+
+/// Dopo Annulla/Ripeti (`UndoFlash.pending`): se la modifica è in griglia la
+/// porta in vista (solo se non si vede già: centrata) e lo notifica; se il
+/// progetto o il dev sono nascosti da filtri o vista, lo dice e non tocca
+/// nulla.
+fn resolve_undo_flash(ui: &egui::Ui, app: &App, state: &mut UiState, layout: &[ProjLayout]) {
+    let Some(undo) = state.undo_flash.as_mut().and_then(|f| f.pending.take()) else {
+        return;
+    };
+    let Some(f) = state.undo_flash.as_ref() else { return };
+    let what = if undo { "Modifica annullata" } else { "Modifica ripetuta" };
+    let total = f.cells.len() + f.devs.len() + f.projects.len();
+    let more = if total > 1 { format!(" (e altri {} punti)", total - 1) } else { String::new() };
+    let Some(t) = undo_target(state, f, layout) else {
+        // Nascosto: il primo punto per id, solo per dirlo.
+        let (proj, dev, week) = f
+            .cells
+            .iter()
+            .min()
+            .map(|&(p, d, w, _)| (p, Some(d), Some(w)))
+            .or_else(|| f.devs.iter().min().map(|&(p, d)| (p, Some(d), None)))
+            .or_else(|| f.projects.iter().min().map(|&p| (p, None, None)))
+            .unwrap_or((ProjectId(0), None, None));
+        let place = undo_place(app, proj, dev, week);
+        state.toast_warn(format!(
+            "{what}: {place}{more} — non visibile con i filtri o la vista attuali"
+        ));
+        // Niente da far brillare.
+        state.undo_flash = None;
+        return;
+    };
+    state.toast_info(format!("{what}: {}{more}", undo_place(app, t.proj, t.dev, t.week)));
+    // Area visibile della griglia (tolta la colonna sinistra).
+    let avail = ui.available_size();
+    let (vis_w, vis_h) = ((avail.x - LEFT_W).max(1.0), avail.y.max(1.0));
+    if t.y.min < state.scroll_y || t.y.max > state.scroll_y + vis_h {
+        state.pending_scroll_y = Some((t.y.center() - vis_h / 2.0).max(0.0));
+    }
+    if let Some(w) = t.week {
+        let compact = state.compact_mode;
+        let level = if compact { 0 } else { state.zoom_level };
+        let cols = columns_vec(app, level);
+        let cw = col_w(compact);
+        if let Some(idx) = cols.iter().position(|c| matches!(c, Col::Weeks(ws) if ws.contains(&w))) {
+            let x0 = col_x_offset(&cols, idx, cw);
+            let x1 = x0 + col_width(&cols[idx], cw);
+            if x0 < state.scroll_x || x1 > state.scroll_x + vis_w {
+                state.pending_scroll_x = Some(centered_scroll_x(&cols, idx, cw, vis_w));
+            }
+        }
+    }
+}
+
+/// Colore del bagliore dopo Annulla/Ripeti.
+const UNDO_FLASH: Color32 = Color32::from_rgb(0xFF, 0x2B, 0xD6);
+
+/// Disegna il bagliore di Annulla/Ripeti: `blocks` = i blocchi dev disegnati
+/// (progetto, dev, rettangolo), `projects` = i rettangoli dei progetti. Chiude
+/// il bagliore quando è svanito.
+fn paint_undo_flash(
+    ui: &egui::Ui,
+    state: &mut UiState,
+    cols: &[Col],
+    cw: f32,
+    left: f32,
+    blocks: &[(ProjectId, DevId, Rect)],
+    projects: &[(ProjectId, Rect)],
+) {
+    let Some(f) = state.undo_flash.as_mut() else { return };
+    let now = ui.input(|i| i.time);
+    let start = *f.start.get_or_insert(now);
+    let k = UndoFlash::strength(now - start);
+    if now - start >= UNDO_FLASH_SECS {
+        state.undo_flash = None;
+        return;
+    }
+    let fill = g(UNDO_FLASH).gamma_multiply(0.45 * k);
+    let stroke = Stroke::new(2.5, g(UNDO_FLASH).gamma_multiply(k));
+    let p = ui.painter();
+    let paint = |r: Rect| {
+        p.rect_filled(r, 2.0, fill);
+        p.rect_stroke(r, 2.0, stroke, egui::StrokeKind::Inside);
+    };
+    for (proj, dev, block) in blocks {
+        if f.devs.contains(&(*proj, *dev)) {
+            paint(*block);
+        }
+        // Solo la cella del worker; se non è stata disegnata (cella tolta,
+        // colonna accorpata) la colonna di quella settimana nel dev, una volta.
+        let mut fallback: Vec<i32> = Vec::new();
+        for key in f.cells.iter().filter(|(pp, d, _, _)| pp == proj && d == dev) {
+            match f.drawn.get(key) {
+                Some(r) => paint(*r),
+                None if !fallback.contains(&key.2) => fallback.push(key.2),
+                None => {}
+            }
+        }
+        for w in fallback {
+            if let Some(r) = week_col_rect(cols, cw, left, block.top(), block.bottom(), w) {
+                paint(r);
+            }
+        }
+    }
+    for (proj, r) in projects {
+        if f.projects.contains(proj) {
+            paint(*r);
+        }
+    }
+    ui.ctx().request_repaint();
 }
 
 pub(crate) fn alloc_strip(ui: &mut egui::Ui, w: f32, h: f32, color: Color32) {
@@ -426,6 +603,15 @@ pub(crate) fn grid(
     paint_hstrip(ui, left, content_w, y, g(START_STOP));
     y += DEV_BORDER;
 
+    // Dove sono blocchi dev e progetti, per il bagliore di Annulla/Ripeti; le
+    // celle si riregistrano a ogni frame (con lo scroll si spostano).
+    let flashing = state.undo_flash.is_some();
+    if let Some(f) = state.undo_flash.as_mut() {
+        f.drawn.clear();
+    }
+    let mut flash_blocks: Vec<(ProjectId, DevId, Rect)> = Vec::new();
+    let mut flash_projects: Vec<(ProjectId, Rect)> = Vec::new();
+
     for p in layout {
         // I progetti chiusi si disegnano in scala di grigi (come la modalità B/N),
         // indipendentemente dal B/N globale; ripristinato a fine progetto.
@@ -466,6 +652,9 @@ pub(crate) fn grid(
                     deadline, filter, compact, cw, merged,
                 );
             }
+            if flashing {
+                flash_blocks.push((p.proj, *dev_id, block));
+            }
             dy += inner_h;
             paint_hstrip_range(ui, act_x0, act_x1, dy, border);
             dy += DEV_BORDER;
@@ -503,6 +692,10 @@ pub(crate) fn grid(
             draw_compact_date_marker(ui, left, cw, &cols, deadline, proj_top, g(DEADLINE_BG));
         }
 
+        if flashing {
+            let r = Rect::from_min_size(egui::pos2(left, proj_top), Vec2::new(content_w, p.proj_h));
+            flash_projects.push((p.proj, r));
+        }
         y = proj_top + p.proj_h;
         paint_hstrip(ui, left, content_w, y, BETWEEN_PROJECTS);
         y += DEV_BORDER;
@@ -513,6 +706,10 @@ pub(crate) fn grid(
     // ai progetti chiusi, che restano grigi); continua in intestazione e footer.
     if let Some(r) = week_col_rect(&cols, cw, left, rect.top(), rect.bottom(), state.this_week) {
         paint_this_week_border(ui, r, false, false);
+    }
+    // Annulla/Ripeti: il punto cambiato brilla e svanisce (sopra a tutto).
+    if flashing {
+        paint_undo_flash(ui, state, &cols, cw, left, &flash_blocks, &flash_projects);
     }
 
     // Cella in modifica: ha la precedenza sul cursore. Il worker segue il nome
@@ -702,6 +899,13 @@ pub(crate) fn draw_dev_cells(
                 draw_cell_editor(ui, app, state, actions, &cx, cell, note);
             } else {
                 draw_cell_static(ui, app, state, actions, &cx, cell, text, note, *wid);
+            }
+            // Cella cambiata da Annulla/Ripeti: se ne ricorda il posto, il
+            // bagliore la disegna dopo, sopra a tutto.
+            if let (Some(f), Some(wid)) = (state.undo_flash.as_mut(), wid)
+                && f.cells.contains(&(proj, dev, *w, *wid))
+            {
+                f.drawn.insert((proj, dev, *w, *wid), cell);
             }
         }
     }
