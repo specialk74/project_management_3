@@ -948,6 +948,13 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `bool` (mark changed only on a real change). Tests
   `clear_project_milestones_removes_placements_but_keeps_definitions`,
   `clear_milestones_window_asks_then_confirms`.
+- **New milestone colour** (`Milestones::pick_color`): a random unused entry
+  of `PALETTE` (16, all mid-luminance), else `fallback_color(seed)` (HSL hue
+  from the seed, lightness bisected to the luminance with equal contrast vs
+  both theme backgrounds `#1E1E1E`/`#F5F5F5`). Rule `readable_on_both_themes`
+  = WCAG contrast ≥ `MIN_THEME_CONTRAST` (2.5) with each (test-only, checks
+  palette + fallback in `new_milestone_colors_are_readable_on_both_themes`).
+  Existing milestones and the manager's colour picker are untouched.
 - **Milestone kind** (`MilestoneKind { Goal, Trigger }`, `#[serde(default)]` =
   `Goal`, so old RON files load as goals): a milestone is not only an arrival
   flag, it can be the **trigger of an event**. The kind belongs to the

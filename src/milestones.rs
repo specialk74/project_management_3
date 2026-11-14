@@ -11,25 +11,96 @@ pub struct MilestoneId(pub usize);
 
 /// Palette di colori distinti (0xRRGGBB) da cui pescare per le nuove milestone.
 /// Alla creazione si sceglie a caso un colore non ancora usato; se sono tutti
-/// occupati si genera un colore pseudo-casuale.
+/// occupati si genera un colore pseudo-casuale (`fallback_color`).
+/// Tutti **leggibili con entrambi i temi** (`readable_on_both_themes`): niente
+/// colori troppo scuri (spariscono sul fondo scuro) né troppo chiari (spariscono
+/// su quello chiaro); per questo giallo e ambra sono tinte ocra.
 const PALETTE: [u32; 16] = [
     0xE53935, // rosso
-    0x8E24AA, // viola
-    0x3949AB, // indaco
+    0xAB47BC, // viola
+    0x5C6BC0, // indaco
     0x1E88E5, // blu
     0x00ACC1, // ciano
     0x00897B, // teal
     0x43A047, // verde
-    0x7CB342, // lime
-    0xC0CA33, // giallo-verde
-    0xFDD835, // giallo
-    0xFFB300, // ambra
-    0xFB8C00, // arancione
+    0x689F38, // lime
+    0x9E9D24, // giallo-verde
+    0xB59A00, // giallo (ocra)
+    0xC79100, // ambra
+    0xEF6C00, // arancione
     0xF4511E, // arancione scuro
-    0x6D4C41, // marrone
+    0x8D6E63, // marrone
     0x757575, // grigio
     0xD81B60, // rosa
 ];
+
+/// Sfondi dei due temi dell'app (`ui_style::bg()`: scuro `#1E1E1E`, chiaro
+/// `#F5F5F5`), contro cui si misura il contrasto dei colori nuovi.
+const DARK_BG: u32 = 0x1E1E1E;
+const LIGHT_BG: u32 = 0xF5F5F5;
+/// Contrasto minimo (rapporto WCAG) di un colore nuovo con **ciascuno** dei
+/// due sfondi. Il massimo possibile per entrambi insieme è ~3,9 (un colore di
+/// luminosità media); 2,5 tiene i colori vivaci ma visibili su tutti e due.
+#[cfg(test)]
+const MIN_THEME_CONTRAST: f32 = 2.5;
+
+/// Luminanza relativa (WCAG) di un colore 0xRRGGBB, 0 (nero) … 1 (bianco).
+fn luminance(rgb: u32) -> f32 {
+    let lin = |shift: u32| {
+        let c = ((rgb >> shift) & 0xFF) as f32 / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * lin(16) + 0.7152 * lin(8) + 0.0722 * lin(0)
+}
+
+/// Rapporto di contrasto WCAG fra due colori (1 … 21).
+#[cfg(test)]
+fn contrast(a: u32, b: u32) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// Il colore si vede bene sia col tema scuro sia con quello chiaro.
+#[cfg(test)]
+pub fn readable_on_both_themes(rgb: u32) -> bool {
+    contrast(rgb, DARK_BG) >= MIN_THEME_CONTRAST && contrast(rgb, LIGHT_BG) >= MIN_THEME_CONTRAST
+}
+
+/// Colore di riserva (palette esaurita): tinta presa da `seed`, saturazione
+/// fissa e luminosità cercata (bisezione) per stare a metà fra i due sfondi,
+/// dove il contrasto con entrambi è massimo; quindi sempre leggibile.
+fn fallback_color(seed: u128) -> u32 {
+    let hue = (seed % 360) as f32;
+    let hsl = |l: f32| -> u32 {
+        let s = 0.75;
+        let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+        let h = hue / 60.0;
+        let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+        let (r, g, b) = match h as u32 {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+        let m = l - c / 2.0;
+        let ch = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u32;
+        (ch(r) << 16) | (ch(g) << 8) | ch(b)
+    };
+    // Luminanza con lo stesso contrasto verso i due sfondi.
+    let target = ((luminance(DARK_BG) + 0.05) * (luminance(LIGHT_BG) + 0.05)).sqrt() - 0.05;
+    let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
+    for _ in 0..24 {
+        let mid = (lo + hi) / 2.0;
+        if luminance(hsl(mid)) < target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hsl((lo + hi) / 2.0)
+}
 
 /// Tipo di milestone. Una milestone non è solo un traguardo: può essere il
 /// **trigger** di un evento. Il tipo è una proprietà della milestone stessa
@@ -243,6 +314,7 @@ impl Milestones {
 
     /// Sceglie un colore distinto: uno a caso tra quelli della palette non
     /// ancora usati; se sono tutti occupati, ne genera uno pseudo-casuale.
+    /// In entrambi i casi leggibile con tutti e due i temi.
     fn pick_color(&self) -> u32 {
         let used = self.used_colors();
         let free: Vec<u32> = PALETTE
@@ -257,8 +329,7 @@ impl Milestones {
         if !free.is_empty() {
             free[(seed as usize) % free.len()]
         } else {
-            // fallback: colore pseudo-casuale dai bit del seed
-            (seed as u32) & 0x00FF_FFFF
+            fallback_color(seed)
         }
     }
 
@@ -455,6 +526,34 @@ mod tests {
         let b = ms.add("Beta");
         assert_eq!(a, MilestoneId(0));
         assert_eq!(b, MilestoneId(1));
+    }
+
+    /// Colori delle nuove milestone: tutti leggibili su entrambi i temi, sia
+    /// quelli della palette sia quelli di riserva (palette esaurita); i
+    /// vecchi troppo scuri / troppo chiari sono scartati dalla regola.
+    #[test]
+    fn new_milestone_colors_are_readable_on_both_themes() {
+        for c in PALETTE {
+            assert!(readable_on_both_themes(c), "palette {c:06X}");
+        }
+        for seed in 0..720u128 {
+            let c = fallback_color(seed * 7919);
+            assert!(readable_on_both_themes(c), "riserva {c:06X} (seed {seed})");
+        }
+        // Prima nella palette: indaco e marrone troppo scuri, giallo troppo chiaro.
+        for c in [0x3949AB, 0x6D4C41, 0xFDD835, 0xFFB300] {
+            assert!(!readable_on_both_themes(c), "{c:06X}");
+        }
+        // Palette esaurita: anche le milestone in più hanno colori leggibili.
+        let mut ms = Milestones::new();
+        for i in 0..40 {
+            let id = ms.add(&format!("M{i}"));
+            let c = ms.get_color(id).unwrap();
+            assert!(readable_on_both_themes(c), "M{i}: {c:06X}");
+        }
+        let distinct: std::collections::HashSet<u32> =
+            ms.list().into_iter().map(|(_, _, c)| c).collect();
+        assert!(distinct.len() >= PALETTE.len(), "i 16 della palette prima di ripetere");
     }
 
     #[test]

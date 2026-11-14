@@ -710,6 +710,12 @@ Possono essere **di sistema** (condivise da tutti i progetti) oppure
 **personalizzate di un progetto**: queste ultime compaiono solo negli elenchi di
 quel progetto e non in quelli degli altri.
 
+Il **colore** di una milestone nuova è scelto in automatico, diverso da quelli già
+usati, fra tinte che si vedono bene **sia con il tema chiaro sia con quello
+scuro**: niente colori troppo scuri o troppo chiari (per questo il giallo è un
+giallo ocra). Si può sempre cambiare da **Filtri ▸ Milestone…**; le milestone già
+esistenti tengono il loro colore.
+
 Il **tipo** distingue due usi:
 
 - **Traguardo** — il punto di arrivo classico; nell'export è una **bandierina**.
