@@ -41,6 +41,11 @@ pub struct Dev {
     /// «Totale»); resta visibile ovunque altrove. Omesso dal file quando falso.
     #[serde(default, skip_serializing_if = "is_false")]
     hide_in_totals: bool,
+    /// Nascosto (archiviato): resta nei dati e nei progetti in cui c'è, ma non
+    /// è più proposto nelle scelte (aggiunta ai progetti, filtri, combo). Omesso
+    /// dal file quando falso.
+    #[serde(default, skip_serializing_if = "is_false")]
+    hidden: bool,
 }
 
 impl Dev {
@@ -51,7 +56,20 @@ impl Dev {
             bg_color: Some(bg),
             font_color: Some(font),
             hide_in_totals: false,
+            hidden: false,
         }
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.hidden
+    }
+
+    pub fn set_hidden(&mut self, hidden: bool) {
+        self.hidden = hidden;
+    }
+
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
     }
 
     pub fn is_hidden_in_totals(&self) -> bool {

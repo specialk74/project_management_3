@@ -36,6 +36,7 @@ mod grid;
 mod help;
 mod matrix;
 mod pies;
+mod registry;
 mod saturation;
 mod toasts;
 mod toolbar;
@@ -49,6 +50,7 @@ pub(crate) use grid::*;
 pub(crate) use help::*;
 pub(crate) use matrix::*;
 pub(crate) use pies::*;
+pub(crate) use registry::*;
 pub(crate) use saturation::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
@@ -433,6 +435,15 @@ pub(crate) enum ProjectViewMode {
     OpenOnHold,
     /// Tutti i progetti (attivi, on-hold e chiusi).
     All,
+}
+
+/// Scheda della finestra «Worker, dev e categorie».
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub(crate) enum RegistryTab {
+    #[default]
+    Workers,
+    Devs,
+    Categories,
 }
 
 /// Colonna della dialog unica dei filtri: decide quale campo di ricerca riceve
@@ -1024,6 +1035,12 @@ pub struct UiState {
     milestone_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
+    // finestra «Worker, dev e categorie» (Aggiungi ▸ …): scheda, ricerca e
+    // testo dei nomi in modifica (per riga, finché non si conferma)
+    show_registry: bool,
+    registry_tab: RegistryTab,
+    registry_search: String,
+    registry_names: HashMap<(RegistryTab, usize), String>,
     // finestra «Worker» (Filtri ▸ Worker (visibilità e ghost)…): ricerca
     show_worker_visibility: bool,
     worker_visibility_just_opened: bool,
@@ -1324,6 +1341,38 @@ pub(crate) enum Action {
         worker: WorkerId,
         hidden: bool,
     },
+    /// Rinomina un worker / dev / categoria (finestra «Worker, dev e
+    /// categorie»); un nome non valido è segnalato con un avviso.
+    RenameWorker {
+        worker: WorkerId,
+        name: String,
+    },
+    RenameDev {
+        dev: DevId,
+        name: String,
+    },
+    RenameCategory {
+        cat: CategoryId,
+        name: String,
+    },
+    /// Nasconde (archivia) o rimostra: il worker sparisce da footer ed
+    /// elenchi, dev e categorie dalle scelte; i dati restano.
+    SetWorkerArchived {
+        worker: WorkerId,
+        archived: bool,
+    },
+    SetDevHidden {
+        dev: DevId,
+        hidden: bool,
+    },
+    SetCategoryHidden {
+        cat: CategoryId,
+        hidden: bool,
+    },
+    /// Elimina, solo se non usato da nessuna parte (altrimenti un avviso).
+    DeleteWorker(WorkerId),
+    DeleteDev(DevId),
+    DeleteCategory(CategoryId),
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
         worker: WorkerId,
@@ -1984,6 +2033,7 @@ impl eframe::App for PjmApp {
             milestone_manager_window(ui.ctx(), app, state, &mut actions);
             dev_totals_window(ui.ctx(), app, state, &mut actions);
             worker_visibility_window(ui.ctx(), app, state, &mut actions);
+            registry_window(ui.ctx(), app, state, &mut actions);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -2670,6 +2720,81 @@ impl PjmApp {
             Action::SetWorkerShownInFind { worker, shown } => {
                 if self.app.workers.set_shown_in_find(worker, shown) {
                     self.mark_changed();
+                }
+            }
+            Action::RenameWorker { worker, name } => {
+                let old = self.app.workers.get_name_by_id(worker).to_string();
+                match self.app.workers.rename(worker, &name) {
+                    Ok(true) => {
+                        // Il filtro worker è per nome: segue il nuovo.
+                        let new = self.app.workers.get_name_by_id(worker).to_string();
+                        if let Some(set) = &mut self.ui.worker_filter
+                            && set.remove(&old)
+                        {
+                            set.insert(new);
+                        }
+                        self.mark_changed();
+                    }
+                    Ok(false) => {}
+                    Err(e) => self.ui.toast_warn(e),
+                }
+            }
+            Action::RenameDev { dev, name } => match self.app.devs.rename(dev, &name) {
+                Ok(true) => self.mark_changed(),
+                Ok(false) => {}
+                Err(e) => self.ui.toast_warn(e),
+            },
+            Action::RenameCategory { cat, name } => match self.app.categories.rename(cat, &name) {
+                Ok(true) => self.mark_changed(),
+                Ok(false) => {}
+                Err(e) => self.ui.toast_warn(e),
+            },
+            Action::SetWorkerArchived { worker, archived } => {
+                let a = self.app.workers.set_hidden_in_footer(worker, archived);
+                let b = self.app.workers.set_shown_in_find(worker, !archived);
+                if a || b {
+                    self.mark_changed();
+                }
+            }
+            Action::SetDevHidden { dev, hidden } => {
+                if self.app.devs.set_hidden(dev, hidden) {
+                    self.mark_changed();
+                }
+            }
+            Action::SetCategoryHidden { cat, hidden } => {
+                if self.app.categories.set_hidden(cat, hidden) {
+                    self.mark_changed();
+                }
+            }
+            Action::DeleteWorker(worker) => {
+                let name = self.app.workers.get_name_by_id(worker).to_string();
+                if self.app.delete_worker(worker) {
+                    forget_worker(&mut self.ui, worker, &name);
+                    self.mark_changed();
+                    self.ui.toast_ok(format!("Worker «{name}» eliminato."));
+                } else {
+                    self.ui.toast_warn(format!("«{name}» ha ancora delle celle: non eliminato."));
+                }
+            }
+            Action::DeleteDev(dev) => {
+                let name = self.app.devs.get(dev).map(|d| d.get_name()).unwrap_or_default();
+                if self.app.delete_dev(dev) {
+                    forget_dev(&mut self.ui, dev);
+                    self.mark_changed();
+                    self.ui.toast_ok(format!("Dev «{name}» eliminato."));
+                } else {
+                    self.ui.toast_warn(format!("«{name}» è ancora in qualche progetto: non eliminato."));
+                }
+            }
+            Action::DeleteCategory(cat) => {
+                let name = self.app.categories.get_name(cat).unwrap_or_default().to_string();
+                if self.app.delete_category(cat) {
+                    forget_category(&mut self.ui, cat);
+                    self.mark_changed();
+                    self.ui.toast_ok(format!("Categoria «{name}» eliminata."));
+                } else {
+                    self.ui
+                        .toast_warn(format!("«{name}» è ancora usata da qualche progetto: non eliminata."));
                 }
             }
             Action::SetDevHiddenInTotals { dev, hidden } => {

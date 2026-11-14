@@ -3209,3 +3209,249 @@ fn current_week_has_a_green_border_in_header_grid_and_footer() {
     assert!(!out.shapes.iter().any(|cs| matches!(&cs.shape,
         egui::epaint::Shape::Rect(r) if r.fill.r() == neon.r() && r.fill.g() == neon.g())));
 }
+
+/// Finestra «Worker, dev e categorie»: per ogni worker l'uso; il cestino
+/// funziona solo su chi non è usato (Anna), su Mario (con celle) no.
+#[test]
+fn registry_window_shows_usage_and_deletes_only_unused() {
+    let mut app = App::new();
+    let mario = app.workers.add("Mario");
+    let anna = app.workers.add("Anna");
+    let fe = app.devs.add("Frontend");
+    let p = app.projects.add("x", Some("P1"), None);
+    app.projects.add_dev(p, fe);
+    app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(8));
+    let ctx = egui::Context::default();
+    let mut state = UiState {
+        show_registry: true,
+        ..Default::default()
+    };
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1200.0, 800.0)),
+        ..Default::default()
+    };
+    let frame = |state: &mut UiState, events: Vec<egui::Event>| {
+        let mut actions = Vec::new();
+        let input = egui::RawInput { events, ..input.clone() };
+        let out = ctx.run_ui_test(input, |ui| registry_window(ui.ctx(), &app, state, &mut actions));
+        (out, actions)
+    };
+    frame(&mut state, vec![]);
+    let (out, _) = frame(&mut state, vec![]);
+    let texts = drawn_texts(&out);
+    for t in ["Mario", "Anna", "1 cella in 1 progetto", "non usato", "Nascosto"] {
+        assert!(texts.iter().any(|x| x == t), "manca «{t}»: {texts:?}");
+    }
+    // Cestini in ordine dall'alto: Anna, poi Mario (elenco per nome).
+    let mut bins: Vec<egui::Pos2> = out
+        .shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == "🗑" => {
+                Some(Rect::from_min_size(t.pos, t.galley.size()).center())
+            }
+            _ => None,
+        })
+        .collect();
+    bins.sort_by(|a, b| a.y.total_cmp(&b.y));
+    assert_eq!(bins.len(), 2);
+    let click = |state: &mut UiState, pos: egui::Pos2| {
+        let mut all = Vec::new();
+        for e in click_events(pos, egui::PointerButton::Primary) {
+            let (_, a) = frame(state, vec![e]);
+            all.extend(a);
+        }
+        all
+    };
+    let acts = click(&mut state, bins[1]);
+    assert!(acts.is_empty(), "Mario è usato: cestino spento");
+    let acts = click(&mut state, bins[0]);
+    assert!(matches!(acts.as_slice(), [Action::DeleteWorker(w)] if *w == anna), "{}", acts.len());
+}
+
+/// Le azioni della finestra: rinomina (il filtro worker, per nome, segue;
+/// un doppione è rifiutato con un avviso), nascondi, elimina (via anche dalle
+/// scelte della sessione).
+#[test]
+fn registry_actions_rename_hide_delete_and_clean_the_session() {
+    let mut app = App::new();
+    let mario = app.workers.add("Mario");
+    let luigi = app.workers.add("Luigi");
+    let fe = app.devs.add("Frontend");
+    let ca = app.categories.add("Cliente A");
+    let mut pjm = PjmApp {
+        app,
+        ui: UiState {
+            worker_filter: Some(["Mario".to_string()].into()),
+            pies_devs: [fe].into(),
+            dev_filter: Some([fe].into()),
+            selected_category: Some(ca),
+            pies_workers: [luigi].into(),
+            ..Default::default()
+        },
+    };
+    pjm.apply(Action::RenameWorker { worker: mario, name: "Mario Rossi".into() });
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "Mario Rossi");
+    assert!(pjm.ui.worker_filter.as_ref().unwrap().contains("Mario Rossi"), "il filtro segue");
+    pjm.apply(Action::RenameWorker { worker: mario, name: "luigi".into() });
+    assert_eq!(pjm.app.workers.get_name_by_id(mario), "Mario Rossi", "doppione rifiutato");
+    assert!(pjm.ui.toasts.iter().any(|t| t.text.contains("luigi")));
+
+    pjm.apply(Action::SetWorkerArchived { worker: luigi, archived: true });
+    assert!(pjm.app.workers.is_archived(luigi));
+    pjm.apply(Action::SetDevHidden { dev: fe, hidden: true });
+    pjm.apply(Action::SetCategoryHidden { cat: ca, hidden: true });
+    assert!(pjm.app.devs.is_hidden(fe) && pjm.app.categories.is_hidden(ca));
+
+    pjm.apply(Action::DeleteWorker(luigi));
+    pjm.apply(Action::DeleteDev(fe));
+    pjm.apply(Action::DeleteCategory(ca));
+    assert!(pjm.app.workers.get_id_by_name("Luigi").is_none());
+    assert!(pjm.app.devs.get(fe).is_none() && pjm.app.categories.get_name(ca).is_none());
+    assert!(pjm.ui.pies_workers.is_empty() && pjm.ui.pies_devs.is_empty());
+    assert!(pjm.ui.dev_filter.as_ref().unwrap().is_empty());
+    assert_eq!(pjm.ui.selected_category, None);
+}
+
+/// Un dev nascosto non è più proposto in «Dev del progetto», tranne in un
+/// progetto che lo ha già (così si può ancora togliere).
+#[test]
+fn hidden_dev_is_not_offered_to_projects_that_lack_it() {
+    let mut app = App::new();
+    let fe = app.devs.add("Frontend");
+    app.devs.add("Backend");
+    let p = app.projects.add("x", Some("P1"), None);
+    let q = app.projects.add("y", Some("P2"), None);
+    app.projects.add_dev(q, fe);
+    app.devs.set_hidden(fe, true);
+    let texts_for = |proj: ProjectId| {
+        let ctx = egui::Context::default();
+        let mut state = UiState { dev_manage: Some(proj), ..Default::default() };
+        let mut actions = Vec::new();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            ..Default::default()
+        };
+        // Il primo frame misura la finestra (ancorata al centro) senza testi.
+        let _ = ctx.run_ui_test(input.clone(), |ui| {
+            dev_manage_window(ui.ctx(), &app, &mut state, &mut actions)
+        });
+        drawn_texts(&ctx.run_ui_test(input, |ui| {
+            dev_manage_window(ui.ctx(), &app, &mut state, &mut actions)
+        }))
+    };
+    let t = texts_for(p);
+    assert!(t.iter().any(|x| x == "Backend") && !t.iter().any(|x| x == "Frontend"), "{t:?}");
+    let t = texts_for(q);
+    assert!(t.iter().any(|x| x == "Frontend"), "già nel progetto: resta {t:?}");
+}
+
+/// Finestra «Worker, dev e categorie»: con un elenco lungo, scorrendo in giù
+/// l'intestazione (Nome / Uso / Nascosto) resta visibile sopra le righe, e la
+/// colonna Nome è larga.
+#[test]
+fn registry_header_stays_visible_when_scrolled() {
+    let mut app = App::new();
+    for i in 0..60 {
+        app.workers.add(&format!("W{i:02}"));
+    }
+    let ctx = egui::Context::default();
+    let mut state = UiState { show_registry: true, ..Default::default() };
+    let base = egui::RawInput {
+        screen_rect: Some(screen(1200.0, 800.0)),
+        ..Default::default()
+    };
+    let mut frame = |events: Vec<egui::Event>| {
+        let mut actions = Vec::new();
+        ctx.run_ui_test(egui::RawInput { events, ..base.clone() }, |ui| {
+            registry_window(ui.ctx(), &app, &mut state, &mut actions)
+        })
+    };
+    frame(vec![]);
+    let out = frame(vec![]);
+    // Visibile = dentro il proprio ritaglio.
+    let visible = |out: &egui::FullOutput, s: &str| -> Option<Rect> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == s => {
+                let r = Rect::from_min_size(t.pos, t.galley.size());
+                cs.clip_rect.intersects(r).then_some(r)
+            }
+            _ => None,
+        })
+    };
+    let first = visible(&out, "W00").expect("prima riga visibile all'inizio");
+    let nome = visible(&out, "Nome").expect("intestazione");
+    assert!(nome.bottom() <= first.top());
+    // Rotella sopra l'elenco: scorre in giù.
+    let over = first.center();
+    frame(vec![egui::Event::PointerMoved(over)]);
+    for _ in 0..5 {
+        frame(vec![
+            egui::Event::PointerMoved(over),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -400.0),
+                modifiers: Default::default(),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+            },
+        ]);
+    }
+    let out = frame(vec![]);
+    assert!(visible(&out, "W00").is_none(), "l'elenco è scorso");
+    let nome2 = visible(&out, "Nome").expect("intestazione ancora visibile");
+    assert!((nome2.top() - nome.top()).abs() < 1.0, "ferma: {nome:?} → {nome2:?}");
+    // Colonna Nome larga: «Uso» parte dopo i 340 px del nome.
+    let uso = visible(&out, "Uso").unwrap();
+    assert!(uso.left() - nome2.left() >= 340.0, "Nome largo {}", uso.left() - nome2.left());
+    // Le righe restano allineate all'intestazione.
+    let usage = visible(&out, "non usato").expect("una riga visibile");
+    assert!((usage.left() - uso.left()).abs() < 1.0, "Uso {uso:?} / riga {usage:?}");
+}
+
+/// Scheda Dev: colonna «Nei totali» (la spunta di Filtri ▸ Dev nei totali…),
+/// indipendente da «Nascosto»; un dev tolto dai totali ha la casella vuota e
+/// spuntarla lo rimette. Nelle altre schede la colonna non c'è.
+#[test]
+fn registry_dev_tab_has_the_in_totals_column() {
+    let mut app = App::new();
+    let dms = app.devs.add("DMS");
+    app.devs.add("Frontend");
+    app.devs.set_hidden_in_totals(dms, true);
+    let ctx = egui::Context::default();
+    let mut state = UiState {
+        show_registry: true,
+        registry_tab: RegistryTab::Devs,
+        ..Default::default()
+    };
+    let base = egui::RawInput {
+        screen_rect: Some(screen(1200.0, 800.0)),
+        ..Default::default()
+    };
+    let frame = |state: &mut UiState, events: Vec<egui::Event>| {
+        let mut actions = Vec::new();
+        let out = ctx.run_ui_test(egui::RawInput { events, ..base.clone() }, |ui| {
+            registry_window(ui.ctx(), &app, state, &mut actions)
+        });
+        (out, actions)
+    };
+    frame(&mut state, vec![]);
+    let (out, _) = frame(&mut state, vec![]);
+    let head = text_pos(&out, "Nei totali").expect("colonna nella scheda Dev");
+    let dms_y = text_pos(&out, "DMS").unwrap().y;
+    // La casella della riga DMS sotto «Nei totali»: un clic la spunta.
+    let at = egui::pos2(head.x - 20.0, dms_y);
+    let mut acts = Vec::new();
+    for e in click_events(at, egui::PointerButton::Primary) {
+        acts.extend(frame(&mut state, vec![e]).1);
+    }
+    assert!(
+        matches!(acts.as_slice(), [Action::SetDevHiddenInTotals { dev, hidden: false }] if *dev == dms),
+        "{} azioni",
+        acts.len()
+    );
+    state.registry_tab = RegistryTab::Workers;
+    frame(&mut state, vec![]);
+    let (out, _) = frame(&mut state, vec![]);
+    assert!(text_pos(&out, "Nei totali").is_none(), "solo nella scheda Dev");
+}

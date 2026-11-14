@@ -113,16 +113,17 @@ pub(crate) fn filters_window(
     let qd = state.dev_search.trim().to_lowercase();
     let devs: Vec<(DevId, String)> = app
         .devs
-        .list()
+        .list_visible()
         .into_iter()
         .filter(|(_, n)| search_matches(&qd, n))
         .collect();
 
     // Categorie: «Senza categoria» (None) in testa, poi quelle definite.
     let qc = state.category_search.trim().to_lowercase();
+    // Le categorie nascoste non sono elencate (restano nel «tutte»).
     let cats: Vec<(Option<CategoryId>, String)> = all_category_items(app)
         .into_iter()
-        .filter(|(_, n)| search_matches(&qc, n))
+        .filter(|(c, n)| search_matches(&qc, n) && !c.is_some_and(|c| app.categories.is_hidden(c)))
         .collect();
 
     // Anni: quelli delle date di inizio/fine dei progetti.

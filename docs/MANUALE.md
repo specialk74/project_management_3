@@ -195,6 +195,50 @@ Termini chiave:
   adiacenti distano 7. L'etichetta mostrata è la data del primo giorno della
   settimana (formato `AA-MM-GG`).
 
+### Rinominare, nascondere, eliminare (Aggiungi ▸ Worker, dev e categorie…)
+
+Una finestra con tre schede — **Worker**, **Dev**, **Categorie** — e un campo di
+ricerca. L'intestazione delle colonne resta ferma in alto mentre si scorre
+l'elenco. Per ogni elemento una riga con:
+
+- **Nome** — clic sul nome per modificarlo; **Invio** (o clic altrove) conferma,
+  **Esc** annulla. Il nome non può essere vuoto, non può contenere `|` (nelle
+  celle separa il worker dalle ore) e non può essere uguale, anche solo per
+  maiuscole/minuscole, a quello di un altro elemento dello stesso tipo: in quei
+  casi compare un avviso e il nome resta quello di prima. Rinominare non tocca i
+  dati: celle, progetti e totali seguono il nome nuovo; il filtro worker attivo
+  si aggiorna da solo.
+- **Uso** — dove è usato: per un worker le **celle** in cui è assegnato (anche a
+  effort 0) e in quanti progetti; per un dev e per una categoria in quanti
+  **progetti**. «non usato» se in nessuno.
+- **Nascosto** — **archivia** l'elemento: i dati restano e tutto ciò che è già
+  stato inserito continua a vedersi (griglia, totali, export), ma l'elemento non
+  è più **proposto per il lavoro nuovo**:
+  - un **worker** nascosto sparisce dal footer e dagli elenchi (autocompletamento
+    delle celle, filtri, matrice, torte, saturazione, inserimento multiplo): è
+    come spegnere insieme le spunte **Footer** ed **Elenchi** di «Filtri ▸ Worker
+    (visibilità e ghost)…»;
+  - un **dev** nascosto non è più proposto in «Dev del progetto» (resta nei
+    progetti che lo hanno già, dove si può ancora togliere), nel filtro Dev e
+    nella combo Dev delle torte; nelle righe «Ore per dev» della matrice compare
+    solo se ha ore;
+  - una **categoria** nascosta non è più proposta nella scelta della categoria del
+    progetto (resta su quelli che la hanno), nel filtro Categorie, nelle combo di
+    matrice e torte e nel selettore del footer.
+
+  Il nome di un elemento nascosto è scritto in grigio; togliendo la spunta torna
+  come prima.
+- **Nei totali** (solo nella scheda **Dev**) — il dev compare nel riquadro in basso
+  a sinistra del footer (riga e somma «Totale»). È la stessa spunta di **Filtri ▸
+  Dev nei totali…** ed è **indipendente** da «Nascosto»: un dev tolto dai totali
+  resta proposto ovunque, e un dev nascosto resta nei totali finché non togli
+  anche questa spunta.
+- **🗑 Elimina** — solo per ciò che **non è usato da nessuna parte**: altrimenti il
+  cestino è spento e, passandoci sopra, dice dove è usato (puoi nasconderlo). Per
+  eliminare un dev, prima toglilo dai progetti; per eliminare una categoria,
+  cambia la categoria dei progetti che la usano. Eliminando un worker spariscono
+  anche i suoi dati propri (ore max, limiti, note e stato delle settimane).
+
 ---
 
 ## 4. Struttura dell'interfaccia
@@ -285,6 +329,8 @@ bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 - **+ Progetto** — crea un nuovo progetto vuoto.
 - **Clona progetto…** — crea una copia completa di un progetto esistente (vedi
   «Clonare un progetto»).
+- **Worker, dev e categorie…** — rinominare, nascondere o eliminare worker, dev e
+  categorie (vedi §3, «Rinominare, nascondere, eliminare»).
 - **Worker** — campo di testo + `+ Worker`: aggiunge una persona. Premi Invio o
   il bottone; il campo resta aperto per inserimenti multipli.
 - **Dev** — aggiunge un nuovo ruolo/disciplina.

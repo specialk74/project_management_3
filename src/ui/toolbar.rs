@@ -132,6 +132,10 @@ pub(crate) fn toolbar(
                     state.clone_project = Some(CloneProject::default());
                     ui.close_kind(egui::UiKind::Menu);
                 }
+                if ui.button("Worker, dev e categorie…").clicked() {
+                    state.show_registry = true;
+                    ui.close_kind(egui::UiKind::Menu);
+                }
                 ui.separator();
 
                 add_field(

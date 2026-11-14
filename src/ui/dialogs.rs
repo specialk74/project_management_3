@@ -332,8 +332,13 @@ pub(crate) fn dev_manage_window(
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .open(&mut open)
         .show(ctx, |ui| {
+            // I dev nascosti non si propongono; restano se già nel progetto,
+            // così si possono ancora togliere.
             for (dev, name) in app.devs.list() {
                 let is_in = in_proj.contains(&dev);
+                if !is_in && app.devs.is_hidden(dev) {
+                    continue;
+                }
                 let col = dev_color(app, dev);
                 let txt_col = if is_in {
                     dev_text_color(app, dev)
@@ -1642,7 +1647,13 @@ pub(crate) fn popup_window(
                         });
                         close = true;
                     }
+                    // Le categorie nascoste non si propongono (tranne quella
+                    // che il progetto ha già).
+                    let current = app.projects.get_category(*proj);
                     for (id, name) in app.categories.list() {
+                        if app.categories.is_hidden(id) && current != Some(id) {
+                            continue;
+                        }
                         if ui.button(name).clicked() {
                             actions.push(Action::SetProjectCategory {
                                 proj: *proj,

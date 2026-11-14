@@ -39,9 +39,32 @@ impl Workers {
         })
     }
 
-    #[cfg(test)]
-    pub fn del(&mut self, id: WorkerId) {
-        self.worker_id.remove(&id);
+    /// Toglie il worker dall'anagrafica (il chiamante controlla che non abbia
+    /// celle). Il worker «zero» interno non si toglie. Ritorna `true` se c'era.
+    pub fn del(&mut self, id: WorkerId) -> bool {
+        id != WORKER_ID_ZERO && self.worker_id.remove(&id).is_some()
+    }
+
+    /// Rinomina il worker (stesse regole di `check_new_name`: nelle celle il
+    /// nome è seguito da `|`, quindi non può contenerlo); `Ok(false)` se il
+    /// nome non cambia.
+    pub fn rename(&mut self, id: WorkerId, name: &str) -> Result<bool, String> {
+        let name = name.trim();
+        let others = self.list().into_iter().filter(|(w, _)| *w != id).map(|(_, n)| n);
+        crate::app::check_new_name(name, others, "worker")?;
+        match self.worker_id.get_mut(&id) {
+            Some(w) if id != WORKER_ID_ZERO && w.name != name => {
+                w.name = name.to_string();
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Worker nascosto (archiviato): né nel footer né negli elenchi, cioè le
+    /// due spunte di «Filtri ▸ Worker (visibilità e ghost)…» entrambe spente.
+    pub fn is_archived(&self, id: WorkerId) -> bool {
+        self.is_hidden_in_footer(id) && !self.is_shown_in_find(id)
     }
 
     pub fn get_max_hours(&self, id: WorkerId) -> u32 {

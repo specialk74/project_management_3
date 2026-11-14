@@ -278,11 +278,24 @@ pub fn build_filtered(
         statuses: (0..ProjectStatus::ALL.len())
             .filter(|&i| statuses.is_empty() || statuses.contains(&ProjectStatus::ALL[i]))
             .collect(),
+        // Righe «Ore per dev»: tutti i dev, tranne i nascosti senza ore.
+        devs: {
+            let dev_hours: Vec<Vec<(DevId, u32)>> = hours
+                .iter()
+                .map(|m| m.iter().filter(|(_, h)| **h > 0).map(|(d, h)| (*d, *h)).collect())
+                .collect();
+            app.devs
+                .list()
+                .into_iter()
+                .filter(|(d, _)| {
+                    !app.devs.is_hidden(*d) || dev_hours.iter().any(|w| w.iter().any(|(x, _)| x == d))
+                })
+                .collect()
+        },
         dev_hours: hours
             .into_iter()
             .map(|m| m.into_iter().filter(|(_, h)| *h > 0).collect())
             .collect(),
-        devs: app.devs.list(),
         sorted_by: None,
     }
 }

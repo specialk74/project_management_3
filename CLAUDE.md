@@ -295,7 +295,45 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     con **solo** note di cella compare lo stesso, e quelle note contano anche per il
     filtro «Solo progetti con note». Le note **Dev** (`SingleDev.note`) e quelle
     **worker/settimana del footer** (`Worker.week_notes`) restano fuori dalla minuta.
-- **Aggiungi**: + Progetto, **Clona progetto…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
+- **Aggiungi**: + Progetto, **Clona progetto…**, **Worker, dev e categorie…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
+  - **Worker, dev e categorie…** (`src/ui/registry.rs`, `registry_window`;
+    `UiState.show_registry` / `registry_tab: RegistryTab` / `registry_search` /
+    `registry_names` = name being edited per `(tab, id)`, committed on
+    `lost_focus` unless Esc): tabs Worker/Dev/Categorie; the header row is
+    **outside** the `ScrollArea` (stays put), so rows are fixed-width cells
+    (`reg_cell`: `allocate_ui_with_layout` + `set_min_size`/`set_max_width`;
+    `REG_NAME_W` 340 / `REG_USE_W` / `REG_HIDDEN_W` / `REG_DEL_W`), not an
+    `egui::Grid`, striped by hand (`Shape::Noop` slot + `row_alt()`); test
+    `registry_header_stays_visible_when_scrolled`. The Dev tab adds a «Nei
+    totali» column (`RegistryRow.in_totals`, `REG_TOTALS_W`) =
+    `!hide_in_totals` → `Action::SetDevHiddenInTotals`, independent of
+    «Nascosto» (test `registry_dev_tab_has_the_in_totals_column`). One row each = name
+    `TextEdit` → `Action::Rename{Worker,Dev,Category}` (`Workers/Devs/
+    Categories::rename` → `Result<bool, String>`, rules in
+    `app::check_new_name`: non-empty, no `|`, case-insensitive unique per type;
+    `Err` ⇒ `toast_warn`; renaming a worker also renames it in the name-keyed
+    `worker_filter`), usage (`App::workers_usage` one pass → (cells incl.
+    effort 0, projects), `dev_usage`, `category_usage`), «Nascosto» and 🗑
+    (enabled only when unused). **Hidden = archived**: data stay, only the
+    *choices* skip it — worker: `SetWorkerArchived` = footer + Elenchi off
+    together (`Workers::is_archived`, no new field); dev: `Dev.hidden`
+    (`#[serde(default, skip_serializing_if = "is_false")]`, `Devs::is_hidden/
+    set_hidden/list_visible`) skipped in `dev_manage_window` (unless already in
+    the project), Filtri ▸ Dev, the pies `devs_combo`, and the matrix «Ore per
+    dev» rows when it has no hours; category: `Categories.hidden: BTreeSet`
+    (skip if empty) skipped in the project category popup (unless current),
+    Filtri ▸ Categorie, `categories_combo`, the footer selector (unless
+    selected). In the combos hidden items stay in the «all» set and the last
+    tick is counted among the visible ones (`can_untick_visible`).
+    **Delete only if unused**: `App::delete_worker` (no cells; also drops its
+    `sovra` keys) / `delete_dev` (in no project) / `delete_category` (no
+    project), then `forget_worker/dev/category` clean the session state
+    (filters, matrix/pies/saturation selections, footer selection). Tests
+    `rename_checks_empty_pipe_and_duplicates`, `delete_only_what_is_not_used`,
+    `hidden_devs_categories_and_workers_round_trip`,
+    `registry_window_shows_usage_and_deletes_only_unused`,
+    `registry_actions_rename_hide_delete_and_clean_the_session`,
+    `hidden_dev_is_not_offered_to_projects_that_lack_it`.
   - **Clona progetto…** → `UiState.clone_project: Option<CloneProject>` →
     `clone_project_window` (`dialogs.rs`: all projects incl. closed, listed and
     searched by tripletta only — `project_label`, name as fallback —, no fields)

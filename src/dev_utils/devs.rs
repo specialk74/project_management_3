@@ -65,6 +65,51 @@ impl Devs {
         }
     }
 
+    /// Dev non nascosti (proposti nelle scelte), ordinati per id come `list`.
+    pub fn list_visible(&self) -> Vec<(DevId, String)> {
+        self.list()
+            .into_iter()
+            .filter(|(id, _)| !self.is_hidden(*id))
+            .collect()
+    }
+
+    pub fn is_hidden(&self, id: DevId) -> bool {
+        self.dev_id.get(&id).is_some_and(|d| d.is_hidden())
+    }
+
+    /// Nasconde / rimostra il dev. Ritorna `true` se il valore è cambiato.
+    pub fn set_hidden(&mut self, id: DevId, hidden: bool) -> bool {
+        match self.dev_id.get_mut(&id) {
+            Some(d) if d.is_hidden() != hidden => {
+                d.set_hidden(hidden);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Rinomina il dev: `Err` con il motivo se il nome è vuoto, contiene `|`
+    /// o è già di un altro dev (vedi `check_new_name`). `Ok(false)` se il nome
+    /// non cambia.
+    pub fn rename(&mut self, id: DevId, name: &str) -> Result<bool, String> {
+        let name = name.trim();
+        let others = self.list().into_iter().filter(|(d, _)| *d != id).map(|(_, n)| n);
+        crate::app::check_new_name(name, others, "dev")?;
+        match self.dev_id.get_mut(&id) {
+            Some(d) if d.get_name() != name => {
+                d.set_name(name);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Toglie il dev dall'anagrafica (il chiamante controlla che non sia in
+    /// nessun progetto). Ritorna `true` se c'era.
+    pub fn del(&mut self, id: DevId) -> bool {
+        self.dev_id.remove(&id).is_some()
+    }
+
     /// Returns (id, name, bg_color_packed, font_color_packed)
     pub fn list_full(&self) -> Vec<(DevId, String, usize, usize)> {
         let mut items: Vec<(DevId, String, usize, usize)> = self

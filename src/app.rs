@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, io::Write, path::Path};
 
 use crate::{
-    categories::Categories,
+    categories::{Categories, CategoryId},
     date_utils::dates::get_default_weeks,
-    dev_utils::devs::Devs,
+    dev_utils::{dev::DevId, devs::Devs},
     milestones::Milestones,
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
@@ -32,6 +32,28 @@ fn default_projects() -> Projects {
 /// Intensità di default della velatura dei mesi (percentuale).
 /// Smussatura degli angoli dei rettangoli nel PDF/SVG (barre effort e celle dei
 /// mesi), in percentuale del raggio massimo. Solo file, come i colori.
+/// Controllo di un nuovo nome (già senza spazi ai lati) di worker, dev o
+/// categoria: non vuoto, senza `|` (separa nome e ore nelle celle) e diverso,
+/// senza badare a maiuscole, da quelli in `others`. `what` = «worker» / «dev» /
+/// «categoria» per il messaggio d'errore.
+pub fn check_new_name(
+    name: &str,
+    others: impl IntoIterator<Item = String>,
+    what: &str,
+) -> Result<(), String> {
+    if name.is_empty() {
+        return Err(format!("Il nome del {what} non può essere vuoto."));
+    }
+    if name.contains('|') {
+        return Err(format!("Il nome del {what} non può contenere «|»."));
+    }
+    let lower = name.to_lowercase();
+    if others.into_iter().any(|n| n.trim().to_lowercase() == lower) {
+        return Err(format!("Esiste già un {what} «{name}»."));
+    }
+    Ok(())
+}
+
 pub fn default_corner_pct() -> i32 {
     crate::pdf_export::CORNER_PCT_DEFAULT
 }
@@ -135,6 +157,78 @@ impl App {
             let _ = fs::rename(name(i), name(i + 1));
         }
         let _ = fs::copy(path, name(1));
+    }
+
+    /// Uso di un worker nei progetti: `(celle, progetti)`, contando ogni cella
+    /// in cui è assegnato (anche a effort 0). Un worker con celle non si può
+    /// eliminare (vedi `delete_worker`).
+    pub fn worker_usage(&self, worker: WorkerId) -> (usize, usize) {
+        self.workers_usage().get(&worker).copied().unwrap_or((0, 0))
+    }
+
+    /// `worker_usage` di tutti i worker con almeno una cella, in un solo
+    /// passaggio sui progetti (la finestra «Worker, dev e categorie» lo chiede
+    /// a ogni frame).
+    pub fn workers_usage(&self) -> HashMap<WorkerId, (usize, usize)> {
+        let mut out: HashMap<WorkerId, (usize, usize)> = HashMap::new();
+        for (proj, _) in self.projects.list() {
+            let mut in_proj = std::collections::HashSet::new();
+            for dev in self.projects.list_devs(proj) {
+                let Some(sd) = self.projects.get_single_dev(proj, dev) else {
+                    continue;
+                };
+                for wk in sd.get_weeks() {
+                    for w in sd.get_all(wk).into_iter().flat_map(|e| e.worker_id.keys()) {
+                        out.entry(*w).or_default().0 += 1;
+                        in_proj.insert(*w);
+                    }
+                }
+            }
+            for w in in_proj {
+                out.entry(w).or_default().1 += 1;
+            }
+        }
+        out
+    }
+
+    /// Progetti in cui c'è il dev (anche senza effort).
+    pub fn dev_usage(&self, dev: DevId) -> usize {
+        self.projects
+            .list()
+            .into_iter()
+            .filter(|(p, _)| self.projects.list_devs(*p).contains(&dev))
+            .count()
+    }
+
+    /// Progetti con questa categoria.
+    pub fn category_usage(&self, cat: CategoryId) -> usize {
+        self.projects
+            .list()
+            .into_iter()
+            .filter(|(p, _)| self.projects.get_category(*p) == Some(cat))
+            .count()
+    }
+
+    /// Elimina il worker **solo se non ha celle** in nessun progetto; con lui
+    /// spariscono i suoi dati propri (ore max, limiti, note e stato delle
+    /// settimane) e le sue voci rimaste in `sovra`. Ritorna `true` se l'ha
+    /// eliminato.
+    pub fn delete_worker(&mut self, worker: WorkerId) -> bool {
+        if self.worker_usage(worker).0 > 0 || !self.workers.del(worker) {
+            return false;
+        }
+        self.sovra.retain(|(_, w), _| *w != worker);
+        true
+    }
+
+    /// Elimina il dev **solo se non è in nessun progetto**.
+    pub fn delete_dev(&mut self, dev: DevId) -> bool {
+        self.dev_usage(dev) == 0 && self.devs.del(dev)
+    }
+
+    /// Elimina la categoria **solo se nessun progetto la usa**.
+    pub fn delete_category(&mut self, cat: CategoryId) -> bool {
+        self.category_usage(cat) == 0 && self.categories.del(cat)
     }
 
     /// Controlli di coerenza "leggeri" da eseguire dopo il caricamento: segnala i
@@ -412,6 +506,113 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Nomi nuovi: non vuoti, senza «|», diversi (senza badare a maiuscole)
+    /// dagli altri dello stesso tipo; rinominare a sé stessi non cambia nulla.
+    #[test]
+    fn rename_checks_empty_pipe_and_duplicates() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        app.workers.add("Luigi");
+        assert!(app.workers.rename(mario, "  ").is_err());
+        assert!(app.workers.rename(mario, "Ma|rio").is_err());
+        assert!(app.workers.rename(mario, "luigi").unwrap_err().contains("luigi"));
+        assert!(app.workers.rename(mario, "LUIGI").is_err(), "duplicato");
+        assert_eq!(app.workers.rename(mario, "Mario"), Ok(false));
+        assert_eq!(app.workers.rename(mario, "  Mario Rossi "), Ok(true));
+        assert_eq!(app.workers.get_name_by_id(mario), "Mario Rossi");
+
+        let fe = app.devs.add("Frontend");
+        app.devs.add("Backend");
+        assert!(app.devs.rename(fe, "backend").is_err());
+        assert_eq!(app.devs.rename(fe, "Front-end"), Ok(true));
+        assert_eq!(app.devs.get(fe).unwrap().get_name(), "Front-end");
+
+        let ca = app.categories.add("Cliente A");
+        app.categories.add("Cliente B");
+        assert!(app.categories.rename(ca, "cliente b").is_err());
+        assert_eq!(app.categories.rename(ca, "Cliente Alfa"), Ok(true));
+        assert_eq!(app.categories.get_name(ca), Some("Cliente Alfa"));
+    }
+
+    /// Uso ed eliminazione: un worker con celle (anche a effort 0), un dev in
+    /// un progetto e una categoria usata non si eliminano; liberati sì, e del
+    /// worker spariscono anche le voci in `sovra`.
+    #[test]
+    fn delete_only_what_is_not_used() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let anna = app.workers.add("Anna");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let ca = app.categories.add("Cliente A");
+        let cb = app.categories.add("Cliente B");
+        let p = app.projects.add("x", Some("P1"), None);
+        let q = app.projects.add("y", Some("P2"), None);
+        app.projects.set_category(p, Some(ca));
+        app.projects.add_dev(p, fe);
+        app.projects.add_dev(q, fe);
+        app.projects.add_effort(p, fe, WeekId(700), mario, Effort(8));
+        app.projects.add_effort(p, fe, WeekId(707), mario, Effort(0));
+        app.projects.add_effort(q, fe, WeekId(700), mario, Effort(4));
+        app.sovra.insert((WeekId(700), anna), Effort(3));
+
+        assert_eq!(app.worker_usage(mario), (3, 2), "3 celle (una a 0) in 2 progetti");
+        assert_eq!(app.worker_usage(anna), (0, 0));
+        assert_eq!(app.dev_usage(fe), 2);
+        assert_eq!(app.dev_usage(be), 0);
+        assert_eq!(app.category_usage(ca), 1);
+        assert_eq!(app.category_usage(cb), 0);
+
+        assert!(!app.delete_worker(mario), "ha celle");
+        assert!(!app.delete_dev(fe), "è nei progetti");
+        assert!(!app.delete_category(ca), "è usata");
+        assert!(app.workers.get_id_by_name("Mario").is_some());
+
+        assert!(app.delete_worker(anna));
+        assert!(app.workers.get_id_by_name("Anna").is_none());
+        assert!(app.sovra.keys().all(|(_, w)| *w != anna), "via anche da sovra");
+        assert!(app.delete_dev(be));
+        assert!(app.devs.get(be).is_none());
+        assert!(app.delete_category(cb));
+        assert_eq!(app.categories.get_name(cb), None);
+        assert!(!app.delete_worker(anna), "già eliminato");
+        assert!(app.validate().is_empty());
+    }
+
+    /// Nascosti: dev e categorie finiscono nel file solo se nascosti, e lo
+    /// restano dopo il ricaricamento; il worker nascosto è footer + elenchi
+    /// spenti insieme.
+    #[test]
+    fn hidden_devs_categories_and_workers_round_trip() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let ca = app.categories.add("Cliente A");
+        let before = app.to_ron_string();
+        assert!(!before.contains("hidden"), "niente campo quando non nascosti");
+        assert!(app.devs.set_hidden(fe, true));
+        assert!(!app.devs.set_hidden(fe, true), "già nascosto");
+        assert!(app.categories.set_hidden(ca, true));
+        assert!(!app.categories.set_hidden(cb_missing(), true), "categoria inesistente");
+        app.workers.set_hidden_in_footer(mario, true);
+        assert!(!app.workers.is_archived(mario), "solo footer: non archiviato");
+        app.workers.set_shown_in_find(mario, false);
+        assert!(app.workers.is_archived(mario));
+        let back = App::from_ron_str(&app.to_ron_string()).unwrap();
+        assert!(back.devs.is_hidden(fe) && back.categories.is_hidden(ca));
+        assert_eq!(back.devs.list_visible(), vec![]);
+        assert!(back.workers.is_archived(mario));
+        app.devs.set_hidden(fe, false);
+        app.categories.set_hidden(ca, false);
+        app.workers.set_hidden_in_footer(mario, false);
+        app.workers.set_shown_in_find(mario, true);
+        assert_eq!(app.to_ron_string(), before, "rimostrati: file come prima");
+    }
+
+    fn cb_missing() -> CategoryId {
+        CategoryId(999)
+    }
 
     #[test]
     fn bulk_week_holiday_keeps_the_typed_hours_and_spares_sick_workers() {

@@ -276,6 +276,10 @@ pub(crate) fn draw_left_footer(
         |ui| {
             ui.selectable_value(&mut state.selected_category, None, "Tutte");
             for (id, name) in app.categories.list() {
+                // Le nascoste no, tranne quella già scelta.
+                if app.categories.is_hidden(id) && state.selected_category != Some(id) {
+                    continue;
+                }
                 ui.selectable_value(&mut state.selected_category, Some(id), name);
             }
         },

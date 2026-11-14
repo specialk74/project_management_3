@@ -80,13 +80,19 @@ pub(crate) fn devs_combo(
         .width(DEVS_COMBO_W)
         .show_ui(ui, |ui| {
             let ids: Vec<DevId> = all.iter().map(|(d, _)| *d).collect();
+            // I dev nascosti non si elencano: restano compresi nel «tutti» e
+            // contano come spuntati togliendo gli altri.
+            let visible: Vec<DevId> = ids.iter().copied().filter(|d| !app.devs.is_hidden(*d)).collect();
             for (d, name) in &all {
+                if app.devs.is_hidden(*d) {
+                    continue;
+                }
                 let mut on = ticked_in_all(devs, d);
                 let fill = dev_color(app, *d);
                 let label = egui::RichText::new(name)
                     .background_color(fill)
                     .color(contrast_text(fill));
-                let enabled = can_untick(devs, ids.len(), d);
+                let enabled = can_untick_visible(devs, &visible, d);
                 if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
                     toggle_in_all(devs, &ids, d, on);
                 }

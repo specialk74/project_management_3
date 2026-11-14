@@ -97,6 +97,13 @@ pub(crate) fn toggle_in_all<T: Ord + Clone>(
     }
 }
 
+/// Come `can_untick`, contando solo le voci elencate (`visible`): quelle
+/// nascoste non si vedono, quindi non valgono come «ultima spunta rimasta».
+pub(crate) fn can_untick_visible<T: Ord>(set: &std::collections::BTreeSet<T>, visible: &[T], item: &T) -> bool {
+    let ticked = visible.iter().filter(|x| ticked_in_all(set, x)).count();
+    !(ticked <= 1 && ticked_in_all(set, item))
+}
+
 /// La voce `item` è spuntata in un filtro con vuoto = tutti spuntati.
 pub(crate) fn ticked_in_all<T: Ord>(set: &std::collections::BTreeSet<T>, item: &T) -> bool {
     set.is_empty() || set.contains(item)
@@ -143,12 +150,19 @@ pub(crate) fn categories_combo(
         .width(MX_YEARS_W)
         .show_ui(ui, |ui| {
             let ids: Vec<Option<CategoryId>> = all.iter().map(|(c, _)| *c).collect();
+            // Le categorie nascoste non si elencano: restano comprese nel
+            // «tutte» e contano come spuntate togliendo le altre.
+            let hidden = |c: &Option<CategoryId>| c.is_some_and(|c| app.categories.is_hidden(c));
+            let visible: Vec<Option<CategoryId>> = ids.iter().copied().filter(|c| !hidden(c)).collect();
             for (c, name) in &all {
+                if hidden(c) {
+                    continue;
+                }
                 let label = egui::RichText::new(name)
                     .background_color(category_fill(*c, false))
                     .color(Color32::BLACK);
                 let mut on = ticked_in_all(cats, c);
-                let enabled = can_untick(cats, ids.len(), c);
+                let enabled = can_untick_visible(cats, &visible, c);
                 if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
                     toggle_in_all(cats, &ids, c, on);
                 }
