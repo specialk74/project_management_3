@@ -3164,3 +3164,48 @@ fn move_devs_window_shows_start_and_end_and_typing_replaces_the_weeks() {
         other => panic!("attesa una MoveEffort, trovate {} azioni", other.len()),
     }
 }
+
+/// Settimana corrente: niente più velatura, un bordo verde acceso sulla sua
+/// colonna in intestazione (chiuso in alto), griglia e footer (chiuso in
+/// fondo); nessun bordo sulle altre colonne.
+#[test]
+fn current_week_has_a_green_border_in_header_grid_and_footer() {
+    let (app, _, week) = highlight_fixture();
+    let ctx = egui::Context::default();
+    let mut state = UiState {
+        this_week: week,
+        ..Default::default()
+    };
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1600.0, 900.0)),
+        ..Default::default()
+    };
+    let mut actions = Vec::new();
+    let out = ctx.run_ui_test(input, |ui| {
+        header(ui, &app, &mut state);
+        footer(ui, &app, &mut state, &mut actions);
+        let layout = body_layout(ui, &app, &state, &Filter::default(), &None);
+        grid(ui, &app, &mut state, &mut actions, &Filter::default(), &layout);
+    });
+    let green: Vec<Rect> = out
+        .shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == this_week_border() => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    // Lati in tre punti (2 + 2 + 2) + chiusura in alto e in fondo.
+    assert_eq!(green.len(), 8, "{green:?}");
+    let verticals = green.iter().filter(|r| r.height() > r.width()).count();
+    assert_eq!(verticals, 6);
+    // Le chiusure in alto e in fondo sono larghe quanto la colonna (qui i tre
+    // pezzi hanno origini diverse: l'intestazione riserva la colonna sinistra).
+    for r in green.iter().filter(|r| r.width() > r.height()) {
+        assert!((r.width() - COL_W).abs() < 0.5, "chiusura larga {}", r.width());
+    }
+    // La vecchia velatura giallo neon non c'è più.
+    let neon = Color32::from_rgb(0xCC, 0xFF, 0x00);
+    assert!(!out.shapes.iter().any(|cs| matches!(&cs.shape,
+        egui::epaint::Shape::Rect(r) if r.fill.r() == neon.r() && r.fill.g() == neon.g())));
+}

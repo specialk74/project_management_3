@@ -509,6 +509,11 @@ pub(crate) fn grid(
     }
     // Ripristina il B/N globale dopo l'eventuale grigio dei progetti chiusi.
     set_bw_mode(state.bw_mode);
+    // Settimana corrente: bordo verde su tutta l'altezza, sopra a tutto (anche
+    // ai progetti chiusi, che restano grigi); continua in intestazione e footer.
+    if let Some(r) = week_col_rect(&cols, cw, left, rect.top(), rect.bottom(), state.this_week) {
+        paint_this_week_border(ui, r, false, false);
+    }
 
     // Cella in modifica: ha la precedenza sul cursore. Il worker segue il nome
     // mentre lo si digita (nessuno finché non corrisponde a un worker).
@@ -624,10 +629,6 @@ pub(crate) fn draw_dev_cells(
             ui.painter().rect_filled(col_rect, 0.0, g(DEADLINE_BG));
         } else if is_start {
             ui.painter().rect_filled(col_rect, 0.0, g(START_BG));
-        }
-        if !compact && ws.contains(&state.this_week) {
-            ui.painter()
-                .rect_filled(col_rect, 0.0, g(this_week()).gamma_multiply(0.18));
         }
 
         // ── Milestone: tinta colonna col colore della milestone + tooltip;

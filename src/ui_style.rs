@@ -23,14 +23,15 @@ pub const DEFAULT_MAX_HOURS: u32 = 40;
 // Colori
 pub const BETWEEN_PROJECTS: Color32 = Color32::from_rgb(0x80, 0x80, 0x80); // gray
 pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // yellow
-/// Colore **di default** dell'evidenziazione della settimana corrente (giallo
-/// fosforescente). Non è una costante d'uso diretto: il colore effettivo è
-/// `this_week()`, impostato a inizio frame da `set_this_week_color` con il
-/// valore letto dal file `.ron` (campo `week_color: "#RRGGBB"`).
-pub const THIS_WEEK_DEFAULT: u32 = 0xCC_FF_00;
+/// Bordo della settimana corrente: verde acceso, fisso. Una velatura colorata
+/// si confondeva con le colonne delle milestone, un bordo no. I chiamanti lo
+/// passano per `g(...)` (in B/N diventa grigio) con `this_week_border()`.
+pub const THIS_WEEK_GREEN: Color32 = Color32::from_rgb(0x00, 0xE6, 0x76);
+/// Spessore (px) del bordo della settimana corrente.
+pub const THIS_WEEK_BORDER_W: f32 = 5.0;
 /// Palette **di default** dei 12 mesi (gennaio → dicembre): i colori puri della
-/// ruota, uno ogni 30°, così due mesi vicini si distinguono. Come
-/// `THIS_WEEK_DEFAULT` non si usa direttamente: il colore effettivo è
+/// ruota, uno ogni 30°, così due mesi vicini si distinguono. Non si usa
+/// direttamente: il colore effettivo è
 /// `month_color`/`month_tint`, impostato a inizio frame da `set_month_colors`
 /// con i valori del file `.ron` (campo `month_colors`).
 pub const MONTH_COLORS_DEFAULT: [u32; 12] = [
@@ -72,12 +73,8 @@ thread_local! {
     /// Tema corrente: true = scuro (default), false = chiaro. Impostato a inizio
     /// frame da `set_dark_theme` (risolto da Auto/Chiaro/Scuro in `ui.rs`).
     static DARK_THEME: Cell<bool> = const { Cell::new(true) };
-    /// Colore dell'evidenziazione della settimana corrente. Non c'è una voce di
-    /// menù: si cambia **solo** dal file `.ron` (`week_color`) e viene impostato
-    /// a inizio frame da `set_this_week_color`.
-    static THIS_WEEK_COLOR: Cell<u32> = const { Cell::new(THIS_WEEK_DEFAULT) };
-    /// Colori dei 12 mesi (gennaio in posizione 0). Come il colore della
-    /// settimana si cambia **solo** dal file `.ron` (`month_colors`) ed è
+    /// Colori dei 12 mesi (gennaio in posizione 0). Si cambiano **solo** dal
+    /// file `.ron` (`month_colors`) e sono
     /// impostato a inizio frame da `set_month_colors`.
     static MONTH_COLORS: Cell<[u32; 12]> = const { Cell::new(MONTH_COLORS_DEFAULT) };
     /// Intensità della velatura del mese (percentuale 0–100), anch'essa dal file
@@ -95,23 +92,11 @@ pub fn set_dark_theme(on: bool) {
     DARK_THEME.with(|b| b.set(on));
 }
 
-/// Imposta il colore della settimana corrente (chiamata a inizio frame con il
-/// valore del file `.ron`). `rgb` è 0xRRGGBB.
-pub fn set_this_week_color(rgb: u32) {
-    THIS_WEEK_COLOR.with(|c| c.set(rgb));
-}
-
-/// Colore dell'evidenziazione della settimana corrente (griglia, footer,
-/// intestazione settimane). I chiamanti lo passano per `g(...)` come gli altri
-/// accenti.
+/// Colore del bordo della settimana corrente (intestazione, griglia, footer),
+/// già passato per `g(...)`.
 #[inline]
-pub fn this_week() -> Color32 {
-    let rgb = THIS_WEEK_COLOR.with(|c| c.get());
-    Color32::from_rgb(
-        ((rgb >> 16) & 0xFF) as u8,
-        ((rgb >> 8) & 0xFF) as u8,
-        (rgb & 0xFF) as u8,
-    )
+pub fn this_week_border() -> Color32 {
+    g(THIS_WEEK_GREEN)
 }
 
 /// Imposta la palette dei mesi (chiamata a inizio frame con i valori del file
@@ -447,7 +432,7 @@ mod tests {
 
     #[test]
     fn hex_string_round_trips() {
-        assert_eq!(hex_rgb_string(THIS_WEEK_DEFAULT), "#CCFF00");
+        assert_eq!(hex_rgb_string(0xCCFF00), "#CCFF00");
         assert_eq!(parse_hex_rgb(&hex_rgb_string(0x01A2B3)), Some(0x01A2B3));
     }
 
@@ -535,13 +520,14 @@ mod tests {
         set_month_tint_pct(MONTH_TINT_PCT_DEFAULT);
     }
 
-    /// Il colore effettivo è quello impostato dal file, non una costante.
+    /// Bordo della settimana corrente: verde acceso, grigio in B/N.
     #[test]
-    fn this_week_follows_the_configured_color() {
+    fn this_week_border_is_bright_green_and_gray_in_bw() {
         set_bw_mode(false);
-        set_this_week_color(0xFF8800);
-        assert_eq!(this_week(), Color32::from_rgb(0xFF, 0x88, 0x00));
-        set_this_week_color(THIS_WEEK_DEFAULT);
-        assert_eq!(this_week(), Color32::from_rgb(0xCC, 0xFF, 0x00));
+        assert_eq!(this_week_border(), Color32::from_rgb(0x00, 0xE6, 0x76));
+        set_bw_mode(true);
+        let c = this_week_border();
+        assert!(c.r() == c.g() && c.g() == c.b(), "grigio in B/N: {c:?}");
+        set_bw_mode(false);
     }
 }

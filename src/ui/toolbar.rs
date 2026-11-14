@@ -435,16 +435,10 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 };
                 let merged = ws.len() > 1;
                 // Velatura del mese (divisa in bande se la settimana è a cavallo
-                // di due mesi): sotto all'evidenziazione della settimana corrente,
-                // che resta il segnale più forte. Lo sfondo che ne risulta decide
-                // il colore del testo, così la data resta leggibile anche con
-                // velature marcate.
-                let mut cell_bg = paint_month_tint(ui, cell, ws);
-                if ws.contains(&state.this_week) {
-                    let wk = g(this_week()).gamma_multiply(0.5);
-                    ui.painter().rect_filled(cell, 0.0, wk);
-                    cell_bg = blend(cell_bg, wk);
-                }
+                // di due mesi). Lo sfondo che ne risulta decide il colore del
+                // testo, così la data resta leggibile anche con velature marcate.
+                // La settimana corrente ha il bordo verde, disegnato dopo il ciclo.
+                let cell_bg = paint_month_tint(ui, cell, ws);
                 // etichetta = data della prima settimana del gruppo
                 let txt = week_label(w);
                 // Click sulla data → popup limite ore settimana per TUTTI i worker.
@@ -479,6 +473,13 @@ pub(crate) fn header(ui: &mut egui::Ui, app: &App, state: &mut UiState) {
                 } else if resp.clicked() {
                     state.popup = Some(bulk_week_popup(app, w as usize, txt));
                 }
+            }
+            // Settimana corrente: bordo verde chiuso in alto, sopra alla data e
+            // all'eventuale evidenziazione della colonna puntata.
+            if let Some(r) =
+                week_col_rect(&cols, cw, rect.left(), rect.top(), rect.bottom(), state.this_week)
+            {
+                paint_this_week_border(ui, r, true, false);
             }
         });
 }

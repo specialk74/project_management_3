@@ -1759,10 +1759,8 @@ impl eframe::App for PjmApp {
             // Resa in scala di grigi: impostata una volta per frame, prima di disegnare.
             set_bw_mode(state.bw_mode);
 
-            // Colore della settimana corrente e palette dei mesi: vengono dal file
-            // (`week_color`, `month_colors`), non dall'interfaccia; come il tema,
-            // si impostano una volta per frame.
-            set_this_week_color(app.week_color_rgb());
+            // Palette dei mesi: viene dal file (`month_colors`), non
+            // dall'interfaccia; come il tema, si imposta una volta per frame.
             set_month_colors(app.month_colors_rgb());
             set_month_tint_pct(app.month_tint_pct);
 
@@ -3198,6 +3196,40 @@ pub(crate) fn month_bands(ws: &[i32]) -> Vec<(u32, f32, f32)> {
 /// Disegna la velatura dei mesi su una cella di intestazione (in alto o nel
 /// footer) e ritorna lo sfondo che ne risulta **al centro** della cella, cioè
 /// quello sotto l'etichetta della data: serve a scegliere il colore del testo.
+/// Rettangolo della colonna (alto `top`..`bottom`) che contiene la settimana
+/// `week` sull'asse `cols` che parte da `left` (colonne larghe `cw`); `None` se
+/// la settimana non è nella griglia.
+pub(crate) fn week_col_rect(cols: &[Col], cw: f32, left: f32, top: f32, bottom: f32, week: i32) -> Option<Rect> {
+    let mut x = left;
+    for c in cols {
+        let colw = col_width(c, cw);
+        if matches!(c, Col::Weeks(ws) if ws.contains(&week)) {
+            return Some(Rect::from_x_y_ranges(x..=x + colw, top..=bottom));
+        }
+        x += colw;
+    }
+    None
+}
+
+/// Bordo verde della settimana corrente sulla colonna `r`: i due lati sempre,
+/// sopra solo se `top` (intestazione) e sotto solo se `bottom` (footer), così
+/// intestazione, griglia e footer formano un'unica cornice. Le strisce stanno
+/// **dentro** la colonna e vanno disegnate per ultime, sopra a celle e
+/// milestone.
+pub(crate) fn paint_this_week_border(ui: &egui::Ui, r: Rect, top: bool, bottom: bool) {
+    let w = THIS_WEEK_BORDER_W.min(r.width() / 3.0);
+    let c = this_week_border();
+    let p = ui.painter();
+    p.rect_filled(Rect::from_x_y_ranges(r.left()..=r.left() + w, r.y_range()), 0.0, c);
+    p.rect_filled(Rect::from_x_y_ranges(r.right() - w..=r.right(), r.y_range()), 0.0, c);
+    if top {
+        p.rect_filled(Rect::from_x_y_ranges(r.x_range(), r.top()..=r.top() + w), 0.0, c);
+    }
+    if bottom {
+        p.rect_filled(Rect::from_x_y_ranges(r.x_range(), r.bottom() - w..=r.bottom()), 0.0, c);
+    }
+}
+
 pub(crate) fn paint_month_tint(ui: &egui::Ui, cell: Rect, ws: &[i32]) -> Color32 {
     let mut center = bg();
     for (month, from, to) in month_bands(ws) {

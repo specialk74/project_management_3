@@ -104,7 +104,6 @@ references; the UI lives entirely in the `src/ui/` module.
 ```
 App (workers.ron)
 ├── start_week / end_week : WeekId   — grid time range
-├── week_color: String               — "#RRGGBB" current-week highlight (file-only setting)
 ├── month_colors: Vec<String>        — 12 "#RRGGBB", Jan→Dec, date-row tint (file-only)
 ├── month_tint_pct: i32              — month tint strength 0..100 (default 60, file-only)
 ├── corner_pct: i32                  — PDF/SVG corner rounding 0..100 (default 40, file-only)
@@ -188,17 +187,18 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
 - `g(color)` applies the B/W (grayscale) transform when B/W mode is on (`set_bw_mode`
   per frame). Wrap accent colors in `g(...)`; theme functions already return final
   colors.
-- **Current-week highlight** — the only **file-configured** color: `App.week_color`
-  (`"#RRGGBB"`, `#[serde(default = "default_week_color")]`, **always serialized**, no
-  UI to change it). `App::week_color_rgb()` parses it (`ui_style::parse_hex_rgb`,
-  falling back to `THIS_WEEK_DEFAULT` = `0xCCFF00` neon yellow; an unparsable value is
-  reported by `App::validate` in the "Problema nel file" window). `PjmApp::ui()` calls
-  `set_this_week_color(app.week_color_rgb())` once per frame next to `set_bw_mode`/
-  `set_dark_theme`; drawing code reads the **function** `this_week()` (there is no
-  `THIS_WEEK` const anymore) — grid column tint, footer column tint **and each footer
-  worker cell** (the alternating `row_even()/row_alt()` fill is opaque and would cover
-  the column tint, so the cell repaints it), plus the week header in `toolbar.rs`.
-- **Month tint on the date rows** — same file-only mechanism: `App.month_colors`
+- **Current week** — a **bright green border** (`THIS_WEEK_GREEN` `#00E676`,
+  `THIS_WEEK_BORDER_W` 5 px, `this_week_border()` = `g(…)`), **no tint**: a
+  coloured column was confused with milestone columns. The column rect comes from
+  `week_col_rect(cols, cw, left, top, bottom, state.this_week)` and is outlined by
+  `paint_this_week_border(ui, r, top, bottom)` (`mod.rs`; strips inside the
+  column, sides always) **after** everything else in each piece: header
+  (`toolbar.rs`, closed on top), `grid` (after the project loop, whole height,
+  over closed projects too) and `draw_right_footer` (closed at the bottom), so the
+  three form one frame. Test `current_week_has_a_green_border_in_header_grid_and_footer`.
+  The old file field `week_color` was **removed** (old files still load: unknown
+  field ignored, dropped on the next save; test `old_week_color_field_is_ignored`).
+- **Month tint on the date rows** — a file-only setting: `App.month_colors`
   (`Vec<String>` of 12 `"#RRGGBB"`, Jan→Dec, always serialized) →
   `App::month_colors_rgb() -> [u32; 12]` (**per-month** fallback to
   `MONTH_COLORS_DEFAULT`, so a short or partly broken list keeps the other months;
@@ -1171,7 +1171,7 @@ the footer date.
   segments over the thin `no_effort` line (it `continue`s before the usual bar
   overlay), so a ghost at 0 is visible either way.
 - **Rounded corners** (`App.corner_pct`, `#[serde(default = "default_corner_pct")]`,
-  **always serialized**, no UI — same family as `week_color`/`month_tint_pct`;
+  **always serialized**, no UI — same family as `month_colors`/`month_tint_pct`;
   default `pdf_export::CORNER_PCT_DEFAULT` = 40, out-of-range reported by
   `App::validate`): percentage of the **maximum** radius (`pct/100 · min(w,h)/2`),
   so 0 = square and 100 = pill-shaped ends. It is a file setting, not a dialog
@@ -1185,7 +1185,7 @@ the footer date.
   already renders to PDF and SVG) and falls back to a real `Shape::Rect` at 0.
   Today's vertical line/triangle, the thin no-effort row and the grey footer band stay square.
   **Missing file-only settings are written on load**: `App::load_reporting_missing`
-  returns `missing_file_settings(raw)` (`week_color`/`month_colors`/`month_tint_pct`/
+  returns `missing_file_settings(raw)` (`month_colors`/`month_tint_pct`/
   `corner_pct` absent from the text); `PjmApp::write_missing_settings` (startup via
   `PjmApp::new`, and **File ▸ Apri…**) saves immediately + info toast, so an old file
   gains `corner_pct: 40` without waiting for another edit.

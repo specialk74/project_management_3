@@ -575,17 +575,8 @@ pub(crate) fn draw_right_footer(
         // sotto all'evidenziazione della settimana corrente.
         let hdr = Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, ROW_H));
         // Sfondo effettivo sotto la data: decide il colore del testo (come in alto).
-        let mut hdr_bg = paint_month_tint(ui, hdr, ws);
+        let hdr_bg = paint_month_tint(ui, hdr, ws);
 
-        // tinta settimana corrente su tutta la colonna
-        let is_this_week = ws.contains(&state.this_week);
-        if is_this_week {
-            let col =
-                Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(COL_W, rect.height()));
-            let wk = g(this_week()).gamma_multiply(0.18);
-            ui.painter().rect_filled(col, 0.0, wk);
-            hdr_bg = blend(hdr_bg, wk);
-        }
 
         // header: data settimana (evidenziata se la colonna è puntata nella griglia)
         let date = week_label(w);
@@ -619,13 +610,6 @@ pub(crate) fn draw_right_footer(
 
             let bg = if idx % 2 == 0 { row_even() } else { row_alt() };
             ui.painter().rect_filled(cell, 0.0, bg);
-            // Lo sfondo alternato è opaco e coprirebbe la tinta di colonna: la
-            // ridisegna sulla cella così la settimana corrente resta evidenziata
-            // come nella griglia sopra.
-            if is_this_week {
-                ui.painter()
-                    .rect_filled(cell, 0.0, g(this_week()).gamma_multiply(0.18));
-            }
             // Incrocio worker × settimana della cella puntata (o in modifica).
             let hl_cell = hl_week && state.grid_hl.worker == Some(*wid);
             if hl_cell {
@@ -792,6 +776,11 @@ pub(crate) fn draw_right_footer(
                 }
             }
         }
+    }
+    // Settimana corrente: bordo verde su tutta la colonna, chiuso in fondo (la
+    // cornice parte dall'intestazione e attraversa la griglia), sopra alle celle.
+    if let Some(r) = week_col_rect(cols, COL_W, rect.left(), rect.top(), rect.bottom(), state.this_week) {
+        paint_this_week_border(ui, r, false, true);
     }
 }
 

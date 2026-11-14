@@ -73,27 +73,17 @@ cargo test       # esegue i test
 - Il nome del file corrente è mostrato in alto a destra nella barra strumenti.
   Un asterisco `(*)` e il colore arancione segnalano modifiche non salvate.
 
-### Colore della settimana corrente (`week_color`)
+### Settimana corrente
 
-L'evidenziazione della **settimana corrente** (tinta sulla colonna in griglia e
-nel footer, intestazione della settimana) usa un colore che si cambia **solo
-editando il file** `.ron`: non c'è una voce di menù. In testa al file:
+La **settimana corrente** è indicata da un **bordo verde acceso** attorno alla sua
+colonna, dall'intestazione delle date fino alla riga in fondo al footer. Non è più
+una tinta sulla colonna: una tinta si confondeva con le colonne colorate delle
+milestone. Il colore è fisso; in modalità **Bianco/Nero** (§15) il bordo diventa
+grigio.
 
-```ron
-(
-    start_week: (20290),
-    week_color: "#CCFF00",
-    ...
-)
-```
-
-- Formato `"#RRGGBB"` (il `#` è facoltativo, maiuscole o minuscole indifferenti).
-- Il valore è **sempre scritto** nel file, anche quando è quello di default
-  (`#CCFF00`, giallo fosforescente): basta modificarlo e riaprire il file.
-- Se il colore è scritto male il programma usa il default e lo segnala nella
-  finestra "Problema nel file" al caricamento.
-- In modalità **Bianco/Nero** (§15) il colore viene reso in scala di grigi come
-  tutti gli altri.
+I file scritti dalle versioni precedenti contengono ancora una riga
+`week_color: "#…"` (il colore della vecchia tinta): viene ignorata e sparisce al
+primo salvataggio.
 
 ### Colori dei mesi (`month_colors`)
 
@@ -105,7 +95,6 @@ successivo. Anche questi 12 colori si cambiano solo dal file:
 ```ron
 (
     start_week: (20290),
-    week_color: "#CCFF00",
     month_colors: [
         "#FF0000",
         "#FF8000",
@@ -130,8 +119,8 @@ successivo. Anche questi 12 colori si cambiano solo dal file:
 - Il testo della data si adatta da solo allo sfondo che ne risulta (nero sulle
   tinte chiare, bianco su quelle scure), quindi resta leggibile anche a
   percentuali alte.
-- La velatura sta comunque **sotto** all'evidenziazione della settimana
-  corrente, che rimane il segnale più forte.
+- La settimana corrente, comunque, si riconosce dal **bordo verde** attorno alla
+  sua colonna.
 - Se una voce manca o è scritta male, **solo quel mese** torna al suo colore di
   default; il problema è segnalato nella finestra "Problema nel file".
 - Anche questi valori sono sempre riscritti nel file al salvataggio: eventuali
@@ -147,7 +136,6 @@ rossa di avanzamento "Today"** sull'asse — hanno gli
 ```ron
 (
     start_week: (20290),
-    week_color: "#CCFF00",
     month_colors: [...],
     month_tint_pct: 60,
     corner_pct: 40,
@@ -227,7 +215,8 @@ Dall'alto verso il basso:
 **Scroll sincronizzato**: la colonna sinistra e la griglia scorrono insieme in
 verticale; header, griglia e footer scorrono insieme in orizzontale.
 
-La **settimana corrente** è evidenziata con una tinta verde su tutta la colonna.
+La **settimana corrente** è contornata da un **bordo verde acceso** su tutta la
+colonna (intestazione, griglia e footer).
 All'avvio la griglia si posiziona su questa settimana; in qualsiasi momento
 `Cmd/Ctrl+T` la riporta lì, centrandola nella parte visibile.
 
