@@ -1116,8 +1116,9 @@ filtro worker Ctrl+F). Contiene:
 - una **heatmap** worker × (settimana|mese) colorata per saturazione
   (**verde** = libero, **giallo** = pieno, **rosso** = oltre capacità); ogni cella
   mostra le ore, col tooltip `allocato / capacità`, ed è cliccabile per saltare a
-  quella settimana nella griglia; la **settimana corrente** è evidenziata (chip
-  verde nell'intestazione e bordo verde brillante sulle celle);
+  quella settimana nella griglia; la **settimana corrente** ha lo stesso **bordo
+  verde acceso** della griglia attorno alla sua colonna, dalla data all'ultimo
+  worker;
 - un'**intestazione su due righe**: sopra l'**anno** di riferimento (una fascia per
   anno, a toni alterni), sotto le date **senza l'anno** — `mm-gg` del lunedì nella
   vista Settimana, `mm` nella vista Mese. Il tooltip delle celle riporta la data
@@ -1345,7 +1346,9 @@ ghost)…»):
 - **in alto** le settimane del periodo, su **tre righe** per tenere strette le
   colonne: l'**anno** e il **mese** (scritti una volta sopra tutte le loro
   settimane) e sotto il **giorno del lunedì** («02», «09»…), in grassetto per la
-  settimana corrente. Una settimana a cavallo di due mesi sta nel mese del suo
+  settimana corrente, che ha anche lo stesso **bordo verde acceso** della griglia
+  attorno alla sua colonna, dal giorno fino al Totale (sopra anche ai colori di
+  ferie e malattia; nel PDF il bordo non c'è). Una settimana a cavallo di due mesi sta nel mese del suo
   lunedì;
 - **a sinistra** una riga per ogni **progetto × dev** in cui il worker è assegnato
   in almeno una settimana del periodo, come «ABC – Frontend». Se il worker lavora

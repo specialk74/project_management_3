@@ -196,6 +196,16 @@ To keep header, grid and footer perfectly aligned (they share horizontal scroll)
   (`toolbar.rs`, closed on top), `grid` (after the project loop, whole height,
   over closed projects too) and `draw_right_footer` (closed at the bottom), so the
   three form one frame. Test `current_week_has_a_green_border_in_header_grid_and_footer`.
+  Same border in **Saturazione** (header date row closed on top in
+  `draw_saturation_header`, body closed at the bottom after the `sat_grid`, both
+  via `sat_col_rect` = column ± half `SAT_GAP`; `heat_cell` no longer has a green
+  stroke, only the orange `selected` one) and **Effort per worker**
+  (`draw_worker_table`, from the day row to Totale, closed on both ends, painted
+  last; GUI only, not the PDF). Tests
+  `current_week_has_the_green_border_in_header_and_body`,
+  `current_week_has_the_green_border`. Both windows use the thinner
+  `THIS_WEEK_BORDER_THIN_W` (2 px) via `paint_this_week_border_w`: their columns
+  are narrow (32 / 24 px) and 5 px covered the cells.
   The old file field `week_color` was **removed** (old files still load: unknown
   field ignored, dropped on the next save; test `old_week_color_field_is_ignored`).
 - **Month tint on the date rows** — a file-only setting: `App.month_colors`

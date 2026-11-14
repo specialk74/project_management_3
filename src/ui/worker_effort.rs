@@ -243,6 +243,12 @@ fn draw_worker_table(ui: &mut egui::Ui, w: &WeWorker, weeks: &[i32], this_week: 
         p.vline(col_x(a), rect.top() + head_h..=rect.bottom(), thin);
     }
     p.vline(x0, rect.y_range(), thin);
+    // Settimana corrente: bordo verde come nella griglia, dalla riga dei
+    // giorni fino al totale, sopra a tutto (anche ai colori ferie/malattia).
+    if let Some(i) = weeks.iter().position(|&wk| wk == this_week) {
+        let col = Rect::from_x_y_ranges(col_x(i)..=col_x(i + 1), y_day..=rect.bottom());
+        paint_this_week_border_w(ui, col, true, true, THIS_WEEK_BORDER_THIN_W);
+    }
 }
 
 pub(crate) fn worker_effort_window(
@@ -526,6 +532,47 @@ mod tests {
                 if t.galley.text() == "13" && t.fallback_color == Color32::WHITE)
         });
         assert!(white_13, "totale oltre il max in bianco sul rosso");
+    }
+
+    /// Settimana corrente: bordo verde come nella griglia (4 lati: chiuso
+    /// sulla riga dei giorni e sul totale), solo sulla sua colonna.
+    #[test]
+    fn current_week_has_the_green_border() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), alice, Effort(7));
+        let ws = [base - 7, base, base + 7];
+        let data = crate::worker_effort::build(&app, &[p], &ws);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_worker_table(ui, &data[0], &ws, base));
+        let green: Vec<Rect> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Rect(r) if r.fill == this_week_border() => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(green.len(), 4, "{green:?}");
+        let left = green.iter().map(|r| r.left()).fold(f32::MAX, f32::min);
+        let right = green.iter().map(|r| r.right()).fold(f32::MIN, f32::max);
+        assert!((right - left - WE_CELL_W).abs() < 0.5, "una colonna: {}", right - left);
+        let none = ctx.run_ui_test(
+            egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), ..Default::default() },
+            |ui| draw_worker_table(ui, &data[0], &ws, base + 700),
+        );
+        assert!(
+            !none.shapes.iter().any(|cs| matches!(&cs.shape,
+                egui::Shape::Rect(r) if r.fill == this_week_border())),
+            "settimana corrente fuori periodo: nessun bordo"
+        );
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // yellow
 pub const THIS_WEEK_GREEN: Color32 = Color32::from_rgb(0x00, 0xE6, 0x76);
 /// Spessore (px) del bordo della settimana corrente.
 pub const THIS_WEEK_BORDER_W: f32 = 5.0;
+/// Spessore (px) dello stesso bordo nelle finestre con colonne strette
+/// (Saturazione, Effort per worker), dove 5 px coprirebbero le celle.
+pub const THIS_WEEK_BORDER_THIN_W: f32 = 2.0;
 /// Palette **di default** dei 12 mesi (gennaio → dicembre): i colori puri della
 /// ruota, uno ogni 30°, così due mesi vicini si distinguono. Non si usa
 /// direttamente: il colore effettivo è

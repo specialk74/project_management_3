@@ -160,13 +160,10 @@ fn draw_saturation_header(
             egui::vec2(SAT_CW, SAT_RH),
         );
         // Colonna della cella puntata: giallo grassetto su scuro, come nella
-        // griglia; prevale sul chip verde della settimana corrente.
+        // griglia. La settimana corrente ha il bordo verde, dopo il ciclo.
         let (col, passes): (Color32, &[f32]) = if hover_col == Some(i) {
             p.rect_filled(r, 2.0, hi_bg());
             (hi_text(), &[0.0, HI_BOLD_DX])
-        } else if c.weeks.contains(&this_week) {
-            p.rect_filled(r, 2.0, g(Color32::from_rgb(0x00, 0xe0, 0x4b)));
-            (Color32::BLACK, &[0.0])
         } else {
             (text(), &[0.0])
         };
@@ -180,28 +177,40 @@ fn draw_saturation_header(
             );
         }
     }
+    // Settimana corrente: bordo verde come nella griglia, chiuso in alto sulla
+    // riga delle date; nel corpo continua fino all'ultimo worker.
+    if let Some(i) = cols.iter().position(|c| c.weeks.contains(&this_week)) {
+        let col = sat_col_rect(rect.left(), i, rect.top() + SAT_RH + SAT_GAP, rect.bottom());
+        paint_this_week_border_w(ui, col, true, false, THIS_WEEK_BORDER_THIN_W);
+    }
 }
 
-/// Cella colorata della heatmap. `current` evidenzia la settimana corrente con un
-/// bordo verde; `selected` (riga worker selezionata) con un bordo arancione che
-/// prevale, così tutta la riga risulta evidenziata; le altre hanno un bordo tenue.
+/// Colonna `i` della heatmap fra `top` e `bottom` (asse che parte da `left`),
+/// allargata di metà spazio per lato: il bordo della settimana corrente
+/// abbraccia le celle invece di coprirne il contenuto.
+fn sat_col_rect(left: f32, i: usize, top: f32, bottom: f32) -> Rect {
+    let x = left + i as f32 * (SAT_CW + SAT_GAP);
+    Rect::from_x_y_ranges(x - SAT_GAP / 2.0..=x + SAT_CW + SAT_GAP / 2.0, top..=bottom)
+}
+
+/// Cella colorata della heatmap. `selected` (riga worker selezionata) ha un
+/// bordo arancione, così tutta la riga risulta evidenziata; le altre hanno un
+/// bordo tenue. La settimana corrente è il bordo verde della colonna, disegnato
+/// a parte (`paint_this_week_border`).
 pub(crate) fn heat_cell(
     ui: &mut egui::Ui,
     label: &str,
     bgc: Color32,
     fg: Color32,
-    current: bool,
     selected: bool,
     tip: &str,
 ) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(SAT_CW, 16.0), Sense::click());
     ui.painter().rect_filled(rect, 2.0, bgc);
-    // Riga selezionata → bordo arancione su tutte le celle (prevale). Altrimenti
-    // settimana corrente → bordo verde; le altre un bordo tenue.
+    // Riga selezionata → bordo arancione su tutte le celle; le altre un bordo
+    // tenue.
     let stroke = if selected {
         Stroke::new(2.0_f32, g(EFFORT_ORANGE))
-    } else if current {
-        Stroke::new(2.5_f32, g(Color32::from_rgb(0x00, 0xe0, 0x4b)))
     } else {
         Stroke::new(0.5_f32, text_faint())
     };
@@ -439,7 +448,7 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                         .max_height(body_h)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            egui::Grid::new("sat_grid")
+                            let grid = egui::Grid::new("sat_grid")
                                 .min_row_height(SAT_RH)
                                 .min_col_width(SAT_CW)
                                 .spacing(egui::vec2(SAT_GAP, SAT_GAP))
@@ -449,7 +458,6 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                         for (ci, c) in columns.iter().enumerate() {
                                             let (alloc, cap) = row[ci];
                                             let (bgc, fg) = heat_colors(alloc, cap);
-                                            let is_cur = c.weeks.contains(&this_week);
                                             let txt = if alloc == 0 {
                                                 String::new()
                                             } else {
@@ -458,7 +466,7 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                             let tip =
                                                 format!("{wname} · {}\n{alloc} / {cap} h", c.full);
                                             let cell =
-                                                heat_cell(ui, &txt, bgc, fg, is_cur, sel, &tip);
+                                                heat_cell(ui, &txt, bgc, fg, sel, &tip);
                                             if cell.hovered() {
                                                 hover_next = Some((*wid, ci));
                                             }
@@ -469,6 +477,16 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                                         ui.end_row();
                                     }
                                 });
+                            // Settimana corrente: bordo verde su tutta la
+                            // colonna, chiuso in fondo (in alto è chiuso
+                            // nell'intestazione).
+                            let r = grid.response.rect;
+                            if let Some(i) =
+                                columns.iter().position(|c| c.weeks.contains(&this_week))
+                            {
+                                let col = sat_col_rect(r.left(), i, r.top(), r.bottom());
+                                paint_this_week_border_w(ui, col, false, true, THIS_WEEK_BORDER_THIN_W);
+                            }
                         });
                     // Il corpo comanda: colonna fissa e intestazione seguono.
                     let offset = out.state.clamped_offset();
@@ -616,6 +634,62 @@ mod tests {
             .map(|(_, p)| *p)
             .expect("nome dell'ultimo worker");
         assert!((name.y - cell.y).abs() < 1.0, "riga del nome {name:?} ≠ cella {cell:?}");
+    }
+
+    /// Settimana corrente: bordo verde come nella griglia, sulla stessa
+    /// colonna in intestazione (chiuso in alto) e nel corpo (chiuso in fondo);
+    /// le celle non hanno più un bordo verde proprio.
+    #[test]
+    fn current_week_has_the_green_border_in_header_and_body() {
+        let mut app = App::new();
+        app.workers.add("Anna");
+        app.workers.add("Bruno");
+        let cols = saturation_columns(&app, false);
+        let ctx = egui::Context::default();
+        let mut state = UiState {
+            show_saturation: true,
+            saturation_future_only: false,
+            this_week: cols[2].weeks[0],
+            ..Default::default()
+        };
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 700.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..3 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| saturation_window(ui.ctx(), &app, &mut state)));
+        }
+        let out = out.unwrap();
+        // La finestra appare in dissolvenza: si confronta l'RGB non premoltiplicato.
+        let rgb = |c: Color32| {
+            let [r, g, b, a] = c.to_srgba_unmultiplied();
+            (a > 0).then_some([r, g, b])
+        };
+        let near = |c: Color32, want: Color32| {
+            rgb(c).is_some_and(|x| {
+                let w = [want.r(), want.g(), want.b()];
+                x.iter().zip(w).all(|(a, b)| a.abs_diff(b) <= 3)
+            })
+        };
+        let green: Vec<Rect> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::epaint::Shape::Rect(r) if near(r.fill, this_week_border()) => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(green.len(), 6, "2 lati + chiusura, in testa e nel corpo: {green:?}");
+        let lefts: Vec<f32> = green.iter().map(|r| r.left()).collect();
+        let min = lefts.iter().cloned().fold(f32::MAX, f32::min);
+        let max = green.iter().map(|r| r.right()).fold(f32::MIN, f32::max);
+        assert!((max - min - (SAT_CW + SAT_GAP)).abs() < 0.5, "una colonna: {}", max - min);
+        let old_green = Color32::from_rgb(0x00, 0xe0, 0x4b);
+        assert!(!out.shapes.iter().any(|cs| match &cs.shape {
+            egui::epaint::Shape::Rect(r) => near(r.stroke.color, old_green),
+            _ => false,
+        }), "niente più bordo verde sulle singole celle");
     }
 
     #[test]

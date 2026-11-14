@@ -3217,7 +3217,13 @@ pub(crate) fn week_col_rect(cols: &[Col], cw: f32, left: f32, top: f32, bottom: 
 /// **dentro** la colonna e vanno disegnate per ultime, sopra a celle e
 /// milestone.
 pub(crate) fn paint_this_week_border(ui: &egui::Ui, r: Rect, top: bool, bottom: bool) {
-    let w = THIS_WEEK_BORDER_W.min(r.width() / 3.0);
+    paint_this_week_border_w(ui, r, top, bottom, THIS_WEEK_BORDER_W);
+}
+
+/// Come `paint_this_week_border`, con spessore `width` (Saturazione ed Effort
+/// per worker usano `THIS_WEEK_BORDER_THIN_W`).
+pub(crate) fn paint_this_week_border_w(ui: &egui::Ui, r: Rect, top: bool, bottom: bool, width: f32) {
+    let w = width.min(r.width() / 3.0);
     let c = this_week_border();
     let p = ui.painter();
     p.rect_filled(Rect::from_x_y_ranges(r.left()..=r.left() + w, r.y_range()), 0.0, c);
