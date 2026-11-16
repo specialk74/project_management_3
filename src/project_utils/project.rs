@@ -239,6 +239,19 @@ impl Project {
         (planned != 0).then_some((used, planned, weighted_declared))
     }
 
+    /// Ore del progetto, su **tutti** i dev: `(previste, spese)` = somma
+    /// dell'effort pianificato e dell'effort delle settimane fino a `today`
+    /// compresa (come la «presunta»). A differenza di `progress_breakdown`
+    /// conta anche i dev senza pianificato.
+    pub fn hours_totals(&self, today: WeekId) -> (u64, u64) {
+        self.dev_id.values().fold((0, 0), |(planned, spent), sd| {
+            (
+                planned + sd.planned_effort().0 as u64,
+                spent + sd.effort_up_to(today).0 as u64,
+            )
+        })
+    }
+
     /// Avanzamento complessivo del progetto: media delle percentuali dichiarate
     /// dai dev, pesata sull'effort pianificato di ciascuno (earned value):
     /// `Σ(pianificato_i · dichiarata_i) / Σ(pianificato_i)`. Considera solo i dev
@@ -981,6 +994,21 @@ mod tests {
     /// `progress_breakdown` è la sorgente unica dei numeri mostrati nel tooltip
     /// della griglia: `(usato, pianificato, Σ pianificato·dichiarata)`, e le due
     /// percentuali ne sono derivate.
+    #[test]
+    fn hours_totals_sum_planned_and_spent_of_every_dev() {
+        let mut p = Project::new("t");
+        let (a, b) = (DevId(1), DevId(2));
+        p.add_dev_effort(a, Effort(200));
+        p.add_effort(a, WeekId(W0), WorkerId(1), Effort(30));
+        p.add_effort(a, WeekId(W0 + 7), WorkerId(1), Effort(20));
+        // Dev senza pianificato: le sue ore spese contano lo stesso.
+        p.add_dev(b);
+        p.add_effort(b, WeekId(W0), WorkerId(2), Effort(5));
+        assert_eq!(p.hours_totals(WeekId(W0)), (200, 35), "settimana dopo esclusa");
+        assert_eq!(p.hours_totals(WeekId(W0 + 7)), (200, 55));
+        assert_eq!(Project::new("vuoto").hours_totals(WeekId(W0)), (0, 0));
+    }
+
     #[test]
     fn progress_breakdown_exposes_the_numbers_behind_both_percentages() {
         let mut p = Project::new("t");

@@ -519,6 +519,14 @@ Da lì in poi i due progetti sono indipendenti.
   effort pianificato. Passando il **mouse sopra la riga** appare un tooltip con il
   **calcolo e i numeri** che generano le due percentuali (es. «Presunta 60% = usato
   120h / pianificato 200h», «Attuale 65% = dichiarate ≈130h / pianificato 200h»).
+- **Ore previste / spese** (in fondo all'area del progetto, a sinistra, su una
+  riga come `1200h / 320h`; nascoste in vista compatta e con un filtro worker o dev
+  attivo): il primo numero (**previste**) è la somma dell'effort pianificato di
+  **tutti** i dev del progetto, il secondo (**spese**) le ore inserite in griglia
+  fino alla **settimana corrente compresa**, anche per i dev senza pianificato. Le
+  spese sono in **rosso** se superano le previste; il tooltip spiega i due numeri.
+  La riga resta sempre sul fondo del blocco, anche quando i dev lo rendono più alto
+  dell'intestazione.
 
 ### Riordinare i progetti
 Sulla riga della tripletta, a destra, i pulsanti **▲ / ▼** spostano il progetto

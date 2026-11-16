@@ -991,8 +991,18 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
     `Option<u32>`. `today` is `current_week_id()` in the grid, `WeekId(today)` in export.
   Shown together as **`presunta%/attuale%`**: an **«Avanz.: PP%/AA%»** row at the
   bottom of the project info header in `draw_project_info` (non-compact,
-  non-worker-filter). Adds one info row, so `project_layout`'s `extra_rows` is **5** in
-  normal mode (tripletta, categoria + priorità on one row, inizio, fine, avanzamento). Both percentages **and** the value shown by the grid come from a single
+  non-worker-filter). Adds one info row, so `project_layout`'s `extra_rows` is **6** in
+  normal mode (tripletta, categoria + priorità on one row, inizio, fine, avanzamento,
+  then the hours row). **Hours row** at the **bottom** of the project area
+  (`top = max(y, rect.bottom() - ROW_H)` in `draw_project_info`, so it stays on
+  the bottom when the devs make the block taller): `«{planned}h / {spent}h»`, no
+  labels (explained in the hover tooltip), a `LayoutJob` so only the spent part
+  turns red, from `Projects::project_hours_totals(proj, current_week_id())` →
+  `Project::hours_totals(today) -> (planned, spent)` over **all** devs (unlike
+  `progress_breakdown`, devs with planned 0 count too); spent red
+  (`g(error_red())`) when > planned. Tests
+  `hours_totals_sum_planned_and_spent_of_every_dev`,
+  `project_area_ends_with_planned_and_spent_hours`. Both percentages **and** the value shown by the grid come from a single
   source, `Project::progress_breakdown(today) -> Option<(used, planned, weighted_declared)>`
   (`progress_pct`/`presumed_progress_pct` are thin wrappers over it); the grid's hover
   tooltip prints the **actual numbers** behind each figure (`usato/pianificato`,

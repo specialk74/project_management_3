@@ -314,8 +314,9 @@ pub(crate) fn project_layout(
     merged: bool,
 ) -> Vec<ProjLayout> {
     // Righe info oltre al nome: compatta = solo tripletta; normale = tripletta +
-    // categoria e priorità (una riga) + inizio + fine + avanzamento.
-    let extra_rows = if compact { 1.0 } else { 5.0 };
+    // categoria e priorità (una riga) + inizio + fine + avanzamento + ore
+    // previste / spese (una riga, in fondo).
+    let extra_rows = if compact { 1.0 } else { 6.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
         // Visibilità (filtro «Progetti…») + modalità Vista (stati mostrati),
@@ -2193,6 +2194,36 @@ pub(crate) fn draw_project_info(
     );
     ui.interact(pr, egui::Id::unique(("prog", proj.0)), Sense::hover())
         .on_hover_text(prog_tip);
+    y += ROW_H;
+
+    // In fondo all'area del progetto, su una riga: «previste / spese» (ore
+    // pianificate di tutti i dev / effort fino alla settimana corrente
+    // compresa). Spese in rosso se superano le previste. Spiegazione nel tooltip.
+    let (planned, spent) = app.projects.project_hours_totals(proj, current_week_id());
+    let hr = Rect::from_min_size(
+        egui::pos2(x, y.max(rect.bottom() - ROW_H)),
+        Vec2::new(w, ROW_H),
+    );
+    let over = spent > planned;
+    let font = mono(FONT_SIZE - 2.0);
+    let mut job = egui::text::LayoutJob::default();
+    let fmt = |color| egui::TextFormat::simple(font.clone(), color);
+    job.append(&format!("{planned}h / "), 0.0, fmt(text_dim()));
+    job.append(
+        &format!("{spent}h"),
+        0.0,
+        fmt(if over { g(error_red()) } else { text_dim() }),
+    );
+    let galley = ui.painter().layout_job(job);
+    let pos = hr.center() - galley.size() / 2.0;
+    ui.painter().galley(pos, galley, text_dim());
+    ui.interact(hr, egui::Id::unique(("hours", proj.0)), Sense::hover())
+        .on_hover_text(format!(
+            "Ore previste / ore spese del progetto\n\
+             Previste: {planned}h = somma dell'effort pianificato di tutti i dev\n\
+             Spese: {spent}h = ore inserite in griglia fino alla settimana corrente compresa{}",
+            if over { "\nLe ore spese superano quelle previste (in rosso)." } else { "" }
+        ));
 }
 
 pub(crate) fn draw_left_dev_strip(

@@ -3698,3 +3698,38 @@ fn priority_row_opens_the_choice_and_sets_the_priority() {
     let cat = text_pos(&out, "—").expect("categoria assente");
     assert!((pri.y - cat.y).abs() < 1.0 && pri.x > cat.x, "stessa riga, a destra");
 }
+
+/// In fondo all'area di ogni progetto, nella colonna sinistra, su una riga
+/// «previste / spese» (pianificato dei dev / ore fino alla settimana corrente), anche quando
+/// i dev rendono il blocco più alto dell'intestazione.
+#[test]
+fn project_area_ends_with_planned_and_spent_hours() {
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let proj = app.projects.add("Progetto", Some("ABC"), None);
+    let now = current_week_id();
+    for i in 0..12 {
+        let dev = app.devs.add(&format!("Dev{i}"));
+        app.projects.add_dev(proj, dev);
+        app.projects.add_dev_effort(proj, dev, Effort(10));
+        if i < 3 {
+            app.projects.add_effort(proj, dev, now, w, Effort(4));
+        }
+    }
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let input = egui::RawInput {
+        screen_rect: Some(screen(1200.0, 2000.0)),
+        ..Default::default()
+    };
+    let mut proj_bottom = 0.0;
+    let out = ctx.run_ui_test(input, |ui| {
+        let top = ui.cursor().min.y;
+        let layout = body_layout(ui, &app, &state, &Filter::default(), &None);
+        proj_bottom = top + DEV_BORDER + layout[0].proj_h;
+        let mut actions = Vec::new();
+        left_column(ui, &app, &mut state, &mut actions, &Filter::default(), &None, &layout);
+    });
+    let row = text_pos(&out, "120h / 12h").expect("previste / spese su una riga");
+    assert!((proj_bottom - row.y - ROW_H / 2.0).abs() < 1.0, "in fondo all'area del progetto");
+}

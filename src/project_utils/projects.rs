@@ -394,6 +394,11 @@ impl Projects {
 
     /// Numeri che compongono le percentuali di avanzamento (per il tooltip):
     /// `(usato_fino_a_today, pianificato, Σ pianificato·dichiarata)`.
+    /// `(previste, spese)` del progetto, vedi `Project::hours_totals`.
+    pub fn project_hours_totals(&self, id: ProjectId, today: WeekId) -> (u64, u64) {
+        self.projects.get(&id).map_or((0, 0), |p| p.hours_totals(today))
+    }
+
     pub fn project_progress_breakdown(
         &self,
         id: ProjectId,
