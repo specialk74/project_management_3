@@ -1391,11 +1391,10 @@ periodo: 280h pianificate su 520h disponibili, 240h libere». Le ore disponibili
 sono calcolate come sopra, solo su quelle settimane: con il periodo fino al 31/12
 dell'anno in corso coincidono con il **numero verde** accanto al worker nel footer; se le ore pianificate le superano la riga
 dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
-lavoro da qui in avanti?». Le ore pianificate di questa riga sono **sempre di
-tutti i dev e di tutte le categorie**, anche con i filtri Dev o Categorie attivi
-(la riga lo segnala con «tutti i dev e le categorie»): il lavoro escluso occupa
-comunque il worker, e senza contarlo le ore libere risulterebbero più del vero.
-Torte, tabelle, totale e occupazione invece seguono i filtri.
+lavoro da qui in avanti?». Le ore pianificate di questa riga, come torte,
+tabelle, totale e occupazione, seguono i filtri **Dev** e **Categorie** e
+l'intervallo di date: contano solo le ore dei dev e delle categorie selezionati
+(senza filtri, tutto il lavoro del worker).
 
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due

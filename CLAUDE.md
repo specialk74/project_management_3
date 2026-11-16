@@ -646,8 +646,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `toggle_in_all` / `can_untick` (`matrix.rs`; unticking from «all» keeps the
   others, re-ticking the last returns to empty, the last ticked one is disabled;
   test `toggling_from_all_keeps_the_others_ticked`),
-  AND with the categories, both pies; `filtered` = either filter on;
-  `planned_all` ignores both; exports pass the devs and `pies_subtitle` prints
+  AND with the categories, both pies (and the free hours); exports pass the devs and `pies_subtitle` prints
   `Dev(s): …`. `cats` empty = all, else only
   projects of those categories — totals and % follow): **hours** (effort 0 ignored) of all
   projects in weeks overlapping `[from, to]` (`week_overlaps`), per dev → per
@@ -697,11 +696,10 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   **Free hours** (only with `split`): `WorkerPie.future_capacity` = capacity of
   the period weeks **from** `now` on (the planned ones; = the footer's green
   number when the period ends on 31/12 of the current year), `free_hours()` =
-  `future_capacity − planned_all` (`i64`, negative = over capacity).
-  `WorkerPie.planned_all` = planned hours of **all** categories, counted in
-  `build` even for projects the category filter excludes (`shown` gates only the
-  pie data), so free hours don't overstate; `WorkerPie.filtered` makes the line
-  say «(tutte le categorie)» / «(all categories)». GUI: a line
+  `future_capacity − planned()` (`i64`, negative = over capacity): the planned
+  hours **follow the Dev/Categorie filters and the period** (the old
+  `planned_all`, which ignored the filters, was removed at the user's request).
+  GUI: a line
   under the worker summary (`future_text`, red + strong when negative); PDF: the
   subtitle is three whole lines (filters / totals+capacity / free hours, red
   bold when over) — never pieces placed side by side, `text_w_mm` is only an
@@ -900,6 +898,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   Some(worker_assigned_hours(app, w, &year_weeks))` (Σ `sovra` = cells of all
   projects) it adds «Già assegnate: Ah, quindi libere: Fh» / «… oltre la
   capacità» — the same free hours as the pies' «Da qui a fine periodo» line
+  when the pies have no Dev/Categorie filter
   (period to 31/12, no category filter; verified equal on real data). `None`
   with «Nulli» (counted weeks have no assigned hours by definition). Test
   `assigned_hours_sum_sovra_over_the_weeks`.

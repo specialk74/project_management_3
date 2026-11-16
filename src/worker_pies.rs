@@ -104,13 +104,6 @@ pub struct WorkerPie {
     /// Di `capacity`, quelle delle settimane **dalla corrente** in poi: le
     /// stesse in cui le ore sono «pianificate».
     pub future_capacity: u32,
-    /// Ore pianificate di **tutti** i dev e le categorie, anche con i filtri:
-    /// le ore libere si calcolano su queste, perché il lavoro escluso occupa
-    /// comunque il worker.
-    pub planned_all: u32,
-    /// Il filtro Categorie o Dev era attivo: `planned_all` può differire da
-    /// `planned()` e la riga delle ore libere lo dice.
-    pub filtered: bool,
     /// Dev in ordine di id, solo quelli con ore.
     pub devs: Vec<DevHours>,
     /// Categorie (stesso ordine di `DevHours::categories`), solo > 0.
@@ -149,10 +142,10 @@ impl WorkerPie {
     }
 
     /// Ore ancora libere da qui a fine periodo: capacità delle settimane future
-    /// meno le ore pianificate di tutto il lavoro (`planned_all`). Negativo =
-    /// oltre la capacità.
+    /// meno le ore pianificate (`planned()`, quindi solo dei dev e delle
+    /// categorie selezionati). Negativo = oltre la capacità.
     pub fn free_hours(&self) -> i64 {
-        self.future_capacity as i64 - self.planned_all as i64
+        self.future_capacity as i64 - self.planned() as i64
     }
 }
 
@@ -291,9 +284,6 @@ pub fn build(
     type ProjKey = (CatKey, usize, ProjectId);
     let mut hours: Vec<BTreeMap<DevId, BTreeMap<ProjKey, Hours>>> =
         vec![BTreeMap::new(); workers.len()];
-    // Ore pianificate di tutti i dev e le categorie, filtri o no (per le ore
-    // libere).
-    let mut planned_all = vec![0u32; workers.len()];
     for (order, (proj, _)) in app.projects.list().into_iter().enumerate() {
         let cat = app.projects.get_category(proj);
         let shown = cats.is_empty() || cats.contains(&cat);
@@ -310,9 +300,6 @@ pub fn build(
                 for (wi, (wid, _)) in workers.iter().enumerate() {
                     let h = sew.worker_id.get(wid).map_or(0, |se| se.get_effort().0 as u32);
                     let done = (wk.0 as i32) < now;
-                    if !done {
-                        planned_all[wi] += h;
-                    }
                     if h > 0 && shown {
                         hours[wi]
                             .entry(dev)
@@ -326,13 +313,11 @@ pub fn build(
         }
     }
     let weeks = period_weeks(from, to);
-    let filtered = !cats.is_empty() || !devs.is_empty();
     let future: Vec<i32> = weeks.iter().copied().filter(|w| *w >= now).collect();
     workers
         .into_iter()
         .zip(hours)
-        .zip(planned_all)
-        .map(|(((worker, name), by_dev), planned_all)| {
+        .map(|((worker, name), by_dev)| {
             let mut by_cat_all: BTreeMap<CatKey, Hours> = BTreeMap::new();
             let mut by_proj_all: BTreeMap<ProjKey, Hours> = BTreeMap::new();
             let mut all = Hours::default();
@@ -364,8 +349,6 @@ pub fn build(
             WorkerPie {
                 capacity: capacity(app, worker, &weeks),
                 future_capacity: capacity(app, worker, &future),
-                planned_all,
-                filtered,
                 worker,
                 name,
                 total: all.total,
@@ -547,8 +530,8 @@ mod tests {
         let no_cat: BTreeSet<_> = [None].into();
         let f = build(&app, &sel, 20000, 20013, &no_cat, &BTreeSet::new(), 20007);
         assert_eq!(f.iter().find(|p| p.worker == mario).unwrap().total, 10);
-        // Filtro dev: solo Backend; si combina con le categorie; le ore
-        // pianificate per le ore libere restano di tutto il lavoro.
+        // Filtro dev: solo Backend; si combina con le categorie; anche le ore
+        // pianificate per le ore libere seguono il filtro.
         let only_be: BTreeSet<_> = [be].into();
         let f = build(&app, &sel, 20000, 20013, &BTreeSet::new(), &only_be, 20007);
         let m = f.iter().find(|p| p.worker == mario).unwrap();
@@ -557,8 +540,7 @@ mod tests {
         assert_eq!(m.categories, [(Some(ca), h(10, 0))]);
         assert_eq!(m.projects.iter().map(|p| p.project).collect::<Vec<_>>(), [p1]);
         assert_eq!(m.dev_ring()[0].to, 1.0, "percentuali sui soli dev scelti");
-        assert!(m.filtered);
-        assert_eq!(m.planned_all, 10, "le 10h di Backend nella settimana corrente");
+        assert_eq!(m.planned(), 10, "le 10h di Backend nella settimana corrente");
         let f = build(&app, &sel, 20000, 20013, &no_cat, &only_be, 20007);
         assert_eq!(f.iter().find(|p| p.worker == mario).unwrap().total, 0, "Backend non ha ore senza categoria");
         assert_eq!(project_shade(0x646464, 0, 1), 0x5C5C5C, "92%");
@@ -634,8 +616,8 @@ mod tests {
         app.projects.add_effort(p, fe, wk(2), mario, Effort(60));
         let m = &build(&app, &sel, monday, to, &BTreeSet::new(), &BTreeSet::new(), now)[0];
         assert_eq!(m.free_hours(), -10);
-        // Filtro Categorie: le ore libere contano comunque il lavoro delle
-        // categorie escluse (P1 è senza categoria, il filtro tiene solo «A»).
+        // Filtro Categorie: le ore libere contano solo il lavoro delle
+        // categorie scelte (P1 è senza categoria, il filtro tiene solo «A»).
         let ca = app.categories.add("Cliente A");
         let pa = app.projects.add("x", Some("PA"), None);
         app.projects.set_category(pa, Some(ca));
@@ -643,13 +625,16 @@ mod tests {
         app.projects.add_effort(pa, fe, wk(1), mario, Effort(5));
         let only_a: BTreeSet<_> = [Some(ca)].into();
         let m = &build(&app, &sel, monday, to, &only_a, &BTreeSet::new(), now)[0];
-        assert_eq!(m.planned(), 5, "le tabelle seguono il filtro");
-        assert_eq!(m.planned_all, 95, "30 + 60 di P1 e 5 di PA");
-        assert_eq!(m.free_hours(), 80 - 95);
-        assert!(m.filtered);
+        assert_eq!(m.planned(), 5, "solo le 5h di PA");
+        assert_eq!(m.free_hours(), 80 - 5);
+        // Filtro Dev: un dev senza ore nel periodo lascia libera tutta la capacità.
+        let be = app.devs.add("Backend");
+        let only_be: BTreeSet<_> = [be].into();
+        let m = &build(&app, &sel, monday, to, &BTreeSet::new(), &only_be, now)[0];
+        assert_eq!((m.planned(), m.free_hours()), (0, 80));
+        // Senza filtri: tutto il lavoro (30 + 60 di P1 e 5 di PA).
         let m = &build(&app, &sel, monday, to, &BTreeSet::new(), &BTreeSet::new(), now)[0];
-        assert!(!m.filtered, "senza filtro");
-        assert_eq!(m.planned(), m.planned_all);
+        assert_eq!((m.planned(), m.free_hours()), (95, 80 - 95));
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette
