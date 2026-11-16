@@ -96,6 +96,41 @@ pub fn pies_csv(app: &App, pies: &[WorkerPie]) -> (String, usize) {
     (csv_text(&PIES_HEADER, &rows), rows.len())
 }
 
+/// Colonne del CSV della capacità delle torte.
+pub const PIES_CAPACITY_HEADER: [&str; 8] = [
+    "Worker", "Hours", "Done", "Planned", "Capacity", "Used %", "Future capacity", "Free hours",
+];
+
+/// Torte, file separato: **una riga per worker** (anche senza ore), con le
+/// ore del periodo (filtri compresi), la capacità e l'occupazione %, e — solo
+/// se il periodo arriva alla settimana corrente (`split`, come la riga «Da qui
+/// a fine periodo» della finestra) — la capacità da qui a fine periodo e le
+/// ore libere (negative = oltre la capacità); altrimenti vuote. «Used %» vuota
+/// con capacità 0.
+pub fn pies_capacity_rows(pies: &[WorkerPie], split: bool) -> Vec<Vec<String>> {
+    pies.iter()
+        .map(|p| {
+            let opt = |v: String| if split { v } else { String::new() };
+            vec![
+                p.name.clone(),
+                p.total.to_string(),
+                p.done.to_string(),
+                p.planned().to_string(),
+                p.capacity.to_string(),
+                if p.capacity > 0 { pct_of(p.total, p.capacity).to_string() } else { String::new() },
+                opt(p.future_capacity.to_string()),
+                opt(p.free_hours().to_string()),
+            ]
+        })
+        .collect()
+}
+
+/// CSV della capacità delle torte e numero di righe di dati.
+pub fn pies_capacity_csv(pies: &[WorkerPie], split: bool) -> (String, usize) {
+    let rows = pies_capacity_rows(pies, split);
+    (csv_text(&PIES_CAPACITY_HEADER, &rows), rows.len())
+}
+
 /// Colonne del CSV dell'effort per worker.
 pub const WORKER_EFFORT_HEADER: [&str; 8] =
     ["Worker", "Project", "Dev", "Week", "Year", "Month", "Hours", "Week status"];
@@ -276,6 +311,34 @@ mod tests {
                 "Mario|Frontend|Cliente|ABC|Portale|Must|10|10|0",
             ]
         );
+    }
+
+    #[test]
+    fn pies_capacity_csv_has_a_row_per_worker_with_free_hours() {
+        let (mut app, sel, monday) = fixture();
+        for (id, _) in app.workers.list() {
+            app.workers.set_max_hours(id, 40);
+        }
+        let pies = crate::worker_pies::build_filtered(
+            &app,
+            &sel,
+            monday,
+            monday + 13,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            monday + 7,
+        );
+        let rows: Vec<String> =
+            pies_capacity_rows(&pies, true).iter().map(|r| r.join("|")).collect();
+        // Mario: 40h di cui 10 fatte, 30 pianificate su 40 disponibili da qui.
+        assert!(rows.contains(&"Mario|40|10|30|80|50|40|10".to_string()), "{rows:?}");
+        assert!(rows.contains(&"Anna|0|0|0|80|0|40|40".to_string()), "{rows:?}");
+        let past = pies_capacity_rows(&pies, false);
+        assert!(past.iter().all(|r| r[6].is_empty() && r[7].is_empty()));
+        let (csv, n) = pies_capacity_csv(&pies, true);
+        assert_eq!(n, 2);
+        assert!(csv.starts_with("\u{FEFF}Worker;Hours;Done;Planned;Capacity;Used %;"));
     }
 
     #[test]

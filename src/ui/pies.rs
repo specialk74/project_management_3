@@ -34,7 +34,7 @@ pub(crate) fn pies_select_window(ctx: &egui::Context, app: &App, state: &mut UiS
         ctx,
         app,
         "Torte dev/categorie — scegli i worker",
-        "Mostra torte",
+        "OK",
         &mut state.pies_workers,
         &mut state.pies_worker_search,
     ) {

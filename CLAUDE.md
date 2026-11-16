@@ -98,7 +98,10 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
   Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
   dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project: Hours/
-  Done/Planned; no per-worker capacity column, a pivot would sum it on every row),
+  Done/Planned) + `pies_capacity_csv(pies, split)` (row = worker: Hours, Done,
+  Planned, Capacity, Used %, Future capacity, Free hours — the last two empty unless
+  `split_shown`), saved together by one click via `save_multi_export_dialog`
+  (`name_hours.csv` / `name_capacity.csv`),
   `worker_effort_csv` (row = worker × table row × assigned week, 0 included, + week
   status Vacation/Sick), `saturation_csv` (row = worker × column: Period, Allocated,
   Capacity, Saturation %, Over; fed by `saturation_export_csv` in
@@ -544,9 +547,11 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `hover_next`, published to `UiState.sat_hover` at the end (repaint on change);
   header and fixed column, drawn first, read `sat_hover` and paint date / name with
   `hi_bg()`/`hi_text()`/`HI_BOLD_DX`. Test `hovering_a_cell_highlights_its_worker_and_week`.
-  **Matrice progetti/worker…**: prima `matrix_select_window` (worker `show_in_find`,
-  ricerca + Select All → `UiState.matrix_workers`, **solo sessione**), poi
-  `matrix_window` (`UiState.matrix_from`/`matrix_to: Option<i32>` in giorni, `None` =
+  **Matrice progetti/worker…**: the menu item opens `matrix_window` **directly**,
+  with `UiState.matrix_workers` reset to **all** `matrix_candidates` (worker
+  `show_in_find`) on every opening (same for the pies with `pies_workers`); the
+  window's «Worker…» button opens `matrix_select_window` (search + Select All, live,
+  «OK» closes it) to untick some. `matrix_window` (`UiState.matrix_from`/`matrix_to: Option<i32>` in giorni, `None` =
   oggi; `DatePickerButton`). In mezzo alla barra la combo anni (`years_combo`,
   anni da `available_years`, stato `UiState.matrix_years: BTreeSet<i32>`, solo
   sessione) imposta Da/A con `years_range` (1/1 del più vecchio → 31/12 del più

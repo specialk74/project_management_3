@@ -1286,12 +1286,10 @@ mese `aaaa-mm` nella vista Mese), `Year`, `Month`, `Allocated`, `Capacity`,
 Una tabella «chi lavora su cosa»: **una colonna per worker**, **una riga per
 progetto**.
 
-1. **Scelta dei worker** — si apre prima una finestra con l'elenco dei worker (quelli
-   con «mostra nella ricerca» attivo), un campo di ricerca e *Select All*. Spunta i
-   worker e premi **Mostra matrice**. La selezione resta **ricordata finché il
-   programma è aperto**: chiudendo e riaprendo la matrice ritrovi gli stessi worker
-   (al riavvio dell'app riparte vuota). Dalla matrice il pulsante **Worker…** riapre
-   la scelta.
+1. **Worker** — la matrice si apre subito con **tutti i worker** con «mostra nella
+   ricerca» attivo, a ogni apertura dal menù. Il pulsante **Worker…** della finestra
+   apre l'elenco (ricerca, *Select All*, una spunta per worker) per toglierne o
+   rimetterne: la matrice si aggiorna subito, **OK** chiude l'elenco.
 2. **Intervallo di date** — in alto, a sinistra **Da:** e a destra **A:**; ognuno può
    essere **Oggi** oppure una **Data** scelta col calendario. **In mezzo** c'è la
    combo **«Anni»**, con gli anni di inizio/fine dei progetti (come il filtro Anni,
@@ -1393,10 +1391,10 @@ cella sulle ore del worker nel periodo).
 Mostra, per ogni worker scelto, **dove sono andate le sue ore** in un intervallo di
 date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 
-1. **Scelta dei worker** — come per la matrice si apre prima l'elenco dei worker
-   (quelli con «Elenchi» attivo), con ricerca e Select All; **Mostra torte** apre la
-   finestra. La scelta è indipendente da quella della matrice e resta finché l'app è
-   aperta; dalla finestra si cambia con **Worker…**.
+1. **Worker** — come la matrice, le torte si aprono subito con **tutti i worker**
+   con «Elenchi» attivo; il pulsante **Worker…** apre l'elenco (ricerca, Select
+   All) per toglierne o rimetterne. La scelta è indipendente da quella della
+   matrice.
 2. **Intervallo e categorie** — in alto **Da** e **A** (oggi o una data) e, in
    mezzo, la combo **Anni** che li imposta dal 1° gennaio del più vecchio al 31
    dicembre del più recente, esattamente come nella matrice. Accanto, le combo
@@ -1506,8 +1504,17 @@ un CSV per Excel (`torte_AAAA_MM_GG.csv`, stesso formato di File ▸ Esporta CSV
 **una riga per worker, dev e progetto**, con `Worker`, `Dev`, `Category`,
 `Tripletta`, `Project`, `Priority`, `Hours`, `Done` e `Planned` (fatte e
 pianificate, divise come nelle tabelle). Sommando per `Dev` o per `Category` si
-ritrovano le due torte. Capacità e ore libere non ci sono: valgono per worker e
-in una pivot verrebbero sommate su ogni riga.
+ritrovano le due torte.
+
+Capacità e ore libere valgono per worker (in una pivot sul primo file verrebbero
+sommate su ogni riga), quindi lo stesso clic salva **un secondo file**: si sceglie
+un nome solo (es. `torte.csv`) e i file diventano `torte_hours.csv` (le ore, sopra)
+e `torte_capacity.csv`, con **una riga per worker** (anche senza ore): `Worker`,
+`Hours`, `Done`, `Planned`, `Capacity` (ore disponibili nel periodo), `Used %`
+(ore sulla capacità), `Future capacity` (disponibili da questa settimana a fine
+periodo) e `Free hours` (quelle meno le pianificate; negative = oltre la
+capacità), gli stessi numeri della finestra. Le ultime due sono vuote se il
+periodo finisce prima della settimana corrente.
 
 ### Effort per worker (Vista ▸ Effort per worker…)
 Finestra di sola lettura con **una tabella per ogni worker**, una sotto l'altra

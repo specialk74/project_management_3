@@ -387,11 +387,15 @@ pub(crate) fn toolbar(
                 ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Matrice progetti/worker…").clicked() {
-                state.matrix_select_open = true;
+                // Si parte subito con tutti i worker: si tolgono dalla finestra
+                // (pulsante «Worker…»).
+                state.matrix_workers = matrix_candidates(app).into_iter().map(|(id, _)| id).collect();
+                state.show_matrix = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Torte dev/categorie per worker…").clicked() {
-                state.pies_select_open = true;
+                state.pies_workers = matrix_candidates(app).into_iter().map(|(id, _)| id).collect();
+                state.show_pies = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
             if ui.button("Effort per worker…").clicked() {

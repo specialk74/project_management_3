@@ -3524,8 +3524,22 @@ impl PjmApp {
                     &self.ui.pies_priorities,
                     current_monday_days(),
                 );
+                // Due file: le ore (worker × dev × progetto) e, a parte, la
+                // capacità e le ore libere (una riga per worker).
                 let (csv, n) = crate::view_csv::pies_csv(&self.app, &pies);
-                self.save_view_csv("torte", csv, n);
+                let split = crate::worker_pies::split_shown(to, current_monday_days());
+                let (cap, _) = crate::view_csv::pies_capacity_csv(&pies, split);
+                if n == 0 {
+                    self.ui.toast_warn("Niente da esportare nella vista: CSV non creato.");
+                } else {
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "CSV",
+                        "csv",
+                        &dated_file_name("torte", "csv"),
+                        vec![("hours".into(), csv.into_bytes()), ("capacity".into(), cap.into_bytes())],
+                    );
+                }
             }
             Action::ExportWorkerEffortCsv { from, to } => {
                 let weeks = crate::worker_effort::weeks(from, to);

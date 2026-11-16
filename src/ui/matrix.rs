@@ -251,7 +251,7 @@ pub(crate) fn range_end_picker(ui: &mut egui::Ui, label: &str, id: &str, value: 
 
 /// Worker proponibili nella dialog di selezione: quelli con `show_in_find`
 /// (come la colonna Workers dei filtri).
-fn matrix_candidates(app: &App) -> Vec<(WorkerId, String)> {
+pub(crate) fn matrix_candidates(app: &App) -> Vec<(WorkerId, String)> {
     app.workers
         .list()
         .into_iter()
@@ -357,7 +357,7 @@ pub(crate) fn matrix_select_window(ctx: &egui::Context, app: &App, state: &mut U
         ctx,
         app,
         "Matrice progetti × worker — scegli i worker",
-        "Mostra matrice",
+        "OK",
         &mut state.matrix_workers,
         &mut state.matrix_worker_search,
     ) {
