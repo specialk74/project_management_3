@@ -102,6 +102,25 @@ pub(crate) fn toolbar(
                 });
                 ui.close_kind(egui::UiKind::Menu);
             }
+            if ui
+                .button("Esporta CSV…")
+                .on_hover_text(
+                    "Matrice effort in CSV per Excel e tabelle pivot: una riga per cella \
+                     (progetto, categoria, priorità, stato, dev, worker, settimana, ore, nota)",
+                )
+                .clicked()
+            {
+                // Come il report: progetti del corpo centrale preselezionati,
+                // opzioni dell'ultima volta.
+                state.csv_export = Some(CsvExportState {
+                    entries: body_projects(app, state.project_view, &ProjectFilter::from_state(state))
+                        .into_iter()
+                        .map(|id| (id, true))
+                        .collect(),
+                    choices: state.csv_choices.unwrap_or_else(CsvChoices::initial),
+                });
+                ui.close_kind(egui::UiKind::Menu);
+            }
             ui.separator();
             if ui.button("Esci").clicked() {
                 // Richiede la chiusura: se ci sono modifiche non salvate,

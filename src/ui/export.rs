@@ -1053,6 +1053,99 @@ pub(crate) fn build_minuta(
     out
 }
 
+/// Dialog «Esporta CSV» (File ▸ Esporta CSV…): progetti, periodo facoltativo e
+/// assegnazioni a 0 ore; il file è `effort_csv::build_effort_csv`.
+pub(crate) fn csv_export_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(st) = state.csv_export.as_mut() else {
+        return;
+    };
+    let mut open = true;
+    let mut export = false;
+    let mut cancel = false;
+    let picker = |ui: &mut egui::Ui, id: &str, day: &mut i32| {
+        let mut date = days_to_jiff(*day);
+        let r = ui.add(
+            egui_extras::DatePickerButton::new(&mut date)
+                .id_salt(id)
+                .format("%Y-%m-%d"),
+        );
+        if r.changed()
+            && let Some(d) = jiff_to_days(date)
+        {
+            *day = d;
+        }
+    };
+
+    egui::Window::new("Esporta CSV")
+        .collapsible(false)
+        .resizable(true)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center())
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label("Progetti da esportare:");
+            ui.add_space(4.0);
+            project_checklist(ui, app, &mut st.entries);
+            ui.separator();
+            let c = &mut st.choices;
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut c.limit, "Solo le settimane dal")
+                    .on_hover_text("Ogni data vale per l'intera settimana che la contiene.");
+                ui.add_enabled_ui(c.limit, |ui| {
+                    picker(ui, "csv_from", &mut c.range.0);
+                    ui.label("al");
+                    picker(ui, "csv_to", &mut c.range.1);
+                });
+            });
+            let valid = !c.limit || c.range.0 <= c.range.1;
+            if !valid {
+                ui.label(egui::RichText::new("«Dal» è dopo «al».").small().color(warn_amber()));
+            }
+            ui.checkbox(&mut c.zero, "Includi le assegnazioni a 0 ore");
+            ui.label(
+                egui::RichText::new(
+                    "Una riga per cella (progetto × dev × worker × settimana), separatore «;»: \
+                     si apre direttamente in Excel.",
+                )
+                .small()
+                .color(text_dim()),
+            );
+            ui.separator();
+            let any = st.entries.iter().any(|(_, s)| *s);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(any && valid, egui::Button::new("Esporta CSV…"))
+                    .clicked()
+                {
+                    export = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+            checklist_dialog_end(ui);
+        });
+
+    // Le opzioni restano per la prossima apertura, anche annullando.
+    state.csv_choices = Some(st.choices);
+    if export {
+        let projects: Vec<ProjectId> =
+            st.entries.iter().filter(|(_, s)| *s).map(|(p, _)| *p).collect();
+        actions.push(Action::ExportEffortCsv {
+            projects,
+            opts: st.choices.options(),
+        });
+        state.csv_export = None;
+    } else if cancel || !open {
+        state.csv_export = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

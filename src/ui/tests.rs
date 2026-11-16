@@ -3733,3 +3733,53 @@ fn project_area_ends_with_planned_and_spent_hours() {
     let row = text_pos(&out, "120h / 12h").expect("previste / spese su una riga");
     assert!((proj_bottom - row.y - ROW_H / 2.0).abs() < 1.0, "in fondo all'area del progetto");
 }
+
+/// Dialog «Esporta CSV»: con il periodo attivo e le 0 ore, «Esporta CSV…»
+/// manda i progetti spuntati e le opzioni, e le opzioni restano per la
+/// prossima apertura.
+#[test]
+fn csv_export_window_sends_projects_and_options() {
+    let mut app = App::new();
+    let p = app.projects.add("Uno", Some("AAA"), None);
+    let q = app.projects.add("Due", Some("BBB"), None);
+    let choices = CsvChoices {
+        limit: true,
+        zero: true,
+        ..CsvChoices::initial()
+    };
+    let mut state = UiState {
+        csv_export: Some(CsvExportState {
+            entries: vec![(p, true), (q, false)],
+            choices,
+        }),
+        ..Default::default()
+    };
+    let ctx = egui::Context::default();
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut input = egui::RawInput {
+            screen_rect: Some(screen(1000.0, 800.0)),
+            ..Default::default()
+        };
+        input.events.extend(ev);
+        ctx.run_ui_test(input, |ui| csv_export_window(ui.ctx(), &app, state, actions))
+    };
+    let mut out = frame(&mut state, &mut actions, None);
+    for _ in 0..3 {
+        out = frame(&mut state, &mut actions, None);
+    }
+    let btn = text_pos(&out, "Esporta CSV…").expect("bottone");
+    for ev in click_events(btn, egui::PointerButton::Primary) {
+        let _ = frame(&mut state, &mut actions, Some(ev));
+    }
+    let sent = actions.iter().find_map(|a| match a {
+        Action::ExportEffortCsv { projects, opts } => Some((projects.clone(), *opts)),
+        _ => None,
+    });
+    let (projects, opts) = sent.expect("ExportEffortCsv");
+    assert_eq!(projects, [p]);
+    assert_eq!(opts.range, Some(choices.range));
+    assert!(opts.zero);
+    assert!(state.csv_export.is_none(), "dialog chiusa");
+    assert_eq!(state.csv_choices, Some(choices), "opzioni ricordate");
+}

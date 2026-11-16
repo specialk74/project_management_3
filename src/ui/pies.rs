@@ -718,6 +718,13 @@ pub(crate) fn pies_window(
                         });
                     }
                 }
+                if ui
+                    .add_enabled(can_export, egui::Button::new("Esporta CSV…"))
+                    .on_hover_text("Una riga per worker, dev e progetto: ore totali, fatte e pianificate, con categoria e priorità.")
+                    .clicked()
+                {
+                    actions.push(Action::ExportWorkerPiesCsv { from, to });
+                }
                 ui.label(
                     egui::RichText::new(format!(
                         "{} worker · {} con ore nel periodo",

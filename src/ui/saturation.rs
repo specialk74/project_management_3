@@ -226,13 +226,17 @@ pub(crate) fn heat_cell(
 
 /// Finestra "Saturazione worker": heatmap worker × (settimana|mese), colorata per
 /// saturazione (allocato / capacità). Mostra solo i worker visibili nel footer.
-pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
-    if !state.show_saturation {
-        return;
-    }
-    let this_week = state.this_week;
-    // Worker mostrati nel cruscotto: quelli con `show_in_find` attivo OPPURE non
-    // nascosti nel footer. Non dipende dal filtro worker (Ctrl+F).
+/// Worker × colonna × (allocato, capacità) del cruscotto, come lo mostra la
+/// finestra: worker con `show_in_find` attivo OPPURE non nascosti nel footer
+/// (non dipende dal filtro Ctrl+F), colonne per settimana o mese, solo dalla
+/// settimana corrente se `future_only`. Condiviso con l'export CSV.
+#[allow(clippy::type_complexity)]
+pub(crate) fn saturation_view(
+    app: &App,
+    monthly: bool,
+    future_only: bool,
+    this_week: i32,
+) -> (Vec<(WorkerId, String)>, Vec<SatCol>, Vec<Vec<(i32, i32)>>) {
     let workers: Vec<(WorkerId, String)> = app
         .workers
         .list()
@@ -241,16 +245,12 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
             app.workers.is_shown_in_find(*id) || !app.workers.is_hidden_in_footer(*id)
         })
         .collect();
-
-    let mut columns = saturation_columns(app, state.saturation_monthly);
-    if state.saturation_future_only {
+    let mut columns = saturation_columns(app, monthly);
+    if future_only {
         // Tieni la settimana corrente e quelle successive.
         columns.retain(|c| c.weeks.iter().any(|&w| w >= this_week));
     }
-
-    // (allocato, capacità) per worker × colonna, calcolati una volta per frame:
-    // li leggono riepilogo, colonna Σ e celle.
-    let cells: Vec<Vec<(i32, i32)>> = workers
+    let cells = workers
         .iter()
         .map(|(wid, _)| {
             columns
@@ -259,6 +259,48 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                 .collect()
         })
         .collect();
+    (workers, columns, cells)
+}
+
+/// CSV del cruscotto (vedi `view_csv::saturation_csv`) e numero di righe.
+pub(crate) fn saturation_export_csv(
+    app: &App,
+    monthly: bool,
+    future_only: bool,
+    this_week: i32,
+) -> (String, usize) {
+    let (workers, columns, cells) = saturation_view(app, monthly, future_only, this_week);
+    let mut out = Vec::new();
+    for ((_, name), row) in workers.iter().zip(&cells) {
+        for (c, &(alloc, cap)) in columns.iter().zip(row) {
+            out.push(crate::view_csv::SatCell {
+                worker: name,
+                first_week: c.weeks.first().copied().unwrap_or_default(),
+                monthly,
+                alloc,
+                cap,
+            });
+        }
+    }
+    crate::view_csv::saturation_csv(&out)
+}
+
+pub(crate) fn saturation_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    if !state.show_saturation {
+        return;
+    }
+    let this_week = state.this_week;
+    let (workers, columns, cells) = saturation_view(
+        app,
+        state.saturation_monthly,
+        state.saturation_future_only,
+        this_week,
+    );
 
     // Riepilogo (sovra-allocazioni e ore in eccesso) sui dati mostrati.
     let mut over_n = 0;
@@ -297,6 +339,14 @@ pub(crate) fn saturation_window(ctx: &egui::Context, app: &App, state: &mut UiSt
                     &mut state.saturation_future_only,
                     "Solo da settimana corrente",
                 );
+                ui.separator();
+                if ui
+                    .add_enabled(!workers.is_empty() && !columns.is_empty(), egui::Button::new("Esporta CSV…"))
+                    .on_hover_text("Una riga per worker e colonna (settimana o mese, come la vista): ore allocate, capacità, % e ore oltre.")
+                    .clicked()
+                {
+                    actions.push(Action::ExportSaturationCsv);
+                }
             });
             ui.label(format!(
                 "Sovra-allocazioni: {over_n}  ·  Ore in eccesso totali: {total_excess}"
@@ -587,7 +637,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state))
+            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state, &mut Vec::new()))
         };
         let _ = frame(&mut state, vec![]); // prima passata: dimensionamento
         let first = texts(&frame(&mut state, vec![]));
@@ -658,7 +708,7 @@ mod tests {
         };
         let mut out = None;
         for _ in 0..3 {
-            out = Some(ctx.run_ui_test(input.clone(), |ui| saturation_window(ui.ctx(), &app, &mut state)));
+            out = Some(ctx.run_ui_test(input.clone(), |ui| saturation_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
         }
         let out = out.unwrap();
         // La finestra appare in dissolvenza: si confronta l'RGB non premoltiplicato.
@@ -715,7 +765,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state))
+            ctx.run_ui_test(input, |ui| saturation_window(ui.ctx(), &app, state, &mut Vec::new()))
         };
         // testi disegnati in giallo evidenziazione
         let yellow = |out: &egui::FullOutput| -> Vec<String> {
@@ -754,5 +804,46 @@ mod tests {
         // cursore fuori: l'evidenziazione sparisce
         let _ = frame(&mut state, vec![egui::Event::PointerMoved(egui::pos2(1190.0, 690.0))]);
         assert_eq!(state.sat_hover, None);
+    }
+
+    #[test]
+    fn csv_button_asks_for_the_csv_and_the_csv_follows_the_view() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let cols = saturation_columns(&app, false);
+        let w0 = cols[0].weeks[0];
+        app.sovra.insert((WeekId(w0 as usize), mario), Effort(13));
+        let mut state = UiState {
+            show_saturation: true,
+            this_week: -1,
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 700.0)),
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let mut button = None;
+        for _ in 0..2 {
+            let out = ctx.run_ui_test(input.clone(), |ui| {
+                saturation_window(ui.ctx(), &app, &mut state, &mut actions)
+            });
+            button = text_pos(&out, "Esporta CSV…");
+        }
+        for ev in click_events(button.expect("Esporta CSV…"), egui::PointerButton::Primary) {
+            let mut i = input.clone();
+            i.events = vec![ev];
+            let _ = ctx.run_ui_test(i, |ui| {
+                saturation_window(ui.ctx(), &app, &mut state, &mut actions)
+            });
+        }
+        assert!(matches!(actions.as_slice(), [Action::ExportSaturationCsv]), "{}", actions.len());
+        // Una riga per worker × colonna; per mese le colonne sono meno.
+        let (csv, n) = saturation_export_csv(&app, false, false, -1);
+        assert_eq!(n, cols.len());
+        assert!(csv.contains(";13;"), "ore allocate della prima settimana");
+        let (_, monthly) = saturation_export_csv(&app, true, false, -1);
+        assert_eq!(monthly, saturation_columns(&app, true).len());
     }
 }

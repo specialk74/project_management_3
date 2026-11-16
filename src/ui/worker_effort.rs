@@ -308,6 +308,13 @@ pub(crate) fn worker_effort_window(
                 {
                     actions.push(Action::ExportWorkerEffort { from, to });
                 }
+                if ui
+                    .add_enabled(any_rows, egui::Button::new("Esporta CSV…"))
+                    .on_hover_text("Una riga per worker, progetto, dev e settimana in cui è assegnato (anche a 0 ore), con ferie / malattia.")
+                    .clicked()
+                {
+                    actions.push(Action::ExportWorkerEffortCsv { from, to });
+                }
             });
             if changed {
                 state.worker_effort_range = Some((from, to));

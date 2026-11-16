@@ -685,6 +685,48 @@ struct ReportState {
     entries: Vec<(ProjectId, bool)>,
 }
 
+/// Opzioni della dialog «Esporta CSV», ricordate fra un'apertura e l'altra
+/// (solo sessione).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CsvChoices {
+    /// Limita alle settimane di `range`.
+    pub(crate) limit: bool,
+    /// Periodo in giorni (Da, A); di default l'anno in corso.
+    pub(crate) range: (i32, i32),
+    /// Includi le assegnazioni a 0 ore.
+    pub(crate) zero: bool,
+}
+
+impl CsvChoices {
+    /// Senza limite di periodo, 0 ore escluse; periodo proposto = anno in corso.
+    pub(crate) fn initial() -> Self {
+        use chrono::Datelike;
+        let y = crate::date_utils::dates::today().year();
+        let day = |m, d| {
+            crate::date_utils::dates::local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap())
+        };
+        Self {
+            limit: false,
+            range: (day(1, 1), day(12, 31)),
+            zero: false,
+        }
+    }
+
+    pub(crate) fn options(&self) -> crate::effort_csv::CsvOptions {
+        crate::effort_csv::CsvOptions {
+            range: self.limit.then_some(self.range),
+            zero: self.zero,
+        }
+    }
+}
+
+/// Stato della dialog «Esporta CSV» (File ▸ Esporta CSV…): progetti scelti e
+/// opzioni.
+pub(crate) struct CsvExportState {
+    pub(crate) entries: Vec<(ProjectId, bool)>,
+    pub(crate) choices: CsvChoices,
+}
+
 // ── Notifiche in-app (toast) ────────────────────────────────────────────────
 
 /// Gravità di una notifica: decide icona, colore e durata.
@@ -1070,6 +1112,9 @@ pub struct UiState {
     minuta: Option<MinutaState>,
     // dialog "Report" (File ▸ Report…): selezione dei progetti del PDF
     report: Option<ReportState>,
+    // dialog «Esporta CSV» (File ▸ Esporta CSV…) e ultime opzioni usate
+    csv_export: Option<CsvExportState>,
+    csv_choices: Option<CsvChoices>,
     // autosave: istante (secondi, orologio egui) dell'ultimo salvataggio
     last_save_time: f64,
     // messaggio di errore/incoerenza da mostrare dopo un caricamento fallito o
@@ -1595,6 +1640,11 @@ pub(crate) enum Action {
         milestones: Vec<MilestoneId>,
         range: (i32, i32),
     },
+    /// CSV della matrice effort (una riga per cella) dei progetti scelti.
+    ExportEffortCsv {
+        projects: Vec<ProjectId>,
+        opts: crate::effort_csv::CsvOptions,
+    },
     GenerateReport {
         projects: Vec<ProjectId>,
     },
@@ -1623,6 +1673,22 @@ pub(crate) enum Action {
         from: i32,
         to: i32,
     },
+    /// CSV delle viste (`view_csv`), con gli stessi dati e filtri della
+    /// finestra da cui parte: matrice, torte ed effort per worker sul periodo
+    /// `[from, to]` (giorni), saturazione con la vista corrente.
+    ExportWorkerMatrixCsv {
+        from: i32,
+        to: i32,
+    },
+    ExportWorkerPiesCsv {
+        from: i32,
+        to: i32,
+    },
+    ExportWorkerEffortCsv {
+        from: i32,
+        to: i32,
+    },
+    ExportSaturationCsv,
     GenerateMinuta {
         projects: Vec<ProjectId>,
         only_current: bool,
@@ -2201,6 +2267,7 @@ impl eframe::App for PjmApp {
             pdf_multi_export_window(ui.ctx(), app, state, &mut actions);
             minuta_window(ui.ctx(), app, state, &mut actions);
             report_window(ui.ctx(), app, state, &mut actions);
+            csv_export_window(ui.ctx(), app, state, &mut actions);
             help_window(ui.ctx(), state);
             confirm_del_dev_window(ui.ctx(), state, &mut actions);
             clear_efforts_window(ui.ctx(), app, state, &mut actions);
@@ -2213,7 +2280,7 @@ impl eframe::App for PjmApp {
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
-            saturation_window(ui.ctx(), app, state);
+            saturation_window(ui.ctx(), app, state, &mut actions);
             matrix_select_window(ui.ctx(), app, state);
             matrix_window(ui.ctx(), app, state, &mut actions);
             pies_select_window(ui.ctx(), app, state);
@@ -2366,6 +2433,16 @@ impl PjmApp {
                 self.ui.editing = None;
             }
             Err(e) => self.ui.toast_error(format!("Annulla/Ripeti non riuscito: {e}")),
+        }
+    }
+
+    /// Salva il CSV di una vista (`stem_aaaa_mm_gg.csv`), o avvisa se non ha
+    /// righe di dati.
+    fn save_view_csv(&mut self, stem: &str, csv: String, rows: usize) {
+        if rows == 0 {
+            self.ui.toast_warn("Niente da esportare nella vista: CSV non creato.");
+        } else {
+            save_export_dialog(&mut self.ui, "CSV", "csv", &dated_file_name(stem, "csv"), csv);
         }
     }
 
@@ -3418,6 +3495,61 @@ impl PjmApp {
                             .ui
                             .toast_warn("Nessun worker con ore nel periodo: niente da esportare."),
                     }
+                }
+            }
+            Action::ExportWorkerMatrixCsv { from, to } => {
+                let mut m = crate::worker_matrix::build_filtered(
+                    &self.app,
+                    &self.ui.matrix_workers,
+                    from,
+                    to,
+                    &self.ui.matrix_categories,
+                    &self.ui.matrix_statuses,
+                    &self.ui.matrix_priorities,
+                );
+                if let Some(w) = self.ui.matrix_sort {
+                    crate::worker_matrix::sort_by_worker(&mut m, w);
+                }
+                let (csv, n) = crate::view_csv::matrix_csv(&self.app, &m);
+                self.save_view_csv("matrice", csv, n);
+            }
+            Action::ExportWorkerPiesCsv { from, to } => {
+                let pies = crate::worker_pies::build_filtered(
+                    &self.app,
+                    &self.ui.pies_workers,
+                    from,
+                    to,
+                    &self.ui.pies_categories,
+                    &self.ui.pies_devs,
+                    &self.ui.pies_priorities,
+                    current_monday_days(),
+                );
+                let (csv, n) = crate::view_csv::pies_csv(&self.app, &pies);
+                self.save_view_csv("torte", csv, n);
+            }
+            Action::ExportWorkerEffortCsv { from, to } => {
+                let weeks = crate::worker_effort::weeks(from, to);
+                let projects = worker_effort_projects(&self.app, &self.ui);
+                let data = crate::worker_effort::build(&self.app, &projects, &weeks);
+                let (csv, n) = crate::view_csv::worker_effort_csv(&data, &weeks);
+                self.save_view_csv("effort_per_worker", csv, n);
+            }
+            Action::ExportSaturationCsv => {
+                let (csv, n) = saturation_export_csv(
+                    &self.app,
+                    self.ui.saturation_monthly,
+                    self.ui.saturation_future_only,
+                    self.ui.this_week,
+                );
+                self.save_view_csv("saturazione", csv, n);
+            }
+            Action::ExportEffortCsv { projects, opts } => {
+                let (csv, rows) = crate::effort_csv::build_effort_csv(&self.app, &projects, opts);
+                if rows == 0 {
+                    self.ui
+                        .toast_warn("Nessuna ora nei progetti e nel periodo scelti: CSV non creato.");
+                } else {
+                    save_export_dialog(&mut self.ui, "CSV", "csv", &dated_file_name("effort", "csv"), csv);
                 }
             }
             Action::GenerateReport { projects } => {

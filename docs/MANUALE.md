@@ -331,6 +331,31 @@ bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
     al Mancante; se l'allocato fino a fine anno supera già lo stimato, la seconda è
     **negativa e in rosso**.
   Se i dev non entrano in una pagina, la tabella continua sulla successiva.
+- **Esporta CSV…** — esporta la **matrice effort** in un file CSV da aprire in
+  Excel (o LibreOffice) per analisi e **tabelle pivot**. La finestra propone i
+  progetti visibili nel corpo centrale (tutti spuntati, con Select All) e due
+  opzioni, ricordate finché l'app è aperta:
+  - **Solo le settimane dal … al …** — limita alle settimane che toccano il periodo
+    (anche di un solo giorno); spenta, esporta tutte le settimane.
+  - **Includi le assegnazioni a 0 ore** — spenta di default (per le somme non
+    servono).
+
+  Il file ha **una riga per cella** della griglia (progetto × dev × worker ×
+  settimana) con le colonne `Tripletta`, `Project` (descrizione), `Category`,
+  `Priority`, `Status` (*Active* / *On-Hold* / *Closed*), `Dev`, `Worker`, `Week`
+  (lunedì della settimana, `aaaa-mm-gg`), `Year`, `Month`, `Hours` e `Note` (la
+  nota della cella). Le colonne del progetto sono ripetute su ogni riga, così la
+  pivot può raggruppare per qualunque colonna (es. ore per worker e mese, o per
+  categoria e priorità). Il separatore è il **punto e virgola** e il file è in
+  UTF-8 con BOM: Excel con le impostazioni italiane lo apre già diviso in colonne e
+  con gli accenti giusti. Il nome proposto è `effort_AAAA_MM_GG.csv`. Se nei
+  progetti e nel periodo scelti non ci sono ore compare un avviso e il file non
+  viene creato.
+
+  Anche le viste **Matrice**, **Torte**, **Saturazione** ed **Effort per worker**
+  (menù Vista) hanno un pulsante **Esporta CSV…** che esporta i dati della
+  vista, con i suoi filtri (vedi le rispettive sezioni). Il formato del file è
+  lo stesso.
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
   conferma (Salva ed esci / Esci senza salvare / Annulla).
 
@@ -1250,6 +1275,13 @@ schermo: la heatmap riempie lo spazio disponibile. Nota: **ferie/malattia non az
 (si possono fare pochi giorni di ferie e lavorare gli altri), quindi il conteggio
 ore resta quello reale.
 
+**Esporta CSV…** (accanto a «Solo da settimana corrente») salva il cruscotto così
+com'è (stessi worker, vista Settimana o Mese, settimane passate incluse o no) in un
+CSV per Excel (`saturazione_AAAA_MM_GG.csv`, stesso formato di File ▸ Esporta CSV…):
+**una riga per worker e colonna**, con `Worker`, `Period` (lunedì `aaaa-mm-gg`, o
+mese `aaaa-mm` nella vista Mese), `Year`, `Month`, `Allocated`, `Capacity`,
+`Saturation %` (vuota con capacità 0) e `Over` (ore oltre la capacità, 0 se dentro).
+
 ### Matrice progetti × worker (Vista ▸ Matrice progetti/worker…)
 Una tabella «chi lavora su cosa»: **una colonna per worker**, **una riga per
 progetto**.
@@ -1348,6 +1380,13 @@ anni, delle categorie o degli stati, il sottotitolo li riporta dopo l'intervallo
 colonne vengono divise in più blocchi (in ogni blocco solo i progetti dei suoi
 worker), e se le righe non entrano la tabella continua sulle pagine successive con
 l'intestazione ripetuta.
+
+**Esporta CSV…** salva gli stessi dati (worker, periodo, filtri e ordinamento
+della finestra) in un CSV per Excel (`matrice_AAAA_MM_GG.csv`, stesso formato di
+File ▸ Esporta CSV…): **una riga per progetto, worker e dev della cella**, con
+`Tripletta`, `Project`, `Category`, `Priority`, `Status`, `Worker`, `Dev`, `Hours`
+(anche 0, se il worker è solo assegnato) e `Worker share %` (la percentuale della
+cella sulle ore del worker nel periodo).
 
 ### Torte dev/categorie per worker (Vista ▸ Torte dev/categorie per worker…)
 
@@ -1462,6 +1501,14 @@ senza pagine (le tabelle lunghe scendono quanto serve), **un file per worker**: 
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I
 worker senza ore nel periodo sono saltati.
 
+**Esporta CSV…** salva le ore delle torte (stessi worker, periodo e filtri) in
+un CSV per Excel (`torte_AAAA_MM_GG.csv`, stesso formato di File ▸ Esporta CSV…):
+**una riga per worker, dev e progetto**, con `Worker`, `Dev`, `Category`,
+`Tripletta`, `Project`, `Priority`, `Hours`, `Done` e `Planned` (fatte e
+pianificate, divise come nelle tabelle). Sommando per `Dev` o per `Category` si
+ritrovano le due torte. Capacità e ore libere non ci sono: valgono per worker e
+in una pivot verrebbero sommate su ogni riga.
+
 ### Effort per worker (Vista ▸ Effort per worker…)
 Finestra di sola lettura con **una tabella per ogni worker**, una sotto l'altra
 (tutti i worker con la spunta **Elenchi** di «Filtri ▸ Worker (visibilità e
@@ -1521,6 +1568,13 @@ vanno a capo) o le righe in altezza (circa 40), la
 tabella del worker **continua su
 altre pagine**, ripetendo intestazione e colonna dei progetti, e il titolo dice
 quale pagina è («(1/2)»).
+
+**Esporta CSV…** salva le stesse tabelle (stessi worker, progetti e periodo) in un
+CSV per Excel (`effort_per_worker_AAAA_MM_GG.csv`, stesso formato di File ▸
+Esporta CSV…): **una riga per worker, progetto, dev e settimana in cui è
+assegnato** (anche a 0 ore, come nella tabella), con `Worker`, `Project`, `Dev`,
+`Week` (lunedì `aaaa-mm-gg`), `Year`, `Month`, `Hours` e `Week status`
+(*Vacation* / *Sick*, vuoto se nessuno dei due).
 
 ---
 

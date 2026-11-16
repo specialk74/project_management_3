@@ -1139,6 +1139,13 @@ pub(crate) fn matrix_window(
                         years: state.matrix_years.iter().copied().collect(),
                     });
                 }
+                if ui
+                    .add_enabled(can_export, egui::Button::new("Esporta CSV…"))
+                    .on_hover_text("Una riga per progetto, worker e dev della cella: ore e % sulle ore del worker, con categoria, priorità e stato.")
+                    .clicked()
+                {
+                    actions.push(Action::ExportWorkerMatrixCsv { from, to });
+                }
                 ui.label(
                     egui::RichText::new(format!(
                         "{} worker · {} progetti",

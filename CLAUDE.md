@@ -94,6 +94,21 @@ references; the UI lives entirely in the `src/ui/` module.
     `private_interfaces` warns). Note the `include_str!` for the manual is `../../docs/…` now.
 - `src/ui_style.rs` — sizes, fonts, colors, theme (light/dark) and B/W mode, `cumulative_color`.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
+- `src/effort_csv.rs` — CSV export of the effort matrix (File ▸ Esporta CSV…).
+- `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
+  Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
+  dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project: Hours/
+  Done/Planned; no per-worker capacity column, a pivot would sum it on every row),
+  `worker_effort_csv` (row = worker × table row × assigned week, 0 included, + week
+  status Vacation/Sick), `saturation_csv` (row = worker × column: Period, Allocated,
+  Capacity, Saturation %, Over; fed by `saturation_export_csv` in
+  `ui/saturation.rs`, which shares `saturation_view` with the window). Actions
+  `ExportWorkerMatrixCsv/ExportWorkerPiesCsv/ExportWorkerEffortCsv { from, to }` and
+  `ExportSaturationCsv` rebuild the data with the window's session filters (and the
+  matrix sort) and save via `PjmApp::save_view_csv(stem, csv, rows)`. All CSV text
+  goes through `effort_csv::csv_text(header, rows)` (BOM, `;`, CRLF, quoting);
+  shared helpers `week_fields`, `category_name`, `priority_name`, `status_en`.
+  `saturation_window` now takes `actions`.
 - `src/worker_matrix.rs` / `src/worker_pies.rs` / `src/worker_effort.rs` — data
   shared by the matrix / pies / effort-per-worker windows and their PDF (and SVG)
   exports.
@@ -285,7 +300,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
 
 ### Toolbar menus (in `toolbar`)
 
-- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Report… (PDF riepilogo progetti), Esci.
+- **File**: Salva (`Cmd/Ctrl+S`), Apri…, Esporta… (PDF Gantt), Andamento… (PDF trend % nel tempo), Minuta… (esporta note progetti in Markdown), Report… (PDF riepilogo progetti), Esporta CSV… (matrice effort), Esci.
   - **Minuta** (`minuta_window` + `build_minuta` in `export.rs`, stato `MinutaState`):
     note settimanali di progetto, più recenti prima. La spunta **«Includi le note dei
     worker»** (`MinutaState.worker_notes` → `Action::GenerateMinuta.worker_notes`,
@@ -483,6 +498,20 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `closed_filter_popup_was_open` (test
   `status_combo_sets_on_hold_and_keeps_the_window_open`, che con il solo controllo
   sul frame corrente fallisce).
+  - **Esporta CSV…** (MIGLIORAMENTI #12; `src/effort_csv.rs`, dialog
+    `csv_export_window` in `export.rs`, `UiState.csv_export: Option<CsvExportState
+    { entries, choices }>` preselected with `body_projects`, `UiState.csv_choices:
+    Option<CsvChoices { limit, range, zero }>` remembered for the session —
+    `CsvChoices::initial()` = no limit, current year, no zeros) →
+    `Action::ExportEffortCsv { projects, opts: CsvOptions { range, zero } }` →
+    `effort_csv::build_effort_csv` → `save_export_dialog("CSV")`, toast_warn with
+    0 rows. **Long format** for pivots: one row per cell (project × dev × worker ×
+    week, `WORKER_ID_ZERO` skipped), columns `HEADER` (English like the other
+    exports): Tripletta, Project, Category, Priority, Status, Dev, Worker, Week
+    (Monday, ISO), Year, Month, Hours, Note; order = given projects, project's
+    dev order, week, worker name. Excel-friendly: `;` separator, UTF-8 BOM, CRLF,
+    quoting of `;`/`"`/newlines. `range` uses `week_overlaps`. Tests in
+    `effort_csv.rs` and `csv_export_window_sends_projects_and_options`.
   - **Report** (`report_window` in `export.rs`, stato `ReportState { entries }`
     preselezionato con `body_projects`, → `Action::GenerateReport { projects }` →
     `pdf_export::build_report_pdf`): PDF di riepilogo, **una pagina (o più) per
