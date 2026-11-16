@@ -10,6 +10,7 @@ pub(crate) use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 pub(crate) use crate::app::App;
 pub(crate) use crate::categories::CategoryId;
+pub(crate) use crate::priorities::PriorityId;
 pub(crate) use crate::date_utils::dates::{
     current_monday_days, days_to_local, local_to_days, parse_date_str,
     primo_giorno_settimana_corrente, today, today_days, week_label,
@@ -174,6 +175,9 @@ pub(crate) enum Popup {
         text: String,
     },
     Category {
+        proj: ProjectId,
+    },
+    Priority {
         proj: ProjectId,
     },
     /// Ore max globali di un worker (click sul nome nel footer sinistro).
@@ -462,6 +466,7 @@ pub(crate) enum RegistryTab {
     Workers,
     Devs,
     Categories,
+    Priorities,
 }
 
 /// Colonna della dialog unica dei filtri: decide quale campo di ricerca riceve
@@ -1111,6 +1116,9 @@ pub struct UiState {
     // matrice: stati mostrati (Attivi / On-Hold / Closed; vuoto = tutti),
     // solo sessione
     matrix_statuses: std::collections::BTreeSet<ProjectStatus>,
+    // matrice: priorità scelte nella combo (`None` = «Senza priorità»; vuoto =
+    // tutte), solo sessione
+    matrix_priorities: std::collections::BTreeSet<Option<PriorityId>>,
     // matrice: righe ordinate per le ore di questo worker (clic sul suo nome;
     // di nuovo = ordine dei progetti), solo sessione; segue anche l'export
     matrix_sort: Option<WorkerId>,
@@ -1129,6 +1137,9 @@ pub struct UiState {
     pies_categories: std::collections::BTreeSet<Option<CategoryId>>,
     // torte: dev scelti nella combo (vuoto = tutti), solo sessione
     pies_devs: std::collections::BTreeSet<DevId>,
+    // torte: priorità scelte nella combo (`None` = «Senza priorità»; vuoto =
+    // tutte), solo sessione
+    pies_priorities: std::collections::BTreeSet<Option<PriorityId>>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -1143,6 +1154,7 @@ pub struct UiState {
     new_worker: String,
     new_dev: String,
     new_category: String,
+    new_priority: String,
     new_milestone: String,
     // nome della milestone "di progetto" in corso di creazione dal menù della
     // griglia (tasto destro sulla riga alta ▸ Aggiungi milestone qui)
@@ -1345,6 +1357,7 @@ pub(crate) enum Action {
     AddWorker(String),
     AddDev(String),
     AddCategory(String),
+    AddPriority(String),
     SetProjectName {
         proj: ProjectId,
         name: String,
@@ -1428,6 +1441,10 @@ pub(crate) enum Action {
         proj: ProjectId,
         cat: Option<CategoryId>,
     },
+    SetProjectPriority {
+        proj: ProjectId,
+        pri: Option<PriorityId>,
+    },
     DelRow {
         proj: ProjectId,
         dev: DevId,
@@ -1489,6 +1506,10 @@ pub(crate) enum Action {
         cat: CategoryId,
         name: String,
     },
+    RenamePriority {
+        pri: PriorityId,
+        name: String,
+    },
     /// Nasconde (archivia) o rimostra: il worker sparisce da footer ed
     /// elenchi, dev e categorie dalle scelte; i dati restano.
     SetWorkerArchived {
@@ -1503,10 +1524,15 @@ pub(crate) enum Action {
         cat: CategoryId,
         hidden: bool,
     },
+    SetPriorityHidden {
+        pri: PriorityId,
+        hidden: bool,
+    },
     /// Elimina, solo se non usato da nessuna parte (altrimenti un avviso).
     DeleteWorker(WorkerId),
     DeleteDev(DevId),
     DeleteCategory(CategoryId),
+    DeletePriority(PriorityId),
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
         worker: WorkerId,
@@ -1586,8 +1612,8 @@ pub(crate) enum Action {
         from: i32,
         to: i32,
         /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo
-        /// insieme alle categorie e ai dev (`UiState.pies_categories` /
-        /// `pies_devs`).
+        /// insieme alle categorie, ai dev e alle priorità
+        /// (`UiState.pies_categories` / `pies_devs` / `pies_priorities`).
         years: Vec<i32>,
         svg: bool,
     },
@@ -2785,6 +2811,17 @@ impl PjmApp {
                     self.mark_changed();
                 }
             }
+            Action::AddPriority(name) => {
+                let name = name.trim();
+                let others = self.app.priorities.list().into_iter().map(|(_, n)| n);
+                match crate::app::check_new_name(name, others, "priorità") {
+                    Ok(()) => {
+                        self.app.priorities.add(name);
+                        self.mark_changed();
+                    }
+                    Err(e) => self.ui.toast_warn(e),
+                }
+            }
             Action::SetProjectName { proj, name } => {
                 self.app.projects.set_project_info(proj, &name);
                 self.ui.changed = true;
@@ -2903,6 +2940,12 @@ impl PjmApp {
                 self.app.projects.set_category(proj, cat);
                 self.mark_changed();
             }
+            Action::SetProjectPriority { proj, pri } => {
+                if self.app.projects.get_priority(proj) != pri {
+                    self.app.projects.set_priority(proj, pri);
+                    self.mark_changed();
+                }
+            }
             Action::DelRow { proj, dev } => {
                 self.app.projects.del_row(proj, dev);
                 self.mark_changed();
@@ -2978,6 +3021,11 @@ impl PjmApp {
                 Ok(false) => {}
                 Err(e) => self.ui.toast_warn(e),
             },
+            Action::RenamePriority { pri, name } => match self.app.priorities.rename(pri, &name) {
+                Ok(true) => self.mark_changed(),
+                Ok(false) => {}
+                Err(e) => self.ui.toast_warn(e),
+            },
             Action::SetWorkerArchived { worker, archived } => {
                 let a = self.app.workers.set_hidden_in_footer(worker, archived);
                 let b = self.app.workers.set_shown_in_find(worker, !archived);
@@ -2992,6 +3040,11 @@ impl PjmApp {
             }
             Action::SetCategoryHidden { cat, hidden } => {
                 if self.app.categories.set_hidden(cat, hidden) {
+                    self.mark_changed();
+                }
+            }
+            Action::SetPriorityHidden { pri, hidden } => {
+                if self.app.priorities.set_hidden(pri, hidden) {
                     self.mark_changed();
                 }
             }
@@ -3021,6 +3074,17 @@ impl PjmApp {
                     forget_category(&mut self.ui, cat);
                     self.mark_changed();
                     self.ui.toast_ok(format!("Categoria «{name}» eliminata."));
+                } else {
+                    self.ui
+                        .toast_warn(format!("«{name}» è ancora usata da qualche progetto: non eliminata."));
+                }
+            }
+            Action::DeletePriority(pri) => {
+                let name = self.app.priorities.get_name(pri).unwrap_or_default().to_string();
+                if self.app.delete_priority(pri) {
+                    forget_priority(&mut self.ui, pri);
+                    self.mark_changed();
+                    self.ui.toast_ok(format!("Priorità «{name}» eliminata."));
                 } else {
                     self.ui
                         .toast_warn(format!("«{name}» è ancora usata da qualche progetto: non eliminata."));
@@ -3251,6 +3315,7 @@ impl PjmApp {
                     to,
                     &self.ui.matrix_categories,
                     &self.ui.matrix_statuses,
+                    &self.ui.matrix_priorities,
                 );
                 // Stesso ordine della finestra.
                 if let Some(w) = self.ui.matrix_sort {
@@ -3295,16 +3360,19 @@ impl PjmApp {
                 years,
                 svg,
             } => {
-                let pies = crate::worker_pies::build(
+                let pies = crate::worker_pies::build_filtered(
                     &self.app,
                     &self.ui.pies_workers,
                     from,
                     to,
                     &self.ui.pies_categories,
                     &self.ui.pies_devs,
+                    &self.ui.pies_priorities,
                     current_monday_days(),
                 );
                 let devs: Vec<DevId> = self.ui.pies_devs.iter().copied().collect();
+                let priorities: Vec<Option<PriorityId>> =
+                    self.ui.pies_priorities.iter().copied().collect();
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.pies_categories.iter().copied().collect();
                 if svg {
@@ -3316,6 +3384,7 @@ impl PjmApp {
                         &years,
                         &categories,
                         &devs,
+                        &priorities,
                     )
                     .into_iter()
                     .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
@@ -3340,6 +3409,7 @@ impl PjmApp {
                         &years,
                         &categories,
                         &devs,
+                        &priorities,
                     ) {
                         Some(bytes) => {
                             save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("torte", "pdf"))

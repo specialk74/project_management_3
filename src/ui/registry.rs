@@ -102,6 +102,18 @@ fn registry_rows(app: &App, tab: RegistryTab, q: &str) -> Vec<RegistryRow> {
                 name,
             })
             .collect(),
+        RegistryTab::Priorities => app
+            .priorities
+            .list()
+            .into_iter()
+            .map(|(id, name)| RegistryRow {
+                id: id.0,
+                usage: projects_usage(app.priority_usage(id)),
+                hidden: app.priorities.is_hidden(id),
+                in_totals: None,
+                name,
+            })
+            .collect(),
     };
     rows.into_iter().filter(|r| search_matches(q, &r.name)).collect()
 }
@@ -117,6 +129,7 @@ fn rename_action(tab: RegistryTab, id: usize, name: String) -> Action {
         RegistryTab::Workers => Action::RenameWorker { worker: WorkerId(id), name },
         RegistryTab::Devs => Action::RenameDev { dev: DevId(id), name },
         RegistryTab::Categories => Action::RenameCategory { cat: CategoryId(id), name },
+        RegistryTab::Priorities => Action::RenamePriority { pri: PriorityId(id), name },
     }
 }
 
@@ -131,6 +144,10 @@ fn hide_action(tab: RegistryTab, id: usize, hidden: bool) -> Action {
             cat: CategoryId(id),
             hidden,
         },
+        RegistryTab::Priorities => Action::SetPriorityHidden {
+            pri: PriorityId(id),
+            hidden,
+        },
     }
 }
 
@@ -139,6 +156,7 @@ fn delete_action(tab: RegistryTab, id: usize) -> Action {
         RegistryTab::Workers => Action::DeleteWorker(WorkerId(id)),
         RegistryTab::Devs => Action::DeleteDev(DevId(id)),
         RegistryTab::Categories => Action::DeleteCategory(CategoryId(id)),
+        RegistryTab::Priorities => Action::DeletePriority(PriorityId(id)),
     }
 }
 
@@ -167,6 +185,10 @@ fn hidden_help(tab: RegistryTab) -> &'static str {
              nella scelta della categoria del progetto, nei filtri, nelle combo \
              di matrice e torte e nel selettore del footer."
         }
+        RegistryTab::Priorities => {
+            "Nascosta: resta sui progetti che la hanno, ma non è più proposta \
+             nella scelta della priorità del progetto e nella combo delle torte."
+        }
     }
 }
 
@@ -187,6 +209,7 @@ pub(crate) fn registry_window(
         RegistryTab::Workers => "worker",
         RegistryTab::Devs => "dev",
         RegistryTab::Categories => "categorie",
+        RegistryTab::Priorities => "priorità",
     };
     egui::Window::new("Worker, dev e categorie")
         .collapsible(false)
@@ -199,6 +222,7 @@ pub(crate) fn registry_window(
                     (RegistryTab::Workers, "Worker"),
                     (RegistryTab::Devs, "Dev"),
                     (RegistryTab::Categories, "Categorie"),
+                    (RegistryTab::Priorities, "Priorità"),
                 ] {
                     ui.selectable_value(&mut state.registry_tab, t, label);
                 }
@@ -379,4 +403,10 @@ pub(crate) fn forget_category(state: &mut UiState, cat: CategoryId) {
     if state.selected_category == Some(cat) {
         state.selected_category = None;
     }
+}
+
+/// Idem per una priorità eliminata (combo di matrice e torte).
+pub(crate) fn forget_priority(state: &mut UiState, pri: PriorityId) {
+    state.matrix_priorities.remove(&Some(pri));
+    state.pies_priorities.remove(&Some(pri));
 }

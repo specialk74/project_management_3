@@ -3,6 +3,7 @@ use std::{collections::HashMap, fs, io::Write, path::Path};
 
 use crate::{
     categories::{Categories, CategoryId},
+    priorities::{Priorities, PriorityId},
     date_utils::dates::get_default_weeks,
     dev_utils::{dev::DevId, devs::Devs},
     milestones::Milestones,
@@ -104,6 +105,10 @@ pub struct App {
     pub projects: Projects,
     #[serde(default)]
     pub categories: Categories,
+    /// Priorità dei progetti (elenco libero). Un file che non le ha parte da
+    /// Must / Should / Could.
+    #[serde(default = "Priorities::with_defaults")]
+    pub priorities: Priorities,
     #[serde(default)]
     pub milestones: Milestones,
     #[serde(default)]
@@ -126,6 +131,7 @@ impl App {
             devs: Devs::new(),
             projects: Projects::new(),
             categories: Categories::new(),
+            priorities: Priorities::with_defaults(),
             milestones: Milestones::new(),
             holidays: Vec::new(),
             sovra: HashMap::new(),
@@ -209,6 +215,15 @@ impl App {
             .count()
     }
 
+    /// Progetti con questa priorità.
+    pub fn priority_usage(&self, pri: PriorityId) -> usize {
+        self.projects
+            .list()
+            .into_iter()
+            .filter(|(p, _)| self.projects.get_priority(*p) == Some(pri))
+            .count()
+    }
+
     /// Elimina il worker **solo se non ha celle** in nessun progetto; con lui
     /// spariscono i suoi dati propri (ore max, limiti, note e stato delle
     /// settimane) e le sue voci rimaste in `sovra`. Ritorna `true` se l'ha
@@ -229,6 +244,11 @@ impl App {
     /// Elimina la categoria **solo se nessun progetto la usa**.
     pub fn delete_category(&mut self, cat: CategoryId) -> bool {
         self.category_usage(cat) == 0 && self.categories.del(cat)
+    }
+
+    /// Elimina la priorità **solo se nessun progetto la usa**.
+    pub fn delete_priority(&mut self, pri: PriorityId) -> bool {
+        self.priority_usage(pri) == 0 && self.priorities.del(pri)
     }
 
     /// Controlli di coerenza "leggeri" da eseguire dopo il caricamento: segnala i
@@ -283,6 +303,11 @@ impl App {
                 && self.categories.get_name(cat).is_none()
             {
                 issues.push(format!("Progetto «{pname}»: categoria inesistente."));
+            }
+            if let Some(pri) = self.projects.get_priority(pid)
+                && self.priorities.get_name(pri).is_none()
+            {
+                issues.push(format!("Progetto «{pname}»: priorità inesistente."));
             }
             for d in self.projects.list_devs(pid) {
                 if !dev_ids.contains(&d) {
@@ -788,6 +813,39 @@ mod tests {
         let app = App::from_ron_str(&old).expect("il RON vecchio deve caricarsi");
         assert!(app.validate().is_empty());
         assert!(App::missing_file_settings(&old).is_empty());
+    }
+
+    /// Priorità: un file nuovo o scritto prima delle priorità parte da Must /
+    /// Should / Could; quella del progetto resta nel file solo se c'è; una in
+    /// uso non si elimina; una inesistente è segnalata da `validate`.
+    #[test]
+    fn priorities_default_round_trip_usage_and_validate() {
+        let names = |app: &App| app.priorities.list().into_iter().map(|(_, n)| n).collect::<Vec<_>>();
+        let mut app = App::new();
+        assert_eq!(names(&app), ["Must", "Should", "Could"]);
+        let ron = app.to_ron_string();
+        let start = ron.find("    priorities: (").expect("campo priorities");
+        let end = start + ron[start..].find("\n    ),\n").unwrap() + "\n    ),\n".len();
+        let old = format!("{}{}", &ron[..start], &ron[end..]);
+        assert!(!old.contains("priorities"));
+        let loaded = App::from_ron_str(&old).expect("il RON vecchio deve caricarsi");
+        assert_eq!(names(&loaded), ["Must", "Should", "Could"], "valori proposti");
+
+        let must = app.priorities.list()[0].0;
+        let could = app.priorities.list()[2].0;
+        let p = app.projects.add("x", Some("ABC"), None);
+        assert!(!app.to_ron_string().contains("priority:"), "niente campo senza priorità");
+        app.projects.set_priority(p, Some(must));
+        let back = App::from_ron_str(&app.to_ron_string()).unwrap();
+        assert_eq!(back.projects.get_priority(p), Some(must));
+        assert_eq!((app.priority_usage(must), app.priority_usage(could)), (1, 0));
+        assert!(!app.delete_priority(must), "è usata");
+        assert!(app.delete_priority(could));
+        assert_eq!(names(&app), ["Must", "Should"]);
+        assert!(app.priorities.rename(must, "should").is_err(), "nome già usato");
+        assert!(app.validate().is_empty());
+        app.projects.set_priority(p, Some(crate::priorities::PriorityId(99)));
+        assert!(app.validate().iter().any(|i| i.contains("priorità inesistente")));
     }
 
     /// Anche i 12 colori dei mesi sono sempre nel file, pronti da editare.

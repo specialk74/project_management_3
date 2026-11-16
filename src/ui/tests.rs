@@ -3645,3 +3645,56 @@ fn undo_shortcut_works_on_an_untouched_open_cell() {
     assert!(undo_shortcut_applies(None, false));
     assert!(!undo_shortcut_applies(None, true), "si scrive in un altro campo");
 }
+
+/// La priorità del progetto sta sulla riga della categoria, a destra: «prio —»
+/// finché non c'è; il clic apre la scelta, e un valore manda
+/// `SetProjectPriority`.
+#[test]
+fn priority_row_opens_the_choice_and_sets_the_priority() {
+    let mut app = App::new();
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("Progetto", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    let must = app.priorities.list()[0].0;
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let mut actions = Vec::new();
+    let frame = |app: &App, state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            ..Default::default()
+        };
+        input.events.extend(ev);
+        ctx.run_ui_test(input, |ui| {
+            let layout = body_layout(ui, app, state, &Filter::default(), &None);
+            left_column(ui, app, state, actions, &Filter::default(), &None, &layout);
+            popup_window(ui.ctx(), app, state, actions);
+        })
+    };
+    let out = frame(&app, &mut state, &mut actions, None);
+    let row = text_pos(&out, "prio —").expect("priorità sulla riga della categoria");
+    for ev in click_events(row, egui::PointerButton::Primary) {
+        let _ = frame(&app, &mut state, &mut actions, Some(ev));
+    }
+    assert!(matches!(state.popup, Some(Popup::Priority { proj: p }) if p == proj));
+    let out = frame(&app, &mut state, &mut actions, None);
+    let item = text_pos(&out, "Must").expect("voce «Must»");
+    actions.clear();
+    for ev in click_events(item, egui::PointerButton::Primary) {
+        let _ = frame(&app, &mut state, &mut actions, Some(ev));
+    }
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::SetProjectPriority { proj: p, pri } if *p == proj && *pri == Some(must))),
+        "SetProjectPriority con Must"
+    );
+
+    // Con la priorità impostata la riga la mostra.
+    app.projects.set_priority(proj, Some(must));
+    state.popup = None;
+    let out = frame(&app, &mut state, &mut actions, None);
+    let pri = text_pos(&out, "Must").expect("priorità nell'intestazione");
+    let cat = text_pos(&out, "—").expect("categoria assente");
+    assert!((pri.y - cat.y).abs() < 1.0 && pri.x > cat.x, "stessa riga, a destra");
+}

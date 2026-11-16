@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::{
     categories::CategoryId,
+    priorities::PriorityId,
     dev_utils::dev::DevId,
     milestones::MilestoneId,
     single_dev_utils::single_dev::{SingleDev, WEEK_STEP, WeekId},
@@ -81,6 +82,10 @@ pub struct Project {
     tripletta: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     category: Option<CategoryId>,
+    /// Priorità del progetto (Must / Should / Could…, elenco libero in
+    /// `App.priorities`). Omessa dal file quando assente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    priority: Option<PriorityId>,
     /// Posizione di ordinamento nella colonna sinistra. I file vecchi (senza
     /// campo) partono tutti da 0 → tie-break per ProjectId = ordine attuale.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -122,6 +127,7 @@ impl Project {
             end_week: None,
             tripletta: None,
             category: None,
+            priority: None,
             order: 0,
             closed: None,
             on_hold: false,
@@ -139,6 +145,7 @@ impl Project {
             end_week: None,
             tripletta: None,
             category: None,
+            priority: None,
             order: 0,
             closed: None,
             on_hold: false,
@@ -310,6 +317,14 @@ impl Project {
         self.category = category;
     }
 
+    pub fn get_priority(&self) -> Option<PriorityId> {
+        self.priority
+    }
+
+    pub fn set_priority(&mut self, priority: Option<PriorityId>) {
+        self.priority = priority;
+    }
+
     pub fn get_info(&self) -> String {
         self.info.clone()
     }
@@ -362,6 +377,7 @@ impl Project {
             && self.end_week == o.end_week
             && self.tripletta == o.tripletta
             && self.category == o.category
+            && self.priority == o.priority
             && self.order == o.order
             && self.closed == o.closed
             && self.on_hold == o.on_hold

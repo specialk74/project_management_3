@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use crate::app::App;
 use crate::categories::CategoryId;
 use crate::dev_utils::dev::DevId;
+use crate::priorities::PriorityId;
 use crate::project_utils::project::ProjectId;
 use crate::worker_matrix::{category_color, week_overlaps};
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
@@ -263,6 +264,7 @@ impl WorkerPie {
 /// `devs` limita allo stesso modo ai dev scelti (vuoto = tutti).
 /// `now` = lunedì della settimana corrente (giorni): le settimane che iniziano
 /// prima sono «fatte», quella corrente e le successive «pianificate».
+#[cfg(test)]
 pub fn build(
     app: &App,
     selected: &HashSet<WorkerId>,
@@ -270,6 +272,22 @@ pub fn build(
     to: i32,
     cats: &BTreeSet<Option<CategoryId>>,
     devs: &BTreeSet<DevId>,
+    now: i32,
+) -> Vec<WorkerPie> {
+    build_filtered(app, selected, from, to, cats, devs, &BTreeSet::new(), now)
+}
+
+/// Come `build`, con in più il filtro **priorità** `pris` (`None` nel set =
+/// «Senza priorità»; vuoto = tutte), in AND con categorie e dev.
+#[allow(clippy::too_many_arguments)]
+pub fn build_filtered(
+    app: &App,
+    selected: &HashSet<WorkerId>,
+    from: i32,
+    to: i32,
+    cats: &BTreeSet<Option<CategoryId>>,
+    devs: &BTreeSet<DevId>,
+    pris: &BTreeSet<Option<PriorityId>>,
     now: i32,
 ) -> Vec<WorkerPie> {
     let workers: Vec<(WorkerId, String)> = app
@@ -286,7 +304,9 @@ pub fn build(
         vec![BTreeMap::new(); workers.len()];
     for (order, (proj, _)) in app.projects.list().into_iter().enumerate() {
         let cat = app.projects.get_category(proj);
-        let shown = cats.is_empty() || cats.contains(&cat);
+        let pri = app.projects.get_priority(proj);
+        let shown = (cats.is_empty() || cats.contains(&cat))
+            && (pris.is_empty() || pris.contains(&pri));
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
                 continue;
@@ -635,6 +655,41 @@ mod tests {
         // Senza filtri: tutto il lavoro (30 + 60 di P1 e 5 di PA).
         let m = &build(&app, &sel, monday, to, &BTreeSet::new(), &BTreeSet::new(), now)[0];
         assert_eq!((m.planned(), m.free_hours()), (95, 80 - 95));
+    }
+
+    /// Filtro priorità: solo i progetti con le priorità scelte (`None` =
+    /// «Senza priorità»), in AND con le categorie; anche le ore pianificate
+    /// e quindi le ore libere seguono il filtro.
+    #[test]
+    fn priority_filter_limits_hours_and_free_hours() {
+        use crate::single_dev_utils::single_dev::WeekId;
+        use crate::single_effort_utils::single_effort::Effort;
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let must = app.priorities.list()[0].0;
+        let could = app.priorities.list()[2].0;
+        let p_must = app.projects.add("x", Some("PM"), None);
+        let p_could = app.projects.add("x", Some("PC"), None);
+        let p_none = app.projects.add("x", Some("PN"), None);
+        app.projects.set_priority(p_must, Some(must));
+        app.projects.set_priority(p_could, Some(could));
+        for (p, h) in [(p_must, 10), (p_could, 20), (p_none, 5)] {
+            app.projects.add_dev(p, fe);
+            app.projects.add_effort(p, fe, WeekId(20007), mario, Effort(h));
+        }
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let (no_cats, no_devs) = (BTreeSet::new(), BTreeSet::new());
+        let run = |pris: &BTreeSet<Option<PriorityId>>| {
+            build_filtered(&app, &sel, 20000, 20013, &no_cats, &no_devs, pris, 20000).remove(0)
+        };
+        assert_eq!(run(&BTreeSet::new()).total, 35, "senza filtro: tutto");
+        let m = run(&[Some(must)].into());
+        assert_eq!(m.total, 10);
+        assert_eq!(m.projects.iter().map(|p| p.project).collect::<Vec<_>>(), [p_must]);
+        assert_eq!(m.free_hours(), m.future_capacity as i64 - 10);
+        assert_eq!(run(&[Some(could), None].into()).total, 25, "Could + senza priorità");
+        assert_eq!(run(&[None].into()).total, 5);
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette

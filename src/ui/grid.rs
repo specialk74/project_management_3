@@ -314,7 +314,7 @@ pub(crate) fn project_layout(
     merged: bool,
 ) -> Vec<ProjLayout> {
     // Righe info oltre al nome: compatta = solo tripletta; normale = tripletta +
-    // categoria + inizio + fine + avanzamento.
+    // categoria e priorità (una riga) + inizio + fine + avanzamento.
     let extra_rows = if compact { 1.0 } else { 5.0 };
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
@@ -2011,31 +2011,50 @@ pub(crate) fn draw_project_info(
     }
     y += ROW_H;
 
-    // categoria (click per scegliere) — nascosta in compatta
+    // categoria e priorità sulla stessa riga (click per scegliere) — nascoste
+    // in compatta. La categoria a sinistra, la priorità a destra.
     if !compact {
+        let font = cell_font();
         let cat = app
             .projects
             .get_category(proj)
-            .and_then(|c| app.categories.get_name(c))
-            .unwrap_or("—")
-            .to_string();
-        let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
-        let cat_col = if cat == "—" {
-            text_faint()
-        } else {
-            g(CAT_BLUE)
-        };
+            .and_then(|c| app.categories.get_name(c));
+        let pri = app
+            .projects
+            .get_priority(proj)
+            .and_then(|p| app.priorities.get_name(p));
+        let pri_txt = pri.unwrap_or("prio —");
+        let text_w = ui.painter().layout_no_wrap(pri_txt.to_string(), font.clone(), Color32::BLACK).size().x;
+        let pri_w = (text_w + 8.0).min(w * 0.45);
+        let cat_rect = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w - pri_w, ROW_H));
+        let pri_rect = Rect::from_min_size(egui::pos2(x + w - pri_w, y), Vec2::new(pri_w, ROW_H));
         ui.painter().text(
             cat_rect.center(),
             Align2::CENTER_CENTER,
-            cat,
-            cell_font(),
-            cat_col,
+            fit_text(ui, cat.unwrap_or("—"), &font, cat_rect.width() - 4.0),
+            font.clone(),
+            if cat.is_some() { g(CAT_BLUE) } else { text_faint() },
+        );
+        ui.painter().text(
+            pri_rect.center(),
+            Align2::CENTER_CENTER,
+            fit_text(ui, pri_txt, &font, pri_rect.width() - 4.0),
+            font.clone(),
+            if pri.is_some() { text() } else { text_faint() },
         );
         let cr = ui.interact(cat_rect, egui::Id::unique(("cat", proj.0)), Sense::click());
         if cr.clicked() {
             state.popup = Some(Popup::Category { proj });
         }
+        cr.on_hover_text("Clic: scegli la categoria del progetto");
+        let pr = ui.interact(pri_rect, egui::Id::unique(("pri", proj.0)), Sense::click());
+        if pr.clicked() {
+            state.popup = Some(Popup::Priority { proj });
+        }
+        pr.on_hover_text(format!(
+            "Priorità: {} · clic per sceglierla",
+            pri.unwrap_or("nessuna")
+        ));
         y += ROW_H;
     }
 

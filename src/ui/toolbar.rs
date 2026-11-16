@@ -171,6 +171,13 @@ pub(crate) fn toolbar(
                     &mut state.new_category,
                     |name| actions.push(Action::AddCategory(name)),
                 );
+                add_field(
+                    ui,
+                    "Priorità",
+                    "Nome priorità…",
+                    &mut state.new_priority,
+                    |name| actions.push(Action::AddPriority(name)),
+                );
                 // Milestone: prima si sceglie il tipo (traguardo / trigger di
                 // evento), poi il nome. La scelta resta per l'inserimento
                 // successivo, comodo per creare più trigger di fila. Qui serve

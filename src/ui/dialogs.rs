@@ -1485,7 +1485,7 @@ pub(crate) fn move_dialog_window(
     }
 }
 
-// ── Popup di modifica (tripletta / inizio / fine / categoria) ───────────────
+// ── Popup di modifica (tripletta / inizio / fine / categoria / priorità) ───────────────
 
 pub(crate) fn popup_window(
     ctx: &egui::Context,
@@ -1658,6 +1658,37 @@ pub(crate) fn popup_window(
                             actions.push(Action::SetProjectCategory {
                                 proj: *proj,
                                 cat: Some(id),
+                            });
+                            close = true;
+                        }
+                    }
+                });
+        }
+        Popup::Priority { proj } => {
+            egui::Window::new("Priorità")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    if ui.button("— Nessuna").clicked() {
+                        actions.push(Action::SetProjectPriority {
+                            proj: *proj,
+                            pri: None,
+                        });
+                        close = true;
+                    }
+                    // Le priorità nascoste non si propongono (tranne quella
+                    // che il progetto ha già).
+                    let current = app.projects.get_priority(*proj);
+                    for (id, name) in app.priorities.list() {
+                        if app.priorities.is_hidden(id) && current != Some(id) {
+                            continue;
+                        }
+                        if ui.button(name).clicked() {
+                            actions.push(Action::SetProjectPriority {
+                                proj: *proj,
+                                pri: Some(id),
                             });
                             close = true;
                         }

@@ -686,9 +686,28 @@ fn draw_matrix_sorted(ui: &mut egui::Ui, app: &App, m: &MatrixData) -> Option<Wo
         };
         let band = reserve(y, h, Band::Project);
 
-        // Etichetta: solo la tripletta (il nome è nel tooltip), più «chiuso».
+        // Etichetta: la tripletta (il nome è nel tooltip), più «chiuso», e la
+        // priorità allineata a destra nella colonna.
         let ty = y + MX_PAD + MX_LINE_H / 2.0;
-        let trip_max = MX_LABEL_W - 2.0 * MX_PAD - if r.closed { 50.0 } else { 0.0 };
+        let pri = r
+            .priority
+            .and_then(|p| app.priorities.get_name(p))
+            .map(|n| fit_text(ui, n, &font, MX_LABEL_W / 2.0 - MX_PAD));
+        let pri_w = pri
+            .as_ref()
+            .map_or(0.0, |n| p.layout_no_wrap(n.clone(), font.clone(), fg).size().x + 6.0);
+        if let Some(n) = &pri {
+            put(
+                band,
+                None,
+                egui::pos2(lx + MX_LABEL_W - MX_PAD, ty),
+                Align2::RIGHT_CENTER,
+                n.clone(),
+                &font,
+                fg,
+            );
+        }
+        let trip_max = MX_LABEL_W - 2.0 * MX_PAD - pri_w - if r.closed { 50.0 } else { 0.0 };
         let trip_w = put(
             band,
             None,
@@ -710,11 +729,14 @@ fn draw_matrix_sorted(ui: &mut egui::Ui, app: &App, m: &MatrixData) -> Option<Wo
             );
         }
         let label_rect = Rect::from_min_size(egui::pos2(lx, y), egui::vec2(MX_LABEL_W, h));
-        let tip = if r.closed {
+        let mut tip = if r.closed {
             format!("{} ({})\n{}", r.tripletta, closed_tag(r.status), r.name)
         } else {
             format!("{}\n{}", r.tripletta, r.name)
         };
+        if let Some(n) = r.priority.and_then(|p| app.priorities.get_name(p)) {
+            tip = format!("{tip}\nPriorità: {n}");
+        }
         ui.interact(
             label_rect,
             ui.scope_id().with(("mx_row", r.proj.0)),
@@ -1048,6 +1070,7 @@ pub(crate) fn matrix_window(
         to,
         &state.matrix_categories,
         &state.matrix_statuses,
+        &state.matrix_priorities,
     );
     if let Some(w) = state.matrix_sort {
         crate::worker_matrix::sort_by_worker(&mut m, w);
@@ -1077,15 +1100,18 @@ pub(crate) fn matrix_window(
                                 range_end_picker(ui, "A:", "matrix_to", &mut state.matrix_to)
                         },
                     );
-                    // In mezzo: le combo di anni e categorie, centrate nello spazio
-                    // rimasto (layout destra→sinistra: categorie prima, a destra).
+                    // In mezzo: le combo di anni, categorie, priorità e stati,
+                    // centrate nello spazio rimasto (layout destra→sinistra: si
+                    // aggiungono da destra, quindi in ordine inverso).
                     let combos = 2.0 * MX_YEARS_W
                         + MX_STATUS_W
-                        + 5.0 * ui.spacing().item_spacing.x
+                        + PRI_COMBO_W
+                        + 7.0 * ui.spacing().item_spacing.x
                         + 60.0;
                     let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
                     statuses_combo(ui, &mut state.matrix_statuses);
+                    priorities_combo(ui, app, "matrix_priorities", &mut state.matrix_priorities);
                     categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories);
                     years_changed = years_combo(ui, app, "matrix_years", &mut state.matrix_years);
                 });
@@ -1203,6 +1229,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -1261,6 +1288,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -1312,6 +1340,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -1327,6 +1356,38 @@ mod tests {
             .find(|t| t.starts_with("Svilupp") && t.ends_with(" 120h 80%"))
             .expect("nome troncato, ore e percentuale intere");
         assert!(cut.contains('…'), "il nome lungo va troncato: {cut}");
+    }
+
+    /// La priorità del progetto è scritta nella riga, a destra della tripletta.
+    #[test]
+    fn project_row_shows_the_priority_beside_the_tripletta() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let could = app.priorities.list()[2].0;
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        app.projects.set_priority(p, Some(could));
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &Default::default(),
+        );
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(800.0, 600.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| draw_matrix(ui, &app, &m));
+        let trip = text_pos(&out, "P1").expect("tripletta");
+        let pri = text_pos(&out, "Could").expect("priorità");
+        assert!((trip.y - pri.y).abs() < 1.0 && pri.x > trip.x, "stessa riga, a destra");
     }
 
     /// Clic sul nome del worker nell'intestazione: `draw_matrix_sorted`
@@ -1347,6 +1408,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         let ctx = egui::Context::default();
         let frame = |events: Vec<egui::Event>, m: &MatrixData| {
@@ -1419,6 +1481,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
 
         let ctx = egui::Context::default();
@@ -1537,6 +1600,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         let ctx = egui::Context::default();
         let input = egui::RawInput {
@@ -1594,6 +1658,7 @@ mod tests {
             20006,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &Default::default(),
         );
         assert_eq!(m.rows.len(), 60);
 

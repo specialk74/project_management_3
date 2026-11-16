@@ -2991,6 +2991,12 @@ fn matrix_pages(
         let names: Vec<&str> = m.statuses.iter().map(|&i| MATRIX_STATUS_EN[i]).collect();
         subtitle = format!("{subtitle}  ·  Status: {}", names.join(", "));
     }
+    // Filtro «Priorità»: riportato solo se attivo.
+    if !m.priorities.is_empty() {
+        let names: Vec<String> = m.priorities.iter().map(|p| priority_name_en(app, *p)).collect();
+        let label = if names.len() == 1 { "Priority" } else { "Priorities" };
+        subtitle = format!("{subtitle}  ·  {label}: {}", names.join(", "));
+    }
     // Righe ordinate per le ore di un worker (clic sul nome nella finestra).
     if let Some(wi) = m.sorted_by {
         subtitle = format!("{subtitle}  ·  Sorted by hours of {}", m.workers[wi].1);
@@ -3152,7 +3158,21 @@ fn matrix_pages(
                 BLACK
             };
             let base = y - 2.9;
-            let trip = truncate_to_w(&r.tripletta, MATRIX_FONT, MATRIX_LABEL_W - if r.closed { 13.0 } else { 3.0 });
+            // Priorità allineata a destra nella colonna delle etichette.
+            let pri_w = match r.priority.and_then(|p| app.priorities.get_name(p)) {
+                Some(n) => {
+                    let n = truncate_to_w(n, MATRIX_FONT, MATRIX_LABEL_W / 2.0 - 1.5);
+                    let x = MATRIX_X0 + MATRIX_LABEL_W - 1.5;
+                    shapes.extend(text_right(x, base, &n, MATRIX_FONT, false, fg));
+                    text_w_mm(&n, MATRIX_FONT) + 1.5
+                }
+                None => 0.0,
+            };
+            let trip = truncate_to_w(
+                &r.tripletta,
+                MATRIX_FONT,
+                MATRIX_LABEL_W - pri_w - if r.closed { 13.0 } else { 3.0 },
+            );
             shapes.extend(text_left(MATRIX_X0 + 1.5, base, &trip, MATRIX_FONT, true, fg));
             if r.closed {
                 let x = MATRIX_X0 + 1.5 + text_w_mm(&trip, MATRIX_FONT) * 1.15 + 2.0;
@@ -4169,8 +4189,17 @@ fn pies_pages(
     pages
 }
 
+/// Nome di una priorità negli export (`None` = «No priority»).
+fn priority_name_en(app: &App, p: Option<crate::priorities::PriorityId>) -> String {
+    match p {
+        Some(id) => app.priorities.get_name(id).unwrap_or("?").to_string(),
+        None => "No priority".to_string(),
+    }
+}
+
 /// Sottotitolo delle torte: intervallo, anni e categorie scelti (come la
-/// matrice), poi i dev scelti (`Dev: …` / `Devs: …`, niente se tutti).
+/// matrice), poi i dev scelti (`Dev: …` / `Devs: …`) e le priorità
+/// (`Priority: …` / `Priorities: …`), niente se tutti.
 fn pies_subtitle(
     app: &App,
     from: i32,
@@ -4178,26 +4207,33 @@ fn pies_subtitle(
     years: &[i32],
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
+    priorities: &[Option<crate::priorities::PriorityId>],
 ) -> String {
     let names: Vec<String> = categories
         .iter()
         .map(|c| matrix_category_name(app, *c))
         .collect();
-    let out = matrix_subtitle(from, to, today_days(), years, &names);
-    if devs.is_empty() {
-        return out;
+    let mut out = matrix_subtitle(from, to, today_days(), years, &names);
+    if !devs.is_empty() {
+        let devs: Vec<String> = devs
+            .iter()
+            .map(|d| app.devs.get(*d).map(|x| x.get_name()).unwrap_or_default())
+            .collect();
+        let label = if devs.len() == 1 { "Dev" } else { "Devs" };
+        out = format!("{out}  ·  {label}: {}", devs.join(", "));
     }
-    let devs: Vec<String> = devs
-        .iter()
-        .map(|d| app.devs.get(*d).map(|x| x.get_name()).unwrap_or_default())
-        .collect();
-    let label = if devs.len() == 1 { "Dev" } else { "Devs" };
-    format!("{out}  ·  {label}: {}", devs.join(", "))
+    if !priorities.is_empty() {
+        let names: Vec<String> = priorities.iter().map(|p| priority_name_en(app, *p)).collect();
+        let label = if names.len() == 1 { "Priority" } else { "Priorities" };
+        out = format!("{out}  ·  {label}: {}", names.join(", "));
+    }
+    out
 }
 
 /// PDF delle torte: una pagina per worker con ore nel periodo `[from, to]`
-/// (`years`/`categories`/`devs` = scelte delle combo, nel sottotitolo). `None` se
+/// (`years`/`categories`/`devs`/`priorities` = scelte delle combo, nel sottotitolo). `None` se
 /// nessun worker ha ore.
+#[allow(clippy::too_many_arguments)]
 pub fn build_pies_pdf(
     app: &App,
     pies: &[crate::worker_pies::WorkerPie],
@@ -4206,8 +4242,9 @@ pub fn build_pies_pdf(
     years: &[i32],
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
+    priorities: &[Option<crate::priorities::PriorityId>],
 ) -> Option<Vec<u8>> {
-    let subtitle = pies_subtitle(app, from, to, years, categories, devs);
+    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities);
     let split = crate::worker_pies::split_shown(to, current_monday_days());
     let created = self::today().format(US_DATE).to_string();
     let pages: Vec<Vec<Shape>> = pies
@@ -4219,6 +4256,7 @@ pub fn build_pies_pdf(
 }
 
 /// SVG delle torte: `(nome del worker, svg)` per ogni worker con ore.
+#[allow(clippy::too_many_arguments)]
 pub fn build_pies_svgs(
     app: &App,
     pies: &[crate::worker_pies::WorkerPie],
@@ -4227,8 +4265,9 @@ pub fn build_pies_svgs(
     years: &[i32],
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
+    priorities: &[Option<crate::priorities::PriorityId>],
 ) -> Vec<(String, String)> {
-    let subtitle = pies_subtitle(app, from, to, years, categories, devs);
+    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities);
     let split = crate::worker_pies::split_shown(to, current_monday_days());
     pies.iter()
         .filter(|p| p.total > 0)
@@ -4273,6 +4312,7 @@ mod tests {
             &sel,
             20000,
             20006,
+            &Default::default(),
             &Default::default(),
             &Default::default(),
         );
@@ -4564,20 +4604,25 @@ mod tests {
         assert_eq!(t.iter().filter(|x| *x == "P1").count(), 3);
         let polys = page.iter().filter(|s| matches!(s, Shape::Poly { .. })).count();
         assert_eq!(polys, 7, "2 dev + 2 dev·categoria + 2 dev·progetto + 1 categoria");
-        let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[]);
+        let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[], &[]);
         let names: Vec<_> = svgs.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(names, ["Anna", "Mario"], "Luigi senza ore è saltato");
         assert!(svgs[1].1.starts_with("<svg") && !svgs[1].1.contains("created"));
-        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[2026], &[Some(ca)], &[fe]).expect("PDF");
+        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[2026], &[Some(ca)], &[fe], &[]).expect("PDF");
         assert_eq!(
-            pies_subtitle(&app, 20000, 20006, &[], &[Some(ca), None], &[]),
+            pies_subtitle(&app, 20000, 20006, &[], &[Some(ca), None], &[], &[]),
             matrix_subtitle(20000, 20006, today_days(), &[], &["Cliente A".into(), "No category".into()])
         );
         let base = matrix_subtitle(20000, 20006, today_days(), &[], &[]);
-        assert_eq!(pies_subtitle(&app, 20000, 20006, &[], &[], &[fe]), format!("{base}  ·  Dev: Frontend"));
+        assert_eq!(pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[]), format!("{base}  ·  Dev: Frontend"));
         assert_eq!(
-            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe, be]),
+            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe, be], &[]),
             format!("{base}  ·  Devs: Frontend, Backend")
+        );
+        let must = app.priorities.list()[0].0;
+        assert_eq!(
+            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[Some(must), None]),
+            format!("{base}  ·  Dev: Frontend  ·  Priorities: Must, No priority")
         );
         assert!(pdf.starts_with(b"%PDF"));
         let none = crate::worker_pies::build(
@@ -4589,7 +4634,7 @@ mod tests {
             &Default::default(),
             20000,
         );
-        assert!(build_pies_pdf(&app, &none, 20000, 20006, &[], &[], &[]).is_none());
+        assert!(build_pies_pdf(&app, &none, 20000, 20006, &[], &[], &[], &[]).is_none());
         // Con il periodo oltre la settimana corrente: colonne Done / Planned /
         // Total e sottotitolo con la divisione.
         let split = pies_pages(&app, m, "From x to y", true, None).concat();
@@ -4754,6 +4799,7 @@ mod tests {
             20006,
             &Default::default(),
             &pick,
+            &Default::default(),
         );
         let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
         let all: Vec<String> = pages.iter().flat_map(|pg| texts(pg)).collect();
@@ -4763,6 +4809,38 @@ mod tests {
         assert_eq!(count("Closed"), 0);
         assert!(all.iter().any(|t| t.ends_with("Status: On-Hold")), "sottotitolo");
         assert!(!all.iter().any(|t| t == "P0" || t == "P2"), "solo il progetto on-hold");
+    }
+
+    /// Matrice PDF: la priorità accanto alla tripletta e, col filtro, nel
+    /// sottotitolo.
+    #[test]
+    fn matrix_pdf_shows_the_priority_and_its_filter() {
+        let mut app = App::new();
+        let fe = app.devs.add("Frontend");
+        let w = app.workers.add("Mario");
+        let should = app.priorities.list()[1].0;
+        let p = app.projects.add("x", Some("PS"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, WeekId(20000), w, Effort(1));
+        app.projects.set_priority(p, Some(should));
+        let sel = [w].into_iter().collect();
+        let pick = [Some(should), None].into();
+        let m = crate::worker_matrix::build_filtered(
+            &app,
+            &sel,
+            20000,
+            20006,
+            &Default::default(),
+            &Default::default(),
+            &pick,
+        );
+        let pages = matrix_pages(&app, &m, 20000, 20006, &[], &[], 20000, "x");
+        let all: Vec<String> = pages.iter().flat_map(|pg| texts(pg)).collect();
+        assert!(all.iter().any(|t| t == "PS") && all.iter().any(|t| t == "Should"), "{all:?}");
+        assert!(
+            all.iter().any(|t| t.ends_with("Priorities: No priority, Should")),
+            "sottotitolo: {all:?}"
+        );
     }
 
     #[test]

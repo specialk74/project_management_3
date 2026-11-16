@@ -105,6 +105,7 @@ pub fn changes(before: &App, after: &App) -> Changes {
     let same = before.workers == after.workers
         && before.devs == after.devs
         && before.categories == after.categories
+        && before.priorities == after.priorities
         && before.milestones == after.milestones
         && before.holidays == after.holidays
         && before.month_colors == after.month_colors

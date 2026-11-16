@@ -6,7 +6,7 @@
 //! fondono automaticamente; c'è conflitto solo se lo *stesso* dev — oppure i
 //! *dati generali* dello stesso progetto — è stato modificato da entrambi.
 //!
-//! Le collezioni globali (worker, dev, milestone, categorie, holidays) sono
+//! Le collezioni globali (worker, dev, milestone, categorie, priorità, holidays) sono
 //! gestite in blocco: se le ho modificate io tengo le mie, altrimenti prendo
 //! quelle del collega.
 //!
@@ -167,6 +167,7 @@ fn globals_changed(mine: &App, base: &App) -> bool {
         || mine.devs != base.devs
         || mine.milestones != base.milestones
         || mine.categories != base.categories
+        || mine.priorities != base.priorities
         || mine.holidays != base.holidays
 }
 
@@ -196,6 +197,7 @@ pub fn merge(
         theirs.devs = mine.devs.clone();
         theirs.milestones = mine.milestones.clone();
         theirs.categories = mine.categories.clone();
+        theirs.priorities = mine.priorities.clone();
         theirs.holidays = mine.holidays.clone();
     }
 
@@ -512,7 +514,7 @@ mod tests {
         );
     }
 
-    // ── Collezioni globali (worker, dev, milestone, categorie, holidays) ────
+    // ── Collezioni globali (worker, dev, milestone, categorie, priorità, holidays) ────
 
     /// Le globali sono gestite in blocco: se le ho toccate io vincono le mie
     /// **per intero**, quindi un worker aggiunto dal collega si perde. È una

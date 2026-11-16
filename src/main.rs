@@ -5,6 +5,7 @@ mod dev_utils;
 mod git_autosync;
 mod milestones;
 mod pdf_export;
+mod priorities;
 mod project_diff;
 mod project_utils;
 mod single_dev_utils;

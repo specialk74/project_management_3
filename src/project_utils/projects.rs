@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::{
     categories::CategoryId,
+    priorities::PriorityId,
     dev_utils::dev::DevId,
     milestones::MilestoneId,
     project_utils::project::{Enable, OverflowResolution, Project, ProjectId, ProjectStatus},
@@ -517,6 +518,16 @@ impl Projects {
     pub fn set_category(&mut self, project_id: ProjectId, category: Option<CategoryId>) {
         if let Some(p) = self.projects.get_mut(&project_id) {
             p.set_category(category);
+        }
+    }
+
+    pub fn get_priority(&self, project_id: ProjectId) -> Option<PriorityId> {
+        self.projects.get(&project_id)?.get_priority()
+    }
+
+    pub fn set_priority(&mut self, project_id: ProjectId, priority: Option<PriorityId>) {
+        if let Some(p) = self.projects.get_mut(&project_id) {
+            p.set_priority(priority);
         }
     }
 }

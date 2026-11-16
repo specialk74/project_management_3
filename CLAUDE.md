@@ -110,10 +110,11 @@ App (workers.ron)
 ├── workers   : Workers              — named people (max hours, colors, hidden-in-footer, show_in_find, ghost)
 ├── devs      : Devs                 — roles (e.g. "Frontend"); each has bg+font color + hide_in_totals
 ├── categories: Categories
+├── priorities: Priorities           — free list (Must/Should/Could by default), see «Project priority»
 ├── milestones: Milestones           — name + color + kind + categorie di stampa (Internal/External), shared across projects
 ├── sovra     : HashMap<(WeekId, WorkerId), Effort>  — per-week per-worker allocation
 └── projects  : Projects
-    └── Project (tripletta, name, start, end, category, enable, closed, milestones)
+    └── Project (tripletta, name, start, end, category, priority, enable, closed, milestones)
         └── SingleDev (per DevId)
             ├── effort : Effort              — planned hours
             ├── note   : Option<String>      — dev-level note
@@ -342,7 +343,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   - **Worker, dev e categorie…** (`src/ui/registry.rs`, `registry_window`;
     `UiState.show_registry` / `registry_tab: RegistryTab` / `registry_search` /
     `registry_names` = name being edited per `(tab, id)`, committed on
-    `lost_focus` unless Esc): tabs Worker/Dev/Categorie; the header row is
+    `lost_focus` unless Esc): tabs Worker/Dev/Categorie/Priorità; the header row is
     **outside** the `ScrollArea` (stays put), so rows are fixed-width cells
     (`reg_cell`: `allocate_ui_with_layout` + `set_min_size`/`set_max_width`;
     `REG_NAME_W` 340 / `REG_USE_W` / `REG_HIDDEN_W` / `REG_DEL_W`), not an
@@ -635,6 +636,14 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `src/worker_pies.rs`): same flow as the matrix, with its **own** session state
   (`pies_select_open`/`show_pies`/`pies_workers`/`pies_worker_search`/`pies_from`/
   `pies_to`/`pies_years`/`pies_categories`/`pies_devs`). The worker dialog is the shared
+  **Priority filter**: `worker_pies::build_filtered(…, &devs, &pris, now)` is the
+  real builder (`build` is a `#[cfg(test)]` wrapper with no priority filter);
+  `pris` = `UiState.pies_priorities: BTreeSet<Option<PriorityId>>` from
+  `priorities_combo` (`pies.rs`, same «all = every item ticked» rules, `None` =
+  «Senza priorità», session only), AND with categories and devs, applied to the
+  pies, tables, totals and free hours; exports pass it to `build_pies_pdf/svgs`
+  and `pies_subtitle` prints `Priority: …` / `Priorities: …`. Test
+  `priority_filter_limits_hours_and_free_hours`.
   `worker_pick_window(…) -> WorkerPick { Open, Show, Closed }` (`matrix.rs`, also
   behind `matrix_select_window`); `years_combo` and `categories_combo` take an
   id salt, and
@@ -983,7 +992,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   Shown together as **`presunta%/attuale%`**: an **«Avanz.: PP%/AA%»** row at the
   bottom of the project info header in `draw_project_info` (non-compact,
   non-worker-filter). Adds one info row, so `project_layout`'s `extra_rows` is **5** in
-  normal mode. Both percentages **and** the value shown by the grid come from a single
+  normal mode (tripletta, categoria + priorità on one row, inizio, fine, avanzamento). Both percentages **and** the value shown by the grid come from a single
   source, `Project::progress_breakdown(today) -> Option<(used, planned, weighted_declared)>`
   (`progress_pct`/`presumed_progress_pct` are thin wrappers over it); the grid's hover
   tooltip prints the **actual numbers** behind each figure (`usato/pianificato`,
@@ -1103,6 +1112,33 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `project_milestone_field_keeps_the_context_menu_open`, which drives real
   right-click/click/type/Enter events). `add_field` returns the text field's
   `Response` for that test.
+- **Project priority** (`src/priorities.rs`): `App.priorities: Priorities` is a
+  free list managed like the categories (`PriorityId`, add/rename/hide/delete
+  if unused — `App::priority_usage`/`delete_priority`, `forget_priority`), but
+  its map is a **`BTreeMap`** (stable file order). `#[serde(default =
+  "Priorities::with_defaults")]`: a new file or one written before priorities
+  starts with `DEFAULT_PRIORITIES` Must/Should/Could. `Project.priority:
+  Option<PriorityId>` (`skip_serializing_if = "Option::is_none"`, part of
+  `header_eq`, `project_diff::HeaderField::Priority`, `undo_diff`/`sync_merge`
+  globals). UI: on the **category row** of `draw_project_info` (non-compact),
+  right part (width of the text, max 45%; «prio —» faint when unset), its own
+  click rect → `Popup::Priority` → `Action::SetProjectPriority`; Aggiungi ▸
+  Priorità (`Action::AddPriority`, checked by `check_new_name`); registry tab
+  `RegistryTab::Priorities`; `validate` reports a missing priority. The matrix
+  and the pies filter on it (see them). Tests
+  `priorities_default_round_trip_usage_and_validate`,
+  `priority_row_opens_the_choice_and_sets_the_priority`.
+  **Matrix**: `worker_matrix::build_filtered(…, cats, statuses, pris)` (last
+  arg, `UiState.matrix_priorities`, `priorities_combo` with salt
+  `matrix_priorities`, placed right of Categorie; width `PRI_COMBO_W`);
+  `MatrixRow.priority` is drawn **right-aligned in the label column** (GUI
+  `fit_text` ≤ half the column, tripletta shrinks; PDF `text_right`, also in
+  the tooltip) and `MatrixData.priorities` (the filter) adds `Priority: …` /
+  `Priorities: …` to the PDF subtitle (`priority_name_en`, `None` = «No
+  priority»). Tests `priority_filter_limits_rows_and_rows_carry_the_priority`,
+  `project_row_shows_the_priority_beside_the_tripletta`,
+  `matrix_pdf_shows_the_priority_and_its_filter`. In the pies the combo sits
+  between Categorie and Dev.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
 - **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`OnHold`/

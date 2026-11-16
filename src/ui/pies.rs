@@ -108,6 +108,71 @@ pub(crate) fn devs_combo(
         .on_hover_text("Togli la spunta ai dev da escludere.");
 }
 
+/// Nome di una priorità per le combo e le tabelle (`None` = «Senza priorità»).
+pub(crate) fn priority_name(app: &App, p: Option<PriorityId>) -> String {
+    match p {
+        Some(id) => app.priorities.get_name(id).unwrap_or("?").to_string(),
+        None => "Senza priorità".to_string(),
+    }
+}
+
+/// Larghezza della combo Priorità (matrice e torte).
+pub(crate) const PRI_COMBO_W: f32 = 150.0;
+
+/// Combo delle priorità (prima «Senza priorità», poi le priorità per id): con
+/// almeno una scelta matrice e torte contano solo i progetti con quelle
+/// priorità (vuoto = tutte), come la combo Categorie: con «tutte» le voci sono
+/// tutte spuntate e si tolgono una a una (`toggle_in_all`); l'ultima non si
+/// toglie. `salt` distingue le combo delle due finestre.
+pub(crate) fn priorities_combo(
+    ui: &mut egui::Ui,
+    app: &App,
+    salt: &str,
+    pris: &mut std::collections::BTreeSet<Option<PriorityId>>,
+) {
+    let all: Vec<(Option<PriorityId>, String)> = std::iter::once((None, priority_name(app, None)))
+        .chain(app.priorities.list().into_iter().map(|(id, n)| (Some(id), n)))
+        .collect();
+    let text = if pris.is_empty() {
+        "Priorità: tutte".to_string()
+    } else {
+        let names: Vec<&str> = all
+            .iter()
+            .filter(|(p, _)| pris.contains(p))
+            .map(|(_, n)| n.as_str())
+            .collect();
+        format!("Priorità: {}", names.join(", "))
+    };
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(text)
+        .width(PRI_COMBO_W)
+        .show_ui(ui, |ui| {
+            let ids: Vec<Option<PriorityId>> = all.iter().map(|(p, _)| *p).collect();
+            // Le priorità nascoste non si elencano: restano comprese nel
+            // «tutte» e contano come spuntate togliendo le altre.
+            let hidden = |p: &Option<PriorityId>| p.is_some_and(|p| app.priorities.is_hidden(p));
+            let visible: Vec<Option<PriorityId>> = ids.iter().copied().filter(|p| !hidden(p)).collect();
+            for (p, name) in &all {
+                if hidden(p) {
+                    continue;
+                }
+                let mut on = ticked_in_all(pris, p);
+                let enabled = can_untick_visible(pris, &visible, p);
+                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, name)).changed() {
+                    toggle_in_all(pris, &ids, p, on);
+                }
+            }
+            if !pris.is_empty() {
+                ui.separator();
+                if ui.button("Tutte").clicked() {
+                    pris.clear();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Togli la spunta alle priorità da escludere.");
+}
+
 /// Riempie la fetta fra i raggi `r0` e `r1` con una mesh di triangoli (la
 /// fetta non è convessa, quindi non può essere un poligono pieno di egui).
 #[allow(clippy::too_many_arguments)]
@@ -595,13 +660,14 @@ pub(crate) fn pies_window(
     let to = state.pies_to.unwrap_or(today);
     let valid = from <= to;
     let now = current_monday_days();
-    let pies = crate::worker_pies::build(
+    let pies = crate::worker_pies::build_filtered(
         app,
         &state.pies_workers,
         from,
         to,
         &state.pies_categories,
         &state.pies_devs,
+        &state.pies_priorities,
         now,
     );
     let split = crate::worker_pies::split_shown(to, now);
@@ -616,7 +682,7 @@ pub(crate) fn pies_window(
         .open(&mut open)
         .show(ctx, |ui| {
             // Stessi controlli della matrice (Da / Anni / Categorie / A) più
-            // la scelta dei dev.
+            // la scelta dei dev e delle priorità.
             let mut manual = false;
             let mut years_changed = false;
             ui.horizontal(|ui| {
@@ -624,6 +690,7 @@ pub(crate) fn pies_window(
                 ui.separator();
                 years_changed = years_combo(ui, app, "pies_years", &mut state.pies_years);
                 categories_combo(ui, app, "pies_categories", &mut state.pies_categories);
+                priorities_combo(ui, app, "pies_priorities", &mut state.pies_priorities);
                 devs_combo(ui, app, "pies_devs", &mut state.pies_devs);
                 ui.separator();
                 manual |= range_end_picker(ui, "A:", "pies_to", &mut state.pies_to);

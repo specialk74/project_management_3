@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::app::App;
 use crate::categories::CategoryId;
 use crate::dev_utils::dev::DevId;
+use crate::priorities::PriorityId;
 use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
@@ -22,6 +23,8 @@ pub struct MatrixRow {
     pub tripletta: String,
     pub name: String,
     pub category: Option<CategoryId>,
+    /// Priorità del progetto (mostrata accanto alla tripletta).
+    pub priority: Option<PriorityId>,
     /// Progetto chiuso: resta nel gruppo della sua categoria ma la riga è
     /// disegnata grigia a strisce.
     pub closed: bool,
@@ -72,6 +75,9 @@ pub struct MatrixData {
     /// Stati mostrati (indici in `ProjectStatus::ALL`, in ordine): solo per
     /// questi il riepilogo ha la sotto-riga. Tutti e tre senza filtro.
     pub statuses: Vec<usize>,
+    /// Priorità scelte nella combo (`None` = «Senza priorità»), in ordine;
+    /// vuoto = tutte. Riportate nel sottotitolo del PDF.
+    pub priorities: Vec<Option<PriorityId>>,
     /// Per ogni worker (stesso ordine di `workers`): ore per dev, sommate su
     /// tutti i progetti della matrice nelle settimane che si sovrappongono al
     /// periodo, in ordine di id del dev e solo i dev con ore > 0 (righe «ore
@@ -132,13 +138,15 @@ pub fn week_overlaps(week_start: i32, from: i32, to: i32) -> bool {
 /// nell'intervallo di giorni `[from, to]`.
 #[cfg(test)]
 pub fn build(app: &App, selected: &HashSet<WorkerId>, from: i32, to: i32) -> MatrixData {
-    build_filtered(app, selected, from, to, &BTreeSet::new(), &BTreeSet::new())
+    build_filtered(app, selected, from, to, &BTreeSet::new(), &BTreeSet::new(), &BTreeSet::new())
 }
 
 /// Come `build`, limitata ai progetti delle categorie in `cats` (`None` nel set
 /// = «Senza categoria»; set vuoto = tutte). Riepilogo e totali contano solo i
 /// progetti rimasti. Allo stesso modo `statuses` limita agli stati scelti
-/// (vuoto = tutti): righe, riepilogo, totali e sotto-righe per stato.
+/// (vuoto = tutti): righe, riepilogo, totali e sotto-righe per stato. E
+/// `pris` alle priorità scelte (`None` nel set = «Senza priorità»; vuoto =
+/// tutte), in AND con gli altri filtri.
 pub fn build_filtered(
     app: &App,
     selected: &HashSet<WorkerId>,
@@ -146,6 +154,7 @@ pub fn build_filtered(
     to: i32,
     cats: &BTreeSet<Option<CategoryId>>,
     statuses: &BTreeSet<ProjectStatus>,
+    pris: &BTreeSet<Option<PriorityId>>,
 ) -> MatrixData {
     let workers: Vec<(WorkerId, String)> = app
         .workers
@@ -163,6 +172,9 @@ pub fn build_filtered(
             continue;
         }
         if !statuses.is_empty() && !statuses.contains(&app.projects.status(proj)) {
+            continue;
+        }
+        if !pris.is_empty() && !pris.contains(&app.projects.get_priority(proj)) {
             continue;
         }
         let mut cells: Vec<Vec<String>> = vec![Vec::new(); workers.len()];
@@ -208,6 +220,7 @@ pub fn build_filtered(
             tripletta: app.projects.get_tripletta(proj),
             name: app.projects.get_info(proj),
             category: app.projects.get_category(proj),
+            priority: app.projects.get_priority(proj),
             closed: app.projects.is_closed(proj),
             status: app.projects.status(proj),
             cells,
@@ -278,6 +291,7 @@ pub fn build_filtered(
         statuses: (0..ProjectStatus::ALL.len())
             .filter(|&i| statuses.is_empty() || statuses.contains(&ProjectStatus::ALL[i]))
             .collect(),
+        priorities: pris.iter().copied().collect(),
         // Righe «Ore per dev»: tutti i dev, tranne i nascosti senza ore.
         devs: {
             let dev_hours: Vec<Vec<(DevId, u32)>> = hours
@@ -444,16 +458,51 @@ mod tests {
         app.projects.set_status(ps[3], ProjectStatus::Closed);
         let sel: HashSet<_> = [mario].into_iter().collect();
         let none = BTreeSet::new();
-        let all = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new());
+        let all = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new(), &Default::default());
         assert_eq!(all.statuses, [0, 1, 2]);
         let pick: BTreeSet<_> = [ProjectStatus::Active, ProjectStatus::Closed].into();
-        let m = build_filtered(&app, &sel, 20000, 20006, &none, &pick);
+        let m = build_filtered(&app, &sel, 20000, 20006, &none, &pick, &Default::default());
         let trip: Vec<_> = m.rows.iter().map(|r| r.tripletta.as_str()).collect();
         assert_eq!(trip, ["P0", "P3"]);
         assert_eq!(m.totals, [2]);
         assert_eq!(m.summary, [vec![2]]);
         assert_eq!(m.status_totals, [[1, 0, 1]]);
         assert_eq!(m.statuses, [0, 2]);
+    }
+
+    /// Filtro priorità: solo i progetti con le priorità scelte (`None` =
+    /// «Senza priorità»); ogni riga porta la sua priorità.
+    #[test]
+    fn priority_filter_limits_rows_and_rows_carry_the_priority() {
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let must = app.priorities.list()[0].0;
+        let ps: Vec<_> = (0..3)
+            .map(|i| app.projects.add("x", Some(&format!("P{i}")), None))
+            .collect();
+        for p in &ps {
+            app.projects.add_dev(*p, fe);
+            app.projects.add_effort(*p, fe, WeekId(20000), mario, Effort(8));
+        }
+        app.projects.set_priority(ps[0], Some(must));
+        app.projects.set_priority(ps[2], Some(must));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let none = BTreeSet::new();
+        let trips = |m: &MatrixData| m.rows.iter().map(|r| r.tripletta.clone()).collect::<Vec<_>>();
+        let all = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new(), &BTreeSet::new());
+        assert_eq!(trips(&all), ["P0", "P1", "P2"]);
+        assert_eq!(all.rows[0].priority, Some(must));
+        assert_eq!(all.rows[1].priority, None);
+        assert!(all.priorities.is_empty());
+        let pick: BTreeSet<_> = [Some(must)].into();
+        let m = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new(), &pick);
+        assert_eq!(trips(&m), ["P0", "P2"]);
+        assert_eq!(m.totals, [2]);
+        assert_eq!(m.priorities, [Some(must)]);
+        let pick: BTreeSet<_> = [None].into();
+        let m = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new(), &pick);
+        assert_eq!(trips(&m), ["P1"]);
     }
 
     /// Righe «ore per dev»: ore nel dev e percentuale arrotondata sul totale
@@ -493,7 +542,7 @@ mod tests {
         app.projects.add_effort(p1, be, WeekId(20000), luigi, Effort(0));
         let sel: HashSet<_> = [mario, luigi].into_iter().collect();
         let none = BTreeSet::new();
-        let m = build_filtered(&app, &sel, 20000, 20013, &none, &BTreeSet::new());
+        let m = build_filtered(&app, &sel, 20000, 20013, &none, &BTreeSet::new(), &Default::default());
         let col = |w| m.workers.iter().position(|(id, _)| *id == w).unwrap();
         // 8 h Frontend (P1) + 8 h Backend (P2, due settimane): metà e metà
         assert_eq!(m.dev_hours[col(mario)], [(fe, 8), (be, 8)]);
@@ -519,7 +568,7 @@ mod tests {
         let cat = app.categories.add("Cat");
         app.projects.set_category(p1, Some(cat));
         let only: BTreeSet<_> = [Some(cat)].into();
-        let m = build_filtered(&app, &sel, 20000, 20013, &only, &BTreeSet::new());
+        let m = build_filtered(&app, &sel, 20000, 20013, &only, &BTreeSet::new(), &Default::default());
         assert_eq!(m.dev_hours[col(mario)], [(fe, 8)]);
     }
 
@@ -538,16 +587,16 @@ mod tests {
             app.projects.add_effort(p, fe, w, mario, Effort(8));
         }
         let sel: HashSet<_> = [mario].into_iter().collect();
-        let all = build_filtered(&app, &sel, 20000, 20006, &BTreeSet::new(), &BTreeSet::new());
+        let all = build_filtered(&app, &sel, 20000, 20006, &BTreeSet::new(), &BTreeSet::new(), &Default::default());
         assert_eq!(all.rows.len(), 2);
         assert_eq!(all.totals, [2]);
         let only_a: BTreeSet<_> = [Some(cat_a)].into();
-        let m = build_filtered(&app, &sel, 20000, 20006, &only_a, &BTreeSet::new());
+        let m = build_filtered(&app, &sel, 20000, 20006, &only_a, &BTreeSet::new(), &Default::default());
         let trip: Vec<_> = m.rows.iter().map(|r| r.tripletta.as_str()).collect();
         assert_eq!(trip, ["P1"]);
         assert_eq!(m.totals, [1]);
         let none: BTreeSet<_> = [None].into();
-        let m = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new());
+        let m = build_filtered(&app, &sel, 20000, 20006, &none, &BTreeSet::new(), &Default::default());
         assert_eq!(m.rows.len(), 1);
         assert_eq!(m.rows[0].tripletta, "P2");
     }

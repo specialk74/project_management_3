@@ -167,10 +167,11 @@ App (file .ron)
 ├── Workers   — le persone (risorse umane)
 ├── Devs      — i ruoli/discipline (es. "Frontend", "Test", "Sistema")
 ├── Categorie — categorie di progetto
+├── Priorità  — priorità di progetto (elenco libero, all'inizio Must / Should / Could)
 ├── Milestone — traguardi (con nome e colore)
 └── Progetti
     └── Progetto
-        ├── tripletta, nome (descrizione), inizio, fine, categoria, stato
+        ├── tripletta, nome (descrizione), inizio, fine, categoria, priorità, stato
         └── per ogni Dev:
             ├── effort pianificato (ore previste)
             ├── nota del dev
@@ -184,6 +185,11 @@ Termini chiave:
   può essere sovrascritto globalmente o per singola settimana.
 - **Dev**: un ruolo/disciplina all'interno di un progetto. Ha un colore proprio
   (sfondo + testo) memorizzato nel file.
+- **Priorità**: un'informazione del progetto allo stesso livello della categoria,
+  con valori **liberi**: un file nuovo (o scritto prima delle priorità) parte da
+  **Must**, **Should** e **Could**, che si possono rinominare, eliminare o
+  affiancare con altri (Aggiungi ▸ Priorità). Serve, fra l'altro, a filtrare
+  matrice e torte (§15).
 - **Effort**: ore di lavoro (valore intero, non percentuale).
 - **Effort pianificato**: le ore previste per un dev in un progetto (colonna a
   sinistra, editabile).
@@ -197,7 +203,7 @@ Termini chiave:
 
 ### Rinominare, nascondere, eliminare (Aggiungi ▸ Worker, dev e categorie…)
 
-Una finestra con tre schede — **Worker**, **Dev**, **Categorie** — e un campo di
+Una finestra con quattro schede — **Worker**, **Dev**, **Categorie**, **Priorità** — e un campo di
 ricerca. L'intestazione delle colonne resta ferma in alto mentre si scorre
 l'elenco. Per ogni elemento una riga con:
 
@@ -209,7 +215,7 @@ l'elenco. Per ogni elemento una riga con:
   dati: celle, progetti e totali seguono il nome nuovo; il filtro worker attivo
   si aggiorna da solo.
 - **Uso** — dove è usato: per un worker le **celle** in cui è assegnato (anche a
-  effort 0) e in quanti progetti; per un dev e per una categoria in quanti
+  effort 0) e in quanti progetti; per un dev, una categoria e una priorità in quanti
   **progetti**. «non usato» se in nessuno.
 - **Nascosto** — **archivia** l'elemento: i dati restano e tutto ciò che è già
   stato inserito continua a vedersi (griglia, totali, export), ma l'elemento non
@@ -224,7 +230,10 @@ l'elenco. Per ogni elemento una riga con:
     solo se ha ore;
   - una **categoria** nascosta non è più proposta nella scelta della categoria del
     progetto (resta su quelli che la hanno), nel filtro Categorie, nelle combo di
-    matrice e torte e nel selettore del footer.
+    matrice e torte e nel selettore del footer;
+  - una **priorità** nascosta non è più proposta nella scelta della priorità del
+    progetto (resta su quelli che la hanno) e nelle combo Priorità di matrice e
+    torte.
 
   Il nome di un elemento nascosto è scritto in grigio; togliendo la spunta torna
   come prima.
@@ -235,8 +244,8 @@ l'elenco. Per ogni elemento una riga con:
   anche questa spunta.
 - **🗑 Elimina** — solo per ciò che **non è usato da nessuna parte**: altrimenti il
   cestino è spento e, passandoci sopra, dice dove è usato (puoi nasconderlo). Per
-  eliminare un dev, prima toglilo dai progetti; per eliminare una categoria,
-  cambia la categoria dei progetti che la usano. Eliminando un worker spariscono
+  eliminare un dev, prima toglilo dai progetti; per eliminare una categoria (o
+  una priorità), cambia la categoria (o la priorità) dei progetti che la usano. Eliminando un worker spariscono
   anche i suoi dati propri (ore max, limiti, note e stato delle settimane).
 
 ---
@@ -383,6 +392,8 @@ Da sapere:
   il bottone; il campo resta aperto per inserimenti multipli.
 - **Dev** — aggiunge un nuovo ruolo/disciplina.
 - **Categoria** — aggiunge una categoria di progetto.
+- **Priorità** — aggiunge un valore di priorità (es. «Won't»); il nome segue le
+  stesse regole dei nomi di categoria (non vuoto, senza `|`, non già usato).
 - **Milestone** — crea una nuova milestone (poi assegnabile ai progetti), con
   **tipo** e **categorie di stampa** scelti prima del nome.
 
@@ -486,6 +497,10 @@ Da lì in poi i due progetti sono indipendenti.
   lasciata vuota non viene salvata); **Annulla** scarta le modifiche.
 - **Categoria**: sotto la tripletta (nascosta in vista compatta). **Click** per
   sceglierla dall'elenco.
+- **Priorità**: sulla stessa riga della categoria, **a destra** (nascosta in vista
+  compatta; «prio —» in grigio se non è impostata). **Click** sulla priorità per
+  sceglierla dall'elenco, o «— Nessuna» per toglierla; il click sulla parte sinistra
+  della riga resta quello della categoria.
 - **Nome/descrizione**: campo di testo editabile su più righe. Basta cliccarci e
   scrivere; la modifica si conferma perdendo il focus.
 - **Inizio** e **Fine**: date del progetto (nascoste in vista compatta). **Tasto
@@ -1248,7 +1263,9 @@ progetto**.
    spunta a quelle da escludere la matrice mostra **solo i progetti delle categorie
    rimaste**, e riepilogo per categoria e «Totale progetti» contano solo quelli.
    Rispuntandole tutte si torna a «tutte», l'ultima rimasta non si può togliere e
-   **Tutte** rimette tutto. Ancora accanto, la
+   **Tutte** rimette tutto. Subito dopo, la combo **«Priorità»** (prima «Senza
+   priorità», poi i valori dell'elenco) funziona allo stesso modo e lascia **solo i
+   progetti con le priorità rimaste** (es. solo «Must»). Ancora accanto, la
    combo **«Stato»** (**Attivi**, **On-Hold**, **Closed**), che funziona allo stesso
    modo: per default sono **tutti spuntati**; togliendo la spunta a quelli da
    escludere la matrice mostra solo i progetti negli stati rimasti, e il **riepilogo** si adegua: conta solo quei progetti e ha le
@@ -1263,7 +1280,8 @@ progetto**.
    Un **progetto chiuso** resta nel gruppo della sua categoria: la sua riga mantiene
    il colore della categoria ma **spento verso il grigio e a strisce**, con
    l'indicazione «chiuso» (oppure «on-hold», se il progetto è on-hold) accanto
-   alla tripletta; conta comunque nel riepilogo.
+   alla tripletta; conta comunque nel riepilogo. La **priorità** del progetto, se
+   c'è, è scritta nella stessa colonna, allineata a destra (anche nel PDF).
 4. **Celle** — all'incrocio progetto × worker ci sono i **dev** con cui il worker è
    assegnato nell'intervallo, **uno per riga** se sono più d'uno, ciascuno con le
    **ore** del worker su quel dev nell'intervallo e la loro **percentuale sul
@@ -1334,16 +1352,19 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
    aperta; dalla finestra si cambia con **Worker…**.
 2. **Intervallo e categorie** — in alto **Da** e **A** (oggi o una data) e, in
    mezzo, la combo **Anni** che li imposta dal 1° gennaio del più vecchio al 31
-   dicembre del più recente, esattamente come nella matrice. Accanto, la combo
-   **Categorie**, che funziona come nella matrice (tutte spuntate per default, si
+   dicembre del più recente, esattamente come nella matrice. Accanto, le combo
+   **Categorie** e **Priorità** e poi la combo **Dev**. La combo **Categorie** che funziona come nella matrice (tutte spuntate per default, si
    toglie la spunta a quelle da escludere): con delle categorie scelte si contano **solo i progetti di quelle
    categorie**, quindi torte, tabelle, totale e percentuali si riferiscono solo a
-   quelle ore. Subito dopo, la combo **Dev** (nomi dei dev nei loro colori, stesse
+   quelle ore. La combo **Dev** (nomi dei dev nei loro colori, stesse
    spunte della combo Categorie: con «tutti» sono tutti spuntati, **Tutti** rimette
    tutto) fa lo stesso con i dev: si
    contano **solo le ore dei dev scelti**, in entrambe le torte, nelle tabelle, nel
-   totale, nelle percentuali e nell'occupazione. Le due combo si combinano (es. solo
-   «Frontend» di «Cliente A»). Le scelte restano finché l'app è aperta.
+   totale, nelle percentuali e nell'occupazione. La combo **Priorità**
+   (prima «Senza priorità», poi i valori dell'elenco; stesse spunte) conta **solo i
+   progetti con le priorità scelte** (es. solo «Must»). Le combo si combinano (es.
+   solo «Frontend» dei progetti «Must» di «Cliente A»). Le scelte restano finché
+   l'app è aperta.
 3. **Cosa si conta** — le **ore** delle celle di tutti i progetti, aperti e chiusi,
    nelle settimane che toccano l'intervallo. Le assegnazioni a effort 0 non contano:
    un worker che nel periodo ha solo quelle mostra «Nessuna ora nel periodo.».
@@ -1392,8 +1413,9 @@ sono calcolate come sopra, solo su quelle settimane: con il periodo fino al 31/1
 dell'anno in corso coincidono con il **numero verde** accanto al worker nel footer; se le ore pianificate le superano la riga
 dice «…, 40h oltre la capacità» **in rosso**. Risponde a «posso dargli altro
 lavoro da qui in avanti?». Le ore pianificate di questa riga, come torte,
-tabelle, totale e occupazione, seguono i filtri **Dev** e **Categorie** e
-l'intervallo di date: contano solo le ore dei dev e delle categorie selezionati
+tabelle, totale e occupazione, seguono i filtri **Dev**, **Categorie** e
+**Priorità** e l'intervallo di date: contano solo le ore dei dev, delle categorie
+e delle priorità selezionati
 (senza filtri, tutto il lavoro del worker).
 
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
@@ -1415,7 +1437,8 @@ sono arrotondate: una fetta con poche ore che arrotonda a zero è indicata «<1%
 
 **Esporta PDF…** crea un PDF con **una pagina per worker** (A4 orizzontale, in
 inglese: «Hours by dev, category and project», con l'intervallo, gli anni, le
-categorie e i dev scelti nel sottotitolo, es. `Devs: Frontend, Backend`): a sinistra la prima torta (tre anelli) con sotto
+categorie, i dev e le priorità scelti nel sottotitolo, es. `Devs: Frontend,
+Backend  ·  Priority: Must`): a sinistra la prima torta (tre anelli) con sotto
 la sua tabella, a destra la seconda; nelle tabelle ci sono anche le righe dei
 progetti (tripletta). Se un worker ha molte righe di tabella, il testo non si
 rimpicciolisce: la tabella **continua sulle pagine successive** (titolo con «(cont.)», intestazione ripetuta, totale in fondo
@@ -1424,8 +1447,8 @@ all'ultima). Con le ore pianificate le colonne sono
 1380h (1100h done, 280h planned)`); in coda c'è sempre la capacità (es.
 `Capacity: 1720h (80% used)`); con un periodo che arriva alla settimana corrente una
 terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
-available, 240h free`, oppure `…, 40h over capacity` in rosso; con il filtro
-Categorie o Dev `From now to the end (all devs and categories): …`).
+available, 240h free`, oppure `…, 40h over capacity` in rosso; come nella
+finestra, le ore pianificate sono solo quelle di dev, categorie e priorità scelti).
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data e
 senza pagine (le tabelle lunghe scendono quanto serve), **un file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
 `torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I
@@ -1831,6 +1854,7 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 | Nome dev | Tasto destro | Menù dev (righe, cancella effort, nota, nascondi effort) |
 | Tripletta / Inizio / Fine | Tasto destro | Modifica il valore |
 | Categoria progetto | Click | Scegli categoria |
+| Priorità progetto | Click | Scegli priorità |
 | Striscia "Dev" | Click | Aggiungi/rimuovi dev |
 | Intestazione settimana | Click | Max ore settimana per tutti i worker |
 | Data nel footer | Click | Max ore settimana per tutti i worker |

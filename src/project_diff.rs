@@ -25,6 +25,7 @@ pub enum HeaderField {
     EndWeek,
     Tripletta,
     Category,
+    Priority,
     Closed,
     Milestones,
     Notes,
@@ -95,6 +96,9 @@ fn header_diff(off: &Project, par: &Project) -> Vec<HeaderField> {
     }
     if off.get_category() != par.get_category() {
         out.push(HeaderField::Category);
+    }
+    if off.get_priority() != par.get_priority() {
+        out.push(HeaderField::Priority);
     }
     if off.status() != par.status() {
         out.push(HeaderField::Closed);

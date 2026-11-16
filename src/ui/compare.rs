@@ -336,6 +336,7 @@ fn header_label(f: crate::project_diff::HeaderField) -> &'static str {
         H::EndWeek => "fine",
         H::Tripletta => "tripletta",
         H::Category => "categoria",
+        H::Priority => "priorità",
         H::Closed => "stato (attivo/on-hold/closed)",
         H::Milestones => "milestone",
         H::Notes => "note",
