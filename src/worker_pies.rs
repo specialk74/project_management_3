@@ -33,7 +33,7 @@ use crate::app::App;
 use crate::categories::CategoryId;
 use crate::dev_utils::dev::DevId;
 use crate::priorities::PriorityId;
-use crate::project_utils::project::ProjectId;
+use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::worker_matrix::{category_color, week_overlaps};
 use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
@@ -351,11 +351,12 @@ pub fn build(
     devs: &BTreeSet<DevId>,
     now: i32,
 ) -> Vec<WorkerPie> {
-    build_filtered(app, selected, from, to, cats, devs, &BTreeSet::new(), now)
+    build_filtered(app, selected, from, to, cats, devs, &BTreeSet::new(), &BTreeSet::new(), now)
 }
 
 /// Come `build`, con in più il filtro **priorità** `pris` (`None` nel set =
-/// «Senza priorità»; vuoto = tutte), in AND con categorie e dev.
+/// «Senza priorità»; vuoto = tutte) e quello **stato** `statuses` (vuoto o
+/// tutti = nessun filtro), in AND con categorie e dev.
 #[allow(clippy::too_many_arguments)]
 pub fn build_filtered(
     app: &App,
@@ -365,6 +366,7 @@ pub fn build_filtered(
     cats: &BTreeSet<Option<CategoryId>>,
     devs: &BTreeSet<DevId>,
     pris: &BTreeSet<Option<PriorityId>>,
+    statuses: &BTreeSet<ProjectStatus>,
     now: i32,
 ) -> Vec<WorkerPie> {
     let workers: Vec<(WorkerId, String)> = app
@@ -383,7 +385,8 @@ pub fn build_filtered(
         let cat = app.projects.get_category(proj);
         let pri = app.projects.get_priority(proj);
         let shown = (cats.is_empty() || cats.contains(&cat))
-            && (pris.is_empty() || pris.contains(&pri));
+            && (pris.is_empty() || pris.contains(&pri))
+            && (statuses.is_empty() || statuses.contains(&app.projects.status(proj)));
         for dev in app.projects.list_devs(proj) {
             let Some(sd) = app.projects.get_single_dev(proj, dev) else {
                 continue;
@@ -758,7 +761,7 @@ mod tests {
         let sel: HashSet<_> = [mario].into_iter().collect();
         let (no_cats, no_devs) = (BTreeSet::new(), BTreeSet::new());
         let run = |pris: &BTreeSet<Option<PriorityId>>| {
-            build_filtered(&app, &sel, 20000, 20013, &no_cats, &no_devs, pris, 20000).remove(0)
+            build_filtered(&app, &sel, 20000, 20013, &no_cats, &no_devs, pris, &BTreeSet::new(), 20000).remove(0)
         };
         assert_eq!(run(&BTreeSet::new()).total, 35, "senza filtro: tutto");
         let m = run(&[Some(must)].into());
@@ -767,6 +770,19 @@ mod tests {
         assert_eq!(m.free_hours(), m.future_capacity as i64 - 10);
         assert_eq!(run(&[Some(could), None].into()).total, 25, "Could + senza priorità");
         assert_eq!(run(&[None].into()).total, 5);
+        // Filtro stato: PC on-hold, PN chiuso.
+        let mut app = app.clone();
+        app.projects.set_status(p_could, ProjectStatus::OnHold);
+        app.projects.set_status(p_none, ProjectStatus::Closed);
+        let by_status = |st: &BTreeSet<ProjectStatus>| {
+            build_filtered(&app, &sel, 20000, 20013, &no_cats, &no_devs, &BTreeSet::new(), st, 20000).remove(0)
+        };
+        assert_eq!(by_status(&BTreeSet::new()).total, 35, "senza filtro stato: tutto");
+        let active = by_status(&[ProjectStatus::Active].into());
+        assert_eq!(active.total, 10);
+        assert_eq!(active.projects.iter().map(|p| p.project).collect::<Vec<_>>(), [p_must]);
+        assert_eq!(by_status(&[ProjectStatus::OnHold, ProjectStatus::Closed].into()).total, 25);
+        assert_eq!(active.free_hours(), active.future_capacity as i64 - 10, "ore libere filtrate");
     }
 
     /// Geometria: 0 in alto e senso orario; l'etichetta entra nelle fette

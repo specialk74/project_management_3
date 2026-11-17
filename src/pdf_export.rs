@@ -3873,6 +3873,14 @@ struct PieRow {
 
 /// Larghezza di una colonna numerica delle tabelle delle torte (mm).
 const PIE_NUM_W: f32 = 17.0;
+/// Larghezza delle colonne di testo (Priority, Status) delle tabelle delle
+/// torte (mm): i valori sono corti («Should», «On-Hold»).
+const PIE_TEXT_W: f32 = 13.0;
+
+/// Larghezza della colonna con intestazione `head`.
+fn pie_col_w(head: &str) -> f32 {
+    if matches!(head, "Priority" | "Status") { PIE_TEXT_W } else { PIE_NUM_W }
+}
 
 /// Celle delle ore: `fatte, pianificate, totale` se `split`, altrimenti solo il
 /// totale.
@@ -3904,9 +3912,15 @@ impl PieTable<'_> {
     /// e, se `total`, la riga del totale.
     fn draw(&self, top: f32, rows: std::ops::Range<usize>, total: bool) -> Vec<Shape> {
         let (x0, right, rh, font) = (self.x0, self.right, PIE_ROW_H, PIE_FONT);
+        // Bordo destro di ogni colonna, da destra: le colonne di testo
+        // (Priority, Status) sono più strette di quelle numeriche.
         let n = self.heads.len();
-        let cols: Vec<f32> = (0..n).map(|i| right - (n - 1 - i) as f32 * PIE_NUM_W).collect();
-        let name_w = cols[0] - PIE_NUM_W - x0;
+        let widths: Vec<f32> = self.heads.iter().map(|h| pie_col_w(h)).collect();
+        let mut cols = vec![right; n];
+        for i in (0..n.saturating_sub(1)).rev() {
+            cols[i] = cols[i + 1] - widths[i + 1];
+        }
+        let name_w = cols.first().zip(widths.first()).map_or(right - x0, |(c, w)| c - w - x0);
         let cells = |vals: &[String]| -> Vec<(f32, String)> {
             cols.iter()
                 .zip(vals)
@@ -4104,8 +4118,11 @@ fn pies_pages(
     let proj_pri = |p: crate::project_utils::project::ProjectId| {
         crate::effort_csv::priority_name(app, app.projects.get_priority(p))
     };
+    let proj_status = |p: crate::project_utils::project::ProjectId| {
+        crate::effort_csv::status_en(app.projects.status(p)).to_string()
+    };
     let total_cells = |pct_dev: bool| {
-        let mut v = vec![String::new()];
+        let mut v = vec![String::new(), String::new()];
         v.extend(pie_hour_cells(Hours { total: pie.total, done: pie.done }, split));
         v.push("100%".to_string());
         if pct_dev {
@@ -4113,12 +4130,12 @@ fn pies_pages(
         }
         v
     };
-    let mut heads = vec!["Priority"];
+    let mut heads = vec!["Priority", "Status"];
     heads.extend(pie_hour_heads(split));
     heads.extend(["% total", "% dev"]);
     let mut rows = Vec::new();
     for d in &pie.devs {
-        let mut vals = vec![String::new()];
+        let mut vals = vec![String::new(), String::new()];
         vals.extend(pie_hour_cells(d.hours, split));
         vals.extend([pct_label(d.hours.total, pie.total), String::new()]);
         rows.push(PieRow {
@@ -4130,7 +4147,7 @@ fn pies_pages(
             vals,
         });
         for &(c, h) in &d.categories {
-            let mut vals = vec![String::new()];
+            let mut vals = vec![String::new(), String::new()];
             vals.extend(pie_hour_cells(h, split));
             vals.extend([pct_label(h.total, pie.total), pct_label(h.total, d.hours.total)]);
             rows.push(PieRow {
@@ -4142,7 +4159,7 @@ fn pies_pages(
                 vals,
             });
             for p in d.projects_in(c) {
-                let mut vals = vec![proj_pri(p.project)];
+                let mut vals = vec![proj_pri(p.project), proj_status(p.project)];
                 vals.extend(pie_hour_cells(p.hours, split));
                 vals.extend([pct_label(p.hours.total, pie.total), pct_label(p.hours.total, d.hours.total)]);
                 rows.push(PieRow {
@@ -4178,12 +4195,12 @@ fn pies_pages(
     let cx = (x0 + right) / 2.0;
     out.extend(text_left(x0, PIE_TITLE_Y, "By category", 10.0, true, BLACK));
     out.extend(pie_ring(cx, 0.0, PIE_R_MM, &pie.category_ring(), pie.total, |c| cat_rgb(*c)));
-    let mut heads = vec!["Priority"];
+    let mut heads = vec!["Priority", "Status"];
     heads.extend(pie_hour_heads(split));
     heads.push("% total");
     let mut rows = Vec::new();
     for &(c, h) in &pie.categories {
-        let mut vals = vec![String::new()];
+        let mut vals = vec![String::new(), String::new()];
         vals.extend(pie_hour_cells(h, split));
         vals.push(pct_label(h.total, pie.total));
         rows.push(PieRow {
@@ -4195,7 +4212,7 @@ fn pies_pages(
             vals,
         });
         for p in pie.projects_in(c) {
-            let mut vals = vec![proj_pri(p.project)];
+            let mut vals = vec![proj_pri(p.project), proj_status(p.project)];
             vals.extend(pie_hour_cells(p.hours, split));
             vals.push(pct_label(p.hours.total, pie.total));
             rows.push(PieRow {
@@ -4312,6 +4329,9 @@ fn pies_capacity_pages(
     let proj_pri = |p: crate::project_utils::project::ProjectId| {
         crate::effort_csv::priority_name(app, app.projects.get_priority(p))
     };
+    let proj_status = |p: crate::project_utils::project::ProjectId| {
+        crate::effort_csv::status_en(app.projects.status(p)).to_string()
+    };
     let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
     let mut out = pies_header(pie, PIES_CAP_TITLE, subtitle, split);
 
@@ -4338,22 +4358,22 @@ fn pies_capacity_pages(
     ));
     let free: Vec<_> = pie.free_seg().into_iter().collect();
     out.extend(pie_ring(cx, 0.0, PIE_R_MM, &free, cap, |k| u32_rgb(k.rgb())));
-    let mut heads = vec!["Priority"];
+    let mut heads = vec!["Priority", "Status"];
     heads.extend(pie_hour_heads(split));
     heads.extend(["% capacity", "% dev"]);
     let mut rows = Vec::new();
     for d in &pie.devs {
-        let mut vals = vec![String::new()];
+        let mut vals = vec![String::new(), String::new()];
         vals.extend(pie_hour_cells(d.hours, split));
         vals.extend([pct_label(d.hours.total, cap), String::new()]);
         rows.push(PieRow { swatch: Some(dev_rgb(app, d.dev)), name: dev_name(d.dev), indent: 0, bold: true, red: false, vals });
         for &(c, h) in &d.categories {
-            let mut vals = vec![String::new()];
+            let mut vals = vec![String::new(), String::new()];
             vals.extend(pie_hour_cells(h, split));
             vals.extend([pct_label(h.total, cap), pct_label(h.total, d.hours.total)]);
             rows.push(PieRow { swatch: Some(cat_rgb(c)), name: matrix_category_name(app, c), indent: 1, bold: false, red: false, vals });
             for p in d.projects_in(c) {
-                let mut vals = vec![proj_pri(p.project)];
+                let mut vals = vec![proj_pri(p.project), proj_status(p.project)];
                 vals.extend(pie_hour_cells(p.hours, split));
                 vals.extend([pct_label(p.hours.total, cap), pct_label(p.hours.total, d.hours.total)]);
                 rows.push(PieRow { swatch: Some(proj_rgb(p.project)), name: proj_name(p.project), indent: 2, bold: false, red: false, vals });
@@ -4361,11 +4381,11 @@ fn pies_capacity_pages(
         }
     }
     let worker_hours = Hours { total: pie.total, done: pie.done };
-    let mut vals = vec![String::new()];
+    let mut vals = vec![String::new(), String::new()];
     vals.extend(pie_hour_cells(worker_hours, split));
     vals.extend([pct_label(pie.total, cap), String::new()]);
     rows.push(PieRow { swatch: None, name: "Total".into(), indent: 0, bold: true, red: false, vals });
-    let (rest, total) = pie_capacity_rows(pie, split, 1, 1);
+    let (rest, total) = pie_capacity_rows(pie, split, 2, 1);
     rows.push(rest);
     let left = PieTable { x0, right: x0 + PIE_PANEL_W, first: "Dev / Category / Project", heads, rows, total };
 
@@ -4405,7 +4425,9 @@ fn priority_name_en(app: &App, p: Option<crate::priorities::PriorityId>) -> Stri
 
 /// Sottotitolo delle torte: intervallo, anni e categorie scelti (come la
 /// matrice), poi i dev scelti (`Dev: …` / `Devs: …`) e le priorità
-/// (`Priority: …` / `Priorities: …`), niente se tutti.
+/// (`Priority: …` / `Priorities: …`) e gli stati (`Status: …`), niente se
+/// tutti.
+#[allow(clippy::too_many_arguments)]
 fn pies_subtitle(
     app: &App,
     from: i32,
@@ -4414,7 +4436,9 @@ fn pies_subtitle(
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
     priorities: &[Option<crate::priorities::PriorityId>],
+    statuses: &[crate::project_utils::project::ProjectStatus],
 ) -> String {
+    use crate::project_utils::project::ProjectStatus;
     let names: Vec<String> = categories
         .iter()
         .map(|c| matrix_category_name(app, *c))
@@ -4433,12 +4457,21 @@ fn pies_subtitle(
         let label = if names.len() == 1 { "Priority" } else { "Priorities" };
         out = format!("{out}  ·  {label}: {}", names.join(", "));
     }
+    if !statuses.is_empty() && statuses.len() < ProjectStatus::ALL.len() {
+        let names: Vec<&str> = ProjectStatus::ALL
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| statuses.contains(s))
+            .map(|(i, _)| MATRIX_STATUS_EN[i])
+            .collect();
+        out = format!("{out}  ·  Status: {}", names.join(", "));
+    }
     out
 }
 
 /// PDF delle torte: per ogni worker con ore nel periodo `[from, to]` la
 /// pagina delle torte e quella delle torte sulla capacità (se ne ha)
-/// (`years`/`categories`/`devs`/`priorities` = scelte delle combo, nel sottotitolo). `None` se
+/// (`years`/`categories`/`devs`/`priorities`/`statuses` = scelte delle combo, nel sottotitolo). `None` se
 /// nessun worker ha ore.
 #[allow(clippy::too_many_arguments)]
 pub fn build_pies_pdf(
@@ -4450,8 +4483,9 @@ pub fn build_pies_pdf(
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
     priorities: &[Option<crate::priorities::PriorityId>],
+    statuses: &[crate::project_utils::project::ProjectStatus],
 ) -> Option<Vec<u8>> {
-    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities);
+    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities, statuses);
     let split = crate::worker_pies::split_shown(to, current_monday_days());
     let created = self::today().format(US_DATE).to_string();
     let pages: Vec<Vec<Shape>> = pies
@@ -4478,8 +4512,9 @@ pub fn build_pies_svgs(
     categories: &[Option<crate::categories::CategoryId>],
     devs: &[DevId],
     priorities: &[Option<crate::priorities::PriorityId>],
+    statuses: &[crate::project_utils::project::ProjectStatus],
 ) -> Vec<(String, String)> {
-    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities);
+    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities, statuses);
     let split = crate::worker_pies::split_shown(to, current_monday_days());
     let mut out = Vec::new();
     for p in pies.iter().filter(|p| p.total > 0) {
@@ -4807,7 +4842,7 @@ mod tests {
         assert!(fill(u32_rgb(WorkKey::Free.rgb())), "fetta libero");
         assert!(!t.iter().any(|x| x == "Work / free"), "sotto il 100% niente torta lavoro / libero: {t:?}");
         assert!(!fill(u32_rgb(WorkKey::Over.rgb())));
-        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[], &[], &[], &[]).expect("PDF");
+        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[], &[], &[], &[], &[]).expect("PDF");
         assert!(pdf.starts_with(b"%PDF"));
         // 30h su 20h: oltre la capacità.
         app.workers.set_max_hours(mario, 10);
@@ -4875,29 +4910,40 @@ mod tests {
         // Colonna Priority in entrambe le tabelle, valorizzata sui progetti.
         assert_eq!(t.iter().filter(|x| *x == "Priority").count(), 2, "{t:?}");
         assert_eq!(t.iter().filter(|x| *x == "Could").count(), 3, "{t:?}");
+        assert_eq!(t.iter().filter(|x| *x == "Status").count(), 2, "{t:?}");
+        assert_eq!(t.iter().filter(|x| *x == "Active").count(), 3, "{t:?}");
         let polys = page.iter().filter(|s| matches!(s, Shape::Poly { .. })).count();
         assert_eq!(polys, 7, "2 dev + 2 dev·categoria + 2 dev·progetto + 1 categoria");
-        let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[], &[]);
+        let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[], &[], &[]);
         let names: Vec<_> = svgs.iter().map(|(n, _)| n.as_str()).collect();
         // Ogni worker con ore ha anche il file delle torte sulla capacità.
         assert_eq!(names, ["Anna", "Anna_capacity", "Mario", "Mario_capacity"], "Luigi senza ore è saltato");
         assert!(svgs[1].1.starts_with("<svg") && !svgs[1].1.contains("created"));
-        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[2026], &[Some(ca)], &[fe], &[]).expect("PDF");
+        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[2026], &[Some(ca)], &[fe], &[], &[]).expect("PDF");
         assert_eq!(
-            pies_subtitle(&app, 20000, 20006, &[], &[Some(ca), None], &[], &[]),
+            pies_subtitle(&app, 20000, 20006, &[], &[Some(ca), None], &[], &[], &[]),
             matrix_subtitle(20000, 20006, today_days(), &[], &["Cliente A".into(), "No category".into()])
         );
         let base = matrix_subtitle(20000, 20006, today_days(), &[], &[]);
-        assert_eq!(pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[]), format!("{base}  ·  Dev: Frontend"));
+        assert_eq!(pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[], &[]), format!("{base}  ·  Dev: Frontend"));
         assert_eq!(
-            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe, be], &[]),
+            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe, be], &[], &[]),
             format!("{base}  ·  Devs: Frontend, Backend")
         );
         let must = app.priorities.list()[0].0;
         assert_eq!(
-            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[Some(must), None]),
+            pies_subtitle(&app, 20000, 20006, &[], &[], &[fe], &[Some(must), None], &[]),
             format!("{base}  ·  Dev: Frontend  ·  Priorities: Must, No priority")
         );
+        {
+            use crate::project_utils::project::ProjectStatus::{Active, Closed, OnHold};
+            assert_eq!(
+                pies_subtitle(&app, 20000, 20006, &[], &[], &[], &[], &[Active, Closed]),
+                format!("{base}  ·  Status: Active, Closed")
+            );
+            // Tutti gli stati = nessun filtro.
+            assert_eq!(pies_subtitle(&app, 20000, 20006, &[], &[], &[], &[], &[Active, OnHold, Closed]), base);
+        }
         assert!(pdf.starts_with(b"%PDF"));
         let none = crate::worker_pies::build(
             &app,
@@ -4908,7 +4954,7 @@ mod tests {
             &Default::default(),
             20000,
         );
-        assert!(build_pies_pdf(&app, &none, 20000, 20006, &[], &[], &[], &[]).is_none());
+        assert!(build_pies_pdf(&app, &none, 20000, 20006, &[], &[], &[], &[], &[]).is_none());
         // Con il periodo oltre la settimana corrente: colonne Done / Planned /
         // Total e sottotitolo con la divisione.
         let split = pies_pages(&app, m, "From x to y", true, None).concat();

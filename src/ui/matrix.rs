@@ -181,7 +181,11 @@ pub(crate) fn categories_combo(
 /// Combo degli stati dei progetti (Attivi / On-Hold / Closed): la matrice
 /// mostra solo i progetti negli stati spuntati, e il riepilogo conta solo
 /// quelli; vuoto = tutti, mostrati tutti spuntati (`toggle_in_all`).
-fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<ProjectStatus>) {
+pub(crate) fn statuses_combo(
+    ui: &mut egui::Ui,
+    salt: &str,
+    statuses: &mut std::collections::BTreeSet<ProjectStatus>,
+) {
     let text = if statuses.is_empty() || statuses.len() == ProjectStatus::ALL.len() {
         "Stato: tutti".to_string()
     } else {
@@ -193,7 +197,7 @@ fn statuses_combo(ui: &mut egui::Ui, statuses: &mut std::collections::BTreeSet<P
             .collect();
         format!("Stato: {}", names.join(", "))
     };
-    egui::ComboBox::from_id_salt("matrix_statuses")
+    egui::ComboBox::from_id_salt(salt)
         .selected_text(text)
         .width(MX_STATUS_W)
         .show_ui(ui, |ui| {
@@ -1110,7 +1114,7 @@ pub(crate) fn matrix_window(
                         + 60.0;
                     let gap = ((ui.available_width() - combos) / 2.0).max(0.0);
                     ui.add_space(gap);
-                    statuses_combo(ui, &mut state.matrix_statuses);
+                    statuses_combo(ui, "matrix_statuses", &mut state.matrix_statuses);
                     priorities_combo(ui, app, "matrix_priorities", &mut state.matrix_priorities);
                     categories_combo(ui, app, "matrix_categories", &mut state.matrix_categories);
                     years_changed = years_combo(ui, app, "matrix_years", &mut state.matrix_years);

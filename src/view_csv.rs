@@ -59,12 +59,13 @@ pub fn matrix_csv(app: &App, m: &MatrixData) -> (String, usize) {
 }
 
 /// Colonne del CSV delle torte.
-pub const PIES_HEADER: [&str; 9] = [
-    "Worker", "Dev", "Category", "Tripletta", "Project", "Priority", "Hours", "Done", "Planned",
+pub const PIES_HEADER: [&str; 10] = [
+    "Worker", "Dev", "Category", "Tripletta", "Project", "Priority", "Status", "Hours", "Done",
+    "Planned",
 ];
 
 /// Torte dev/categorie: una riga per worker × dev × progetto (la fetta più
-/// fine dell'anello esterno), con la categoria del progetto; ore totali,
+/// fine dell'anello esterno), con categoria, priorità e stato del progetto; ore totali,
 /// fatte (settimane prima della corrente) e pianificate. Sommando per Dev o
 /// per Category si ritrovano le due torte.
 pub fn pies_rows(app: &App, pies: &[WorkerPie]) -> Vec<Vec<String>> {
@@ -80,6 +81,7 @@ pub fn pies_rows(app: &App, pies: &[WorkerPie]) -> Vec<Vec<String>> {
                     app.projects.get_tripletta(p.project),
                     app.projects.get_info(p.project),
                     priority_name(app, app.projects.get_priority(p.project)),
+                    status_en(app.projects.status(p.project)).to_string(),
                     p.hours.total.to_string(),
                     p.hours.done.to_string(),
                     p.hours.planned().to_string(),
@@ -300,6 +302,7 @@ mod tests {
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
             monday + 7,
         );
         let mut rows: Vec<String> = pies_rows(&app, &pies).iter().map(|r| r.join("|")).collect();
@@ -307,8 +310,8 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "Mario|Backend|Cliente|ABC|Portale|Must|30|0|30",
-                "Mario|Frontend|Cliente|ABC|Portale|Must|10|10|0",
+                "Mario|Backend|Cliente|ABC|Portale|Must|Active|30|0|30",
+                "Mario|Frontend|Cliente|ABC|Portale|Must|Active|10|10|0",
             ]
         );
     }
@@ -324,6 +327,7 @@ mod tests {
             &sel,
             monday,
             monday + 13,
+            &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),

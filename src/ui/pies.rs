@@ -444,6 +444,11 @@ fn priority_cell(ui: &mut egui::Ui, app: &App, proj: ProjectId) {
     }
 }
 
+/// Cella «Stato» di una riga progetto (Attivo / On-Hold / Closed).
+fn status_cell(ui: &mut egui::Ui, app: &App, proj: ProjectId) {
+    ui.label(app.projects.status(proj).label());
+}
+
 /// Quadratino del colore e nome dopo `indent` px, al più `CAT_W` di larghezza
 /// in tutto (nome troncato con «…» e intero nel tooltip se non ci sta).
 fn swatch_cell(ui: &mut egui::Ui, name: String, color: Color32, indent: f32) {
@@ -522,12 +527,13 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
     let (pct_head, denom) = if on_cap { ("% capacità", pie.capacity) } else { ("% totale", pie.total) };
     egui::Grid::new(("pies_dev_table", pie.worker, on_cap))
         .striped(true)
-        .num_columns(if split { 8 } else { 6 })
+        .num_columns(if split { 9 } else { 7 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Dev").strong());
             ui.label(egui::RichText::new("Categoria").strong());
             ui.label(egui::RichText::new("Priorità").strong());
+            ui.label(egui::RichText::new("Stato").strong());
             hour_heads(ui, split);
             for h in [pct_head, "% del dev"] {
                 num(ui, h.to_string(), true);
@@ -541,6 +547,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                 });
                 ui.label("");
                 ui.label("");
+                ui.label("");
                 hour_cells(ui, d.hours, split, true);
                 num(ui, pct_label(d.hours.total, denom), true);
                 ui.label("");
@@ -548,6 +555,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                 for &(cat, h) in &d.categories {
                     ui.label("");
                     category_cell(ui, app, cat);
+                    ui.label("");
                     ui.label("");
                     hour_cells(ui, h, split, false);
                     num(ui, pct_label(h.total, denom), false);
@@ -557,6 +565,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                         ui.label("");
                         project_cell(ui, app, pie, p.project);
                         priority_cell(ui, app, p.project);
+                        status_cell(ui, app, p.project);
                         hour_cells(ui, p.hours, split, false);
                         num(ui, pct_label(p.hours.total, denom), false);
                         num(ui, pct_label(p.hours.total, d.hours.total), false);
@@ -567,12 +576,13 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
             ui.label(egui::RichText::new("Totale").strong());
             ui.label("");
             ui.label("");
+            ui.label("");
             hour_cells(ui, pie_hours(pie), split, true);
             num(ui, pct_label(pie.total, denom), true);
             ui.label("");
             ui.end_row();
             if on_cap {
-                capacity_rows(ui, pie, split, 3, true);
+                capacity_rows(ui, pie, split, 4, true);
             }
         })
         .response
@@ -663,16 +673,18 @@ fn work_table(ui: &mut egui::Ui, pie: &WorkerPie, split: bool) -> f32 {
 fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_cat_table", pie.worker))
         .striped(true)
-        .num_columns(if split { 6 } else { 4 })
+        .num_columns(if split { 7 } else { 5 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Categoria").strong());
             ui.label(egui::RichText::new("Priorità").strong());
+            ui.label(egui::RichText::new("Stato").strong());
             hour_heads(ui, split);
             num(ui, "% totale".to_string(), true);
             ui.end_row();
             for &(cat, h) in &pie.categories {
                 category_cell(ui, app, cat);
+                ui.label("");
                 ui.label("");
                 hour_cells(ui, h, split, false);
                 num(ui, pct_label(h.total, pie.total), false);
@@ -680,12 +692,14 @@ fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) ->
                 for p in pie.projects_in(cat) {
                     project_cell(ui, app, pie, p.project);
                     priority_cell(ui, app, p.project);
+                    status_cell(ui, app, p.project);
                     hour_cells(ui, p.hours, split, false);
                     num(ui, pct_label(p.hours.total, pie.total), false);
                     ui.end_row();
                 }
             }
             ui.label(egui::RichText::new("Totale").strong());
+            ui.label("");
             ui.label("");
             hour_cells(ui, pie_hours(pie), split, true);
             num(ui, "100%".to_string(), true);
@@ -731,10 +745,10 @@ fn pie_block(
 
 /// Larghezza sotto la quale i due blocchi (torta con sotto la tabella) vanno
 /// uno sotto l'altro invece che affiancati: ogni blocco è largo quanto la sua
-/// tabella (colonna Priorità compresa), e con le colonne fatte/pianificate le
+/// tabella (colonne Priorità e Stato comprese), e con le colonne fatte/pianificate le
 /// tabelle sono più larghe.
 fn side_by_side_min_w(split: bool) -> f32 {
-    if split { 1450.0 } else { 1150.0 }
+    if split { 1600.0 } else { 1300.0 }
 }
 
 /// Riga «da qui a fine periodo»: ore pianificate (dei dev e delle categorie
@@ -897,6 +911,7 @@ pub(crate) fn pies_window(
         &state.pies_categories,
         &state.pies_devs,
         &state.pies_priorities,
+        &state.pies_statuses,
         now,
     );
     let split = crate::worker_pies::split_shown(to, now);
@@ -910,8 +925,8 @@ pub(crate) fn pies_window(
         .default_pos(egui::pos2(80.0, 60.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            // Stessi controlli della matrice (Da / Anni / Categorie / A) più
-            // la scelta dei dev e delle priorità.
+            // Stessi controlli della matrice (Da / Anni / Categorie / Priorità
+            // / Stato / A) più la scelta dei dev.
             let mut manual = false;
             let mut years_changed = false;
             ui.horizontal(|ui| {
@@ -920,6 +935,7 @@ pub(crate) fn pies_window(
                 years_changed = years_combo(ui, app, "pies_years", &mut state.pies_years);
                 categories_combo(ui, app, "pies_categories", &mut state.pies_categories);
                 priorities_combo(ui, app, "pies_priorities", &mut state.pies_priorities);
+                statuses_combo(ui, "pies_statuses", &mut state.pies_statuses);
                 devs_combo(ui, app, "pies_devs", &mut state.pies_devs);
                 ui.separator();
                 manual |= range_end_picker(ui, "A:", "pies_to", &mut state.pies_to);
@@ -1053,8 +1069,8 @@ mod tests {
         assert!(rights("100%").iter().all(|x| *x < 600.0), "fuori tabella: {:?}", rights("100%"));
     }
 
-    /// Le tabelle hanno la colonna «Priorità», valorizzata sulle righe dei
-    /// progetti (in entrambe le tabelle).
+    /// Le tabelle hanno le colonne «Priorità» e «Stato», valorizzate sulle
+    /// righe dei progetti (in entrambe le tabelle).
     #[test]
     fn tables_show_the_project_priority() {
         let (mut app, mario, _) = sample();
@@ -1076,6 +1092,9 @@ mod tests {
         assert_eq!(texts.iter().filter(|t| *t == "Priorità").count(), 2, "{texts:?}");
         // P1 compare sotto Frontend, sotto Backend e nella tabella delle categorie.
         assert_eq!(texts.iter().filter(|t| *t == "Should").count(), 3, "{texts:?}");
+        // Accanto, lo stato del progetto.
+        assert_eq!(texts.iter().filter(|t| *t == "Stato").count(), 2, "{texts:?}");
+        assert_eq!(texts.iter().filter(|t| *t == "Attivo").count(), 3, "{texts:?}");
     }
 
     /// Periodo oltre la settimana corrente: intestazione con fatte e
@@ -1345,6 +1364,39 @@ mod tests {
         app.workers.set_max_hours(mario, 0);
         let (texts, _) = draw(&app);
         assert!(texts.iter().any(|s| s.starts_with("Nessuna capacità nel periodo")), "{texts:?}");
+    }
+
+    /// La finestra ha la combo «Stato» e il filtro vale per le torte: con
+    /// il solo stato Closed le ore del progetto attivo spariscono.
+    #[test]
+    fn status_combo_filters_the_pies() {
+        let (app, mario, _) = sample();
+        let mut state = UiState {
+            show_pies: true,
+            pies_workers: [mario].into_iter().collect(),
+            pies_from: Some(20000),
+            pies_to: Some(20006),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 900.0)),
+            ..Default::default()
+        };
+        let frame = |state: &mut UiState| {
+            let mut out = None;
+            for _ in 0..2 {
+                out = Some(ctx.run_ui_test(input.clone(), |ui| pies_window(ui.ctx(), &app, state, &mut Vec::new())));
+            }
+            drawn_texts(&out.unwrap())
+        };
+        let texts = frame(&mut state);
+        assert!(texts.iter().any(|t| t == "Stato: tutti"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "40h nel periodo"), "{texts:?}");
+        state.pies_statuses = [ProjectStatus::Closed].into();
+        let texts = frame(&mut state);
+        assert!(texts.iter().any(|t| t == "Stato: Closed"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "Nessuna ora nel periodo."), "{texts:?}");
     }
 
     /// Tooltip: le fette dei dev e delle categorie elencano i loro progetti;

@@ -1398,7 +1398,7 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 2. **Intervallo e categorie** — in alto **Da** e **A** (oggi o una data) e, in
    mezzo, la combo **Anni** che li imposta dal 1° gennaio del più vecchio al 31
    dicembre del più recente, esattamente come nella matrice. Accanto, le combo
-   **Categorie** e **Priorità** e poi la combo **Dev**. La combo **Categorie** che funziona come nella matrice (tutte spuntate per default, si
+   **Categorie**, **Priorità** e **Stato** e poi la combo **Dev**. La combo **Categorie** che funziona come nella matrice (tutte spuntate per default, si
    toglie la spunta a quelle da escludere): con delle categorie scelte si contano **solo i progetti di quelle
    categorie**, quindi torte, tabelle, totale e percentuali si riferiscono solo a
    quelle ore. La combo **Dev** (nomi dei dev nei loro colori, stesse
@@ -1407,8 +1407,12 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
    contano **solo le ore dei dev scelti**, in entrambe le torte, nelle tabelle, nel
    totale, nelle percentuali e nell'occupazione. La combo **Priorità**
    (prima «Senza priorità», poi i valori dell'elenco; stesse spunte) conta **solo i
-   progetti con le priorità scelte** (es. solo «Must»). Le combo si combinano (es.
-   solo «Frontend» dei progetti «Must» di «Cliente A»). Le scelte restano finché
+   progetti con le priorità scelte** (es. solo «Must»). La combo **Stato**
+   (**Attivi**, **On-Hold**, **Closed**, come nella matrice: tutti spuntati per
+   default, l'ultimo rimasto non si toglie) conta **solo i progetti in quegli
+   stati**, es. solo gli attivi. Le combo si combinano (es. solo «Frontend» dei
+   progetti attivi «Must» di «Cliente A»), anche per le ore libere, le torte
+   sulla capacità e gli export (il sottotitolo del PDF riporta `Status: …`). Le scelte restano finché
    l'app è aperta.
 3. **Cosa si conta** — le **ore** delle celle di tutti i progetti, aperti e chiusi,
    nelle settimane che toccano l'intervallo. Le assegnazioni a effort 0 non contano:
@@ -1423,12 +1427,13 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
    colore sotto tutti i dev). Sotto la torta, la tabella: per ogni dev le ore e la %
    sul totale del worker, poi le sue categorie con ore, % sul totale e **% del dev**,
    e sotto ogni categoria, rientrati, i suoi **progetti** (tripletta) con le stesse
-   colonne; in fondo il totale. La colonna **Priorità**, dopo la categoria, riporta
-   la priorità di ogni progetto (vuota sulle righe di dev e categorie, e per i
-   progetti senza priorità).
+   colonne; in fondo il totale. Le colonne **Priorità** e **Stato**, dopo la
+   categoria, riportano la priorità (vuota se il progetto non ne ha) e lo stato
+   (Attivo / On-Hold / Closed) di ogni progetto; sulle righe di dev e categorie
+   sono vuote.
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
    (ore e % sul totale); sotto ogni categoria, rientrati, i suoi progetti (ore di
-   tutti i dev), anche qui con la colonna **Priorità**.
+   tutti i dev), anche qui con le colonne **Priorità** e **Stato**.
 6. **Seconda riga: le ore sulla capacità** — sotto le prime due, altre due torte
    misurano le stesse ore (stessi filtri) sulle **ore disponibili** del periodo
    (vedi «Ore disponibili e occupazione» più sotto):
@@ -1506,7 +1511,8 @@ inglese: «Hours by dev, category and project», con l'intervallo, gli anni, le
 categorie, i dev e le priorità scelti nel sottotitolo, es. `Devs: Frontend,
 Backend  ·  Priority: Must`): a sinistra la prima torta (tre anelli) con sotto
 la sua tabella, a destra la seconda; nelle tabelle ci sono anche le righe dei
-progetti (tripletta), con la loro priorità nella colonna `Priority`. Se un worker ha molte righe di tabella, il testo non si
+progetti (tripletta), con la loro priorità e il loro stato nelle colonne
+`Priority` e `Status` (*Active* / *On-Hold* / *Closed*). Se un worker ha molte righe di tabella, il testo non si
 rimpicciolisce: la tabella **continua sulle pagine successive** (titolo con «(cont.)», intestazione ripetuta, totale in fondo
 all'ultima). Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
@@ -1529,7 +1535,8 @@ torte sulla capacità sono in un **secondo file per worker**
 **Esporta CSV…** salva le ore delle torte (stessi worker, periodo e filtri) in
 un CSV per Excel (`torte_AAAA_MM_GG.csv`, stesso formato di File ▸ Esporta CSV…):
 **una riga per worker, dev e progetto**, con `Worker`, `Dev`, `Category`,
-`Tripletta`, `Project`, `Priority`, `Hours`, `Done` e `Planned` (fatte e
+`Tripletta`, `Project`, `Priority`, `Status` (*Active* / *On-Hold* /
+*Closed*), `Hours`, `Done` e `Planned` (fatte e
 pianificate, divise come nelle tabelle). Sommando per `Dev` o per `Category` si
 ritrovano le due torte.
 

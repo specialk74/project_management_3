@@ -1185,6 +1185,9 @@ pub struct UiState {
     // torte: priorità scelte nella combo (`None` = «Senza priorità»; vuoto =
     // tutte), solo sessione
     pies_priorities: std::collections::BTreeSet<Option<PriorityId>>,
+    // torte: stati dei progetti scelti nella combo (vuoto = tutti), solo
+    // sessione
+    pies_statuses: std::collections::BTreeSet<ProjectStatus>,
     // testo di ricerca nel manuale (filtra le sezioni)
     help_search: String,
     // capitolo del manuale a cui scrollare al prossimo frame (indice di sezione,
@@ -1663,7 +1666,8 @@ pub(crate) enum Action {
         to: i32,
         /// Anni scelti nella combo (vuoto = nessuno), stampati nel sottotitolo
         /// insieme alle categorie, ai dev e alle priorità
-        /// (`UiState.pies_categories` / `pies_devs` / `pies_priorities`).
+        /// (`UiState.pies_categories` / `pies_devs` / `pies_priorities` /
+        /// `pies_statuses`).
         years: Vec<i32>,
         svg: bool,
     },
@@ -3445,11 +3449,13 @@ impl PjmApp {
                     &self.ui.pies_categories,
                     &self.ui.pies_devs,
                     &self.ui.pies_priorities,
+                    &self.ui.pies_statuses,
                     current_monday_days(),
                 );
                 let devs: Vec<DevId> = self.ui.pies_devs.iter().copied().collect();
                 let priorities: Vec<Option<PriorityId>> =
                     self.ui.pies_priorities.iter().copied().collect();
+                let statuses: Vec<ProjectStatus> = self.ui.pies_statuses.iter().copied().collect();
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.pies_categories.iter().copied().collect();
                 if svg {
@@ -3462,6 +3468,7 @@ impl PjmApp {
                         &categories,
                         &devs,
                         &priorities,
+                        &statuses,
                     )
                     .into_iter()
                     .map(|(name, svg)| (file_safe(&name), svg.into_bytes()))
@@ -3487,6 +3494,7 @@ impl PjmApp {
                         &categories,
                         &devs,
                         &priorities,
+                        &statuses,
                     ) {
                         Some(bytes) => {
                             save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("torte", "pdf"))
@@ -3522,6 +3530,7 @@ impl PjmApp {
                     &self.ui.pies_categories,
                     &self.ui.pies_devs,
                     &self.ui.pies_priorities,
+                    &self.ui.pies_statuses,
                     current_monday_days(),
                 );
                 // Due file: le ore (worker × dev × progetto) e, a parte, la

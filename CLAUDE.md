@@ -97,8 +97,8 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/effort_csv.rs` — CSV export of the effort matrix (File ▸ Esporta CSV…).
 - `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
   Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
-  dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project: Hours/
-  Done/Planned) + `pies_capacity_csv(pies, split)` (row = worker: Hours, Done,
+  dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project, with Priority and
+  Status: Hours/Done/Planned) + `pies_capacity_csv(pies, split)` (row = worker: Hours, Done,
   Planned, Capacity, Used %, Future capacity, Free hours — the last two empty unless
   `split_shown`), saved together by one click via `save_multi_export_dialog`
   (`name_hours.csv` / `name_capacity.csv`),
@@ -677,7 +677,13 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   «Senza priorità», session only), AND with categories and devs, applied to the
   pies, tables, totals and free hours; exports pass it to `build_pies_pdf/svgs`
   and `pies_subtitle` prints `Priority: …` / `Priorities: …`. Test
-  `priority_filter_limits_hours_and_free_hours`.
+  `priority_filter_limits_hours_and_free_hours`. **Status filter**: the matrix's
+  `statuses_combo` (now `pub(crate)`, with an id salt: `"pies_statuses"`) →
+  `UiState.pies_statuses: BTreeSet<ProjectStatus>` (empty = all, session only)
+  → `build_filtered(…, &pris, &statuses, now)` (AND with the rest, on
+  `Projects::status`); `build_pies_pdf/svgs` take `statuses` and
+  `pies_subtitle` prints `Status: …` (via `MATRIX_STATUS_EN`, nothing when all
+  three). The pies CSV handlers pass it too. Test `status_combo_filters_the_pies`.
   `worker_pick_window(…) -> WorkerPick { Open, Show, Closed }` (`matrix.rs`, also
   behind `matrix_select_window`); `years_combo` and `categories_combo` take an
   id salt, and
@@ -709,8 +715,12 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   rows (`project_cell`/`swatch_cell`) under each category. Both tables have a
   **Priorità** column after the name column (`priority_cell`, capped at `PRI_W`
   80 px, text = `effort_csv::priority_name`, empty when none), filled only on
-  project rows; in the PDF/SVG it is the first value column `Priority` of
-  `PieTable` (empty string on dev/category/total rows). Tests
+  project rows; then a **Stato** column (`status_cell`, `ProjectStatus::label`),
+  also project rows only (the capacity table too: `capacity_rows` blanks = 4).
+  In the PDF/SVG they are the first two value columns `Priority` / `Status`
+  (`effort_csv::status_en`) of `PieTable` (empty strings on dev/category/total
+  rows); text columns are `PIE_TEXT_W` (13 mm) wide instead of `PIE_NUM_W`
+  (`pie_col_w(head)`, columns laid out from the right). Tests
   `tables_show_the_project_priority`, `pies_pdf_has_a_page_per_worker_with_hours`. GUI radii
   `PIE_R_IN` 78 / `PIE_R_CAT` 120 / `PIE_R` 162; PDF `PIE_R_IN_MM` 21.5 /
   `PIE_R_CAT_MM` 32.5 / `PIE_R_MM` 44. Geometry shared GUI/PDF with a
