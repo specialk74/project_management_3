@@ -199,6 +199,41 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   intestazioni e footer, settimana corrente, date picker, export PDF/CSV (date e
   nomi file). _Impatto: Medio (dipendenza mantenuta, una in meno) · Rischio:
   Medio (date ovunque, ma coperte da test)._
+  **Analisi d'impatto (2026-11-17)**:
+  - *Volume*: ~35 punti di codice (non test) e ~25 nei test, in 20 file. Le
+    funzioni di `dates.rs` restano con lo stesso nome, quindi la gran parte dei
+    chiamanti (37 `days_to_local`, 49 `local_to_days`, 21 lunedì della
+    settimana, 19 `today()`) non cambia: cambia solo il tipo che ricevono
+    (`jiff::civil::Date` al posto di `NaiveDate`).
+  - *Formati*: 31 `.format(...)` diventano `.strftime(...)` con le **stesse
+    direttive** (`%Y %y %m %d %H %M %S`, `US_DATE` = `%m/%d/%Y`, tutte
+    supportate da jiff con lo stesso zero-padding). I nomi dei mesi negli
+    export vengono già da `MONTHS_EN`, non dal formattatore.
+  - *Tipi*: in jiff anno/mese/giorno sono `i16`/`i8` (in chrono `i32`/`u32`):
+    qualche cast in più (`month_of`, indici di `MONTHS_EN`, `month_bands`).
+  - *Giorni dall'epoca*: jiff 0.2 non ha un costruttore «giorno N
+    dall'epoca»; si fa con `date(1970, 1, 1)` ± `n.days()` e `since`. È il
+    punto più delicato: `WeekId` è salvato nel `.ron`, quindi prima di togliere
+    chrono un test deve confrontare le due implementazioni su molte date
+    (1970–2100, bisestili comprese).
+  - *«Oggi» locale* (D1): `Zoned::now().date()` usa il fuso di sistema; le
+    feature di default di jiff (già attive per egui_extras) includono il
+    database dei fusi **anche su Windows** (`tzdb-bundle-platform`), quindi
+    nessun ritorno all'UTC. Da verificare a mano su Windows dopo la mezzanotte
+    del lunedì.
+  - *Aritmetica*: `+ Duration::days/weeks` → `+ n.days()/n.weeks()`;
+    `checked_add_months(12)` → `checked_add(1.year())` (stesso troncamento a
+    fine mese, es. 29/2 → 28/2).
+  - *File dati e export*: **nessun cambiamento di formato**. Nessun tipo chrono
+    è serializzato (le date nel `.ron` sono numeri); nomi file, etichette e CSV
+    devono uscire identici, e i test esistenti li confrontano già come testo.
+  - *Cosa sparisce*: la dipendenza `chrono` e le conversioni di
+    `date_utils::picker` (il date picker riceve direttamente le date).
+  - *Rischio jiff 1.0*: migrando ora sulla 0.2, il passaggio alla 1.0 (quando
+    egui lo farà) potrebbe richiedere piccoli ritocchi: probabilmente pochi,
+    ma in quel caso si toccherebbero le date due volte.
+  - *Stima*: ~150–200 righe cambiate; lavoro di qualche ora, quasi tutto
+    meccanico, con i test (386) come rete.
 
 ## B. Codice duplicato
 
@@ -487,3 +522,6 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
 - **2026-11-17** — `cargo update` (pollster 1.0.2, uuid 1.29.3); `cargo audit`
   segnala chrono «non più mantenuto»: aggiunta A13 (migrazione a jiff), aperta e
   non ancora approvata. Build e clippy 0 warning, 385 test verdi.
+- **2026-11-17** — A13: aggiunta l'analisi d'impatto (volume, formati, tipi,
+  giorni dall'epoca, «oggi» locale, nessun cambio di formato dei file). Ancora
+  da approvare.
