@@ -17,10 +17,10 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 | Misura | Inizio (2026-10-24) | Ora |
 |---|---|---|
-| Righe Rust | ~28.000 | ~34.000 |
+| Righe Rust | ~28.000 | ~39.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 347 verdi |
+| Test | 275 verdi | 385 verdi |
 
 ## Ordine consigliato
 
@@ -32,6 +32,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
    5a: B2–B7 (duplicati) · 5b: C3–C5 (ottimizzazioni)~~ ✅ fatto
 6. ~~**B1, B9, E1–E3** — riordino~~ ✅ fatto
 7. ~~**B10** — a parte: la modifica più invasiva~~ ✅ fatto
+8. **A13** — migrazione da chrono a jiff: aperta, da valutare
 
 ---
 
@@ -163,6 +164,41 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   per indicizzare `m.dev_hours`). _Impatto: Nullo · Rischio: Nullo._ _(approvato
   il 2026-11-13)_ _(fatto: `m.dev_hours.iter().enumerate().take(n)`, stesso
   comportamento; clippy di nuovo a 0 warning, 347 test verdi.)_
+
+- [ ] **A13. Migrazione da `chrono` a `jiff`** (da valutare, non approvata).
+  `cargo audit` del 2026-11-17 segnala **chrono 0.4.45 «non più mantenuto»**
+  (RUSTSEC-2026-0543, del 2026-09-14, nessuna versione che lo risolva). Per ora
+  funziona e non ha vulnerabilità note: il rischio è solo che i bug futuri non
+  vengano più corretti. A differenza degli altri avvisi (dipendenze di egui, rfd,
+  printpdf), chrono è una nostra **dipendenza diretta**.
+  **Perché jiff**: è già nel progetto, richiesto dal date-picker di
+  `egui_extras` 0.37, e le conversioni chrono ⇄ jiff vivono già tutte in
+  `date_utils::picker` (B8). Alla fine si toglierebbe una dipendenza e quelle
+  conversioni.
+  **Cosa tocca** (~70 righe con chrono in 14 file): soprattutto
+  `date_utils/dates.rs` (23: giorni ⇄ data, lunedì della settimana, «oggi» locale,
+  parsing `yy-mm-dd`/`yyyy-mm-dd`, `week_label`) e `pdf_export.rs` (16: date US,
+  mesi dell'asse, `short_date`); poi `picker.rs`, `ui/mod.rs`, `matrix.rs`,
+  `worker_pies.rs`, `worker_effort.rs`, `ui/worker_effort.rs` (aggiunta di 12
+  mesi), `filters.rs`, i due CSV, `ui_style.rs` (mese delle bande),
+  `git_autosync.rs` (ora del commit) e i test. Tipi usati: `NaiveDate` (la
+  maggior parte), `Datelike`, `Local`, `Duration`, `Days`, `Months`, `Weekday`.
+  **Punti delicati**: i giorni (`WeekId`, `days_to_local`/`local_to_days`) sono
+  salvati nel `.ron` come numeri, quindi l'origine del conteggio deve restare
+  **identica** (un test di andata e ritorno su molte date, prima e dopo, lo
+  garantisce); «oggi» deve restare la data **locale** (vedi D1); i formati di
+  data delle etichette, dei nomi file e degli export (`%y-%m-%d`, `%m/%d/%Y`,
+  `%b %d`) devono uscire uguali — jiff usa `strftime` con quasi le stesse
+  direttive, da verificare una per una.
+  **Vincolo**: jiff 1.0 è uscito ma `egui_extras` 0.37 usa jiff 0.2; la
+  migrazione si fa sulla 0.2 (quella che il progetto ha già), o si aspetta
+  l'egui che passa alla 1.0 per fare tutto in una volta.
+  **Modo proposto**: prima `dates.rs` dietro le stesse funzioni (il resto del
+  codice non se ne accorge), test verdi; poi i chiamanti un file alla volta;
+  infine via chrono da `Cargo.toml`. Da provare a mano: date in griglia,
+  intestazioni e footer, settimana corrente, date picker, export PDF/CSV (date e
+  nomi file). _Impatto: Medio (dipendenza mantenuta, una in meno) · Rischio:
+  Medio (date ovunque, ma coperte da test)._
 
 ## B. Codice duplicato
 
@@ -448,3 +484,6 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   minimi di `Cargo.toml` allineati) e A12 (warning del nuovo clippy nella
   matrice). Applicate: build e clippy 0 warning, 347 test verdi. A11 in attesa
   della prova a mano delle finestre Apri/Salva.
+- **2026-11-17** — `cargo update` (pollster 1.0.2, uuid 1.29.3); `cargo audit`
+  segnala chrono «non più mantenuto»: aggiunta A13 (migrazione a jiff), aperta e
+  non ancora approvata. Build e clippy 0 warning, 385 test verdi.
