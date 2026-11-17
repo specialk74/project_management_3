@@ -199,21 +199,59 @@ fn segs<K: Clone>(items: &[(K, u32)], total: u32, start: u32) -> Vec<Seg<K>> {
         .collect()
 }
 
+/// Fette della torta «lavoro / libero».
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkKey {
+    /// Ore del worker nel periodo (filtri compresi).
+    Work,
+    /// Capacità non usata.
+    Free,
+    /// Ore oltre la capacità: torta tutta rossa.
+    Over,
+}
+
+impl WorkKey {
+    /// Colore 0xRRGGBB (GUI e PDF).
+    pub fn rgb(self) -> u32 {
+        match self {
+            WorkKey::Work => 0x5B8DEF,
+            WorkKey::Free => 0xD0D0D0,
+            WorkKey::Over => 0xE53935,
+        }
+    }
+}
+
 impl WorkerPie {
+    /// Base delle torte «sulla capacità»: la capacità, o il totale se lo
+    /// supera (allora non c'è fetta «libero» e le % sommano oltre 100).
+    pub fn cap_base(&self) -> u32 {
+        self.capacity.max(self.total)
+    }
+
     /// Anello interno della prima torta: un fetta per dev.
     pub fn dev_ring(&self) -> Vec<Seg<DevId>> {
+        self.dev_ring_on(self.total)
+    }
+
+    /// Come `dev_ring`, con le fette in frazioni di `base`.
+    pub fn dev_ring_on(&self, base: u32) -> Vec<Seg<DevId>> {
         let items: Vec<(DevId, u32)> = self.devs.iter().map(|d| (d.dev, d.hours.total)).collect();
-        segs(&items, self.total, 0)
+        segs(&items, base, 0)
     }
 
     /// Anello esterno della prima torta: le categorie di ogni dev, nello
     /// spicchio del dev.
     pub fn dev_category_ring(&self) -> Vec<Seg<(DevId, Option<CategoryId>)>> {
+        self.dev_category_ring_on(self.total)
+    }
+
+    /// Come `dev_category_ring`, in frazioni di `base`.
+    pub fn dev_category_ring_on(&self, base: u32) -> Vec<Seg<(DevId, Option<CategoryId>)>> {
         let mut out = Vec::new();
         let mut start = 0;
         for d in &self.devs {
             let items: Vec<_> = d.categories.iter().map(|&(c, h)| ((d.dev, c), h.total)).collect();
-            out.extend(segs(&items, self.total, start));
+            out.extend(segs(&items, base, start));
             start += d.hours.total;
         }
         out
@@ -222,14 +260,53 @@ impl WorkerPie {
     /// Anello esterno della prima torta: i progetti di ogni dev e categoria,
     /// nella fetta dev·categoria.
     pub fn dev_project_ring(&self) -> Vec<Seg<(DevId, ProjectId)>> {
+        self.dev_project_ring_on(self.total)
+    }
+
+    /// Come `dev_project_ring`, in frazioni di `base`.
+    pub fn dev_project_ring_on(&self, base: u32) -> Vec<Seg<(DevId, ProjectId)>> {
         let mut out = Vec::new();
         let mut start = 0;
         for d in &self.devs {
             let items: Vec<_> = d.projects.iter().map(|p| ((d.dev, p.project), p.hours.total)).collect();
-            out.extend(segs(&items, self.total, start));
+            out.extend(segs(&items, base, start));
             start += d.hours.total;
         }
         out
+    }
+
+    /// Fetta «libero» della torta dei progetti sulla capacità: dopo le ore
+    /// del worker fino al giro completo, su tutti gli anelli. `None` se le
+    /// ore arrivano alla capacità (o la superano).
+    pub fn free_seg(&self) -> Option<Seg<WorkKey>> {
+        (self.capacity > self.total).then(|| Seg {
+            key: WorkKey::Free,
+            hours: self.capacity - self.total,
+            from: self.total as f32 / self.capacity as f32,
+            to: 1.0,
+        })
+    }
+
+    /// Torta «lavoro / libero» sulla capacità: ore e capacità non usata; oltre
+    /// la capacità una sola fetta `Over` (giro intero, % reale nell'etichetta
+    /// se calcolata sulla capacità). Vuota con capacità 0.
+    pub fn work_ring(&self) -> Vec<Seg<WorkKey>> {
+        if self.capacity == 0 {
+            return Vec::new();
+        }
+        if self.total > self.capacity {
+            return vec![Seg {
+                key: WorkKey::Over,
+                hours: self.total,
+                from: 0.0,
+                to: 1.0,
+            }];
+        }
+        segs(
+            &[(WorkKey::Work, self.total), (WorkKey::Free, self.capacity - self.total)],
+            self.capacity,
+            0,
+        )
     }
 
     /// Progetti del worker nella categoria `cat` (tutti i dev).
@@ -713,5 +790,41 @@ mod tests {
         assert_eq!(hit(0.0, 0.0, 5.0, 10.0, &s, 1.0, 1.0), None, "nel buco");
         let pts = sector(0.0, 0.0, 0.0, 10.0, 0.0, 0.25, true);
         assert_eq!(pts.last(), Some(&(0.0, 0.0)), "lo spicchio chiude sul centro");
+    }
+
+    /// Torte sulla capacità: base = capacità (o il totale se la supera),
+    /// fetta «libero» dopo le ore, lavoro / libero oppure una fetta rossa
+    /// oltre la capacità, niente con capacità 0.
+    #[test]
+    fn capacity_rings_split_work_free_and_overflow() {
+        let pie = |total: u32, capacity: u32| WorkerPie {
+            worker: WORKER_ID_ZERO,
+            name: "W".into(),
+            total,
+            done: 0,
+            capacity,
+            future_capacity: 0,
+            devs: Vec::new(),
+            categories: Vec::new(),
+            projects: Vec::new(),
+        };
+        let p = pie(30, 120);
+        assert_eq!(p.cap_base(), 120);
+        let free = p.free_seg().unwrap();
+        assert_eq!((free.hours, free.from, free.to), (90, 0.25, 1.0));
+        let w = p.work_ring();
+        assert_eq!(w.iter().map(|s| (s.key, s.hours)).collect::<Vec<_>>(), [(WorkKey::Work, 30), (WorkKey::Free, 90)]);
+        assert_eq!(w[0].to, 0.25);
+        let over = pie(150, 100);
+        assert_eq!(over.cap_base(), 150);
+        assert!(over.free_seg().is_none());
+        let w = over.work_ring();
+        assert_eq!(w.len(), 1);
+        assert_eq!((w[0].key, w[0].hours, w[0].from, w[0].to), (WorkKey::Over, 150, 0.0, 1.0));
+        assert_eq!(pct_label(w[0].hours, over.capacity), "150%");
+        let full = pie(100, 100);
+        assert!(full.free_seg().is_none());
+        assert_eq!(full.work_ring().len(), 1, "solo lavoro");
+        assert!(pie(10, 0).work_ring().is_empty());
     }
 }

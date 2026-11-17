@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::worker_matrix::category_color;
-use crate::worker_pies::{Hours, ProjHours, Seg, WorkerPie, label_pos, pct_label};
+use crate::worker_pies::{Hours, ProjHours, Seg, WorkKey, WorkerPie, label_pos, pct_label};
 
 /// Diametro dell'area di una torta (px).
 const PIE_D: f32 = 340.0;
@@ -311,6 +311,81 @@ fn dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
     }
 }
 
+/// Torta dei progetti sulla capacità: gli stessi tre anelli della prima
+/// torta, ma in frazioni della capacità del periodo (`cap_base`) con le %
+/// sulla capacità, e una fetta grigia «Libero» su tutti gli anelli per la
+/// capacità non usata.
+fn cap_dev_category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
+    use crate::worker_pies::hit;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, PIE_D), Sense::hover());
+    let c = rect.center();
+    let base = pie.cap_base();
+    let cap = pie.capacity;
+    let inner = pie.dev_ring_on(base);
+    let middle = pie.dev_category_ring_on(base);
+    let outer = pie.dev_project_ring_on(base);
+    let free: Vec<_> = pie.free_seg().into_iter().collect();
+    let (r_cat, r_proj) = (PIE_R_IN + PIE_GAP, PIE_R_CAT + PIE_GAP);
+    let pos = resp.hover_pos();
+    let hit_in = pos.and_then(|q| hit(c.x, c.y, 0.0, PIE_R_IN, &inner, q.x, q.y));
+    let hit_mid = pos.and_then(|q| hit(c.x, c.y, r_cat, PIE_R_CAT, &middle, q.x, q.y));
+    let hit_out = pos.and_then(|q| hit(c.x, c.y, r_proj, PIE_R, &outer, q.x, q.y));
+    let hit_free = pos.and_then(|q| hit(c.x, c.y, 0.0, PIE_R, &free, q.x, q.y));
+    let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
+    let dev_hours = |d: DevId| pie.devs.iter().find(|x| x.dev == d);
+    paint_ring(ui, c, 0.0, PIE_R_IN, &inner, cap, |d| dev_color(app, *d), hit_in);
+    paint_ring(ui, c, r_cat, PIE_R_CAT, &middle, cap, |(_, cat)| category_rgb(*cat), hit_mid);
+    paint_ring(ui, c, r_proj, PIE_R, &outer, cap, |(_, p)| project_rgb(pie, *p), hit_out);
+    paint_ring(ui, c, 0.0, PIE_R, &free, cap, |k| rgb_color(k.rgb()), hit_free);
+    let tip = if let Some(i) = hit_in {
+        let s = &inner[i];
+        let projects = dev_hours(s.key).into_iter().flat_map(|d| d.projects.iter());
+        Some(seg_tip_projects(app, &dev_name(s.key), s.hours, cap, projects))
+    } else if let Some(i) = hit_mid {
+        let s = &middle[i];
+        let (dev, cat) = s.key;
+        let name = format!("{} · {}", dev_name(dev), category_name(app, cat));
+        let projects = dev_hours(dev).into_iter().flat_map(|d| d.projects_in(cat));
+        Some(seg_tip_projects(app, &name, s.hours, cap, projects))
+    } else if let Some(i) = hit_out {
+        let (dev, proj) = outer[i].key;
+        let cat = app.projects.get_category(proj);
+        let name = format!("{} · {} · {}", dev_name(dev), category_name(app, cat), project_label(app, proj));
+        Some(seg_tip(&name, outer[i].hours, cap))
+    } else {
+        hit_free.map(|i| seg_tip("Libero", free[i].hours, cap))
+    };
+    if let Some(t) = tip {
+        resp.on_hover_text_at_pointer(format!("{t}\n(% sulla capacità del periodo: {cap}h)"));
+    }
+}
+
+/// Torta «lavoro / libero»: ore del worker e capacità non usata, in % della
+/// capacità; oltre la capacità tutta rossa con la % reale (es. 120%).
+fn work_pie(ui: &mut egui::Ui, pie: &WorkerPie, width: f32) {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, PIE_D), Sense::hover());
+    let c = rect.center();
+    let segs = pie.work_ring();
+    let hit = resp
+        .hover_pos()
+        .and_then(|q| crate::worker_pies::hit(c.x, c.y, 0.0, PIE_R, &segs, q.x, q.y));
+    paint_ring(ui, c, 0.0, PIE_R, &segs, pie.capacity, |k| rgb_color(k.rgb()), hit);
+    if let Some(i) = hit {
+        let s = &segs[i];
+        let tip = match s.key {
+            WorkKey::Work => seg_tip("Lavoro", s.hours, pie.capacity),
+            WorkKey::Free => seg_tip("Libero", s.hours, pie.capacity),
+            WorkKey::Over => format!(
+                "{}\n{}h oltre la capacità di {}h",
+                seg_tip("Lavoro", s.hours, pie.capacity),
+                pie.total - pie.capacity,
+                pie.capacity
+            ),
+        };
+        resp.on_hover_text_at_pointer(tip);
+    }
+}
+
 /// Seconda torta: una fetta per categoria.
 /// `width` = larghezza del blocco: la torta sta al centro.
 fn category_pie(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, width: f32) {
@@ -439,9 +514,13 @@ fn pie_hours(pie: &WorkerPie) -> Hours {
 /// le sue categorie (ore, % sul totale, % del dev), ognuna seguita dai suoi
 /// progetti (rientrati, stesse colonne); in fondo il totale. Con
 /// `split` le ore sono divise in fatte, pianificate e totale.
+/// `on_cap`: tabella della torta sulla capacità — percentuali sulla capacità
+/// invece che sul totale del worker, e in fondo le righe «Libero» (o «Oltre
+/// la capacità», in rosso) e «Capacità».
 /// Ritorna la larghezza della tabella.
-fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
-    egui::Grid::new(("pies_dev_table", pie.worker))
+fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool, on_cap: bool) -> f32 {
+    let (pct_head, denom) = if on_cap { ("% capacità", pie.capacity) } else { ("% totale", pie.total) };
+    egui::Grid::new(("pies_dev_table", pie.worker, on_cap))
         .striped(true)
         .num_columns(if split { 8 } else { 6 })
         .spacing(egui::vec2(12.0, 4.0))
@@ -450,7 +529,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
             ui.label(egui::RichText::new("Categoria").strong());
             ui.label(egui::RichText::new("Priorità").strong());
             hour_heads(ui, split);
-            for h in ["% totale", "% del dev"] {
+            for h in [pct_head, "% del dev"] {
                 num(ui, h.to_string(), true);
             }
             ui.end_row();
@@ -463,7 +542,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                 ui.label("");
                 ui.label("");
                 hour_cells(ui, d.hours, split, true);
-                num(ui, pct_label(d.hours.total, pie.total), true);
+                num(ui, pct_label(d.hours.total, denom), true);
                 ui.label("");
                 ui.end_row();
                 for &(cat, h) in &d.categories {
@@ -471,7 +550,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                     category_cell(ui, app, cat);
                     ui.label("");
                     hour_cells(ui, h, split, false);
-                    num(ui, pct_label(h.total, pie.total), false);
+                    num(ui, pct_label(h.total, denom), false);
                     num(ui, pct_label(h.total, d.hours.total), false);
                     ui.end_row();
                     for p in d.projects_in(cat) {
@@ -479,7 +558,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                         project_cell(ui, app, pie, p.project);
                         priority_cell(ui, app, p.project);
                         hour_cells(ui, p.hours, split, false);
-                        num(ui, pct_label(p.hours.total, pie.total), false);
+                        num(ui, pct_label(p.hours.total, denom), false);
                         num(ui, pct_label(p.hours.total, d.hours.total), false);
                         ui.end_row();
                     }
@@ -489,9 +568,89 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
             ui.label("");
             ui.label("");
             hour_cells(ui, pie_hours(pie), split, true);
-            num(ui, "100%".to_string(), true);
+            num(ui, pct_label(pie.total, denom), true);
             ui.label("");
             ui.end_row();
+            if on_cap {
+                capacity_rows(ui, pie, split, 3, true);
+            }
+        })
+        .response
+        .rect
+        .width()
+}
+
+/// Righe in fondo alle tabelle «sulla capacità»: «Libero» (capacità non
+/// usata) oppure «Oltre la capacità» (in rosso), poi «Capacità» (100%).
+/// `blanks` = celle vuote dopo il nome (colonne di testo della tabella),
+/// `trail` = una cella vuota in coda («% del dev»). Le ore vanno nella colonna
+/// del totale (con `split` fatte/pianificate restano vuote).
+fn capacity_rows(ui: &mut egui::Ui, pie: &WorkerPie, split: bool, blanks: usize, trail: bool) {
+    let row = |ui: &mut egui::Ui, name: egui::RichText, color: Color32, hours: u32, pct: String| {
+        ui.horizontal(|ui| {
+            swatch(ui, color);
+            ui.label(name);
+        });
+        for _ in 1..blanks {
+            ui.label("");
+        }
+        if split {
+            ui.label("");
+            ui.label("");
+        }
+        num(ui, format!("{hours}h"), false);
+        num(ui, pct, false);
+        if trail {
+            ui.label("");
+        }
+        ui.end_row();
+    };
+    if pie.total > pie.capacity {
+        let over = pie.total - pie.capacity;
+        let red = egui::RichText::new("Oltre la capacità").color(error_red()).strong();
+        row(ui, red, rgb_color(WorkKey::Over.rgb()), over, pct_label(over, pie.capacity));
+    } else {
+        let free = pie.capacity - pie.total;
+        let name = egui::RichText::new("Libero");
+        row(ui, name, rgb_color(WorkKey::Free.rgb()), free, pct_label(free, pie.capacity));
+    }
+    ui.label(egui::RichText::new("Capacità").strong());
+    for _ in 1..blanks {
+        ui.label("");
+    }
+    if split {
+        ui.label("");
+        ui.label("");
+    }
+    num(ui, format!("{}h", pie.capacity), true);
+    num(ui, "100%".to_string(), true);
+    if trail {
+        ui.label("");
+    }
+    ui.end_row();
+}
+
+/// Tabella della torta «lavoro / libero»: ore del worker (fatte e pianificate
+/// con `split`), capacità non usata o ore oltre, capacità; % sulla capacità.
+/// Ritorna la larghezza della tabella.
+fn work_table(ui: &mut egui::Ui, pie: &WorkerPie, split: bool) -> f32 {
+    egui::Grid::new(("pies_work_table", pie.worker))
+        .striped(true)
+        .num_columns(if split { 5 } else { 3 })
+        .spacing(egui::vec2(12.0, 4.0))
+        .show(ui, |ui| {
+            ui.label("");
+            hour_heads(ui, split);
+            num(ui, "% capacità".to_string(), true);
+            ui.end_row();
+            ui.horizontal(|ui| {
+                swatch(ui, rgb_color(WorkKey::Work.rgb()));
+                ui.label("Lavoro");
+            });
+            hour_cells(ui, pie_hours(pie), split, false);
+            num(ui, pct_label(pie.total, pie.capacity), false);
+            ui.end_row();
+            capacity_rows(ui, pie, split, 1, false);
         })
         .response
         .rect
@@ -646,7 +805,7 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
             ("pies_dev_block", pie.worker),
             "Dev, categorie e progetti",
             |ui, w| dev_category_pie(ui, app, pie, w),
-            |ui| dev_category_table(ui, app, pie, split),
+            |ui| dev_category_table(ui, app, pie, split, false),
         );
     };
     let second = |ui: &mut egui::Ui| {
@@ -658,7 +817,52 @@ fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) 
             |ui| category_table(ui, app, pie, split),
         );
     };
-    if ui.available_width() >= side_by_side_min_w(split) {
+    let side = ui.available_width() >= side_by_side_min_w(split);
+    pie_pair(ui, side, first, second);
+    // Seconda riga: le stesse ore sulla capacità del periodo.
+    ui.add_space(PIE_SPACING / 2.0);
+    if pie.capacity == 0 {
+        ui.label(
+            egui::RichText::new("Nessuna capacità nel periodo: niente torte sulla capacità.")
+                .color(text_dim()),
+        );
+        return;
+    }
+    let third = |ui: &mut egui::Ui| {
+        pie_block(
+            ui,
+            ("pies_cap_block", pie.worker),
+            "Dev, categorie e progetti sulla capacità",
+            |ui, w| cap_dev_category_pie(ui, app, pie, w),
+            |ui| dev_category_table(ui, app, pie, split, true),
+        );
+    };
+    let fourth = |ui: &mut egui::Ui| {
+        pie_block(
+            ui,
+            ("pies_work_block", pie.worker),
+            "Lavoro / libero",
+            |ui, w| work_pie(ui, pie, w),
+            |ui| work_table(ui, pie, split),
+        );
+    };
+    // «Lavoro / libero» solo oltre la capacità: sotto il 100% la fetta
+    // «Libero» della torta accanto dice già tutto.
+    if pie.total > pie.capacity {
+        pie_pair(ui, side, third, fourth);
+    } else {
+        third(ui);
+    }
+}
+
+/// Due blocchi affiancati (`side`) o uno sotto l'altro.
+fn pie_pair(
+    ui: &mut egui::Ui,
+    side: bool,
+    first: impl FnOnce(&mut egui::Ui),
+    second: impl FnOnce(&mut egui::Ui),
+) {
+    if side {
         ui.horizontal_top(|ui| {
             first(ui);
             ui.add_space(PIE_SPACING);
@@ -825,7 +1029,7 @@ mod tests {
         // La griglia misura le colonne al primo frame e le usa dal secondo.
         for _ in 0..2 {
             out = Some(ctx.run_ui_test(input.clone(), |ui| {
-                dev_category_table(ui, &app, &pies[0], false);
+                dev_category_table(ui, &app, &pies[0], false, false);
                 category_table(ui, &app, &pies[0], false);
             }));
         }
@@ -865,7 +1069,7 @@ mod tests {
             ..Default::default()
         };
         let out = ctx.run_ui_test(input, |ui| {
-            dev_category_table(ui, &app, &pies[0], false);
+            dev_category_table(ui, &app, &pies[0], false, false);
             category_table(ui, &app, &pies[0], false);
         });
         let texts = drawn_texts(&out);
@@ -928,6 +1132,9 @@ mod tests {
         app.projects.set_category(p, Some(long));
         app.projects.add_dev(p, fe);
         app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(5));
+        // Capacità 0: solo la prima riga di torte (le due di cui si misura lo
+        // spazio).
+        app.workers.set_max_hours(mario, 0);
         let sel: HashSet<_> = [mario].into_iter().collect();
         let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
@@ -1022,7 +1229,10 @@ mod tests {
     /// «Categoria» delle tabelle è più in basso dell'area della torta.
     #[test]
     fn tables_are_drawn_below_the_pies() {
-        let (app, mario, _) = sample();
+        let (mut app, mario, _) = sample();
+        // Capacità 0: solo la prima riga (le torte sulla capacità hanno il
+        // loro test).
+        app.workers.set_max_hours(mario, 0);
         let sel: HashSet<_> = [mario].into_iter().collect();
         let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
         let ctx = egui::Context::default();
@@ -1083,10 +1293,58 @@ mod tests {
             .filter(|cs| matches!(cs.shape, egui::epaint::Shape::Mesh(_)))
             .count();
         // anello dev (2) + anello categorie (2: FE·A, BE·A) + anello progetti
-        // (2: FE·P1, BE·P1) + torta categorie (1)
-        assert_eq!(meshes, 7, "una mesh per fetta");
-        // P1 nelle due tabelle: sotto FE·Cliente A, BE·Cliente A e Cliente A.
-        assert_eq!(texts.iter().filter(|s| *s == "P1").count(), 3, "{texts:?}");
+        // (2: FE·P1, BE·P1) + torta categorie (1), poi le stesse 6 fette sulla
+        // capacità + «Libero» se c'è + le fette di lavoro / libero.
+        let m = pies.iter().find(|p| p.worker == mario).unwrap();
+        let work = if m.total > m.capacity { m.work_ring().len() } else { 0 };
+        let cap = 6 + m.free_seg().iter().count() + work;
+        assert_eq!(meshes, 7 + cap, "una mesh per fetta");
+        // P1 nelle tabelle: sotto FE·Cliente A, BE·Cliente A e Cliente A, e
+        // di nuovo sotto i due dev nella tabella sulla capacità.
+        assert_eq!(texts.iter().filter(|s| *s == "P1").count(), 5, "{texts:?}");
+    }
+
+    /// Seconda riga: torta dei progetti sulla capacità (con «Libero») e,
+    /// solo oltre la capacità, la torta lavoro / libero tutta rossa; le
+    /// tabelle dicono «Oltre la capacità»; senza capacità c'è solo l'avviso.
+    #[test]
+    fn capacity_pies_show_free_hours_or_the_overflow() {
+        let (mut app, mario, _) = sample();
+        let draw = |app: &App| {
+            let sel: HashSet<_> = [mario].into_iter().collect();
+            let pies = crate::worker_pies::build(app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
+            let ctx = egui::Context::default();
+            let input = egui::RawInput {
+                screen_rect: Some(screen(1600.0, 2400.0)),
+                ..Default::default()
+            };
+            let out = ctx.run_ui_test(input, |ui| draw_worker_pies(ui, app, &pies[0], false));
+            (drawn_texts(&out), out)
+        };
+        // 40h su due settimane da 40h: 50% lavoro, 50% libero.
+        app.workers.set_max_hours(mario, 40);
+        let (texts, _) = draw(&app);
+        for t in ["Dev, categorie e progetti sulla capacità", "% capacità", "Libero", "Capacità", "80h"] {
+            assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+        }
+        // Sotto il 100% niente torta «Lavoro / libero».
+        assert!(!texts.iter().any(|s| s == "Lavoro / libero" || s == "Lavoro"), "{texts:?}");
+        // 40h su 20h di capacità: torta rossa al 200%, 20h oltre.
+        app.workers.set_max_hours(mario, 10);
+        let (texts, out) = draw(&app);
+        assert!(texts.iter().any(|s| s == "Oltre la capacità"), "{texts:?}");
+        assert!(texts.iter().any(|s| s == "Lavoro / libero"), "oltre il 100% c'è: {texts:?}");
+        assert!(!texts.iter().any(|s| s == "Libero"), "{texts:?}");
+        assert!(texts.iter().any(|s| s == "200%"), "{texts:?}");
+        let red = rgb_color(WorkKey::Over.rgb());
+        let has_red = out.shapes.iter().any(|cs| match &cs.shape {
+            egui::epaint::Shape::Mesh(m) => m.vertices.iter().any(|v| v.color == red),
+            _ => false,
+        });
+        assert!(has_red, "torta oltre la capacità rossa");
+        app.workers.set_max_hours(mario, 0);
+        let (texts, _) = draw(&app);
+        assert!(texts.iter().any(|s| s.starts_with("Nessuna capacità nel periodo")), "{texts:?}");
     }
 
     /// Tooltip: le fette dei dev e delle categorie elencano i loro progetti;

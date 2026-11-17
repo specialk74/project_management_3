@@ -3807,6 +3807,7 @@ fn pie_table_row(
     name_w: f32,
     cols: &[(f32, String)],
     bold: bool,
+    color: (f32, f32, f32),
 ) -> Vec<Shape> {
     let mut out = Vec::new();
     let mut nx = x;
@@ -3816,9 +3817,9 @@ fn pie_table_row(
         nx += s + 1.2;
     }
     let name = truncate_to_w(name, font, name_w - (nx - x));
-    out.extend(text_left(nx, y, &name, font, bold, BLACK));
+    out.extend(text_left(nx, y, &name, font, bold, color));
     for (right, v) in cols {
-        out.extend(text_right(*right, y, v, font, bold, BLACK));
+        out.extend(text_right(*right, y, v, font, bold, color));
     }
     out
 }
@@ -3865,6 +3866,8 @@ struct PieRow {
     /// Livello di rientro (0 = nessuno).
     indent: u8,
     bold: bool,
+    /// Riga in rosso (ore oltre la capacità).
+    red: bool,
     vals: Vec<String>,
 }
 
@@ -3914,18 +3917,18 @@ impl PieTable<'_> {
         let mut out = Vec::new();
         let mut y = top;
         let head: Vec<String> = self.heads.iter().map(|h| h.to_string()).collect();
-        out.extend(pie_table_row(x0, y, font, None, self.first, name_w, &cells(&head), true));
+        out.extend(pie_table_row(x0, y, font, None, self.first, name_w, &cells(&head), true, BLACK));
         out.extend(line(x0, y - rh * 0.35, right, y - rh * 0.35, 0.3, GRAY_DK));
         y -= rh;
         for r in &self.rows[rows] {
             let ind = 3.0 * r.indent as f32;
-            out.extend(pie_table_row(x0 + ind, y, font, r.swatch, &r.name, name_w - ind, &cells(&r.vals), r.bold));
+            out.extend(pie_table_row(x0 + ind, y, font, r.swatch, &r.name, name_w - ind, &cells(&r.vals), r.bold, if r.red { RED } else { BLACK }));
             y -= rh;
         }
         if total {
             let t = &self.total;
             out.extend(line(x0, y + rh * 0.65, right, y + rh * 0.65, 0.3, GRAY_DK));
-            out.extend(pie_table_row(x0, y, font, None, &t.name, name_w, &cells(&t.vals), true));
+            out.extend(pie_table_row(x0, y, font, None, &t.name, name_w, &cells(&t.vals), true, if t.red { RED } else { BLACK }));
         }
         out
     }
@@ -3952,35 +3955,16 @@ impl PieTable<'_> {
 /// Titolo delle pagine delle torte.
 const PIES_TITLE: &str = "Hours by dev, category and project";
 
-/// Pagine di un worker: titolo e periodo, a sinistra la torta dev/categorie/
-/// progetti con la sua tabella, a destra quella delle categorie con la sua.
-/// Le tabelle troppo lunghe continuano su altre pagine («(cont.)»).
-/// `created` = `None` per l'SVG: niente footer e niente pagine (una sola,
-/// con le tabelle che scendono quanto serve).
-/// `split`: colonne fatte/pianificate (periodo oltre la settimana corrente).
-fn pies_pages(
-    app: &App,
-    pie: &crate::worker_pies::WorkerPie,
-    subtitle: &str,
-    split: bool,
-    created: Option<&str>,
-) -> Vec<Vec<Shape>> {
-    use crate::worker_matrix::category_color;
-    use crate::worker_pies::{Hours, pct_label};
-    let cat_rgb = |c: Option<crate::categories::CategoryId>| u32_rgb(category_color(c));
-    let proj_rgb = |p: crate::project_utils::project::ProjectId| u32_rgb(pie.project_color(p));
-    let proj_name = |p: crate::project_utils::project::ProjectId| {
-        app.projects
-            .get(p)
-            .map(|x| x.label(p))
-            .unwrap_or_else(|| format!("Project {}", p.0))
-    };
-    let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
+/// Testa delle pagine delle torte di un worker: titolo (`title — nome`),
+/// sottotitolo (periodo e filtri), ore e capacità e, con `split`, le ore
+/// libere da qui a fine periodo (rosse se oltre la capacità).
+fn pies_header(pie: &crate::worker_pies::WorkerPie, title: &str, subtitle: &str, split: bool) -> Vec<Shape> {
+    use crate::worker_pies::pct_label;
     let mut out = Vec::new();
     out.extend(text_left(
         X_LABEL,
         PAGE_H - 14.0,
-        &format!("{PIES_TITLE} — {}", pie.name),
+        &format!("{title} — {}", pie.name),
         16.0,
         true,
         BLACK,
@@ -4020,6 +4004,79 @@ fn pies_pages(
         };
         out.extend(text_left(X_LABEL, PAGE_H - 30.5, &line, 9.0, bold, color));
     }
+    out
+}
+
+/// Pagine di due pannelli affiancati (tabelle `left` e `right` sotto le loro
+/// torte): la prima pagina parte da `first` (testa e torte), le pagine di
+/// continuazione hanno il titolo `cont_title`; footer con `created` (`None` =
+/// SVG, un solo pezzo senza footer).
+fn pie_panel_pages(
+    mut first_page: Vec<Shape>,
+    cont_title: &str,
+    left: &PieTable,
+    right: Option<&PieTable>,
+    created: Option<&str>,
+) -> Vec<Vec<Shape>> {
+    let paged = created.is_some();
+    let mut lp = left.pages(paged).into_iter();
+    let mut rp = right.map(|r| r.pages(paged)).unwrap_or_default().into_iter();
+    let mut pages = Vec::new();
+    let mut first = true;
+    loop {
+        let (l, r) = (lp.next(), rp.next());
+        if l.is_none() && r.is_none() {
+            break;
+        }
+        let mut page = if first {
+            std::mem::take(&mut first_page)
+        } else {
+            text_left(X_LABEL, PAGE_H - 14.0, cont_title, 16.0, true, BLACK)
+        };
+        first = false;
+        page.extend(l.into_iter().flatten());
+        page.extend(r.into_iter().flatten());
+        if let Some(created) = created {
+            page.extend(rect_fill(X_LABEL, FOOTER_BOT, PAGE_W - X_LABEL, FOOTER_TOP, GRAY_FOOTER));
+            page.extend(text_center(
+                PAGE_W / 2.0,
+                (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
+                created,
+                8.0,
+                false,
+                TEXT_GRAY,
+            ));
+        }
+        pages.push(page);
+    }
+    pages
+}
+
+/// Pagine di un worker: titolo e periodo, a sinistra la torta dev/categorie/
+/// progetti con la sua tabella, a destra quella delle categorie con la sua.
+/// Le tabelle troppo lunghe continuano su altre pagine («(cont.)»).
+/// `created` = `None` per l'SVG: niente footer e niente pagine (una sola,
+/// con le tabelle che scendono quanto serve).
+/// `split`: colonne fatte/pianificate (periodo oltre la settimana corrente).
+fn pies_pages(
+    app: &App,
+    pie: &crate::worker_pies::WorkerPie,
+    subtitle: &str,
+    split: bool,
+    created: Option<&str>,
+) -> Vec<Vec<Shape>> {
+    use crate::worker_matrix::category_color;
+    use crate::worker_pies::{Hours, pct_label};
+    let cat_rgb = |c: Option<crate::categories::CategoryId>| u32_rgb(category_color(c));
+    let proj_rgb = |p: crate::project_utils::project::ProjectId| u32_rgb(pie.project_color(p));
+    let proj_name = |p: crate::project_utils::project::ProjectId| {
+        app.projects
+            .get(p)
+            .map(|x| x.label(p))
+            .unwrap_or_else(|| format!("Project {}", p.0))
+    };
+    let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
+    let mut out = pies_header(pie, PIES_TITLE, subtitle, split);
 
     // Pannello sinistro: dev (spicchio interno), categorie di ogni dev e,
     // all'esterno, progetti di ogni dev·categoria.
@@ -4069,6 +4126,7 @@ fn pies_pages(
             name: dev_name(d.dev),
             indent: 0,
             bold: true,
+            red: false,
             vals,
         });
         for &(c, h) in &d.categories {
@@ -4080,6 +4138,7 @@ fn pies_pages(
                 name: matrix_category_name(app, c),
                 indent: 1,
                 bold: false,
+                red: false,
                 vals,
             });
             for p in d.projects_in(c) {
@@ -4091,6 +4150,7 @@ fn pies_pages(
                     name: proj_name(p.project),
                     indent: 2,
                     bold: false,
+                    red: false,
                     vals,
                 });
             }
@@ -4107,6 +4167,7 @@ fn pies_pages(
             name: "Total".into(),
             indent: 0,
             bold: true,
+            red: false,
             vals: total_cells(true),
         },
     };
@@ -4130,6 +4191,7 @@ fn pies_pages(
             name: matrix_category_name(app, c),
             indent: 0,
             bold: false,
+            red: false,
             vals,
         });
         for p in pie.projects_in(c) {
@@ -4141,6 +4203,7 @@ fn pies_pages(
                 name: proj_name(p.project),
                 indent: 1,
                 bold: false,
+                red: false,
                 vals,
             });
         }
@@ -4156,49 +4219,180 @@ fn pies_pages(
             name: "Total".into(),
             indent: 0,
             bold: true,
+            red: false,
             vals: total_cells(false),
         },
     };
 
-    let paged = created.is_some();
-    let mut lp = left.pages(paged).into_iter();
-    let mut rp = right_table.pages(paged).into_iter();
-    let mut pages = Vec::new();
-    let mut first = true;
-    loop {
-        let (l, r) = (lp.next(), rp.next());
-        if l.is_none() && r.is_none() {
-            break;
+    pie_panel_pages(out, &format!("{PIES_TITLE} — {} (cont.)", pie.name), &left, Some(&right_table), created)
+}
+
+/// Titolo delle pagine delle torte sulla capacità.
+const PIES_CAP_TITLE: &str = "Hours on available capacity";
+
+/// Celle delle ore con un valore solo nella colonna del totale (righe
+/// «Free» / «Over capacity» / «Capacity»: niente fatte/pianificate).
+fn pie_total_only(h: u32, split: bool) -> Vec<String> {
+    let mut v = if split { vec![String::new(), String::new()] } else { Vec::new() };
+    v.push(format!("{h}h"));
+    v
+}
+
+/// Righe «Free» (capacità non usata) oppure «Over capacity» (rossa) e
+/// riga finale «Capacity» delle tabelle sulla capacità; `lead`/`trail` celle
+/// vuote prima delle ore e dopo la % (colonne Priority / % dev).
+fn pie_capacity_rows(pie: &crate::worker_pies::WorkerPie, split: bool, lead: usize, trail: usize) -> (PieRow, PieRow) {
+    use crate::worker_pies::{WorkKey, pct_label};
+    let vals = |h: u32, pct: String| {
+        let mut v = vec![String::new(); lead];
+        v.extend(pie_total_only(h, split));
+        v.push(pct);
+        v.extend(vec![String::new(); trail]);
+        v
+    };
+    let rest = if pie.total > pie.capacity {
+        let over = pie.total - pie.capacity;
+        PieRow {
+            swatch: Some(u32_rgb(WorkKey::Over.rgb())),
+            name: "Over capacity".into(),
+            indent: 0,
+            bold: true,
+            red: true,
+            vals: vals(over, pct_label(over, pie.capacity)),
         }
-        let mut page = if first {
-            std::mem::take(&mut out)
-        } else {
-            text_left(
-                X_LABEL,
-                PAGE_H - 14.0,
-                &format!("{PIES_TITLE} — {} (cont.)", pie.name),
-                16.0,
-                true,
-                BLACK,
-            )
-        };
-        first = false;
-        page.extend(l.into_iter().flatten());
-        page.extend(r.into_iter().flatten());
-        if let Some(created) = created {
-            page.extend(rect_fill(X_LABEL, FOOTER_BOT, PAGE_W - X_LABEL, FOOTER_TOP, GRAY_FOOTER));
-            page.extend(text_center(
-                PAGE_W / 2.0,
-                (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4,
-                created,
-                8.0,
-                false,
-                TEXT_GRAY,
-            ));
+    } else {
+        let free = pie.capacity - pie.total;
+        PieRow {
+            swatch: Some(u32_rgb(WorkKey::Free.rgb())),
+            name: "Free".into(),
+            indent: 0,
+            bold: false,
+            red: false,
+            vals: vals(free, pct_label(free, pie.capacity)),
         }
-        pages.push(page);
+    };
+    let total = PieRow {
+        swatch: None,
+        name: "Capacity".into(),
+        indent: 0,
+        bold: true,
+        red: false,
+        vals: vals(pie.capacity, "100%".into()),
+    };
+    (rest, total)
+}
+
+/// Pagine «sulla capacità» di un worker (stessa testa delle altre): a
+/// sinistra la torta dev/categorie/progetti con le fette in frazioni della
+/// capacità e la fetta grigia «Free», a destra — **solo oltre la capacità** —
+/// la torta «lavoro / libero» (tutta rossa); % sulla capacità. Tabelle come le altre,
+/// con in fondo Free / Over capacity e Capacity. Vuoto con capacità 0.
+fn pies_capacity_pages(
+    app: &App,
+    pie: &crate::worker_pies::WorkerPie,
+    subtitle: &str,
+    split: bool,
+    created: Option<&str>,
+) -> Vec<Vec<Shape>> {
+    use crate::worker_matrix::category_color;
+    use crate::worker_pies::{Hours, WorkKey, pct_label};
+    if pie.capacity == 0 {
+        return Vec::new();
     }
-    pages
+    let cap = pie.capacity;
+    let base = pie.cap_base();
+    let cat_rgb = |c: Option<crate::categories::CategoryId>| u32_rgb(category_color(c));
+    let proj_rgb = |p: crate::project_utils::project::ProjectId| u32_rgb(pie.project_color(p));
+    let proj_name = |p: crate::project_utils::project::ProjectId| {
+        app.projects
+            .get(p)
+            .map(|x| x.label(p))
+            .unwrap_or_else(|| format!("Project {}", p.0))
+    };
+    let proj_pri = |p: crate::project_utils::project::ProjectId| {
+        crate::effort_csv::priority_name(app, app.projects.get_priority(p))
+    };
+    let dev_name = |d: DevId| app.devs.get(d).map(|d| d.get_name()).unwrap_or_default();
+    let mut out = pies_header(pie, PIES_CAP_TITLE, subtitle, split);
+
+    // Pannello sinistro: i tre anelli sulla capacità + «Free».
+    let x0 = X_LABEL;
+    let cx = x0 + PIE_PANEL_W / 2.0;
+    out.extend(text_left(x0, PIE_TITLE_Y, "By dev, category and project, on capacity", 10.0, true, BLACK));
+    out.extend(pie_ring(cx, 0.0, PIE_R_IN_MM, &pie.dev_ring_on(base), cap, |d| dev_rgb(app, *d)));
+    out.extend(pie_ring(
+        cx,
+        PIE_R_IN_MM + PIE_GAP_MM,
+        PIE_R_CAT_MM,
+        &pie.dev_category_ring_on(base),
+        cap,
+        |(_, c)| cat_rgb(*c),
+    ));
+    out.extend(pie_ring(
+        cx,
+        PIE_R_CAT_MM + PIE_GAP_MM,
+        PIE_R_MM,
+        &pie.dev_project_ring_on(base),
+        cap,
+        |(_, p)| proj_rgb(*p),
+    ));
+    let free: Vec<_> = pie.free_seg().into_iter().collect();
+    out.extend(pie_ring(cx, 0.0, PIE_R_MM, &free, cap, |k| u32_rgb(k.rgb())));
+    let mut heads = vec!["Priority"];
+    heads.extend(pie_hour_heads(split));
+    heads.extend(["% capacity", "% dev"]);
+    let mut rows = Vec::new();
+    for d in &pie.devs {
+        let mut vals = vec![String::new()];
+        vals.extend(pie_hour_cells(d.hours, split));
+        vals.extend([pct_label(d.hours.total, cap), String::new()]);
+        rows.push(PieRow { swatch: Some(dev_rgb(app, d.dev)), name: dev_name(d.dev), indent: 0, bold: true, red: false, vals });
+        for &(c, h) in &d.categories {
+            let mut vals = vec![String::new()];
+            vals.extend(pie_hour_cells(h, split));
+            vals.extend([pct_label(h.total, cap), pct_label(h.total, d.hours.total)]);
+            rows.push(PieRow { swatch: Some(cat_rgb(c)), name: matrix_category_name(app, c), indent: 1, bold: false, red: false, vals });
+            for p in d.projects_in(c) {
+                let mut vals = vec![proj_pri(p.project)];
+                vals.extend(pie_hour_cells(p.hours, split));
+                vals.extend([pct_label(p.hours.total, cap), pct_label(p.hours.total, d.hours.total)]);
+                rows.push(PieRow { swatch: Some(proj_rgb(p.project)), name: proj_name(p.project), indent: 2, bold: false, red: false, vals });
+            }
+        }
+    }
+    let worker_hours = Hours { total: pie.total, done: pie.done };
+    let mut vals = vec![String::new()];
+    vals.extend(pie_hour_cells(worker_hours, split));
+    vals.extend([pct_label(pie.total, cap), String::new()]);
+    rows.push(PieRow { swatch: None, name: "Total".into(), indent: 0, bold: true, red: false, vals });
+    let (rest, total) = pie_capacity_rows(pie, split, 1, 1);
+    rows.push(rest);
+    let left = PieTable { x0, right: x0 + PIE_PANEL_W, first: "Dev / Category / Project", heads, rows, total };
+
+    // Pannello destro: lavoro / libero, solo oltre la capacità (sotto il
+    // 100% basta la fetta «Free» della torta a sinistra).
+    let right_table = (pie.total > cap).then(|| {
+        let x0 = X_LABEL + PIE_PANEL_W + 5.0;
+        let right = (x0 + PIE_PANEL_W).min(PAGE_W - X_LABEL);
+        let cx = (x0 + right) / 2.0;
+        out.extend(text_left(x0, PIE_TITLE_Y, "Work / free", 10.0, true, BLACK));
+        out.extend(pie_ring(cx, 0.0, PIE_R_MM, &pie.work_ring(), cap, |k| u32_rgb(k.rgb())));
+        let mut heads = pie_hour_heads(split);
+        heads.push("% capacity");
+        let mut vals = pie_hour_cells(worker_hours, split);
+        vals.push(pct_label(pie.total, cap));
+        let (rest, total) = pie_capacity_rows(pie, split, 0, 0);
+        let work = PieRow {
+            swatch: Some(u32_rgb(WorkKey::Work.rgb())),
+            name: "Work".into(),
+            indent: 0,
+            bold: false,
+            red: false,
+            vals,
+        };
+        PieTable { x0, right, first: "", heads, rows: vec![work, rest], total }
+    });
+    pie_panel_pages(out, &format!("{PIES_CAP_TITLE} — {} (cont.)", pie.name), &left, right_table.as_ref(), created)
 }
 
 /// Nome di una priorità negli export (`None` = «No priority»).
@@ -4242,7 +4436,8 @@ fn pies_subtitle(
     out
 }
 
-/// PDF delle torte: una pagina per worker con ore nel periodo `[from, to]`
+/// PDF delle torte: per ogni worker con ore nel periodo `[from, to]` la
+/// pagina delle torte e quella delle torte sulla capacità (se ne ha)
 /// (`years`/`categories`/`devs`/`priorities` = scelte delle combo, nel sottotitolo). `None` se
 /// nessun worker ha ore.
 #[allow(clippy::too_many_arguments)]
@@ -4262,12 +4457,17 @@ pub fn build_pies_pdf(
     let pages: Vec<Vec<Shape>> = pies
         .iter()
         .filter(|p| p.total > 0)
-        .flat_map(|p| pies_pages(app, p, &subtitle, split, Some(&created)))
+        .flat_map(|p| {
+            let mut pages = pies_pages(app, p, &subtitle, split, Some(&created));
+            pages.extend(pies_capacity_pages(app, p, &subtitle, split, Some(&created)));
+            pages
+        })
         .collect();
     pdf_document(PIES_TITLE, &pages)
 }
 
-/// SVG delle torte: `(nome del worker, svg)` per ogni worker con ore.
+/// SVG delle torte: `(nome del worker, svg)` per ogni worker con ore, più
+/// `(nome_capacity, svg)` con le torte sulla capacità (se ne ha).
 #[allow(clippy::too_many_arguments)]
 pub fn build_pies_svgs(
     app: &App,
@@ -4281,13 +4481,18 @@ pub fn build_pies_svgs(
 ) -> Vec<(String, String)> {
     let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities);
     let split = crate::worker_pies::split_shown(to, current_monday_days());
-    pies.iter()
-        .filter(|p| p.total > 0)
-        .map(|p| {
-            let page = pies_pages(app, p, &subtitle, split, None).concat();
-            (p.name.clone(), render_svg(&page))
-        })
-        .collect()
+    let mut out = Vec::new();
+    for p in pies.iter().filter(|p| p.total > 0) {
+        let page = pies_pages(app, p, &subtitle, split, None).concat();
+        out.push((p.name.clone(), render_svg(&page)));
+        // Le torte sulla capacità in un file a parte (`…_capacity`): un SVG non
+        // ha pagine e i due disegni si sovrapporrebbero.
+        let cap = pies_capacity_pages(app, p, &subtitle, split, None).concat();
+        if !cap.is_empty() {
+            out.push((format!("{}_capacity", p.name), render_svg(&cap)));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -4567,6 +4772,57 @@ mod tests {
         assert_eq!(white, ["12", "5", "12", "5"], "ore scritte in bianco sul colore");
     }
 
+    /// Pagina «sulla capacità»: torta dei progetti con la fetta Free e torta
+    /// work / free; oltre la capacità la riga «Over capacity» (rossa) e una
+    /// sola fetta rossa; senza capacità nessuna pagina. Il PDF ha due pagine
+    /// per worker.
+    #[test]
+    fn pies_capacity_page_shows_free_or_over_capacity() {
+        use crate::worker_pies::WorkKey;
+        let mut app = App::new();
+        let mario = app.workers.add("Mario");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("x", Some("P1"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
+        let sel: std::collections::HashSet<_> = [mario].into_iter().collect();
+        let build = |app: &App| crate::worker_pies::build(app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20007);
+        app.workers.set_max_hours(mario, 40);
+        let pies = build(&app);
+        let pages = pies_capacity_pages(&app, &pies[0], "From x to y", false, Some("created"));
+        assert_eq!(pages.len(), 1);
+        let t = texts(&pages[0]);
+        for s in [
+            "Hours on available capacity — Mario",
+            "By dev, category and project, on capacity",
+            "% capacity",
+            "Free",
+            "Capacity",
+            "50h",
+            "80h",
+        ] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        let fill = |c: (f32, f32, f32)| pages[0].iter().any(|sh| matches!(sh, Shape::Poly { color, .. } if *color == c));
+        assert!(fill(u32_rgb(WorkKey::Free.rgb())), "fetta libero");
+        assert!(!t.iter().any(|x| x == "Work / free"), "sotto il 100% niente torta lavoro / libero: {t:?}");
+        assert!(!fill(u32_rgb(WorkKey::Over.rgb())));
+        let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[], &[], &[], &[]).expect("PDF");
+        assert!(pdf.starts_with(b"%PDF"));
+        // 30h su 20h: oltre la capacità.
+        app.workers.set_max_hours(mario, 10);
+        let pies = build(&app);
+        let page = pies_capacity_pages(&app, &pies[0], "From x to y", false, Some("created")).concat();
+        let t = texts(&page);
+        assert!(t.iter().any(|x| x == "Over capacity") && !t.iter().any(|x| x == "Free"), "{t:?}");
+        assert!(t.iter().any(|x| x == "Work / free") && t.iter().any(|x| x == "Work"), "{t:?}");
+        assert!(t.iter().any(|x| x == "150%"), "{t:?}");
+        assert!(page.iter().any(|sh| matches!(sh, Shape::Poly { color, .. } if *color == u32_rgb(WorkKey::Over.rgb()))));
+        app.workers.set_max_hours(mario, 0);
+        let pies = build(&app);
+        assert!(pies_capacity_pages(&app, &pies[0], "x", false, Some("created")).is_empty());
+    }
+
     /// Torte dei worker: una pagina per worker con ore (chi ne ha 0 è
     /// saltato), fette come poligoni, tabelle con ore e percentuali; SVG uno
     /// per worker, senza footer.
@@ -4623,7 +4879,8 @@ mod tests {
         assert_eq!(polys, 7, "2 dev + 2 dev·categoria + 2 dev·progetto + 1 categoria");
         let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[], &[]);
         let names: Vec<_> = svgs.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["Anna", "Mario"], "Luigi senza ore è saltato");
+        // Ogni worker con ore ha anche il file delle torte sulla capacità.
+        assert_eq!(names, ["Anna", "Anna_capacity", "Mario", "Mario_capacity"], "Luigi senza ore è saltato");
         assert!(svgs[1].1.starts_with("<svg") && !svgs[1].1.contains("created"));
         let pdf = build_pies_pdf(&app, &pies, 20000, 20006, &[2026], &[Some(ca)], &[fe], &[]).expect("PDF");
         assert_eq!(

@@ -1429,6 +1429,25 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
    (ore e % sul totale); sotto ogni categoria, rientrati, i suoi progetti (ore di
    tutti i dev), anche qui con la colonna **Priorità**.
+6. **Seconda riga: le ore sulla capacità** — sotto le prime due, altre due torte
+   misurano le stesse ore (stessi filtri) sulle **ore disponibili** del periodo
+   (vedi «Ore disponibili e occupazione» più sotto):
+   - **«Dev, categorie e progetti sulla capacità»** — gli stessi tre anelli della
+     prima torta, ma ogni fetta è una parte della capacità e la percentuale
+     scritta dentro è **sulla capacità**; la capacità non usata è una fetta
+     grigia **«Libero»** che attraversa tutti gli anelli. La tabella è quella
+     della prima torta con la colonna **% capacità** al posto di «% totale» e, in
+     fondo, le righe **Libero** e **Capacità**.
+   - **«Lavoro / libero»** — compare **solo se le ore superano la capacità**
+     (sotto il 100% la fetta «Libero» della torta accanto dice già quanto resta):
+     è una torta **tutta rossa** con la percentuale reale (es. 120%) e sotto la
+     tabella con Lavoro, Oltre la capacità e Capacità (ore e % sulla capacità).
+
+   Oltre la capacità la torta dei progetti non ha fetta «Libero» (si riempie
+   solo di ore e le percentuali sommano oltre 100%) e la sua tabella ha la riga
+   **«Oltre la capacità»** in rosso al posto di «Libero».
+   Con capacità 0 (es. massimo ore 0) le due torte non ci sono e compare un
+   avviso.
 
 **Ore fatte e pianificate** — se l'intervallo arriva **alla settimana corrente**
 (o oltre), accanto al nome del worker compare la divisione (es. «1380h nel
@@ -1467,7 +1486,7 @@ e delle priorità selezionati
 
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
-torte stanno una
+torte di ogni riga stanno una
 accanto all'altra; se la finestra non è abbastanza larga (con le colonne
 fatte/pianificate le tabelle sono più larghe), la seconda torta con la sua tabella
 va sotto la prima. La colonna «Categoria» delle tabelle è stretta: un nome di
@@ -1496,10 +1515,16 @@ all'ultima). Con le ore pianificate le colonne sono
 terza riga riporta le ore libere (`From now to the end: 280h planned of 520h
 available, 240h free`, oppure `…, 40h over capacity` in rosso; come nella
 finestra, le ore pianificate sono solo quelle di dev, categorie e priorità scelti).
+Dopo questa pagina, ogni worker ne ha una seconda, **«Hours on available
+capacity»**, con le due torte sulla capacità (a sinistra «By dev, category and
+project, on capacity» con la fetta «Free» e, solo oltre la capacità, a destra
+«Work / free» tutta rossa) e le loro tabelle (`% capacity`, righe `Free` o `Over capacity` in rosso, e `Capacity`);
+manca se il worker non ha capacità nel periodo.
 **Esporta SVG…** crea lo stesso disegno, senza la fascia in fondo con la data e
 senza pagine (le tabelle lunghe scendono quanto serve), **un file per worker**: si sceglie un nome (es. `torte.svg`) e i file diventano
-`torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). I
-worker senza ore nel periodo sono saltati.
+`torte_Mario.svg`, `torte_Luigi.svg`… (con un solo worker, il nome scelto). Le
+torte sulla capacità sono in un **secondo file per worker**
+(`torte_Mario_capacity.svg`). I worker senza ore nel periodo sono saltati.
 
 **Esporta CSV…** salva le ore delle torte (stessi worker, periodo e filtri) in
 un CSV per Excel (`torte_AAAA_MM_GG.csv`, stesso formato di File ▸ Esporta CSV…):

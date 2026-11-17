@@ -724,6 +724,24 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `egui::Grid` cell doesn't right-align, and in the **last** column (no width
   bound) it stretched to the window edge, pushing «% del dev» out of the table
   (test `table_values_stay_under_their_headers`).
+  **Capacity pies** (second row, `draw_worker_pies` → `pie_pair`; skipped with
+  a notice when `capacity == 0`): `cap_dev_category_pie` = the first pie's three
+  rings in fractions of `WorkerPie::cap_base()` (= `capacity.max(total)`) via
+  `dev_ring_on/dev_category_ring_on/dev_project_ring_on(base)`, labels on the
+  capacity (`paint_ring`'s `total` arg is only the label denominator), plus the
+  grey `free_seg()` across all rings; `work_pie` (**only when total > capacity**,
+  GUI and PDF/SVG — below 100% the Free slice says it all; `pie_panel_pages`
+  takes `right: Option<&PieTable>`) = `work_ring()` → `WorkKey {
+  Work, Free, Over }` (`WorkKey::rgb`, shared GUI/PDF), one full red `Over` slice
+  labelled with the real % when total > capacity. Tables:
+  `dev_category_table(…, on_cap: true)` («% capacità», then `capacity_rows`:
+  Libero or red «Oltre la capacità», and Capacità) and `work_table`. PDF:
+  `pies_capacity_pages` (title `PIES_CAP_TITLE`, after each worker's pies pages;
+  `PieRow.red`, `pie_capacity_rows`); the header and the two-panel pagination
+  are shared helpers `pies_header` / `pie_panel_pages`. SVG: a second item per
+  worker named `<name>_capacity`. Tests `capacity_rings_split_work_free_and_overflow`,
+  `capacity_pies_show_free_hours_or_the_overflow`,
+  `pies_capacity_page_shows_free_or_over_capacity`.
   Export: `Action::ExportWorkerPies { from, to, years, svg }` →
   **Done / planned**: every value is a `worker_pies::Hours { total, done }`
   (`planned()` = rest; `WorkerPie` keeps `total`/`done` fields); `build` takes
