@@ -706,7 +706,12 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   equal to the category and the same under every dev). Tooltips
   (`seg_tip_projects`) of dev and dev·category slices, and of the category
   pie, list their projects (tripletta, hours, %); tables add indented project
-  rows (`project_cell`/`swatch_cell`) under each category. GUI radii
+  rows (`project_cell`/`swatch_cell`) under each category. Both tables have a
+  **Priorità** column after the name column (`priority_cell`, capped at `PRI_W`
+  80 px, text = `effort_csv::priority_name`, empty when none), filled only on
+  project rows; in the PDF/SVG it is the first value column `Priority` of
+  `PieTable` (empty string on dev/category/total rows). Tests
+  `tables_show_the_project_priority`, `pies_pdf_has_a_page_per_worker_with_hours`. GUI radii
   `PIE_R_IN` 78 / `PIE_R_CAT` 120 / `PIE_R` 162; PDF `PIE_R_IN_MM` 21.5 /
   `PIE_R_CAT_MM` 32.5 / `PIE_R_MM` 44. Geometry shared GUI/PDF with a
   `y_up` flag: angle 0 at 12 o'clock, clockwise (`arc_point`, `arc`, `sector`),

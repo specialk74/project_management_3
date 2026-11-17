@@ -4043,19 +4043,26 @@ fn pies_pages(
         pie.total,
         |(_, p)| proj_rgb(*p),
     ));
+    // Prima colonna dei valori: la priorità, solo sulle righe dei progetti.
+    let proj_pri = |p: crate::project_utils::project::ProjectId| {
+        crate::effort_csv::priority_name(app, app.projects.get_priority(p))
+    };
     let total_cells = |pct_dev: bool| {
-        let mut v = pie_hour_cells(Hours { total: pie.total, done: pie.done }, split);
+        let mut v = vec![String::new()];
+        v.extend(pie_hour_cells(Hours { total: pie.total, done: pie.done }, split));
         v.push("100%".to_string());
         if pct_dev {
             v.push(String::new());
         }
         v
     };
-    let mut heads = pie_hour_heads(split);
+    let mut heads = vec!["Priority"];
+    heads.extend(pie_hour_heads(split));
     heads.extend(["% total", "% dev"]);
     let mut rows = Vec::new();
     for d in &pie.devs {
-        let mut vals = pie_hour_cells(d.hours, split);
+        let mut vals = vec![String::new()];
+        vals.extend(pie_hour_cells(d.hours, split));
         vals.extend([pct_label(d.hours.total, pie.total), String::new()]);
         rows.push(PieRow {
             swatch: Some(dev_rgb(app, d.dev)),
@@ -4065,7 +4072,8 @@ fn pies_pages(
             vals,
         });
         for &(c, h) in &d.categories {
-            let mut vals = pie_hour_cells(h, split);
+            let mut vals = vec![String::new()];
+            vals.extend(pie_hour_cells(h, split));
             vals.extend([pct_label(h.total, pie.total), pct_label(h.total, d.hours.total)]);
             rows.push(PieRow {
                 swatch: Some(cat_rgb(c)),
@@ -4075,7 +4083,8 @@ fn pies_pages(
                 vals,
             });
             for p in d.projects_in(c) {
-                let mut vals = pie_hour_cells(p.hours, split);
+                let mut vals = vec![proj_pri(p.project)];
+                vals.extend(pie_hour_cells(p.hours, split));
                 vals.extend([pct_label(p.hours.total, pie.total), pct_label(p.hours.total, d.hours.total)]);
                 rows.push(PieRow {
                     swatch: Some(proj_rgb(p.project)),
@@ -4108,11 +4117,13 @@ fn pies_pages(
     let cx = (x0 + right) / 2.0;
     out.extend(text_left(x0, PIE_TITLE_Y, "By category", 10.0, true, BLACK));
     out.extend(pie_ring(cx, 0.0, PIE_R_MM, &pie.category_ring(), pie.total, |c| cat_rgb(*c)));
-    let mut heads = pie_hour_heads(split);
+    let mut heads = vec!["Priority"];
+    heads.extend(pie_hour_heads(split));
     heads.push("% total");
     let mut rows = Vec::new();
     for &(c, h) in &pie.categories {
-        let mut vals = pie_hour_cells(h, split);
+        let mut vals = vec![String::new()];
+        vals.extend(pie_hour_cells(h, split));
         vals.push(pct_label(h.total, pie.total));
         rows.push(PieRow {
             swatch: Some(cat_rgb(c)),
@@ -4122,7 +4133,8 @@ fn pies_pages(
             vals,
         });
         for p in pie.projects_in(c) {
-            let mut vals = pie_hour_cells(p.hours, split);
+            let mut vals = vec![proj_pri(p.project)];
+            vals.extend(pie_hour_cells(p.hours, split));
             vals.push(pct_label(p.hours.total, pie.total));
             rows.push(PieRow {
                 swatch: Some(proj_rgb(p.project)),
@@ -4569,6 +4581,8 @@ mod tests {
         let ca = app.categories.add("Cliente A");
         let p = app.projects.add("x", Some("P1"), None);
         app.projects.set_category(p, Some(ca));
+        let could = app.priorities.list()[2].0;
+        app.projects.set_priority(p, Some(could));
         app.projects.add_dev(p, fe);
         app.projects.add_dev(p, be);
         app.projects.add_effort(p, fe, WeekId(20000), mario, Effort(30));
@@ -4602,6 +4616,9 @@ mod tests {
         // P1 sotto Frontend·Cliente A, sotto Backend·Cliente A e sotto
         // Cliente A nella tabella delle categorie.
         assert_eq!(t.iter().filter(|x| *x == "P1").count(), 3);
+        // Colonna Priority in entrambe le tabelle, valorizzata sui progetti.
+        assert_eq!(t.iter().filter(|x| *x == "Priority").count(), 2, "{t:?}");
+        assert_eq!(t.iter().filter(|x| *x == "Could").count(), 3, "{t:?}");
         let polys = page.iter().filter(|s| matches!(s, Shape::Poly { .. })).count();
         assert_eq!(polys, 7, "2 dev + 2 dev·categoria + 2 dev·progetto + 1 categoria");
         let svgs = build_pies_svgs(&app, &pies, 20000, 20006, &[], &[], &[], &[]);

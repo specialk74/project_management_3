@@ -354,6 +354,21 @@ fn project_cell(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, proj: ProjectId) 
     swatch_cell(ui, project_label(app, proj), project_rgb(pie, proj), PROJ_INDENT);
 }
 
+/// Larghezza massima della colonna «Priorità» delle tabelle.
+const PRI_W: f32 = 80.0;
+
+/// Cella «Priorità» di una riga progetto: il nome della priorità (vuota se il
+/// progetto non ne ha), al più `PRI_W` (troncata con «…», intera nel tooltip).
+fn priority_cell(ui: &mut egui::Ui, app: &App, proj: ProjectId) {
+    let name = crate::effort_csv::priority_name(app, app.projects.get_priority(proj));
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let shown = fit_text(ui, &name, &font, PRI_W);
+    let resp = ui.label(shown.clone());
+    if shown != name {
+        resp.on_hover_text(name);
+    }
+}
+
 /// Quadratino del colore e nome dopo `indent` px, al più `CAT_W` di larghezza
 /// in tutto (nome troncato con «…» e intero nel tooltip se non ci sta).
 fn swatch_cell(ui: &mut egui::Ui, name: String, color: Color32, indent: f32) {
@@ -428,11 +443,12 @@ fn pie_hours(pie: &WorkerPie) -> Hours {
 fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_dev_table", pie.worker))
         .striped(true)
-        .num_columns(if split { 7 } else { 5 })
+        .num_columns(if split { 8 } else { 6 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Dev").strong());
             ui.label(egui::RichText::new("Categoria").strong());
+            ui.label(egui::RichText::new("Priorità").strong());
             hour_heads(ui, split);
             for h in ["% totale", "% del dev"] {
                 num(ui, h.to_string(), true);
@@ -445,6 +461,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                     ui.label(egui::RichText::new(name).strong());
                 });
                 ui.label("");
+                ui.label("");
                 hour_cells(ui, d.hours, split, true);
                 num(ui, pct_label(d.hours.total, pie.total), true);
                 ui.label("");
@@ -452,6 +469,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                 for &(cat, h) in &d.categories {
                     ui.label("");
                     category_cell(ui, app, cat);
+                    ui.label("");
                     hour_cells(ui, h, split, false);
                     num(ui, pct_label(h.total, pie.total), false);
                     num(ui, pct_label(h.total, d.hours.total), false);
@@ -459,6 +477,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                     for p in d.projects_in(cat) {
                         ui.label("");
                         project_cell(ui, app, pie, p.project);
+                        priority_cell(ui, app, p.project);
                         hour_cells(ui, p.hours, split, false);
                         num(ui, pct_label(p.hours.total, pie.total), false);
                         num(ui, pct_label(p.hours.total, d.hours.total), false);
@@ -467,6 +486,7 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
                 }
             }
             ui.label(egui::RichText::new("Totale").strong());
+            ui.label("");
             ui.label("");
             hour_cells(ui, pie_hours(pie), split, true);
             num(ui, "100%".to_string(), true);
@@ -484,26 +504,30 @@ fn dev_category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool
 fn category_table(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) -> f32 {
     egui::Grid::new(("pies_cat_table", pie.worker))
         .striped(true)
-        .num_columns(if split { 5 } else { 3 })
+        .num_columns(if split { 6 } else { 4 })
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new("Categoria").strong());
+            ui.label(egui::RichText::new("Priorità").strong());
             hour_heads(ui, split);
             num(ui, "% totale".to_string(), true);
             ui.end_row();
             for &(cat, h) in &pie.categories {
                 category_cell(ui, app, cat);
+                ui.label("");
                 hour_cells(ui, h, split, false);
                 num(ui, pct_label(h.total, pie.total), false);
                 ui.end_row();
                 for p in pie.projects_in(cat) {
                     project_cell(ui, app, pie, p.project);
+                    priority_cell(ui, app, p.project);
                     hour_cells(ui, p.hours, split, false);
                     num(ui, pct_label(p.hours.total, pie.total), false);
                     ui.end_row();
                 }
             }
             ui.label(egui::RichText::new("Totale").strong());
+            ui.label("");
             hour_cells(ui, pie_hours(pie), split, true);
             num(ui, "100%".to_string(), true);
             ui.end_row();
@@ -548,9 +572,10 @@ fn pie_block(
 
 /// Larghezza sotto la quale i due blocchi (torta con sotto la tabella) vanno
 /// uno sotto l'altro invece che affiancati: ogni blocco è largo quanto la sua
-/// tabella, e con le colonne fatte/pianificate le tabelle sono più larghe.
+/// tabella (colonna Priorità compresa), e con le colonne fatte/pianificate le
+/// tabelle sono più larghe.
 fn side_by_side_min_w(split: bool) -> f32 {
-    if split { 1300.0 } else { 1000.0 }
+    if split { 1450.0 } else { 1150.0 }
 }
 
 /// Riga «da qui a fine periodo»: ore pianificate (dei dev e delle categorie
@@ -822,6 +847,31 @@ mod tests {
         let pct_dev: Vec<f32> = rights("100%").into_iter().filter(|x| (x - head).abs() < 1.0).collect();
         assert_eq!(pct_dev.len(), 4, "valori sotto «% del dev» ({head}): {:?}", rights("100%"));
         assert!(rights("100%").iter().all(|x| *x < 600.0), "fuori tabella: {:?}", rights("100%"));
+    }
+
+    /// Le tabelle hanno la colonna «Priorità», valorizzata sulle righe dei
+    /// progetti (in entrambe le tabelle).
+    #[test]
+    fn tables_show_the_project_priority() {
+        let (mut app, mario, _) = sample();
+        let p = app.projects.list()[0].0;
+        let should = app.priorities.list()[1].0;
+        app.projects.set_priority(p, Some(should));
+        let sel: HashSet<_> = [mario].into_iter().collect();
+        let pies = crate::worker_pies::build(&app, &sel, 20000, 20006, &Default::default(), &Default::default(), 20000);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1400.0, 900.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| {
+            dev_category_table(ui, &app, &pies[0], false);
+            category_table(ui, &app, &pies[0], false);
+        });
+        let texts = drawn_texts(&out);
+        assert_eq!(texts.iter().filter(|t| *t == "Priorità").count(), 2, "{texts:?}");
+        // P1 compare sotto Frontend, sotto Backend e nella tabella delle categorie.
+        assert_eq!(texts.iter().filter(|t| *t == "Should").count(), 3, "{texts:?}");
     }
 
     /// Periodo oltre la settimana corrente: intestazione con fatte e

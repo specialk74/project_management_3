@@ -1423,10 +1423,12 @@ date: su quali dev e, dentro ogni dev, per quali categorie e quali progetti.
    colore sotto tutti i dev). Sotto la torta, la tabella: per ogni dev le ore e la %
    sul totale del worker, poi le sue categorie con ore, % sul totale e **% del dev**,
    e sotto ogni categoria, rientrati, i suoi **progetti** (tripletta) con le stesse
-   colonne; in fondo il totale.
+   colonne; in fondo il totale. La colonna **Priorità**, dopo la categoria, riporta
+   la priorità di ogni progetto (vuota sulle righe di dev e categorie, e per i
+   progetti senza priorità).
 5. **Seconda torta, «Categorie»** — le ore del worker per categoria, con la tabella
    (ore e % sul totale); sotto ogni categoria, rientrati, i suoi progetti (ore di
-   tutti i dev).
+   tutti i dev), anche qui con la colonna **Priorità**.
 
 **Ore fatte e pianificate** — se l'intervallo arriva **alla settimana corrente**
 (o oltre), accanto al nome del worker compare la divisione (es. «1380h nel
@@ -1485,7 +1487,7 @@ inglese: «Hours by dev, category and project», con l'intervallo, gli anni, le
 categorie, i dev e le priorità scelti nel sottotitolo, es. `Devs: Frontend,
 Backend  ·  Priority: Must`): a sinistra la prima torta (tre anelli) con sotto
 la sua tabella, a destra la seconda; nelle tabelle ci sono anche le righe dei
-progetti (tripletta). Se un worker ha molte righe di tabella, il testo non si
+progetti (tripletta), con la loro priorità nella colonna `Priority`. Se un worker ha molte righe di tabella, il testo non si
 rimpicciolisce: la tabella **continua sulle pagine successive** (titolo con «(cont.)», intestazione ripetuta, totale in fondo
 all'ultima). Con le ore pianificate le colonne sono
 «Done», «Planned» e «Total», e il sottotitolo riporta la divisione (es. `Total:
