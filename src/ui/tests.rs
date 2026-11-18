@@ -3887,7 +3887,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
     match actions.as_slice() {
         [Action::AddRule(r)] => {
             assert!(!r.enabled, "nasce spenta");
-            assert_eq!((r.target, r.anchor, r.scope), (crate::rules::Target::Milestone(collaudo), Anchor::DevEnd(be), RuleScope::All));
+            assert_eq!((r.target, r.anchor, r.scope.clone()), (crate::rules::Target::Milestone(collaudo), Anchor::DevEnd(be), RuleScope::All));
         }
         _ => panic!("attesa una AddRule"),
     }
@@ -3936,7 +3936,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
     match actions.as_slice() {
         [Action::UpdateRule(rid, r)] => {
             assert_eq!(*rid, id);
-            assert_eq!(r.scope, RuleScope::Project(p));
+            assert_eq!(r.scope, RuleScope::Projects(vec![p]));
         }
         _ => panic!("attesa una UpdateRule con l'ambito del progetto"),
     }
@@ -3945,7 +3945,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
     let mut only = App::new();
     let q = only.projects.add("y", Some("XYZ"), None);
     only.milestones.add_owned("Solo XYZ", Default::default(), Vec::new(), Some(q));
-    assert_eq!(new_rule(&only).scope, RuleScope::Project(q));
+    assert_eq!(new_rule(&only).scope, RuleScope::Projects(vec![q]));
 }
 
 /// Il nome della regola ha la sua larghezza (`RULE_NAME_W`): la colonna
@@ -4202,5 +4202,71 @@ fn rules_text_import_reports_and_buttons_send_actions() {
             _ => matches!(actions.as_slice(), [Action::ExportRulesLog]),
         };
         assert!(ok, "«{label}»: {} azioni", actions.len());
+    }
+}
+
+/// Finestra delle regole: nella combo «Progetti» si spuntano più progetti
+/// (l'ambito diventa quei progetti); «Clona» aggiunge una copia spenta.
+#[test]
+fn rules_window_picks_several_projects_and_clones_a_rule() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let p = app.projects.add("x", Some("ABC"), None);
+    let q = app.projects.add("y", Some("XYZ"), None);
+    let id = app.rules.add(Rule {
+        name: "Fine".into(),
+        enabled: true,
+        scope: RuleScope::Projects(vec![p]),
+        target: Target::ProjectEnd,
+        anchor: Anchor::LastEffort,
+        offset_weeks: 1,
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1700.0, 900.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut frame = |state: &mut UiState, actions: &mut Vec<Action>, events: Vec<egui::Event>| {
+        let mut i = input.clone();
+        i.events = events;
+        ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), &app, state, actions))
+    };
+    type Frame<'a> = dyn FnMut(&mut UiState, &mut Vec<Action>, Vec<egui::Event>) -> egui::FullOutput + 'a;
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, frame: &mut Frame, label: &str| {
+        frame(state, actions, vec![]);
+        let out = frame(state, actions, vec![]);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("manca «{label}»: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, vec![ev]);
+        }
+    };
+    click(&mut state, &mut actions, &mut frame, "Progetto: ABC");
+    actions.clear();
+    click(&mut state, &mut actions, &mut frame, "XYZ");
+    let scopes: Vec<RuleScope> = actions
+        .iter()
+        .filter_map(|a| match a {
+            Action::UpdateRule(r, rule) if *r == id => Some(rule.scope.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(scopes.contains(&RuleScope::Projects(vec![p, q])), "{scopes:?}");
+    // Chiusa la combo, «Clona».
+    frame(&mut state, &mut actions, vec![egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }]);
+    actions.clear();
+    click(&mut state, &mut actions, &mut frame, "Clona");
+    match actions.as_slice() {
+        [Action::AddRule(r)] => {
+            assert_eq!(r.name, "Fine (copia)");
+            assert!(!r.enabled, "la copia nasce spenta");
+            assert_eq!((r.target, r.anchor, r.offset_weeks), (Target::ProjectEnd, Anchor::LastEffort, 1));
+            assert_eq!(r.scope, RuleScope::Projects(vec![p]));
+        }
+        _ => panic!("attesa una AddRule, ricevute {}", actions.len()),
     }
 }

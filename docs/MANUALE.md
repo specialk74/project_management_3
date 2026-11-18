@@ -951,7 +951,10 @@ Nella finestra ogni regola è una riga:
 - **Nome** — libero, per riconoscerla (si conferma uscendo dal campo; Esc
   annulla);
 - **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
-  una **priorità** o **un solo progetto**;
+  una **priorità**, oppure **uno o più progetti scelti**: nella tendina, sotto le
+  scelte singole, c'è una spunta per ogni progetto (togliendo l'ultima si torna a
+  «Tutti i progetti»); la tendina mostra «Progetto: ABC» o «Progetti: ABC,
+  XYZ»;
 - **Cosa** — la milestone da posizionare, oppure **Inizio progetto (data)** /
   **Fine progetto (data)** (in cima all'elenco), oppure — in fondo — **Aggiungi
   dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto) e
@@ -967,6 +970,9 @@ Nella finestra ogni regola è una riga:
 - **Settimane** — quante dopo (+) o prima (−) dell'ancora;
 - **Stato** — in quanti progetti la regola ha collocato la milestone, oppure un
   avviso: «⚠ ciclo», «⚠ … inesistente», «spenta»;
+- **Clona** — aggiunge in fondo una **copia** della regola (stessi valori, nome
+  «… (copia)»), **spenta**: la si modifica e poi la si attiva (due regole uguali
+  attive si farebbero concorrenza);
 - 🗑 — elimina la regola: le milestone che aveva messo **restano dove sono** e da
   quel momento si spostano a mano.
 
@@ -992,7 +998,8 @@ Come funzionano:
   mai ore: se la fine calcolata cade prima di qualche effort, quelle celle
   restano (fuori dal periodo).
 - **Vince la più specifica** — se più regole posizionano la stessa milestone in
-  un progetto, vale quella dell'ambito più ristretto: **progetto**, poi
+  un progetto, vale quella dell'ambito più ristretto: **progetti scelti** (uno o
+  più, contano allo stesso modo), poi
   **categoria**, poi **priorità**, poi **tutti**; a parità, la creata prima.
 - **Cicli** — se una regola dipende da sé stessa (es. Collaudo dal Rilascio e
   Rilascio dal Collaudo) resta **ferma** ed è segnalata «⚠ ciclo», come quelle che
@@ -1070,7 +1077,8 @@ settimane = +2
 ```
 
 - `attiva`: `sì` / `no`; `settimane`: un numero (anche `-1`, `+2`);
-- `progetti`: `tutti`, `categoria "…"`, `priorità "…"`, `progetto "ABC"`;
+- `progetti`: `tutti`, `categoria "…"`, `priorità "…"`, `progetto "ABC"`,
+  `progetti "ABC", "XYZ"` (più progetti, separati da virgole);
 - `cosa`: `milestone "…"`, `inizio progetto`, `fine progetto`, `aggiungi dev
   "…"`, `ore dev "…"`, `avviso <punto> non prima di`, `avviso <punto> non dopo`;
 - `ancora` e `<punto>`: `fine dev "…"`, `inizio dev "…"`, `se c'è il dev "…"`,

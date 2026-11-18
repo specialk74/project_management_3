@@ -138,33 +138,46 @@ pub enum Anchor {
 }
 
 /// A quali progetti vale la regola.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum RuleScope {
     All,
     Category(CategoryId),
     Priority(PriorityId),
+    /// Un solo progetto (le regole scritte prima della scelta multipla).
     Project(ProjectId),
+    /// I progetti scelti (uno o più).
+    Projects(Vec<ProjectId>),
 }
 
 impl RuleScope {
     /// Il progetto è nell'ambito?
-    pub fn matches(self, app: &App, proj: ProjectId) -> bool {
+    pub fn matches(&self, app: &App, proj: ProjectId) -> bool {
         match self {
             RuleScope::All => true,
-            RuleScope::Category(c) => app.projects.get_category(proj) == Some(c),
-            RuleScope::Priority(p) => app.projects.get_priority(proj) == Some(p),
-            RuleScope::Project(p) => p == proj,
+            RuleScope::Category(c) => app.projects.get_category(proj) == Some(*c),
+            RuleScope::Priority(p) => app.projects.get_priority(proj) == Some(*p),
+            RuleScope::Project(p) => *p == proj,
+            RuleScope::Projects(ps) => ps.contains(&proj),
         }
     }
 
-    /// Specificità: vince il valore più alto (progetto > categoria >
+    /// Specificità: vince il valore più alto (progetti scelti > categoria >
     /// priorità > tutti).
-    pub fn rank(self) -> u8 {
+    pub fn rank(&self) -> u8 {
         match self {
             RuleScope::All => 0,
             RuleScope::Priority(_) => 1,
             RuleScope::Category(_) => 2,
-            RuleScope::Project(_) => 3,
+            RuleScope::Project(_) | RuleScope::Projects(_) => 3,
+        }
+    }
+
+    /// I progetti scelti (`Project` / `Projects`); vuoto per gli altri ambiti.
+    pub fn projects(&self) -> Vec<ProjectId> {
+        match self {
+            RuleScope::Project(p) => vec![*p],
+            RuleScope::Projects(ps) => ps.clone(),
+            _ => Vec::new(),
         }
     }
 }
@@ -876,7 +889,7 @@ pub fn diagnose(app: &App, when: &str) -> String {
             target_text(app, r.target),
             anchor_text(app, r.anchor),
             r.offset_weeks,
-            scope_text(app, r.scope)
+            scope_text(app, &r.scope)
         ));
         if !st.missing.is_empty() {
             out.push_str(&format!("   ⚠ inesistente: {} — la regola non agisce.\n", st.missing.join(", ")));
@@ -961,10 +974,14 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => st.missing.push("milestone di partenza"),
         _ => {}
     }
-    match r.scope {
-        RuleScope::Category(c) if app.categories.get_name(c).is_none() => st.missing.push("categoria"),
-        RuleScope::Priority(p) if app.priorities.get_name(p).is_none() => st.missing.push("priorità"),
-        RuleScope::Project(p) if app.projects.get(p).is_none() => st.missing.push("progetto"),
+    match &r.scope {
+        RuleScope::Category(c) if app.categories.get_name(*c).is_none() => st.missing.push("categoria"),
+        RuleScope::Priority(p) if app.priorities.get_name(*p).is_none() => st.missing.push("priorità"),
+        RuleScope::Project(_) | RuleScope::Projects(_)
+            if r.scope.projects().iter().all(|p| app.projects.get(*p).is_none()) =>
+        {
+            st.missing.push("progetto")
+        }
         _ => {}
     }
     match r.target.kind() {
@@ -1376,5 +1393,30 @@ mod tests {
         assert!(log.contains("   - XYZ: ancora mancante (il dev Frontend non è nel progetto)"), "{log}");
         assert!(log.contains("   fuori ambito: 1 progetti (ABC)"), "{log}");
         let _ = scoped;
+    }
+
+    /// Ambito con più progetti: vale in quelli scelti, specifico come un
+    /// progetto solo (batte categoria / priorità / tutti).
+    #[test]
+    fn a_rule_can_cover_several_chosen_projects() {
+        let mut f = fx();
+        let w = f.app.workers.list()[0].0;
+        let q = f.app.projects.add("y", Some("XYZ"), None);
+        let z = f.app.projects.add("z", Some("ZZZ"), None);
+        for p in [q, z] {
+            f.app.projects.add_dev(p, f.be);
+            f.app.projects.add_effort(p, f.be, WeekId(f.base), w, Effort(8));
+        }
+        f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 9));
+        let r = f.app.rules.add(rule(RuleScope::Projects(vec![f.p, q]), f.collaudo, Anchor::DevEnd(f.be), 1));
+        assert!(RuleScope::Projects(vec![f.p, q]).matches(&f.app, q));
+        assert!(!RuleScope::Projects(vec![f.p, q]).matches(&f.app, z));
+        assert_eq!(RuleScope::Projects(vec![f.p]).rank(), RuleScope::Project(f.p).rank());
+        apply(&mut f.app);
+        assert_eq!(governing_rule(&f.app, q, Target::Milestone(f.collaudo)), Some(r));
+        assert_eq!(at(&f.app, f.p, f.collaudo), Some(WeekId(f.base + 21 + 7)));
+        assert_eq!(at(&f.app, q, f.collaudo), Some(WeekId(f.base + 7)));
+        assert_eq!(at(&f.app, z, f.collaudo), Some(WeekId(f.base + 63)), "ZZZ: la regola per tutti");
+        assert_eq!(status(&f.app, r).placed, 2);
     }
 }

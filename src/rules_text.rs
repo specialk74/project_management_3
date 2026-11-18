@@ -17,7 +17,8 @@
 //!
 //! Valori (parole chiave in minuscolo, nomi fra virgolette, `\"` per una
 //! virgoletta nel nome):
-//! - `progetti`: `tutti` · `categoria "X"` · `priorità "X"` · `progetto "ABC"`
+//! - `progetti`: `tutti` · `categoria "X"` · `priorità "X"` · `progetto "ABC"` ·
+//!   `progetti "ABC", "XYZ"`
 //! - `cosa`: `milestone "X"` · `inizio progetto` · `fine progetto` ·
 //!   `aggiungi dev "X"` · `ore dev "X"` · `avviso <punto> non prima di` ·
 //!   `avviso <punto> non dopo`
@@ -81,12 +82,16 @@ pub(crate) fn target_text(app: &App, t: Target) -> String {
     }
 }
 
-pub(crate) fn scope_text(app: &App, s: RuleScope) -> String {
+pub(crate) fn scope_text(app: &App, s: &RuleScope) -> String {
     match s {
         RuleScope::All => "tutti".into(),
-        RuleScope::Category(c) => format!("categoria {}", quote(app.categories.get_name(c).unwrap_or("?"))),
-        RuleScope::Priority(p) => format!("priorità {}", quote(app.priorities.get_name(p).unwrap_or("?"))),
-        RuleScope::Project(p) => format!("progetto {}", quote(&project_name(app, p))),
+        RuleScope::Category(c) => format!("categoria {}", quote(app.categories.get_name(*c).unwrap_or("?"))),
+        RuleScope::Priority(p) => format!("priorità {}", quote(app.priorities.get_name(*p).unwrap_or("?"))),
+        RuleScope::Project(p) => format!("progetto {}", quote(&project_name(app, *p))),
+        RuleScope::Projects(ps) => {
+            let names: Vec<String> = ps.iter().map(|p| quote(&project_name(app, *p))).collect();
+            format!("progetti {}", names.join(", "))
+        }
     }
 }
 
@@ -103,7 +108,7 @@ pub fn export_rules(app: &App) -> String {
             "\n[regola]\nnome = {}\nattiva = {}\nprogetti = {}\ncosa = {}\nancora = {}\nsettimane = {plus}{}\n",
             r.name.replace('\n', " "),
             if r.enabled { "sì" } else { "no" },
-            scope_text(app, r.scope),
+            scope_text(app, &r.scope),
             target_text(app, r.target),
             anchor_text(app, r.anchor),
             r.offset_weeks
@@ -269,6 +274,26 @@ fn parse_scope(app: &App, s: &str) -> Result<RuleScope, String> {
             .find(|(_, n)| same(n, &name))
             .map(|(p, _)| RuleScope::Priority(p))
             .ok_or_else(|| format!("priorità «{name}» inesistente"));
+    }
+    if let Some(r) = strip(s, "progetti") {
+        // `progetti "ABC", "XYZ"`.
+        let mut list = Vec::new();
+        let mut rest = r;
+        loop {
+            let (name, after) = quoted(rest)?;
+            let p = find_project(app, &name)?;
+            if !list.contains(&p) {
+                list.push(p);
+            }
+            let after = after.trim_start();
+            if after.is_empty() {
+                break;
+            }
+            rest = after
+                .strip_prefix(',')
+                .ok_or_else(|| format!("attesa una virgola fra i progetti: «{}»", after.trim()))?;
+        }
+        return Ok(RuleScope::Projects(list));
     }
     if let Some(r) = strip(s, "progetto") {
         return Ok(RuleScope::Project(find_project(app, &only_quoted(r)?)?));
@@ -491,6 +516,38 @@ colore = rosso
             "riga 23: chiave sconosciuta «colore»",
         ] {
             assert!(e.contains(part), "manca «{part}» in:\n{e}");
+        }
+    }
+
+    /// Più progetti: `progetti "ABC", "XYZ"` va e torna; virgola mancante o
+    /// progetto inesistente sono errori.
+    #[test]
+    fn several_projects_round_trip_and_bad_lists_are_reported() {
+        let mut app = App::new();
+        let p = app.projects.add("x", Some("ABC"), None);
+        let q = app.projects.add("y", Some("XYZ"), None);
+        app.rules.add(Rule {
+            name: "Due".into(),
+            enabled: true,
+            scope: RuleScope::Projects(vec![p, q]),
+            target: Target::ProjectEnd,
+            anchor: Anchor::LastEffort,
+            offset_weeks: 1,
+        });
+        let text = export_rules(&app);
+        assert!(text.contains("progetti = progetti \"ABC\", \"XYZ\""), "{text}");
+        let mut other = App::new();
+        other.projects.add("x", Some("ABC"), None);
+        other.projects.add("y", Some("XYZ"), None);
+        assert_eq!(import_rules(&mut other, &text).added, 1);
+        assert_eq!(other.rules.list()[0].1, app.rules.list()[0].1);
+        for (bad, err) in [
+            ("progetti \"ABC\" \"XYZ\"", "attesa una virgola"),
+            ("progetti \"ABC\", \"NOPE\"", "progetto «NOPE» inesistente"),
+        ] {
+            let t = format!("[regola]\nprogetti = {bad}\ncosa = fine progetto\nancora = ultimo effort\n");
+            let rep = import_rules(&mut other, &t);
+            assert!(rep.errors.iter().any(|e| e.contains(err)), "{bad}: {:?}", rep.errors);
         }
     }
 }

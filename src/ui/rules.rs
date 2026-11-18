@@ -45,18 +45,58 @@ fn choice_combo<T: PartialEq + Copy>(
     picked
 }
 
-/// Scelte dell'ambito: tutti, ogni categoria, ogni priorità, ogni progetto.
-fn scope_options(app: &App) -> Vec<(RuleScope, String)> {
-    let mut out = vec![(RuleScope::All, "Tutti i progetti".to_string())];
-    out.extend(app.categories.list().into_iter().map(|(c, n)| (RuleScope::Category(c), format!("Categoria: {n}"))));
-    out.extend(app.priorities.list().into_iter().map(|(p, n)| (RuleScope::Priority(p), format!("Priorità: {n}"))));
-    out.extend(
-        app.projects
-            .list()
-            .into_iter()
-            .map(|(p, _)| (RuleScope::Project(p), format!("Progetto: {}", project_label(app, p)))),
-    );
-    out
+/// Testo dell'ambito nella combo: «Tutti i progetti», «Categoria: …»,
+/// «Priorità: …», «Progetto: ABC» o «Progetti: ABC, XYZ».
+fn scope_label(app: &App, scope: &RuleScope) -> String {
+    match scope {
+        RuleScope::All => "Tutti i progetti".into(),
+        RuleScope::Category(c) => format!("Categoria: {}", app.categories.get_name(*c).unwrap_or("⚠ inesistente")),
+        RuleScope::Priority(p) => format!("Priorità: {}", app.priorities.get_name(*p).unwrap_or("⚠ inesistente")),
+        RuleScope::Project(_) | RuleScope::Projects(_) => {
+            let ps = scope.projects();
+            let names: Vec<String> = ps.iter().map(|p| project_label(app, *p)).collect();
+            if ps.len() == 1 { format!("Progetto: {}", names[0]) } else { format!("Progetti: {}", names.join(", ")) }
+        }
+    }
+}
+
+/// Combo dell'ambito: in cima le scelte singole (tutti, una categoria, una
+/// priorità), sotto una spunta per progetto (uno o più: togliendo l'ultimo
+/// si torna a «tutti»). Ritorna il nuovo ambito se cambiato.
+fn scope_combo(ui: &mut egui::Ui, app: &App, salt: impl std::hash::Hash + std::fmt::Debug, scope: &RuleScope) -> Option<RuleScope> {
+    let mut picked = None;
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(scope_label(app, scope))
+        .width(RULE_SCOPE_W)
+        .height(400.0)
+        .show_ui(ui, |ui| {
+            let mut singles = vec![RuleScope::All];
+            singles.extend(app.categories.list().into_iter().map(|(c, _)| RuleScope::Category(c)));
+            singles.extend(app.priorities.list().into_iter().map(|(p, _)| RuleScope::Priority(p)));
+            for s in singles {
+                if ui.selectable_label(*scope == s, scope_label(app, &s)).clicked() && *scope != s {
+                    picked = Some(s);
+                }
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("Progetti (uno o più):").small().color(text_dim()));
+            let chosen = scope.projects();
+            for (p, _) in app.projects.list() {
+                let mut on = chosen.contains(&p);
+                if ui.checkbox(&mut on, project_label(app, p)).changed() {
+                    // Nell'ordine dei progetti.
+                    let set: Vec<ProjectId> = app
+                        .projects
+                        .list()
+                        .into_iter()
+                        .map(|(x, _)| x)
+                        .filter(|x| if *x == p { on } else { chosen.contains(x) })
+                        .collect();
+                    picked = Some(if set.is_empty() { RuleScope::All } else { RuleScope::Projects(set) });
+                }
+            }
+        });
+    picked
 }
 
 /// Scelte della milestone bersaglio: tutte (quelle di un progetto con la sua
@@ -138,7 +178,10 @@ fn anchor_options(app: &App, target: Target) -> Vec<(Anchor, String)> {
 /// progetto è sempre quel progetto (altrove non si può collocare), altrimenti
 /// resta `scope`.
 fn auto_scope(app: &App, target: Target, scope: RuleScope) -> RuleScope {
-    target.milestone().and_then(|m| app.milestones.owner(m)).map_or(scope, RuleScope::Project)
+    match target.milestone().and_then(|m| app.milestones.owner(m)) {
+        Some(o) if scope.projects() != [o] => RuleScope::Projects(vec![o]),
+        _ => scope,
+    }
 }
 
 /// Regola nuova: spenta (le scelte di partenza non devono toccare i progetti
@@ -157,6 +200,17 @@ pub(crate) fn new_rule(app: &App) -> Rule {
         target,
         anchor,
         offset_weeks: 0,
+    }
+}
+
+/// Copia di una regola per «Clona»: stessi valori, nome «… (copia)» e
+/// **spenta** (due regole uguali attive si farebbero concorrenza: la copia si
+/// modifica e poi si attiva).
+pub(crate) fn cloned_rule(app: &App, id: RuleId, rule: &Rule) -> Rule {
+    Rule {
+        name: format!("{} (copia)", crate::rules::rule_label(app, id)),
+        enabled: false,
+        ..rule.clone()
     }
 }
 
@@ -295,7 +349,6 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 ui.label(egui::RichText::new("Nessuna regola.").color(text_dim()));
                 return;
             }
-            let scopes = scope_options(app);
 
             egui::ScrollArea::both()
                 .scroll_source(drag_scroll())
@@ -329,7 +382,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             // l'ambito è quel progetto e non si sceglie.
                             let own = r.target.milestone().and_then(|m| app.milestones.owner(m)).is_some();
                             let scope = ui.add_enabled_ui(!own, |ui| {
-                                choice_combo(ui, ("rule_scope", id), RULE_SCOPE_W, r.scope, &scopes)
+                                scope_combo(ui, app, ("rule_scope", id), &r.scope)
                             });
                             if own {
                                 scope.response.on_hover_text(
@@ -353,7 +406,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                     r.target = Target::Check(p, c);
                                 }
                             });
-                            r.scope = auto_scope(app, r.target, r.scope);
+                            r.scope = auto_scope(app, r.target, r.scope.clone());
                             // Ancore adatte al bersaglio: se il bersaglio
                             // cambia tipo, l'ancora passa alla prima adatta.
                             let anchors = anchor_options(app, r.target);
@@ -389,9 +442,18 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                     }
                                 }
                             });
-                            if ui.button("🗑").on_hover_text("Elimina la regola (le milestone restano dove sono).").clicked() {
-                                actions.push(Action::DeleteRule(id));
-                            }
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button("Clona")
+                                    .on_hover_text("Aggiunge in fondo una copia della regola (spenta, da modificare e poi attivare).")
+                                    .clicked()
+                                {
+                                    actions.push(Action::AddRule(cloned_rule(app, id, &rule)));
+                                }
+                                if ui.button("🗑").on_hover_text("Elimina la regola (le milestone restano dove sono).").clicked() {
+                                    actions.push(Action::DeleteRule(id));
+                                }
+                            });
                             ui.end_row();
                             if r != rule {
                                 actions.push(Action::UpdateRule(id, r));

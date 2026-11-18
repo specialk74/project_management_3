@@ -1317,7 +1317,18 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   toast + `UiState.rules_import_errors` → `rules_import_report_window`) /
   `ExportRulesLog` (`save_export_dialog`). Tests in `rules_text.rs`,
   `diagnosis_explains_why_a_rule_does_or_does_not_act`,
-  `rules_text_import_reports_and_buttons_send_actions`. **Always aligned**: `rules::apply(&mut app)` runs inside
+  `rules_text_import_reports_and_buttons_send_actions`.
+  **Several projects per rule**: `RuleScope::Projects(Vec<ProjectId>)` (old
+  `Project(p)` still loads and works; `RuleScope` is no longer `Copy`;
+  `matches`/`rank` take `&self`, rank 3 like `Project`; `projects()` lists
+  them). Window: custom `scope_combo` (single choices + one checkbox per
+  project; unticking the last → `All`), `auto_scope` forces
+  `Projects(vec![owner])` for project-owned milestones; text form `progetti
+  "ABC", "XYZ"`. **Clona** button → `cloned_rule` (same values, «… (copia)»,
+  disabled) → `Action::AddRule`. Tests
+  `a_rule_can_cover_several_chosen_projects`,
+  `several_projects_round_trip_and_bad_lists_are_reported`,
+  `rules_window_picks_several_projects_and_clones_a_rule`. **Always aligned**: `rules::apply(&mut app)` runs inside
   `PjmApp::mark_changed` (so after every mutating action, before the undo
   snapshot — Undo reverts the effect too) and in `reset_undo` (file opened /
   reloaded / merged: `changed = true` if it moved something). Per project,
