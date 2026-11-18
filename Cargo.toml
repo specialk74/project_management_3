@@ -16,7 +16,7 @@ eframe = "0.37.0"
 egui = { version = "0.37.0", features = ["monochrome_emoji_fonts"] }
 egui_extras = { version = "0.37.0", features = ["datepicker"] }
 jiff = "0.2.46"
-printpdf = "0.12.9"
+printpdf = "0.12.11"
 # Già presente fra le dipendenze di egui (stessa versione): serve per misurare
 # la larghezza vera dei testi nel PDF della matrice (celle strette).
 ttf-parser = "0.25.1"

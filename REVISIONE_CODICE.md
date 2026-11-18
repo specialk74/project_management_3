@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~39.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 385 verdi |
+| Test | 275 verdi | 392 verdi |
 
 ## Ordine consigliato
 
@@ -525,3 +525,9 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
 - **2026-11-17** — A13: aggiunta l'analisi d'impatto (volume, formati, tipi,
   giorni dall'epoca, «oggi» locale, nessun cambio di formato dei file). Ancora
   da approvare.
+- **2026-11-18** — `cargo update`: printpdf 0.12.9 → 0.12.11 (con lopdf 0.44 →
+  0.47 e azul-* 0.0.18), bytes, smallvec, ucd-trie; minimo di `printpdf` in
+  `Cargo.toml` allineato a 0.12.11. `cargo audit`: nessuna vulnerabilità, gli
+  stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi A13). jiff resta
+  0.2.46 (disponibile la 1.0.1, bloccata da egui_extras 0.37). Build e clippy 0
+  warning, 392 test verdi. Da provare a mano: gli export PDF.
