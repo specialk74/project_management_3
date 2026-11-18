@@ -3807,7 +3807,7 @@ fn rules_apply_on_every_change_and_undo_with_it() {
         name: "Collaudo".into(),
         enabled: false,
         scope: RuleScope::All,
-        target: collaudo,
+        target: crate::rules::Target::Milestone(collaudo),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
     };
@@ -3847,7 +3847,7 @@ fn opening_a_file_aligns_it_to_the_rules() {
         name: String::new(),
         enabled: true,
         scope: RuleScope::Project(p),
-        target: rilascio,
+        target: crate::rules::Target::Milestone(rilascio),
         anchor: Anchor::ProjectEnd,
         offset_weeks: -1,
     });
@@ -3887,7 +3887,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
     match actions.as_slice() {
         [Action::AddRule(r)] => {
             assert!(!r.enabled, "nasce spenta");
-            assert_eq!((r.target, r.anchor, r.scope), (collaudo, Anchor::DevEnd(be), RuleScope::All));
+            assert_eq!((r.target, r.anchor, r.scope), (crate::rules::Target::Milestone(collaudo), Anchor::DevEnd(be), RuleScope::All));
         }
         _ => panic!("attesa una AddRule"),
     }
@@ -3895,7 +3895,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
         name: "Collaudo dopo il Backend".into(),
         enabled: true,
         scope: RuleScope::All,
-        target: collaudo,
+        target: crate::rules::Target::Milestone(collaudo),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
     });
@@ -3922,7 +3922,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
         name: String::new(),
         enabled: true,
         scope: RuleScope::All,
-        target: own,
+        target: crate::rules::Target::Milestone(own),
         anchor: Anchor::ProjectEnd,
         offset_weeks: 0,
     });
@@ -3945,5 +3945,123 @@ fn project_milestone_rules_get_the_project_as_scope() {
     let mut only = App::new();
     let q = only.projects.add("y", Some("XYZ"), None);
     only.milestones.add_owned("Solo XYZ", Default::default(), Vec::new(), Some(q));
-    assert_eq!(new_rule(&only).map(|r| r.scope), Some(RuleScope::Project(q)));
+    assert_eq!(new_rule(&only).scope, RuleScope::Project(q));
+}
+
+/// Il nome della regola ha la sua larghezza (`RULE_NAME_W`): la colonna
+/// «Nome» è larga almeno tanto, anche dopo più frame.
+#[test]
+fn rule_name_column_is_wide() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    app.rules.add(Rule {
+        name: "Nome".into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: Target::ProjectEnd,
+        anchor: Anchor::LastEffort,
+        offset_weeks: 0,
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1600.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..3 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let out = out.unwrap();
+    let x = |t: &str| text_pos(&out, t).unwrap_or_else(|| panic!("manca «{t}»")).x;
+    let width = x("Progetti") - x("Nome");
+    assert!(width >= RULE_NAME_W, "colonna Nome larga {width}");
+}
+
+/// «Applica ora…» di una regola «Ore del dev»: l'anteprima elenca lo
+/// spostamento e «Sposta le ore» manda `ApplyRuleNow`, che sposta le ore e si
+/// annulla con Annulla.
+#[test]
+fn rule_preview_lists_the_moves_and_applies_them() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let test = app.devs.add("Test");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.projects.add_dev(p, test);
+    let base = 20004;
+    app.projects.add_effort(p, be, WeekId(base + 7), w, Effort(8));
+    app.projects.add_effort(p, test, WeekId(base), w, Effort(4));
+    let id = app.rules.add(Rule {
+        name: "Test dopo il Backend".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::DevStart(test),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 1,
+    });
+    let mut state = UiState { rule_preview: Some(id), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rule_preview_window(ui.ctx(), &app, &mut state, &mut actions)));
+    }
+    let out = out.unwrap();
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "+2 sett."), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "ABC"), "{texts:?}");
+    let pos = text_pos(&out, "Sposta le ore").expect("pulsante");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| rule_preview_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(matches!(actions.as_slice(), [Action::ApplyRuleNow(r)] if *r == id));
+    assert!(state.rule_preview.is_none(), "anteprima chiusa");
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    let first = |pjm: &PjmApp| pjm.app.projects.get_single_dev(p, test).unwrap().effort_span().map(|s| s.0);
+    pjm.apply(Action::ApplyRuleNow(id));
+    pjm.record_undo();
+    assert_eq!(first(&pjm), Some(WeekId(base + 14)));
+    pjm.apply(Action::Undo);
+    assert_eq!(first(&pjm), Some(WeekId(base)));
+}
+
+/// Un dev richiesto da una regola «Aggiungi dev» non si toglie dalla
+/// finestra dei dev del progetto (il pulsante è spento).
+#[test]
+fn a_dev_required_by_a_rule_cannot_be_removed() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let be = app.devs.add("Backend");
+    let test = app.devs.add("Test");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.rules.add(Rule {
+        name: String::new(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::AddDev(test),
+        anchor: Anchor::DevPresent(be),
+        offset_weeks: 0,
+    });
+    crate::rules::apply(&mut app);
+    assert!(app.projects.list_devs(p).contains(&test));
+    let mut state = UiState { dev_manage: Some(p), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(900.0, 700.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| dev_manage_window(ui.ctx(), &app, &mut state, &mut actions)));
+    }
+    let pos = text_pos(&out.unwrap(), "Test").expect("dev Test");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| dev_manage_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(actions.is_empty(), "nessuna rimozione: {}", actions.len());
 }

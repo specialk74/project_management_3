@@ -91,11 +91,17 @@ non il tempo di digitazione.
      finestra «Regole…», blocco nel menù della griglia, test e manuale.~~
      _(fatta 2026-11-18: `src/rules.rs` + `src/ui/rules.rs`, Aggiungi ▸ Regole
      di automazione…; semantica confermata dall'utente)_
-  2. Date del progetto come bersaglio (es. «fine progetto = ultima milestone +
-     1 settimana»).
-  3. Dev ed effort (es. «se c'è il dev *Backend*, aggiungi il dev *Test*»; «il dev
+  2. ~~Date del progetto come bersaglio (es. «fine progetto = ultima milestone +
+     1 settimana»).~~ _(fatta 2026-11-18: bersagli «Inizio / Fine progetto
+     (data)», nuove ancore primo / ultimo effort e prima / ultima milestone;
+     senza ancora la data resta com'è; date governate non modificabili a mano)_
+  3. ~~Dev ed effort (es. «se c'è il dev *Backend*, aggiungi il dev *Test*»; «il dev
      *Test* parte 2 settimane dopo la fine del *Backend*»): spostare effort è
-     delicato, va pensata a parte.
+     delicato, va pensata a parte.~~ _(fatta 2026-11-18, scelte dell'utente:
+     «Aggiungi dev B se c'è il dev A» — A nel progetto anche senza ore, B
+     aggiunto sempre e mai tolto; «Ore del dev B» spostate in blocco **solo su
+     comando** con anteprima, senza perdere ore; niente regole sul pianificato
+     per ora)_
   4. Avvisi: regole che non cambiano nulla ma segnalano (toast, colore), es.
      «*Rilascio* prima della fine del dev *Backend*».
 

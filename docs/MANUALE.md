@@ -931,13 +931,18 @@ quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
 
 ### Regole di automazione (Aggiungi ▸ Regole di automazione…)
 
-Una regola mette **da sola** una milestone nei progetti, contando le settimane
-da un punto di partenza (l'**ancora**), e la tiene sempre al suo posto. Esempi:
+Una regola mette **da sola** una milestone, oppure la **data di inizio** o di
+**fine** del progetto, contando le settimane da un punto di partenza
+(l'**ancora**), e la tiene sempre al suo posto. Esempi:
 
 - «**Collaudo** = **Fine dev Backend** + 2» — la milestone Collaudo va 2
   settimane dopo l'ultima settimana con ore del dev Backend;
 - «**Rilascio** = **Milestone Collaudo** + 8» — il Rilascio va 8 settimane dopo
-  il Collaudo (le regole si possono concatenare).
+  il Collaudo (le regole si possono concatenare);
+- «**Fine progetto (data)** = **Ultima milestone** + 1» — la fine del progetto
+  è sempre una settimana dopo la sua ultima milestone;
+- «**Inizio progetto (data)** = **Primo effort (tutti i dev)**» — il progetto
+  inizia con la prima settimana in cui qualcuno ci lavora.
 
 Nella finestra ogni regola è una riga:
 
@@ -947,13 +952,17 @@ Nella finestra ogni regola è una riga:
   annulla);
 - **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
   una **priorità** o **un solo progetto**;
-- **Milestone** — quella da posizionare. Le milestone di un solo progetto sono
+- **Cosa** — la milestone da posizionare, oppure **Inizio progetto (data)** /
+  **Fine progetto (data)** (in cima all'elenco), oppure — in fondo — **Aggiungi
+  dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto). Le milestone di un solo progetto sono
   nell'elenco con la tripletta dopo il nome (es. «Demo interna · ABC»): valgono
   solo in quel progetto, quindi scegliendone una l'ambito diventa **da solo**
   «Progetto: ABC» e non si può cambiare;
 - **Ancora** — da dove si conta: **fine** o **inizio di un dev** (ultima o prima
-  settimana con ore > 0), **inizio** o **fine del progetto**, oppure **un'altra
-  milestone** (dove è collocata nel progetto);
+  settimana con ore > 0), **primo** o **ultimo effort** di tutti i dev,
+  **inizio** o **fine del progetto**, **prima** o **ultima milestone** del
+  progetto (senza contare quella che la regola sta posizionando), oppure
+  **un'altra milestone** (dove è collocata nel progetto);
 - **Settimane** — quante dopo (+) o prima (−) dell'ancora;
 - **Stato** — in quanti progetti la regola ha collocato la milestone, oppure un
   avviso: «⚠ ciclo», «⚠ … inesistente», «spenta»;
@@ -966,14 +975,21 @@ Come funzionano:
   all'**apertura del file** (o quando arrivano le modifiche di un collega): se il
   Backend lavora una settimana in più, il Collaudo si sposta da solo, e con lui il
   Rilascio. Un **Annulla** annulla la modifica insieme al suo effetto sulle
-  milestone.
+  milestone e sulle date.
 - **La milestone c'è solo se c'è l'ancora** — se il dev non ha ore (o il
   progetto non ha la data di fine, o la milestone di partenza non c'è), la
-  milestone viene tolta; ricompare quando l'ancora torna.
+  milestone viene tolta; ricompare quando l'ancora torna. Una **data** del
+  progetto invece, senza ancora, **resta com'è** (non viene cancellata).
 - **Non si sposta a mano** — nel menù della griglia («Aggiungi milestone qui»)
   una milestone governata da una regola è disattivata, sia per collocarla sia
   per toglierla, e il suggerimento dice quale regola la governa. Anche «Sposta» e
   «Cancella tutte le milestone» non la spostano: la regola la rimette a posto.
+  Allo stesso modo una **data** governata non si modifica: nella colonna di
+  sinistra il tasto destro su «Inizio» / «Fine» non apre la modifica (il
+  suggerimento dice quale regola la governa) e nel menù della griglia «Sposta /
+  Imposta inizio|fine progetto qua» è disattivato. Le regole non cancellano
+  mai ore: se la fine calcolata cade prima di qualche effort, quelle celle
+  restano (fuori dal periodo).
 - **Vince la più specifica** — se più regole posizionano la stessa milestone in
   un progetto, vale quella dell'ambito più ristretto: **progetto**, poi
   **categoria**, poi **priorità**, poi **tutti**; a parità, la creata prima.
@@ -985,6 +1001,28 @@ Come funzionano:
   restano ma non agiscono e sono segnalate (anche fra i problemi del file).
 - Le regole sono **salvate nel file** (quindi condivise con i colleghi via git)
   e valgono per i progetti aperti e chiusi.
+
+**Dev ed effort** — due tipi di regola in più:
+
+- «**Aggiungi dev Test** se **Se c'è il dev Backend**» — in ogni progetto
+  dell'ambito in cui c'è il dev Backend (basta che sia nel progetto, anche senza
+  ore) viene aggiunto il dev Test, subito e ogni volta che serve (anche a catena:
+  una regola può aggiungere il dev che fa scattare un'altra). Il dev aggiunto
+  **non viene mai tolto**, nemmeno se poi il Backend se ne va. Finché la
+  condizione vale, nella finestra «Dev del progetto» il dev Test è disattivato
+  (il suggerimento dice quale regola lo richiede). Qui le settimane non
+  contano.
+- «**Ore del dev Test (su comando)** = **Fine dev Backend** + 2» — sposta **in
+  blocco** tutte le ore del dev Test (stessi worker, stessa forma) perché la sua
+  prima settimana sia 2 settimane dopo la fine del Backend. Questa regola **non
+  agisce da sola**: nello stato dice quanti progetti sono «da spostare» (o
+  «allineata») e il pulsante **Applica ora…** apre l'anteprima con, per ogni
+  progetto, la prima settimana prima → dopo e lo spostamento in settimane;
+  **Sposta le ore** lo fa (e un Annulla lo disfa). Nessuna ora si perde: se il
+  blocco finisce fuori dal periodo del progetto le ore restano e l'anteprima lo
+  segnala con «⚠ fuori dal periodo». L'ancora non può essere il dev stesso né
+  «primo / ultimo effort» (che lo comprendono): ogni volta lo sposterebbe di
+  nuovo.
 
 ---
 

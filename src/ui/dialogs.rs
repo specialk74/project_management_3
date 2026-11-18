@@ -323,6 +323,9 @@ pub(crate) fn dev_manage_window(
         return;
     };
     let in_proj = app.projects.list_devs(proj);
+    // Dev che una regola «Aggiungi dev» vuole nel progetto: non si tolgono
+    // (la regola li rimetterebbe subito).
+    let required = crate::rules::required_devs(app, proj);
     let mut open = true;
     let mut close = false;
 
@@ -346,11 +349,20 @@ pub(crate) fn dev_manage_window(
                     Color32::from_gray(0x88)
                 };
                 let fill = if is_in { col } else { Color32::TRANSPARENT };
-                let resp = ui.add(
+                let rule = required.get(&dev).filter(|_| is_in);
+                let resp = ui.add_enabled(
+                    rule.is_none(),
                     egui::Button::new(egui::RichText::new(&name).color(txt_col).monospace())
                         .fill(fill)
                         .min_size(Vec2::new(160.0, 18.0)),
                 );
+                let resp = match rule {
+                    Some(r) => resp.on_disabled_hover_text(format!(
+                        "Richiesto dalla regola «{}»: non si toglie finché la regola vale.",
+                        crate::rules::rule_label(app, *r)
+                    )),
+                    None => resp,
+                };
                 if resp.clicked() {
                     if is_in {
                         let has_data = app

@@ -663,6 +663,21 @@ impl Project {
         }
     }
 
+    /// Sposta **tutte** le ore del dev di `delta_days` giorni (multiplo di 7),
+    /// senza perdere nulla anche fuori dal periodo del progetto (regole di
+    /// automazione, «Applica ora…»). `false` se non c'è niente da spostare.
+    pub fn shift_dev(&mut self, dev: DevId, delta_days: i64) -> bool {
+        let Some(sd) = self.dev_id.get_mut(&dev) else {
+            return false;
+        };
+        let weeks = sd.get_weeks();
+        if weeks.is_empty() || delta_days == 0 {
+            return false;
+        }
+        sd.shift_weeks(&weeks, delta_days, None, None);
+        true
+    }
+
     /// Milestone collocate nella settimana indicata (ordinate per id).
     pub fn milestones_at_week(&self, week: WeekId) -> Vec<MilestoneId> {
         let mut v: Vec<MilestoneId> = self

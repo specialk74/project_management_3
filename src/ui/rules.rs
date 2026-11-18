@@ -6,13 +6,13 @@
 //! `DeleteRule`); le regole si riapplicano in `mark_changed`.
 
 use super::*;
-use crate::rules::{Anchor, Rule, RuleId, RuleScope};
+use crate::rules::{Anchor, Rule, RuleId, RuleScope, Target};
 
 /// Larghezze delle colonne (combo).
-const RULE_NAME_W: f32 = 300.0;
+pub(crate) const RULE_NAME_W: f32 = 300.0;
 const RULE_SCOPE_W: f32 = 170.0;
-const RULE_TARGET_W: f32 = 150.0;
-const RULE_ANCHOR_W: f32 = 170.0;
+const RULE_TARGET_W: f32 = 220.0;
+const RULE_ANCHOR_W: f32 = 200.0;
 
 /// Combo con scelte `(valore, etichetta)`: ritorna la nuova scelta se
 /// cambiata. Un valore che non è fra le scelte (riferimento eliminato) si
@@ -73,48 +73,83 @@ fn milestone_options(app: &App) -> Vec<(MilestoneId, String)> {
         .collect()
 }
 
-/// Scelte dell'ancora: fine / inizio di ogni dev, date del progetto, ogni
-/// milestone.
-fn anchor_options(app: &App) -> Vec<(Anchor, String)> {
+/// Scelte del bersaglio: le due date del progetto, le milestone, poi per
+/// ogni dev «Aggiungi dev» e lo spostamento delle sue ore (su comando).
+fn target_options(app: &App) -> Vec<(Target, String)> {
+    let mut out = vec![
+        (Target::ProjectStart, "Inizio progetto (data)".to_string()),
+        (Target::ProjectEnd, "Fine progetto (data)".to_string()),
+    ];
+    out.extend(milestone_options(app).into_iter().map(|(m, n)| (Target::Milestone(m), n)));
+    for (d, n) in app.devs.list() {
+        out.push((Target::AddDev(d), format!("Aggiungi dev {n}")));
+    }
+    for (d, n) in app.devs.list() {
+        out.push((Target::DevStart(d), format!("Ore del dev {n} (su comando)")));
+    }
+    out
+}
+
+/// Scelte dell'ancora adatte al bersaglio (`anchor_fits`): per «Aggiungi
+/// dev» le condizioni «Se c'è il dev …»; altrimenti fine / inizio di ogni dev,
+/// primo / ultimo effort di tutti i dev, date del progetto, prima / ultima
+/// milestone, ogni milestone.
+fn anchor_options(app: &App, target: Target) -> Vec<(Anchor, String)> {
     let mut out = Vec::new();
+    for (d, n) in app.devs.list() {
+        out.push((Anchor::DevPresent(d), format!("Se c'è il dev {n}")));
+    }
     for (d, n) in app.devs.list() {
         out.push((Anchor::DevEnd(d), format!("Fine dev {n}")));
         out.push((Anchor::DevStart(d), format!("Inizio dev {n}")));
     }
+    out.push((Anchor::FirstEffort, "Primo effort (tutti i dev)".to_string()));
+    out.push((Anchor::LastEffort, "Ultimo effort (tutti i dev)".to_string()));
     out.push((Anchor::ProjectStart, "Inizio progetto".to_string()));
     out.push((Anchor::ProjectEnd, "Fine progetto".to_string()));
+    out.push((Anchor::FirstMilestone, "Prima milestone".to_string()));
+    out.push((Anchor::LastMilestone, "Ultima milestone".to_string()));
     out.extend(milestone_options(app).into_iter().map(|(m, n)| (Anchor::Milestone(m), format!("Milestone {n}"))));
+    out.retain(|(a, _)| crate::rules::anchor_fits(target, *a));
     out
 }
 
 /// Ambito della regola con bersaglio `target`: per una milestone di un solo
 /// progetto è sempre quel progetto (altrove non si può collocare), altrimenti
 /// resta `scope`.
-fn auto_scope(app: &App, target: MilestoneId, scope: RuleScope) -> RuleScope {
-    app.milestones.owner(target).map_or(scope, RuleScope::Project)
+fn auto_scope(app: &App, target: Target, scope: RuleScope) -> RuleScope {
+    target.milestone().and_then(|m| app.milestones.owner(m)).map_or(scope, RuleScope::Project)
 }
 
 /// Regola nuova: spenta (le scelte di partenza non devono toccare i progetti
-/// finché non è configurata), prima milestone, fine del primo dev.
-pub(crate) fn new_rule(app: &App) -> Option<Rule> {
-    let target = app.milestones.list().first()?.0;
-    let anchor = app.devs.list().first().map_or(Anchor::ProjectEnd, |(d, _)| Anchor::DevEnd(*d));
-    Some(Rule {
+/// finché non è configurata): prima milestone (o, se non ce ne sono, la fine
+/// del progetto), fine del primo dev (o ultimo effort).
+pub(crate) fn new_rule(app: &App) -> Rule {
+    let target = app.milestones.list().first().map_or(Target::ProjectEnd, |m| Target::Milestone(m.0));
+    let anchor = match (target, app.devs.list().first()) {
+        (Target::Milestone(_), Some((d, _))) => Anchor::DevEnd(*d),
+        _ => Anchor::LastEffort,
+    };
+    Rule {
         name: String::new(),
         enabled: false,
         scope: auto_scope(app, target, RuleScope::All),
         target,
         anchor,
         offset_weeks: 0,
-    })
+    }
 }
 
 /// Testo dello stato di una regola e il suo colore.
 fn status_text(app: &App, id: RuleId, rule: &Rule) -> (String, Color32, String) {
+    use crate::rules::RuleKind;
     let st = crate::rules::status(app, id);
     if !st.missing.is_empty() {
         let text = format!("⚠ {} inesistente", st.missing.join(", "));
         return (text, warn_amber(), "Un riferimento della regola è stato eliminato: sceglierne un altro.".into());
+    }
+    if st.bad_anchor {
+        return ("⚠ ancora non adatta".into(), warn_amber(), "Scegli un'ancora dall'elenco.".into());
     }
     if st.blocked {
         return (
@@ -125,6 +160,28 @@ fn status_text(app: &App, id: RuleId, rule: &Rule) -> (String, Color32, String) 
     }
     if !rule.enabled {
         return ("spenta".into(), text_dim(), "Spunta «Attiva» per applicarla.".into());
+    }
+    match rule.target.kind() {
+        RuleKind::Aligned => {}
+        RuleKind::AddDev => {
+            return (
+                format!("in {} progetti", st.placed),
+                text_dim(),
+                format!(
+                    "Progetti nell'ambito: {}; in {} c'è il dev della condizione, quindi il dev \
+                     viene aggiunto (e non si toglie finché la condizione vale).",
+                    st.governed, st.placed
+                ),
+            );
+        }
+        RuleKind::MoveDev => {
+            let text = if st.placed == 0 { "allineata".to_string() } else { format!("{} da spostare", st.placed) };
+            return (
+                text,
+                text_dim(),
+                "Si applica su comando: «Applica ora…» mostra cosa si sposta prima di farlo.".into(),
+            );
+        }
     }
     (
         format!("in {} progetti", st.placed),
@@ -151,23 +208,22 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
         .show(ctx, |ui| {
             ui.label(
                 egui::RichText::new(
-                    "Ogni regola mette una milestone N settimane prima (-) o dopo (+) un'ancora, \
-                     nei progetti dell'ambito, e la tiene allineata: se l'ancora si sposta, la \
-                     milestone la segue; se l'ancora manca, la milestone non c'è. Una milestone \
-                     governata da una regola non si sposta a mano. Con più regole sulla stessa \
-                     milestone vince la più specifica (progetto, poi categoria, priorità, tutti).",
+                    "Ogni regola mette una milestone (o la data di inizio / fine del progetto) N \
+                     settimane prima (-) o dopo (+) un'ancora, nei progetti dell'ambito, e la tiene \
+                     allineata: se l'ancora si sposta, la segue; se l'ancora manca, la milestone \
+                     non c'è (la data invece resta com'è). Quello che una regola governa non si \
+                     modifica a mano. Con più regole sulla stessa \
+                     milestone vince la più specifica (progetto, poi categoria, priorità, tutti). \
+                     «Aggiungi dev B se c'è il dev A» aggiunge B ai progetti in cui c'è A (e non lo \
+                     toglie). «Ore del dev B» sposta in blocco tutte le ore di B perché partano N \
+                     settimane dopo l'ancora, solo con «Applica ora…».",
                 )
                 .small()
                 .color(text_dim()),
             );
-            let fresh = new_rule(app);
             ui.horizontal(|ui| {
-                let btn = ui.add_enabled(fresh.is_some(), egui::Button::new("+ Nuova regola"));
-                let btn = btn.on_disabled_hover_text("Crea prima una milestone (Aggiungi ▸ Milestone).");
-                if btn.clicked()
-                    && let Some(r) = fresh
-                {
-                    actions.push(Action::AddRule(r));
+                if ui.button("+ Nuova regola").clicked() {
+                    actions.push(Action::AddRule(new_rule(app)));
                 }
                 ui.label(egui::RichText::new("(nasce spenta: configurala, poi spunta «Attiva»)").small().color(text_dim()));
             });
@@ -178,14 +234,13 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 return;
             }
             let scopes = scope_options(app);
-            let targets = milestone_options(app);
-            let anchors = anchor_options(app);
+            let targets = target_options(app);
             egui::ScrollArea::both()
                 .scroll_source(drag_scroll())
                 .max_height(ui.available_height().max(120.0))
                 .show(ui, |ui| {
                     egui::Grid::new("rules_grid").striped(true).spacing(egui::vec2(8.0, 6.0)).show(ui, |ui| {
-                        for h in ["Attiva", "Nome", "Progetti", "Milestone", "", "Ancora", "Settimane", "Stato", ""] {
+                        for h in ["Attiva", "Nome", "Progetti", "Cosa", "", "Ancora", "Settimane", "Stato", ""] {
                             ui.label(egui::RichText::new(h).strong());
                         }
                         ui.end_row();
@@ -194,7 +249,13 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             ui.checkbox(&mut r.enabled, "");
                             // Nome: si conferma uscendo dal campo (Esc annulla).
                             let buf = state.rule_names.entry(id).or_insert_with(|| rule.name.clone());
-                            let resp = ui.add(egui::TextEdit::singleline(buf).desired_width(RULE_NAME_W).hint_text(format!("Regola {}", id.0)));
+                            // Dimensione esatta: dentro una griglia una
+                            // `TextEdit` non va oltre la larghezza che la
+                            // colonna ha preso al primo frame.
+                            let resp = ui.add_sized(
+                                [RULE_NAME_W, ui.spacing().interact_size.y],
+                                egui::TextEdit::singleline(buf).hint_text(format!("Regola {}", id.0)),
+                            );
                             if resp.lost_focus() {
                                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                     *buf = rule.name.clone();
@@ -204,7 +265,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             }
                             // Milestone di un progetto: vale solo lì, quindi
                             // l'ambito è quel progetto e non si sceglie.
-                            let own = app.milestones.owner(r.target).is_some();
+                            let own = r.target.milestone().and_then(|m| app.milestones.owner(m)).is_some();
                             let scope = ui.add_enabled_ui(!own, |ui| {
                                 choice_combo(ui, ("rule_scope", id), RULE_SCOPE_W, r.scope, &scopes)
                             });
@@ -220,15 +281,40 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                 r.target = t;
                             }
                             r.scope = auto_scope(app, r.target, r.scope);
-                            ui.label("=");
+                            // Ancore adatte al bersaglio: se il bersaglio
+                            // cambia tipo, l'ancora passa alla prima adatta.
+                            let anchors = anchor_options(app, r.target);
+                            if !crate::rules::anchor_fits(r.target, r.anchor)
+                                && let Some((a, _)) = anchors.first()
+                            {
+                                r.anchor = *a;
+                            }
+                            let add_dev = r.target.kind() == crate::rules::RuleKind::AddDev;
+                            ui.label(if add_dev { "se" } else { "=" });
                             if let Some(a) = choice_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, r.anchor, &anchors) {
                                 r.anchor = a;
                             }
-                            let plus = if r.offset_weeks > 0 { "+" } else { "" };
-                            ui.add(egui::DragValue::new(&mut r.offset_weeks).range(-520..=520).prefix(plus))
-                                .on_hover_text("Settimane dopo (+) o prima (-) dell'ancora.");
+                            // «Aggiungi dev» non conta settimane.
+                            ui.add_enabled_ui(!add_dev, |ui| {
+                                let plus = if r.offset_weeks > 0 { "+" } else { "" };
+                                ui.add(egui::DragValue::new(&mut r.offset_weeks).range(-520..=520).prefix(plus))
+                                    .on_hover_text("Settimane dopo (+) o prima (-) dell'ancora.");
+                            });
                             let (text, color, tip) = status_text(app, id, &rule);
-                            ui.label(egui::RichText::new(text).color(color)).on_hover_text(tip);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(text).color(color)).on_hover_text(tip);
+                                // Spostamento delle ore: su comando, con anteprima.
+                                if rule.target.kind() == crate::rules::RuleKind::MoveDev {
+                                    let todo = rule.enabled && !crate::rules::pending_moves(app, id).is_empty();
+                                    let btn = ui.add_enabled(todo, egui::Button::new("Applica ora…"));
+                                    if btn
+                                        .on_hover_text("Mostra quali ore si spostano, poi chiede conferma.")
+                                        .clicked()
+                                    {
+                                        state.rule_preview = Some(id);
+                                    }
+                                }
+                            });
                             if ui.button("🗑").on_hover_text("Elimina la regola (le milestone restano dove sono).").clicked() {
                                 actions.push(Action::DeleteRule(id));
                             }
@@ -278,5 +364,79 @@ pub(crate) fn confirm_delete_milestone_window(
         }
         Some(false) => state.confirm_delete_milestone = None,
         None => {}
+    }
+}
+
+/// Anteprima di «Applica ora…» di una regola «Ore del dev»: elenco degli
+/// spostamenti (progetto, prima settimana prima → dopo, settimane, fuori dal
+/// periodo), poi «Sposta le ore» → `Action::ApplyRuleNow`.
+pub(crate) fn rule_preview_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(id) = state.rule_preview else {
+        return;
+    };
+    let moves = crate::rules::pending_moves(app, id);
+    let dev = app.rules.get(id).map(|r| r.target_dev());
+    let dev_name = dev.and_then(|d| app.devs.get(d)).map(|d| d.get_name()).unwrap_or_default();
+    let mut open = true;
+    let mut close = false;
+    egui::Window::new(format!("Applica la regola «{}»", crate::rules::rule_label(app, id)))
+        .collapsible(false)
+        .resizable(true)
+        .default_width(560.0)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            if moves.is_empty() {
+                ui.label("Niente da spostare: le ore sono già al loro posto.");
+                if ui.button("Chiudi").clicked() {
+                    close = true;
+                }
+                return;
+            }
+            ui.label(format!(
+                "Le ore del dev «{dev_name}» si spostano in blocco (stessi worker, stessa forma) in {} progetti:",
+                moves.len()
+            ));
+            egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    egui::Grid::new("rule_preview").striped(true).show(ui, |ui| {
+                        for h in ["Progetto", "Prima settimana", "", "Spostamento"] {
+                            ui.label(egui::RichText::new(h).strong());
+                        }
+                        ui.end_row();
+                        for m in &moves {
+                            ui.label(project_label(app, m.proj));
+                            ui.label(format!("{} → {}", week_label(m.from.0 as i32), week_label(m.to.0 as i32)));
+                            if m.outside {
+                                ui.label(egui::RichText::new("⚠ fuori dal periodo").color(warn_amber()))
+                                    .on_hover_text("Dopo lo spostamento alcune ore cadono fuori dal periodo del progetto: restano, ma vanno controllate.");
+                            } else {
+                                ui.label("");
+                            }
+                            let w = m.weeks();
+                            ui.label(format!("{}{w} sett.", if w > 0 { "+" } else { "" }));
+                            ui.end_row();
+                        }
+                    });
+                });
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Sposta le ore").clicked() {
+                    actions.push(Action::ApplyRuleNow(id));
+                    close = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    close = true;
+                }
+            });
+        });
+    if !open || close {
+        state.rule_preview = None;
     }
 }

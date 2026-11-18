@@ -1082,7 +1082,7 @@ fn draw_milestone_strip(
             // la regola le rimetterebbe subito dov'erano.
             let governed = crate::rules::governing(app, proj);
             let rule_tip = |m: &MilestoneId| {
-                governed.get(m).map(|r| {
+                governed.get(&crate::rules::Target::Milestone(*m)).map(|r| {
                     format!(
                         "Governata dalla regola «{}»: si posiziona da sola (Aggiungi ▸ Regole di automazione…).",
                         crate::rules::rule_label(app, *r)
@@ -1207,6 +1207,14 @@ fn draw_milestone_strip(
     });
 }
 
+/// Suggerimento di una data del progetto governata dalla regola `r`.
+fn rule_date_tip(app: &App, r: crate::rules::RuleId) -> String {
+    format!(
+        "Data governata dalla regola «{}»: si aggiorna da sola (Aggiungi ▸ Regole di automazione…).",
+        crate::rules::rule_label(app, r)
+    )
+}
+
 /// Voci «Sposta/Imposta inizio|fine progetto qua» del menù della fascia
 /// milestone (vedi `bound_menu_items`). Se nel nuovo periodo non entrerebbe
 /// qualcosa di già inserito, apre la conferma invece di spostare subito.
@@ -1219,7 +1227,18 @@ fn bound_menu(
     week_id: WeekId,
 ) {
     for (bound, label, enabled) in bound_menu_items(app, proj, week_id) {
-        if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+        // Data governata da una regola: la voce è spenta.
+        let target = match bound {
+            ProjectBound::Start => crate::rules::Target::ProjectStart,
+            ProjectBound::End => crate::rules::Target::ProjectEnd,
+        };
+        let rule = crate::rules::governing_rule(app, proj, target);
+        let btn = ui.add_enabled(enabled && rule.is_none(), egui::Button::new(label));
+        let btn = match rule {
+            Some(r) => btn.on_disabled_hover_text(rule_date_tip(app, r)),
+            None => btn,
+        };
+        if btn.clicked() {
             let loss = bound_move_loss(app, proj, bound, week_id);
             if loss.is_empty() {
                 actions.push(Action::MoveProjectBound {
@@ -2136,13 +2155,18 @@ pub(crate) fn draw_project_info(
         text_dim(),
     );
     let srr = ui.interact(sr, egui::Id::unique(("start", proj.0)), Sense::click());
-    if srr.secondary_clicked() {
+    // Data governata da una regola di automazione: non si modifica a mano.
+    let start_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectStart);
+    if srr.secondary_clicked() && start_rule.is_none() {
         state.popup = Some(Popup::Start {
             proj,
             text: start_date,
         });
     }
-    srr.on_hover_text("Tasto destro: modifica data inizio");
+    match start_rule {
+        Some(r) => srr.on_hover_text(rule_date_tip(app, r)),
+        None => srr.on_hover_text("Tasto destro: modifica data inizio"),
+    };
     y += ROW_H;
 
     // fine (right-click per modificare)
@@ -2167,13 +2191,17 @@ pub(crate) fn draw_project_info(
         text_dim(),
     );
     let err = ui.interact(er, egui::Id::unique(("end", proj.0)), Sense::click());
-    if err.secondary_clicked() {
+    let end_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectEnd);
+    if err.secondary_clicked() && end_rule.is_none() {
         state.popup = Some(Popup::End {
             proj,
             text: end_date,
         });
     }
-    err.on_hover_text("Tasto destro: modifica deadline");
+    match end_rule {
+        Some(r) => err.on_hover_text(rule_date_tip(app, r)),
+        None => err.on_hover_text("Tasto destro: modifica deadline"),
+    };
     y += ROW_H;
 
     // Avanzamento complessivo del progetto nel formato "presunta%/attuale%" — la

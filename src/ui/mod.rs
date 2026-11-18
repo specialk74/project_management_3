@@ -1243,6 +1243,8 @@ pub struct UiState {
     // milestone usata da qualche regola di cui si è chiesta l'eliminazione:
     // prima la conferma (`confirm_delete_milestone_window`)
     confirm_delete_milestone: Option<MilestoneId>,
+    // regola «Ore del dev» di cui si mostra l'anteprima di «Applica ora…»
+    rule_preview: Option<crate::rules::RuleId>,
     registry_tab: RegistryTab,
     registry_search: String,
     registry_names: HashMap<(RegistryTab, usize), String>,
@@ -1600,6 +1602,8 @@ pub(crate) enum Action {
     AddRule(crate::rules::Rule),
     UpdateRule(crate::rules::RuleId, crate::rules::Rule),
     DeleteRule(crate::rules::RuleId),
+    /// «Applica ora» di una regola «Ore del dev»: sposta le ore adesso.
+    ApplyRuleNow(crate::rules::RuleId),
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
         worker: WorkerId,
@@ -2302,6 +2306,7 @@ impl eframe::App for PjmApp {
             registry_window(ui.ctx(), app, state, &mut actions);
             rules_window(ui.ctx(), app, state, &mut actions);
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
+            rule_preview_window(ui.ctx(), app, state, &mut actions);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -3204,6 +3209,17 @@ impl PjmApp {
             Action::UpdateRule(id, rule) => {
                 if self.app.rules.update(id, rule) {
                     self.mark_changed();
+                }
+            }
+            Action::ApplyRuleNow(id) => {
+                let moves = crate::rules::pending_moves(&self.app, id);
+                let n = crate::rules::apply_moves(&mut self.app, &moves);
+                if n > 0 {
+                    self.mark_changed();
+                    self.ui.toast_ok(format!(
+                        "Regola «{}»: ore spostate in {n} progetti.",
+                        crate::rules::rule_label(&self.app, id)
+                    ));
                 }
             }
             Action::DeleteRule(id) => {

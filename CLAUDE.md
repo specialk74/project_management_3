@@ -1253,14 +1253,39 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `project_row_shows_the_priority_beside_the_tripletta`,
   `matrix_pdf_shows_the_priority_and_its_filter`. In the pies the combo sits
   between Categorie and Dev.
-- **Automation rules** (MIGLIORAMENTI #58, phase 1; `src/rules.rs`, window
+- **Automation rules** (MIGLIORAMENTI #58, phases 1–3; `src/rules.rs`, window
   `src/ui/rules.rs`, Aggiungi ▸ Regole di automazione…): `App.rules: Rules`
   (`BTreeMap<RuleId, Rule>` + `last_id`, `#[serde(default, skip_serializing_if
   = "Rules::is_empty")]`, globals in `sync_merge`/`undo_diff`). `Rule { name,
   enabled, scope: RuleScope { All, Category, Priority, Project }, target:
-  MilestoneId, anchor: Anchor { DevStart(d), DevEnd(d), ProjectStart,
-  ProjectEnd, Milestone(m) }, offset_weeks }` = target placed at anchor week +
-  7·offset. **Always aligned**: `rules::apply(&mut app)` runs inside
+  Target { Milestone(m), ProjectStart, ProjectEnd }, anchor: Anchor {
+  DevStart(d), DevEnd(d), FirstEffort, LastEffort, ProjectStart, ProjectEnd,
+  FirstMilestone, LastMilestone, Milestone(m) }, offset_weeks }` = target
+  placed at anchor week + 7·offset. In the file the target is `goal`;
+  phase-1 rules (`target: (id)`, milestone only) still load through `#[serde(from
+  = "RuleFile")]` (+ `plain_some`, RON wants `Some(…)` for options; `untagged`
+  enums don't work with RON) — test `old_rules_with_a_milestone_target_still_load`.
+  Engine = `Ctx::resolve(Target)` with a memo over targets: dates and
+  milestones can depend on each other (date anchors resolve the governed date;
+  First/LastMilestone resolve every placed or governed milestone **except the
+  target itself**), cycles are blocked. A governed **date** with a missing
+  anchor keeps its current value (never cleared); rules never touch effort
+  cells. Grid: governed dates can't be edited (`draw_project_info` right-click
+  on Inizio/Fine does nothing, tooltip `rule_date_tip`; `bound_menu` items
+  disabled). **Phase 3** (`Target::kind()` → `RuleKind { Aligned, AddDev,
+  MoveDev }`; `anchor_fits(target, anchor)` filters the anchor combo and is
+  auto-applied when the target changes kind): `Target::AddDev(b)` + condition
+  `Anchor::DevPresent(a)` (a ≠ b) — `required_devs(app, proj)`, applied at the
+  start of `apply` until a fixed point (chains), never removes; the dev manage
+  window disables removing a required dev (test
+  `a_dev_required_by_a_rule_cannot_be_removed`). `Target::DevStart(b)` =
+  **on demand only** (excluded from `governing`/`apply`): `pending_moves(app,
+  id) -> Vec<DevMove { proj, dev, from, to, outside }>` (anchor resolved with a
+  `Ctx`; anchors on b itself or First/LastEffort don't fit) → «Applica ora…»
+  (`UiState.rule_preview` → `rule_preview_window`) → `Action::ApplyRuleNow` →
+  `apply_moves` → `Projects::shift_dev` (`SingleDev::shift_weeks` of every week,
+  no truncation: hours outside the period stay, flagged in the preview).
+  Tests in `rules.rs`, `rule_preview_lists_the_moves_and_applies_them`. **Always aligned**: `rules::apply(&mut app)` runs inside
   `PjmApp::mark_changed` (so after every mutating action, before the undo
   snapshot — Undo reverts the effect too) and in `reset_undo` (file opened /
   reloaded / merged: `changed = true` if it moved something). Per project,
@@ -1275,7 +1300,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   scope / target / anchor — a project-owned target forces the scope to
   `RuleScope::Project(owner)` via `auto_scope` (scope combo disabled, also
   applied to `new_rule` and to existing rules when the window draws; test
-  `project_milestone_rules_get_the_project_as_scope`), `DragValue` for weeks, name buffered in
+  `project_milestone_rules_get_the_project_as_scope`), `DragValue` for weeks, name field `add_sized([RULE_NAME_W, …])` — inside an `egui::Grid` a `TextEdit`'s `desired_width` is capped by the column width fixed on the first frame (test `rule_name_column_is_wide`) —, name buffered in
   `UiState.rule_names` and committed on lost focus) → `Action::AddRule` (new
   rules start **disabled**) / `UpdateRule` / `DeleteRule` (placements stay);
   status from `rules::status` (placed/governed, blocked, missing refs, also in

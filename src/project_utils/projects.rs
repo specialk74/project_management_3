@@ -298,6 +298,13 @@ impl Projects {
         }
     }
 
+    /// Vedi `Project::shift_dev`.
+    pub fn shift_dev(&mut self, id_project: ProjectId, dev: DevId, delta_days: i64) -> bool {
+        self.projects
+            .get_mut(&id_project)
+            .is_some_and(|p| p.shift_dev(dev, delta_days))
+    }
+
     pub fn del_dev(&mut self, id_project: ProjectId, id_dev: DevId) {
         if let Some(p) = self.projects.get_mut(&id_project) {
             p.del_dev(id_dev);
