@@ -1253,7 +1253,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `project_row_shows_the_priority_beside_the_tripletta`,
   `matrix_pdf_shows_the_priority_and_its_filter`. In the pies the combo sits
   between Categorie and Dev.
-- **Automation rules** (MIGLIORAMENTI #58, phases 1–3; `src/rules.rs`, window
+- **Automation rules** (MIGLIORAMENTI #58, phases 1–4; `src/rules.rs`, window
   `src/ui/rules.rs`, Aggiungi ▸ Regole di automazione…): `App.rules: Rules`
   (`BTreeMap<RuleId, Rule>` + `last_id`, `#[serde(default, skip_serializing_if
   = "Rules::is_empty")]`, globals in `sync_merge`/`undo_diff`). `Rule { name,
@@ -1285,7 +1285,22 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   (`UiState.rule_preview` → `rule_preview_window`) → `Action::ApplyRuleNow` →
   `apply_moves` → `Projects::shift_dev` (`SingleDev::shift_weeks` of every week,
   no truncation: hours outside the period stay, flagged in the preview).
-  Tests in `rules.rs`, `rule_preview_lists_the_moves_and_applies_them`. **Always aligned**: `rules::apply(&mut app)` runs inside
+  Tests in `rules.rs`, `rule_preview_lists_the_moves_and_applies_them`.
+  **Phase 4 (warnings)**: `Target::Check(point: Anchor, Cmp { NotBefore,
+  NotAfter })` (`RuleKind::Warning`, changes nothing; `Anchor` now derives
+  `Ord`/`Hash`) — `warnings(app, proj) -> Vec<RuleWarning { rule, text }>`
+  (point and anchor resolved with a `Ctx`, only when both exist; text via
+  `anchor_label`, shared with the window's option labels), `all_warnings(app)`.
+  Shown: «⚠» right of the tripletta in `draw_project_info` (tooltip list, click
+  → window), a toast only for **new** (project, rule) pairs via
+  `PjmApp::refresh_warnings(notify)` (true in `mark_changed`; false in
+  `reset_undo` and `restore_snapshot`; `UiState.known_warnings`), and
+  `rule_warnings_window` (Vista ▸ Avvisi delle regole…, or «⚠ Avvisi (N)…» in
+  the rules window; project link → `jump_to_project`). In the rules window the
+  «Cosa» cell shows point + comparison combos for a `Check` (window default
+  width 1600 so the row fits). Tests `warning_rules_flag_violations_only_when_both_points_exist`,
+  `rule_warnings_notify_new_ones_and_show_in_grid_and_list`,
+  `warning_rule_row_shows_point_comparison_and_count`. **Always aligned**: `rules::apply(&mut app)` runs inside
   `PjmApp::mark_changed` (so after every mutating action, before the undo
   snapshot — Undo reverts the effect too) and in `reset_undo` (file opened /
   reloaded / merged: `changed = true` if it moved something). Per project,

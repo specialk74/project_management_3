@@ -2024,6 +2024,23 @@ pub(crate) fn draw_project_info(
     }
     tr.on_hover_text("Tasto sinistro: modifica tripletta · Tasto destro: note progetto");
 
+    // Avvisi delle regole: «⚠» a destra della tripletta, l'elenco nel
+    // suggerimento, clic = finestra «Avvisi delle regole».
+    let warns = crate::rules::warnings(app, proj);
+    if !warns.is_empty() {
+        let wr = Rect::from_min_size(egui::pos2(trip_rect.right() - 16.0, y), Vec2::new(16.0, ROW_H));
+        ui.painter().text(wr.center(), Align2::CENTER_CENTER, "⚠", cell_font(), g(warn_amber()));
+        let tip: Vec<String> = warns
+            .iter()
+            .map(|w| format!("«{}»: {}", crate::rules::rule_label(app, w.rule), w.text))
+            .collect();
+        let resp = ui.interact(wr, egui::Id::unique(("rule_warn", proj.0)), Sense::click());
+        if resp.clicked() {
+            state.show_rule_warnings = true;
+        }
+        resp.on_hover_text(format!("Avvisi delle regole (clic: elenco)\n{}", tip.join("\n")));
+    }
+
     // Con filtro worker attivo resta visibile solo la tripletta: niente pulsanti
     // sposta, categoria, nome, inizio/fine (così non crea spessore).
     if filter_active {

@@ -50,12 +50,16 @@ non il tempo di digitazione.
 - [ ] **54. Torte: fetta «Altri» per i progetti piccoli** — con molti progetti l'anello esterno della prima torta si riempie di fette sottilissime: sotto una soglia (es. 2% del worker) i progetti di una fetta dev·categoria si raggruppano in un'unica fetta «Altri», con l'elenco nel tooltip; le tabelle restano complete. Stessa resa nel PDF/SVG. _Tempo: ~1-2 h · Difficoltà: Bassa-Media._
 - [ ] **55. Torte: clic su una fetta di progetto → griglia** — salta al progetto nella griglia (come la ricerca per tripletta), per correggere subito gli effort. _Tempo: ~1 h · Difficoltà: Bassa._
 
+---
+
+# Fatti
+
 ## G. Automazioni (regole senza scrivere codice)
 
-- [ ] **58. Regole di automazione** — regole scritte dall'utente che il programma
+- [x] **58. Regole di automazione** — regole scritte dall'utente che il programma
   applica da solo, es. «milestone *Collaudo* = 2 settimane dopo la fine del dev
   *Backend*» o «milestone *Rilascio* = 8 settimane dopo la milestone *Collaudo*».
-  _Tempo: ~2-3 giorni in tutto (fase 1 ~1 giorno) · Difficoltà: Alta._
+  _(fatto 2026-11-18, tutte e quattro le fasi)_
 
   **Scelte fatte (2026-11-18)**: le regole stanno **nel `.ron`** (quindi
   condivise via git) e si creano da una **finestra del programma** con elenchi a
@@ -102,12 +106,11 @@ non il tempo di digitazione.
      aggiunto sempre e mai tolto; «Ore del dev B» spostate in blocco **solo su
      comando** con anteprima, senza perdere ore; niente regole sul pianificato
      per ora)_
-  4. Avvisi: regole che non cambiano nulla ma segnalano (toast, colore), es.
-     «*Rilascio* prima della fine del dev *Backend*».
-
----
-
-# Fatti
+  4. ~~Avvisi: regole che non cambiano nulla ma segnalano (toast, colore), es.
+     «*Rilascio* prima della fine del dev *Backend*».~~ _(fatta 2026-11-18:
+     «Avviso: punto non prima di / non dopo ancora ± N», controllato solo se
+     punto e ancora esistono; «⚠» accanto alla tripletta, notifica per gli
+     avvisi nuovi, finestra «Avvisi delle regole» con salto al progetto)_
 
 ## A. Robustezza & dati condivisi
 

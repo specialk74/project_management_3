@@ -15,7 +15,8 @@
 //! (togliere la data di un progetto farebbe sparire il periodo). I bersagli
 //! governati non si modificano a mano. Le catene si risolvono in ordine; una
 //! regola in un **ciclo** (o che dipende da un ciclo) resta ferma e la
-//! finestra la segnala.
+//! finestra la segnala. Fase 3: aggiunta di dev (sempre) e spostamento delle
+//! ore di un dev (su comando). Fase 4: avvisi, che non cambiano nulla.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -47,6 +48,18 @@ pub enum Target {
     /// Fase 3: prima settimana delle ore del dev. Si applica **su comando**
     /// («Applica ora…»): tutte le ore del dev si spostano in blocco.
     DevStart(DevId),
+    /// Fase 4: avviso. Il punto (un'ancora qualunque) non deve stare prima /
+    /// dopo l'ancora della regola ± N; non cambia mai nulla, segnala.
+    Check(Anchor, Cmp),
+}
+
+/// Confronto di una regola d'avviso.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Cmp {
+    /// Il punto deve essere dalla soglia in poi (avviso se prima).
+    NotBefore,
+    /// Il punto deve essere entro la soglia (avviso se dopo).
+    NotAfter,
 }
 
 /// Come agisce una regola, secondo il suo bersaglio.
@@ -58,6 +71,8 @@ pub enum RuleKind {
     AddDev,
     /// Spostamento delle ore di un dev: solo su comando (`pending_moves`).
     MoveDev,
+    /// Avviso: non cambia nulla (`warnings`).
+    Warning,
 }
 
 impl Target {
@@ -73,6 +88,7 @@ impl Target {
             Target::Milestone(_) | Target::ProjectStart | Target::ProjectEnd => RuleKind::Aligned,
             Target::AddDev(_) => RuleKind::AddDev,
             Target::DevStart(_) => RuleKind::MoveDev,
+            Target::Check(..) => RuleKind::Warning,
         }
     }
 }
@@ -85,6 +101,7 @@ pub fn anchor_fits(target: Target, anchor: Anchor) -> bool {
     match (target, anchor) {
         (Target::AddDev(b), Anchor::DevPresent(a)) => a != b,
         (Target::AddDev(_), _) | (_, Anchor::DevPresent(_)) => false,
+        (Target::Check(Anchor::DevPresent(_), _), _) => false,
         (Target::DevStart(b), Anchor::DevStart(a) | Anchor::DevEnd(a)) => a != b,
         (Target::DevStart(_), Anchor::FirstEffort | Anchor::LastEffort) => false,
         _ => true,
@@ -93,7 +110,7 @@ pub fn anchor_fits(target: Target, anchor: Anchor) -> bool {
 
 
 /// Da dove si conta (la settimana di partenza della regola).
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Anchor {
     /// Prima settimana con effort (> 0) del dev nel progetto.
     DevStart(DevId),
@@ -292,6 +309,7 @@ fn placeable(app: &App, proj: ProjectId, t: Target) -> bool {
         Target::Milestone(m) => app.milestones.available_for(m, proj),
         Target::ProjectStart | Target::ProjectEnd => true,
         Target::AddDev(d) | Target::DevStart(d) => app.devs.get(d).is_some(),
+        Target::Check(..) => true,
     }
 }
 
@@ -338,7 +356,7 @@ fn current(app: &App, proj: ProjectId, t: Target) -> Option<WeekId> {
         Target::ProjectStart => app.projects.get_project_start_week(proj),
         Target::ProjectEnd => app.projects.get_project_end_week(proj),
         Target::DevStart(d) => app.projects.get_single_dev(proj, d).and_then(|sd| sd.effort_span()).map(|s| s.0),
-        Target::AddDev(_) => None,
+        Target::AddDev(_) | Target::Check(..) => None,
     }
 }
 
@@ -612,6 +630,104 @@ pub fn apply_moves(app: &mut App, moves: &[DevMove]) -> usize {
         .count()
 }
 
+/// Nome di un'ancora (o del punto di un avviso), come negli elenchi della
+/// finestra delle regole.
+pub fn anchor_label(app: &App, a: Anchor) -> String {
+    let dev = |d: DevId| app.devs.get(d).map(|x| x.get_name()).unwrap_or_else(|| "?".into());
+    let ms = |m: MilestoneId| {
+        let name = app.milestones.get_name(m).unwrap_or("?").to_string();
+        match app.milestones.owner(m) {
+            Some(p) => format!("{name} · {}", app.projects.get(p).map(|x| x.label(p)).unwrap_or_default()),
+            None => name,
+        }
+    };
+    match a {
+        Anchor::DevPresent(d) => format!("Se c'è il dev {}", dev(d)),
+        Anchor::DevEnd(d) => format!("Fine dev {}", dev(d)),
+        Anchor::DevStart(d) => format!("Inizio dev {}", dev(d)),
+        Anchor::FirstEffort => "Primo effort (tutti i dev)".into(),
+        Anchor::LastEffort => "Ultimo effort (tutti i dev)".into(),
+        Anchor::ProjectStart => "Inizio progetto".into(),
+        Anchor::ProjectEnd => "Fine progetto".into(),
+        Anchor::FirstMilestone => "Prima milestone".into(),
+        Anchor::LastMilestone => "Ultima milestone".into(),
+        Anchor::Milestone(m) => format!("Milestone {}", ms(m)),
+    }
+}
+
+/// Un avviso: una regola d'avviso violata in un progetto.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuleWarning {
+    pub rule: RuleId,
+    /// Es. «Milestone Rilascio (26-03-02) è prima di Fine dev Backend + 1
+    /// (26-03-09)».
+    pub text: String,
+}
+
+/// Avvisi del progetto: le regole d'avviso attive, con l'ambito che lo
+/// comprende, in cui sia il punto sia l'ancora esistono e il punto sta prima
+/// (o dopo) dell'ancora ± N. Valori come dopo le regole (milestone e date
+/// governate già al loro posto).
+pub fn warnings(app: &App, proj: ProjectId) -> Vec<RuleWarning> {
+    let checks: Vec<(RuleId, &Rule)> = app
+        .rules
+        .list()
+        .into_iter()
+        .filter(|(_, r)| r.enabled && r.target.kind() == RuleKind::Warning && anchor_fits(r.target, r.anchor))
+        .collect();
+    if checks.is_empty() {
+        return Vec::new();
+    }
+    let mut ctx = Ctx { app, proj, gov: governing(app, proj), memo: HashMap::new() };
+    let mut out = Vec::new();
+    for (id, r) in checks {
+        let Target::Check(point, cmp) = r.target else { continue };
+        if !r.scope.matches(app, proj) {
+            continue;
+        }
+        let (Ok(Some(p)), Ok(Some(a))) = (ctx.anchor(point, r.target), ctx.anchor(r.anchor, r.target)) else {
+            continue;
+        };
+        let limit = shifted(a, r.offset_weeks);
+        let (bad, word) = match cmp {
+            Cmp::NotBefore => (p < limit, "prima di"),
+            Cmp::NotAfter => (p > limit, "dopo"),
+        };
+        if !bad {
+            continue;
+        }
+        let off = match r.offset_weeks {
+            0 => String::new(),
+            n if n > 0 => format!(" + {n}"),
+            n => format!(" - {}", -n),
+        };
+        let date = |w: WeekId| crate::date_utils::dates::week_label(w.0 as i32);
+        out.push(RuleWarning {
+            rule: id,
+            text: format!(
+                "{} ({}) è {word} {}{off} ({})",
+                anchor_label(app, point),
+                date(p),
+                anchor_label(app, r.anchor),
+                date(limit)
+            ),
+        });
+    }
+    out
+}
+
+/// Avvisi di tutti i progetti, nell'ordine dei progetti.
+pub fn all_warnings(app: &App) -> Vec<(ProjectId, RuleWarning)> {
+    if !app.rules.list().iter().any(|(_, r)| r.enabled && r.target.kind() == RuleKind::Warning) {
+        return Vec::new();
+    }
+    app.projects
+        .list()
+        .into_iter()
+        .flat_map(|(p, _)| warnings(app, p).into_iter().map(move |w| (p, w)))
+        .collect()
+}
+
 /// Nome della regola, o una descrizione se non ne ha («Regola 3»).
 pub fn rule_label(app: &App, id: RuleId) -> String {
     match app.rules.get(id) {
@@ -647,6 +763,13 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         _ => {}
     }
     st.bad_anchor = !anchor_fits(r.target, r.anchor);
+    if let Target::Check(p, _) = r.target {
+        match p {
+            Anchor::DevStart(d) | Anchor::DevEnd(d) if app.devs.get(d).is_none() => st.missing.push("dev controllato"),
+            Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => st.missing.push("milestone controllata"),
+            _ => {}
+        }
+    }
     match r.anchor {
         Anchor::DevStart(d) | Anchor::DevEnd(d) | Anchor::DevPresent(d) if app.devs.get(d).is_none() => {
             st.missing.push("dev di partenza")
@@ -675,6 +798,17 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         }
         RuleKind::MoveDev => {
             st.placed = pending_moves(app, id).len();
+            return st;
+        }
+        RuleKind::Warning => {
+            for (proj, _) in app.projects.list() {
+                if r.scope.matches(app, proj) {
+                    st.governed += 1;
+                    if warnings(app, proj).iter().any(|w| w.rule == id) {
+                        st.placed += 1;
+                    }
+                }
+            }
             return st;
         }
     }
@@ -979,5 +1113,48 @@ mod tests {
         let total: usize = f.app.projects.get_single_dev(f.p, f.fe).unwrap().get_weeks().len();
         assert_eq!(total, 4, "nessuna settimana persa, anche fuori dal periodo");
         assert!(pending_moves(&f.app, r).is_empty(), "allineata");
+    }
+
+    /// Fase 4: «Rilascio non prima di fine Backend + 1»: avviso quando il
+    /// Rilascio sta prima, niente se è dopo o se manca; «non dopo» al
+    /// contrario; spenta = niente. Non cambia nulla.
+    #[test]
+    fn warning_rules_flag_violations_only_when_both_points_exist() {
+        let mut f = fx();
+        let be_end = f.base + 21;
+        let r = f.app.rules.add(date_rule(
+            RuleScope::All,
+            Target::Check(Anchor::Milestone(f.rilascio), Cmp::NotBefore),
+            Anchor::DevEnd(f.be),
+            1,
+        ));
+        assert!(warnings(&f.app, f.p).is_empty(), "Rilascio non collocato: niente avviso");
+        f.app.projects.add_project_milestone(f.p, f.rilascio, WeekId(be_end));
+        let before = f.app.clone();
+        assert!(!apply(&mut f.app).changed, "un avviso non cambia nulla");
+        assert_eq!(f.app.projects.list_project_milestones(f.p), before.projects.list_project_milestones(f.p));
+        let w = warnings(&f.app, f.p);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].rule, r);
+        let d = |x: usize| crate::date_utils::dates::week_label(x as i32);
+        assert_eq!(
+            w[0].text,
+            format!("Milestone Rilascio ({}) è prima di Fine dev Backend + 1 ({})", d(be_end), d(be_end + 7))
+        );
+        assert_eq!(status(&f.app, r).placed, 1);
+        assert_eq!(all_warnings(&f.app).len(), 1);
+        // Spostato dopo: rispettata.
+        f.app.projects.add_project_milestone(f.p, f.rilascio, WeekId(be_end + 7));
+        assert!(warnings(&f.app, f.p).is_empty());
+        // «Non dopo»: il Rilascio oltre la soglia è un avviso.
+        let mut after = f.app.rules.get(r).unwrap().clone();
+        after.target = Target::Check(Anchor::Milestone(f.rilascio), Cmp::NotAfter);
+        after.offset_weeks = 0;
+        f.app.rules.update(r, after.clone());
+        assert_eq!(warnings(&f.app, f.p).len(), 1);
+        assert!(warnings(&f.app, f.p)[0].text.contains("è dopo Fine dev Backend ("));
+        after.enabled = false;
+        f.app.rules.update(r, after);
+        assert!(warnings(&f.app, f.p).is_empty(), "spenta");
     }
 }

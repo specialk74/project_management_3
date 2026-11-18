@@ -4065,3 +4065,96 @@ fn a_dev_required_by_a_rule_cannot_be_removed() {
     }
     assert!(actions.is_empty(), "nessuna rimozione: {}", actions.len());
 }
+
+/// Avvisi delle regole nel programma: notifica solo quando nasce un avviso
+/// nuovo (non per quelli già nel file aperto), «⚠» accanto alla tripletta,
+/// elenco nella finestra «Avvisi delle regole».
+#[test]
+fn rule_warnings_notify_new_ones_and_show_in_grid_and_list() {
+    use crate::rules::{Anchor, Cmp, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    let base = 20004;
+    app.projects.add_effort(p, be, WeekId(base + 14), w, Effort(8));
+    let rilascio = app.milestones.add("Rilascio");
+    app.rules.add(Rule {
+        name: "Rilascio dopo il Backend".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::Check(Anchor::Milestone(rilascio), Cmp::NotBefore),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 0,
+    });
+    // Avviso già presente all'apertura: niente notifica.
+    app.projects.add_project_milestone(p, rilascio, WeekId(base));
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    assert!(pjm.ui.toasts.is_empty(), "avviso già noto");
+    // Rispettata, poi di nuovo violata: notifica.
+    pjm.apply(Action::AddProjectMilestone { proj: p, milestone: rilascio, week: WeekId(base + 21) });
+    assert!(pjm.ui.toasts.is_empty());
+    pjm.apply(Action::AddProjectMilestone { proj: p, milestone: rilascio, week: WeekId(base + 7) });
+    assert_eq!(pjm.ui.toasts.len(), 1);
+    assert!(pjm.ui.toasts[0].text.starts_with("Avviso «Rilascio dopo il Backend» in ABC:"), "{}", pjm.ui.toasts[0].text);
+    // Un'altra modifica che lascia l'avviso: nessuna nuova notifica.
+    pjm.apply(Action::AddProjectMilestone { proj: p, milestone: rilascio, week: WeekId(base) });
+    assert_eq!(pjm.ui.toasts.len(), 1);
+
+    // «⚠» nella colonna di sinistra.
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1200.0, 900.0)), ..Default::default() };
+    let PjmApp { app, ui: state } = &mut pjm;
+    let out = ctx.run_ui_test(input.clone(), |ui| {
+        let layout = body_layout(ui, app, state, &Filter::default(), &None);
+        left_column(ui, app, state, &mut Vec::new(), &Filter::default(), &None, &layout);
+    });
+    assert!(drawn_texts(&out).iter().any(|t| t == "⚠"), "segno sul progetto");
+    // Elenco.
+    state.show_rule_warnings = true;
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rule_warnings_window(ui.ctx(), app, state)));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    assert!(texts.iter().any(|t| t == "Rilascio dopo il Backend"), "{texts:?}");
+    assert!(texts.iter().any(|t| t.starts_with("Milestone Rilascio (")), "{texts:?}");
+}
+
+/// Riga di una regola d'avviso: «Avviso» con accanto punto e confronto, lo
+/// stato con il numero di avvisi e il pulsante «⚠ Avvisi (1)…».
+#[test]
+fn warning_rule_row_shows_point_comparison_and_count() {
+    use crate::rules::{Anchor, Cmp, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.projects.add_effort(p, be, WeekId(20004 + 14), w, Effort(8));
+    let rilascio = app.milestones.add("Rilascio");
+    app.projects.add_project_milestone(p, rilascio, WeekId(20004));
+    app.rules.add(Rule {
+        name: "Controllo".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::Check(Anchor::Milestone(rilascio), Cmp::NotBefore),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 0,
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1700.0, 800.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions)));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    for t in ["Avviso", "Milestone Rilascio", "non prima di", "Fine dev Backend", "⚠ 1 avvisi", "⚠ Avvisi (1)…"] {
+        assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+    }
+    assert!(actions.is_empty(), "disegnare non modifica la regola");
+}

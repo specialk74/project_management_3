@@ -1245,6 +1245,10 @@ pub struct UiState {
     confirm_delete_milestone: Option<MilestoneId>,
     // regola «Ore del dev» di cui si mostra l'anteprima di «Applica ora…»
     rule_preview: Option<crate::rules::RuleId>,
+    // finestra «Avvisi delle regole» e avvisi già noti (progetto, regola):
+    // una notifica solo per quelli nuovi
+    show_rule_warnings: bool,
+    known_warnings: std::collections::BTreeSet<(ProjectId, crate::rules::RuleId)>,
     registry_tab: RegistryTab,
     registry_search: String,
     registry_names: HashMap<(RegistryTab, usize), String>,
@@ -2307,6 +2311,7 @@ impl eframe::App for PjmApp {
             rules_window(ui.ctx(), app, state, &mut actions);
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             rule_preview_window(ui.ctx(), app, state, &mut actions);
+            rule_warnings_window(ui.ctx(), app, state);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -2430,6 +2435,28 @@ impl PjmApp {
         self.app.compute_sovra();
         self.ui.changed = true;
         self.ui.undo_dirty = true;
+        self.refresh_warnings(true);
+    }
+
+    /// Avvisi delle regole: ricorda quelli attuali e, con `notify`, segnala
+    /// con una notifica quelli **nuovi** (non c'erano prima della modifica).
+    fn refresh_warnings(&mut self, notify: bool) {
+        let all = crate::rules::all_warnings(&self.app);
+        let now: std::collections::BTreeSet<_> = all.iter().map(|(p, w)| (*p, w.rule)).collect();
+        if notify {
+            let new: Vec<_> = all.iter().filter(|(p, w)| !self.ui.known_warnings.contains(&(*p, w.rule))).collect();
+            if let Some((p, w)) = new.first() {
+                let more = if new.len() > 1 { format!(" (e altri {})", new.len() - 1) } else { String::new() };
+                let msg = format!(
+                    "Avviso «{}» in {}: {}{more}",
+                    crate::rules::rule_label(&self.app, w.rule),
+                    project_label(&self.app, *p),
+                    w.text
+                );
+                self.ui.toast_warn(msg);
+            }
+        }
+        self.ui.known_warnings = now;
     }
 
     /// Dopo le azioni del frame: se qualcosa è cambiato, l'istantanea va nella
@@ -2444,6 +2471,8 @@ impl PjmApp {
     /// Cronologia da capo sullo stato attuale (file aperto, modifiche di un
     /// collega): non si può tornare a uno stato di prima.
     fn reset_undo(&mut self) {
+        // Avvisi già presenti nel file aperto: niente notifica.
+        self.refresh_warnings(false);
         // Il file appena aperto (o arrivato da un collega) si allinea subito
         // alle regole; se cambia qualcosa va salvato.
         if crate::rules::apply(&mut self.app).changed {
@@ -2465,6 +2494,7 @@ impl PjmApp {
                 app.compute_sovra();
                 self.app = app;
                 self.ui.changed = true;
+                self.refresh_warnings(false);
                 self.ui.name_buffers.clear();
                 self.ui.effort_buffers.clear();
                 self.ui.declared_buffers.clear();

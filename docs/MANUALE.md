@@ -954,7 +954,8 @@ Nella finestra ogni regola è una riga:
   una **priorità** o **un solo progetto**;
 - **Cosa** — la milestone da posizionare, oppure **Inizio progetto (data)** /
   **Fine progetto (data)** (in cima all'elenco), oppure — in fondo — **Aggiungi
-  dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto). Le milestone di un solo progetto sono
+  dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto) e
+  **Avviso** (vedi «Avvisi» più sotto); Le milestone di un solo progetto sono
   nell'elenco con la tripletta dopo il nome (es. «Demo interna · ABC»): valgono
   solo in quel progetto, quindi scegliendone una l'ambito diventa **da solo**
   «Progetto: ABC» e non si può cambiare;
@@ -1023,6 +1024,30 @@ Come funzionano:
   segnala con «⚠ fuori dal periodo». L'ancora non può essere il dev stesso né
   «primo / ultimo effort» (che lo comprendono): ogni volta lo sposterebbe di
   nuovo.
+
+**Avvisi** — regole che **non cambiano nulla** ma segnalano. In «Cosa» si
+sceglie **Avviso**; accanto compaiono il **punto** da controllare (le stesse
+scelte dell'ancora: fine / inizio di un dev, primo / ultimo effort, date del
+progetto, prima / ultima milestone, una milestone) e il confronto **non prima
+di** o **non dopo**; poi, come sempre, l'ancora e le settimane. Esempio:
+«Avviso: **Milestone Rilascio** non prima di **Fine dev Backend** + 1» segnala i
+progetti in cui il Rilascio è collocato prima della settimana dopo la fine del
+Backend. Il controllo vale solo dove **il punto e l'ancora esistono entrambi**
+(un Rilascio non collocato non dà avvisi). Gli avvisi si vedono:
+
+- con un **«⚠» arancione** a destra della tripletta del progetto, nella colonna
+  di sinistra: passandoci sopra l'elenco degli avvisi del progetto, cliccandolo
+  la finestra degli avvisi;
+- con una **notifica** quando una modifica fa nascere un avviso **nuovo** (non
+  per quelli già presenti nel file appena aperto, né di nuovo per un avviso che
+  resta);
+- nella finestra **Avvisi delle regole** (Vista ▸ Avvisi delle regole…, oppure
+  il pulsante «⚠ Avvisi (N)…» nella finestra delle regole): una riga per avviso
+  con progetto, regola e testo, es. «Milestone Rilascio (26-03-02) è prima di
+  Fine dev Backend + 1 (26-03-09)»; un clic sul progetto lo mostra nella griglia
+  (se è nella vista e nei filtri).
+
+Nello stato della regola: «rispettata» oppure «⚠ N avvisi».
 
 ---
 

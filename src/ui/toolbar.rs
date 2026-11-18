@@ -406,6 +406,11 @@ pub(crate) fn toolbar(
                 state.show_worker_effort = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
+            ui.separator();
+            if ui.button("Avvisi delle regole…").clicked() {
+                state.show_rule_warnings = true;
+                ui.close_kind(egui::UiKind::Menu);
+            }
         });
 
         // ── Aiuto ────────────────────────────────────────────────────────────

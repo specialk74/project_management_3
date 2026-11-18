@@ -6,13 +6,15 @@
 //! `DeleteRule`); le regole si riapplicano in `mark_changed`.
 
 use super::*;
-use crate::rules::{Anchor, Rule, RuleId, RuleScope, Target};
+use crate::rules::{Anchor, Cmp, Rule, RuleId, RuleScope, Target};
 
 /// Larghezze delle colonne (combo).
 pub(crate) const RULE_NAME_W: f32 = 300.0;
 const RULE_SCOPE_W: f32 = 170.0;
 const RULE_TARGET_W: f32 = 220.0;
 const RULE_ANCHOR_W: f32 = 200.0;
+/// Punto controllato da un avviso (accanto a «Avviso»).
+const RULE_POINT_W: f32 = 170.0;
 
 /// Combo con scelte `(valore, etichetta)`: ritorna la nuova scelta se
 /// cambiata. Un valore che non è fra le scelte (riferimento eliminato) si
@@ -73,9 +75,18 @@ fn milestone_options(app: &App) -> Vec<(MilestoneId, String)> {
         .collect()
 }
 
+/// Avviso di partenza quando si sceglie «Avviso» in «Cosa»: la prima
+/// milestone (o la fine del progetto) non prima dell'ancora.
+fn default_check(app: &App) -> Target {
+    let point = app.milestones.list().first().map_or(Anchor::ProjectEnd, |m| Anchor::Milestone(m.0));
+    Target::Check(point, Cmp::NotBefore)
+}
+
 /// Scelte del bersaglio: le due date del progetto, le milestone, poi per
-/// ogni dev «Aggiungi dev» e lo spostamento delle sue ore (su comando).
-fn target_options(app: &App) -> Vec<(Target, String)> {
+/// ogni dev «Aggiungi dev» e lo spostamento delle sue ore (su comando), e
+/// in fondo «Avviso» (il punto e il confronto si scelgono accanto).
+/// `current`: se è già un avviso, la voce «Avviso» è quello.
+fn target_options(app: &App, current: Target) -> Vec<(Target, String)> {
     let mut out = vec![
         (Target::ProjectStart, "Inizio progetto (data)".to_string()),
         (Target::ProjectEnd, "Fine progetto (data)".to_string()),
@@ -87,7 +98,14 @@ fn target_options(app: &App) -> Vec<(Target, String)> {
     for (d, n) in app.devs.list() {
         out.push((Target::DevStart(d), format!("Ore del dev {n} (su comando)")));
     }
+    let check = if matches!(current, Target::Check(..)) { current } else { default_check(app) };
+    out.push((check, "Avviso".to_string()));
     out
+}
+
+/// Punti controllabili da un avviso: le stesse ancore delle milestone.
+fn point_options(app: &App) -> Vec<(Anchor, String)> {
+    anchor_options(app, Target::ProjectEnd)
 }
 
 /// Scelte dell'ancora adatte al bersaglio (`anchor_fits`): per «Aggiungi
@@ -95,23 +113,25 @@ fn target_options(app: &App) -> Vec<(Target, String)> {
 /// primo / ultimo effort di tutti i dev, date del progetto, prima / ultima
 /// milestone, ogni milestone.
 fn anchor_options(app: &App, target: Target) -> Vec<(Anchor, String)> {
-    let mut out = Vec::new();
-    for (d, n) in app.devs.list() {
-        out.push((Anchor::DevPresent(d), format!("Se c'è il dev {n}")));
+    let devs: Vec<DevId> = app.devs.list().into_iter().map(|(d, _)| d).collect();
+    let mut all: Vec<Anchor> = devs.iter().map(|d| Anchor::DevPresent(*d)).collect();
+    for d in &devs {
+        all.push(Anchor::DevEnd(*d));
+        all.push(Anchor::DevStart(*d));
     }
-    for (d, n) in app.devs.list() {
-        out.push((Anchor::DevEnd(d), format!("Fine dev {n}")));
-        out.push((Anchor::DevStart(d), format!("Inizio dev {n}")));
-    }
-    out.push((Anchor::FirstEffort, "Primo effort (tutti i dev)".to_string()));
-    out.push((Anchor::LastEffort, "Ultimo effort (tutti i dev)".to_string()));
-    out.push((Anchor::ProjectStart, "Inizio progetto".to_string()));
-    out.push((Anchor::ProjectEnd, "Fine progetto".to_string()));
-    out.push((Anchor::FirstMilestone, "Prima milestone".to_string()));
-    out.push((Anchor::LastMilestone, "Ultima milestone".to_string()));
-    out.extend(milestone_options(app).into_iter().map(|(m, n)| (Anchor::Milestone(m), format!("Milestone {n}"))));
-    out.retain(|(a, _)| crate::rules::anchor_fits(target, *a));
-    out
+    all.extend([
+        Anchor::FirstEffort,
+        Anchor::LastEffort,
+        Anchor::ProjectStart,
+        Anchor::ProjectEnd,
+        Anchor::FirstMilestone,
+        Anchor::LastMilestone,
+    ]);
+    all.extend(app.milestones.list().into_iter().map(|(m, _, _)| Anchor::Milestone(m)));
+    all.into_iter()
+        .filter(|a| crate::rules::anchor_fits(target, *a))
+        .map(|a| (a, crate::rules::anchor_label(app, a)))
+        .collect()
 }
 
 /// Ambito della regola con bersaglio `target`: per una milestone di un solo
@@ -182,6 +202,18 @@ fn status_text(app: &App, id: RuleId, rule: &Rule) -> (String, Color32, String) 
                 "Si applica su comando: «Applica ora…» mostra cosa si sposta prima di farlo.".into(),
             );
         }
+        RuleKind::Warning => {
+            let tip = format!(
+                "Progetti nell'ambito: {}; con l'avviso: {} (controllati solo dove punto e ancora \
+                 esistono). L'elenco è in «Avvisi…».",
+                st.governed, st.placed
+            );
+            return if st.placed == 0 {
+                ("rispettata".into(), text_dim(), tip)
+            } else {
+                (format!("⚠ {} avvisi", st.placed), warn_amber(), tip)
+            };
+        }
     }
     (
         format!("in {} progetti", st.placed),
@@ -202,7 +234,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
     egui::Window::new("Regole di automazione")
         .collapsible(false)
         .resizable(true)
-        .default_width(1300.0)
+        .default_width(1600.0)
         .default_pos(egui::pos2(60.0, 80.0))
         .open(&mut open)
         .show(ctx, |ui| {
@@ -216,7 +248,9 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                      milestone vince la più specifica (progetto, poi categoria, priorità, tutti). \
                      «Aggiungi dev B se c'è il dev A» aggiunge B ai progetti in cui c'è A (e non lo \
                      toglie). «Ore del dev B» sposta in blocco tutte le ore di B perché partano N \
-                     settimane dopo l'ancora, solo con «Applica ora…».",
+                     settimane dopo l'ancora, solo con «Applica ora…». «Avviso» non cambia nulla: \
+                     segnala (⚠ accanto alla tripletta, notifica, «Avvisi…») quando il punto scelto \
+                     sta prima / dopo l'ancora ± N.",
                 )
                 .small()
                 .color(text_dim()),
@@ -224,6 +258,11 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
             ui.horizontal(|ui| {
                 if ui.button("+ Nuova regola").clicked() {
                     actions.push(Action::AddRule(new_rule(app)));
+                }
+                let n = crate::rules::all_warnings(app).len();
+                let label = if n == 0 { "Avvisi…".to_string() } else { format!("⚠ Avvisi ({n})…") };
+                if ui.button(label).on_hover_text("Elenco degli avvisi delle regole in tutti i progetti.").clicked() {
+                    state.show_rule_warnings = true;
                 }
                 ui.label(egui::RichText::new("(nasce spenta: configurala, poi spunta «Attiva»)").small().color(text_dim()));
             });
@@ -234,7 +273,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 return;
             }
             let scopes = scope_options(app);
-            let targets = target_options(app);
+
             egui::ScrollArea::both()
                 .scroll_source(drag_scroll())
                 .max_height(ui.available_height().max(120.0))
@@ -277,9 +316,20 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             if let Some(s) = scope.inner {
                                 r.scope = s;
                             }
-                            if let Some(t) = choice_combo(ui, ("rule_target", id), RULE_TARGET_W, r.target, &targets) {
-                                r.target = t;
-                            }
+                            // «Cosa»; per un avviso, accanto il punto e il confronto.
+                            ui.horizontal(|ui| {
+                                let targets = target_options(app, r.target);
+                                if let Some(t) = choice_combo(ui, ("rule_target", id), RULE_TARGET_W, r.target, &targets) {
+                                    r.target = t;
+                                }
+                                if let Target::Check(point, cmp) = r.target {
+                                    let points = point_options(app);
+                                    let p = choice_combo(ui, ("rule_point", id), RULE_POINT_W, point, &points).unwrap_or(point);
+                                    let cmps = [(Cmp::NotBefore, "non prima di".to_string()), (Cmp::NotAfter, "non dopo".to_string())];
+                                    let c = choice_combo(ui, ("rule_cmp", id), 110.0, cmp, &cmps).unwrap_or(cmp);
+                                    r.target = Target::Check(p, c);
+                                }
+                            });
                             r.scope = auto_scope(app, r.target, r.scope);
                             // Ancore adatte al bersaglio: se il bersaglio
                             // cambia tipo, l'ancora passa alla prima adatta.
@@ -290,7 +340,8 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                 r.anchor = *a;
                             }
                             let add_dev = r.target.kind() == crate::rules::RuleKind::AddDev;
-                            ui.label(if add_dev { "se" } else { "=" });
+                            let check = matches!(r.target, Target::Check(..));
+                            ui.label(if add_dev { "se" } else if check { "" } else { "=" });
                             if let Some(a) = choice_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, r.anchor, &anchors) {
                                 r.anchor = a;
                             }
@@ -438,5 +489,50 @@ pub(crate) fn rule_preview_window(
         });
     if !open || close {
         state.rule_preview = None;
+    }
+}
+
+/// Finestra «Avvisi delle regole»: per ogni progetto con avvisi, la
+/// tripletta (clic = salta al progetto nella griglia), la regola e il testo.
+pub(crate) fn rule_warnings_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    if !state.show_rule_warnings {
+        return;
+    }
+    let list = crate::rules::all_warnings(app);
+    let mut open = true;
+    egui::Window::new("Avvisi delle regole")
+        .collapsible(false)
+        .resizable(true)
+        .default_width(760.0)
+        .default_pos(egui::pos2(120.0, 120.0))
+        .open(&mut open)
+        .show(ctx, |ui| {
+            if list.is_empty() {
+                ui.label(egui::RichText::new("Nessun avviso: le regole d'avviso sono tutte rispettate.").color(text_dim()));
+                return;
+            }
+            ui.label(
+                egui::RichText::new("Clic sul progetto: lo mostra nella griglia (se è nella vista e nei filtri).")
+                    .small()
+                    .color(text_dim()),
+            );
+            egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
+                .max_height(ui.available_height().max(120.0))
+                .show(ui, |ui| {
+                    egui::Grid::new("rule_warnings").striped(true).spacing(egui::vec2(10.0, 4.0)).show(ui, |ui| {
+                        for (proj, w) in &list {
+                            if ui.link(project_label(app, *proj)).clicked() {
+                                state.jump_to_project = Some(*proj);
+                            }
+                            ui.label(egui::RichText::new(crate::rules::rule_label(app, w.rule)).strong());
+                            ui.label(egui::RichText::new(&w.text).color(warn_amber()));
+                            ui.end_row();
+                        }
+                    });
+                });
+        });
+    if !open {
+        state.show_rule_warnings = false;
     }
 }
