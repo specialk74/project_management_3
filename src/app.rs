@@ -7,6 +7,7 @@ use crate::{
     date_utils::dates::get_default_weeks,
     dev_utils::{dev::DevId, devs::Devs},
     milestones::Milestones,
+    rules::Rules,
     project_utils::projects::Projects,
     single_dev_utils::single_dev::WeekId,
     single_effort_utils::single_effort::Effort,
@@ -113,6 +114,10 @@ pub struct App {
     pub milestones: Milestones,
     #[serde(default)]
     pub holidays: Vec<WeekId>,
+    /// Regole di automazione (milestone posizionate rispetto a un'ancora),
+    /// vedi `rules.rs`. Non scritte se non ce ne sono.
+    #[serde(default, skip_serializing_if = "Rules::is_empty")]
+    pub rules: Rules,
     #[serde(skip)]
     pub sovra: HashMap<(WeekId, WorkerId), Effort>,
 }
@@ -132,6 +137,7 @@ impl App {
             projects: Projects::new(),
             categories: Categories::new(),
             priorities: Priorities::with_defaults(),
+            rules: Rules::default(),
             milestones: Milestones::new(),
             holidays: Vec::new(),
             sovra: HashMap::new(),
@@ -328,6 +334,13 @@ impl App {
                         "Progetto «{pname}»: la milestone «{mname}» appartiene a un altro progetto."
                     ));
                 }
+            }
+        }
+        for (rid, _) in self.rules.list() {
+            let st = crate::rules::status(self, rid);
+            if !st.missing.is_empty() {
+                let name = crate::rules::rule_label(self, rid);
+                issues.push(format!("Regola «{name}»: {} inesistente.", st.missing.join(", ")));
             }
         }
         if issues.len() > MAX {

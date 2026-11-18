@@ -3783,3 +3783,167 @@ fn csv_export_window_sends_projects_and_options() {
     assert!(state.csv_export.is_none(), "dialog chiusa");
     assert_eq!(state.csv_choices, Some(choices), "opzioni ricordate");
 }
+
+/// Regole di automazione nel programma: la regola agisce appena attivata,
+/// segue le modifiche (anche alle regole), si annulla con Annulla insieme al
+/// suo effetto; eliminandola la milestone resta dov'è e torna libera.
+#[test]
+fn rules_apply_on_every_change_and_undo_with_it() {
+    use crate::rules::{Anchor, Rule, RuleScope};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    let base = 20004;
+    app.projects.add_effort(p, be, WeekId(base), w, Effort(8));
+    let collaudo = app.milestones.add("Collaudo");
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    let at = |pjm: &PjmApp| {
+        pjm.app.projects.list_project_milestones(p).into_iter().find(|(m, _)| *m == collaudo).map(|(_, w)| w)
+    };
+    let mut rule = Rule {
+        name: "Collaudo".into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: collaudo,
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 2,
+    };
+    pjm.apply(Action::AddRule(rule.clone()));
+    pjm.record_undo();
+    assert_eq!(at(&pjm), None, "regola nuova spenta: niente");
+    let id = pjm.app.rules.list()[0].0;
+    rule.enabled = true;
+    pjm.apply(Action::UpdateRule(id, rule.clone()));
+    pjm.record_undo();
+    assert_eq!(at(&pjm), Some(WeekId(base + 14)));
+    // Una modifica qualunque (un effort in più) la fa seguire.
+    pjm.apply(Action::BulkFillEffort { proj: p, dev: be, start: WeekId(base + 7), workers: vec![w], effort: Effort(4), weeks: 1 });
+    pjm.record_undo();
+    assert_eq!(at(&pjm), Some(WeekId(base + 21)));
+    // Annulla: torna l'effort di prima e con lui la milestone.
+    pjm.apply(Action::Undo);
+    assert_eq!(at(&pjm), Some(WeekId(base + 14)));
+    pjm.apply(Action::Redo);
+    assert_eq!(at(&pjm), Some(WeekId(base + 21)));
+    // Eliminata la regola, la milestone resta dov'è.
+    pjm.apply(Action::DeleteRule(id));
+    assert!(pjm.app.rules.is_empty());
+    assert_eq!(at(&pjm), Some(WeekId(base + 21)));
+}
+
+/// All'apertura (o all'arrivo del file di un collega) il file si allinea
+/// alle regole e, se cambia qualcosa, risulta da salvare.
+#[test]
+fn opening_a_file_aligns_it_to_the_rules() {
+    use crate::rules::{Anchor, Rule, RuleScope};
+    let mut app = App::new();
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.set_project_end_week(p, Some(WeekId(20004 + 70)));
+    let rilascio = app.milestones.add("Rilascio");
+    app.rules.add(Rule {
+        name: String::new(),
+        enabled: true,
+        scope: RuleScope::Project(p),
+        target: rilascio,
+        anchor: Anchor::ProjectEnd,
+        offset_weeks: -1,
+    });
+    let ron = app.to_ron_string();
+    let back = App::from_ron_str(&ron).expect("regole nel .ron");
+    assert_eq!(back.rules, app.rules);
+    let mut pjm = PjmApp { app: back, ui: UiState::default() };
+    pjm.reset_undo();
+    assert!(pjm.ui.changed, "allineato: da salvare");
+    assert_eq!(pjm.app.projects.list_project_milestones(p), [(rilascio, WeekId(20004 + 63))]);
+    assert!(pjm.app.validate().is_empty());
+}
+
+/// Finestra «Regole di automazione»: «+ Nuova regola» crea una regola
+/// spenta; ogni regola mostra il suo stato; una milestone eliminata è
+/// segnalata (anche da «Problemi nel file»).
+#[test]
+fn rules_window_adds_rules_and_shows_their_status() {
+    use crate::rules::{Anchor, Rule, RuleScope};
+    let mut app = App::new();
+    let be = app.devs.add("Backend");
+    let collaudo = app.milestones.add("Collaudo");
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1400.0, 800.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions)));
+    }
+    let pos = text_pos(&out.unwrap(), "+ Nuova regola").expect("pulsante");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    match actions.as_slice() {
+        [Action::AddRule(r)] => {
+            assert!(!r.enabled, "nasce spenta");
+            assert_eq!((r.target, r.anchor, r.scope), (collaudo, Anchor::DevEnd(be), RuleScope::All));
+        }
+        _ => panic!("attesa una AddRule"),
+    }
+    app.rules.add(Rule {
+        name: "Collaudo dopo il Backend".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: collaudo,
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 2,
+    });
+    let texts = drawn_texts(&ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    for t in ["Fine dev Backend", "Collaudo", "Tutti i progetti", "in 0 progetti"] {
+        assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+    }
+    app.milestones.del(collaudo);
+    let texts = drawn_texts(&ctx.run_ui_test(input, |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    assert!(texts.iter().any(|s| s == "⚠ milestone inesistente"), "{texts:?}");
+    assert!(app.validate().iter().any(|i| i.contains("Collaudo dopo il Backend")));
+}
+
+/// Regola su una milestone di un solo progetto: l'ambito diventa da solo
+/// quel progetto (anche per una regola già esistente con un altro ambito) e
+/// la combo dell'ambito è bloccata.
+#[test]
+fn project_milestone_rules_get_the_project_as_scope() {
+    use crate::rules::{Anchor, Rule, RuleScope};
+    let mut app = App::new();
+    let p = app.projects.add("x", Some("ABC"), None);
+    let own = app.milestones.add_owned("Demo interna", Default::default(), Vec::new(), Some(p));
+    let id = app.rules.add(Rule {
+        name: String::new(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: own,
+        anchor: Anchor::ProjectEnd,
+        offset_weeks: 0,
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1400.0, 800.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    // Due frame: al primo la griglia misura soltanto.
+    let _ = ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions));
+    let out = ctx.run_ui_test(input, |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new()));
+    match actions.as_slice() {
+        [Action::UpdateRule(rid, r)] => {
+            assert_eq!(*rid, id);
+            assert_eq!(r.scope, RuleScope::Project(p));
+        }
+        _ => panic!("attesa una UpdateRule con l'ambito del progetto"),
+    }
+    assert!(drawn_texts(&out).iter().any(|t| t == "Demo interna · ABC"));
+    // Una regola nuova sulla milestone del progetto nasce già con quell'ambito.
+    let mut only = App::new();
+    let q = only.projects.add("y", Some("XYZ"), None);
+    only.milestones.add_owned("Solo XYZ", Default::default(), Vec::new(), Some(q));
+    assert_eq!(new_rule(&only).map(|r| r.scope), Some(RuleScope::Project(q)));
+}

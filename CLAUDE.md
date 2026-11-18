@@ -95,6 +95,8 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/ui_style.rs` — sizes, fonts, colors, theme (light/dark) and B/W mode, `cumulative_color`.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
 - `src/effort_csv.rs` — CSV export of the effort matrix (File ▸ Esporta CSV…).
+- `src/rules.rs` — automation rules (milestones placed relative to an anchor), see
+  «Automation rules» below; window in `src/ui/rules.rs`.
 - `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
   Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
   dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project, with Priority and
@@ -1251,6 +1253,37 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `project_row_shows_the_priority_beside_the_tripletta`,
   `matrix_pdf_shows_the_priority_and_its_filter`. In the pies the combo sits
   between Categorie and Dev.
+- **Automation rules** (MIGLIORAMENTI #58, phase 1; `src/rules.rs`, window
+  `src/ui/rules.rs`, Aggiungi ▸ Regole di automazione…): `App.rules: Rules`
+  (`BTreeMap<RuleId, Rule>` + `last_id`, `#[serde(default, skip_serializing_if
+  = "Rules::is_empty")]`, globals in `sync_merge`/`undo_diff`). `Rule { name,
+  enabled, scope: RuleScope { All, Category, Priority, Project }, target:
+  MilestoneId, anchor: Anchor { DevStart(d), DevEnd(d), ProjectStart,
+  ProjectEnd, Milestone(m) }, offset_weeks }` = target placed at anchor week +
+  7·offset. **Always aligned**: `rules::apply(&mut app)` runs inside
+  `PjmApp::mark_changed` (so after every mutating action, before the undo
+  snapshot — Undo reverts the effect too) and in `reset_undo` (file opened /
+  reloaded / merged: `changed = true` if it moved something). Per project,
+  `governing(app, proj)` picks for each milestone the enabled rule with the
+  highest `scope.rank()` (Project 3 > Category 2 > Priority 1 > All 0, ties =
+  older), only if the milestone is `available_for` that project;
+  `evaluate` resolves chains with a memo and marks cycles (and rules depending
+  on them) as `blocked` (left untouched). The target **exists iff the anchor
+  exists** (dev anchors via `effort_span`, > 0 hours). Grid: in «Aggiungi
+  milestone qui» governed milestones are disabled (place and «Rimuovi»), tooltip
+  with `rule_label`. Window: one `egui::Grid` row per rule (`choice_combo` for
+  scope / target / anchor — a project-owned target forces the scope to
+  `RuleScope::Project(owner)` via `auto_scope` (scope combo disabled, also
+  applied to `new_rule` and to existing rules when the window draws; test
+  `project_milestone_rules_get_the_project_as_scope`), `DragValue` for weeks, name buffered in
+  `UiState.rule_names` and committed on lost focus) → `Action::AddRule` (new
+  rules start **disabled**) / `UpdateRule` / `DeleteRule` (placements stay);
+  status from `rules::status` (placed/governed, blocked, missing refs, also in
+  `App::validate`). Deleting a milestone used by a rule asks first
+  (`confirm_delete_milestone_window`); deleting it or a used dev toasts a
+  warning. Tests in `rules.rs` and `rules_apply_on_every_change_and_undo_with_it`,
+  `opening_a_file_aligns_it_to_the_rules`,
+  `rules_window_adds_rules_and_shows_their_status`.
 - **Worker filter active** → `draw_project_info` shows **only the tripletta** (other
   info hidden so it adds no height); projects with no matching workers disappear.
 - **Project view mode** (`UiState.project_view: ProjectViewMode` — `Open`/`OnHold`/

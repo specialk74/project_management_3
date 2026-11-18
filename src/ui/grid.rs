@@ -1078,6 +1078,17 @@ fn draw_milestone_strip(
 
             // Elenco: le milestone di sistema più quelle di QUESTO progetto.
             let all = app.milestones.list_for_project(proj);
+            // Quelle governate da una regola non si mettono / tolgono a mano:
+            // la regola le rimetterebbe subito dov'erano.
+            let governed = crate::rules::governing(app, proj);
+            let rule_tip = |m: &MilestoneId| {
+                governed.get(m).map(|r| {
+                    format!(
+                        "Governata dalla regola «{}»: si posiziona da sola (Aggiungi ▸ Regole di automazione…).",
+                        crate::rules::rule_label(app, *r)
+                    )
+                })
+            };
             if all.is_empty() {
                 ui.label("(nessuna — creane una qui sopra o dalla toolbar)");
             }
@@ -1092,11 +1103,12 @@ fn draw_milestone_strip(
                 let suffix = if own { " ·" } else { "" };
                 let label = egui::RichText::new(format!("{mark}{icon} {name}{suffix}"))
                     .color(u32_to_color(*color));
-                let btn = ui.button(label);
-                let btn = if own {
-                    btn.on_hover_text("Milestone solo di questo progetto")
-                } else {
-                    btn
+                let tip = rule_tip(id);
+                let btn = ui.add_enabled(tip.is_none(), egui::Button::new(label));
+                let btn = match (&tip, own) {
+                    (Some(t), _) => btn.on_disabled_hover_text(t),
+                    (None, true) => btn.on_hover_text("Milestone solo di questo progetto"),
+                    (None, false) => btn,
                 };
                 if btn.clicked() {
                     actions.push(Action::AddProjectMilestone {
@@ -1112,7 +1124,13 @@ fn draw_milestone_strip(
                 for m in ms_here {
                     if let Some(name) = app.milestones.get_name(*m) {
                         let icon = app.milestones.get_kind(*m).icon();
-                        if ui.button(format!("Rimuovi: {icon} {name}")).clicked() {
+                        let tip = rule_tip(m);
+                        let btn = ui.add_enabled(tip.is_none(), egui::Button::new(format!("Rimuovi: {icon} {name}")));
+                        let btn = match &tip {
+                            Some(t) => btn.on_disabled_hover_text(t),
+                            None => btn,
+                        };
+                        if btn.clicked() {
                             actions.push(Action::RemoveProjectMilestone {
                                 proj,
                                 milestone: *m,

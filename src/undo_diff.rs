@@ -108,6 +108,7 @@ pub fn changes(before: &App, after: &App) -> Changes {
         && before.priorities == after.priorities
         && before.milestones == after.milestones
         && before.holidays == after.holidays
+        && before.rules == after.rules
         && before.month_colors == after.month_colors
         && before.month_tint_pct == after.month_tint_pct
         && before.corner_pct == after.corner_pct;

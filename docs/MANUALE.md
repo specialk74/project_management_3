@@ -423,6 +423,8 @@ Da sapere:
   «Clonare un progetto»).
 - **Worker, dev e categorie…** — rinominare, nascondere o eliminare worker, dev e
   categorie (vedi §3, «Rinominare, nascondere, eliminare»).
+- **Regole di automazione…** — regole che posizionano da sole le milestone (vedi
+  §11, «Regole di automazione»).
 - **Worker** — campo di testo + `+ Worker`: aggiunge una persona. Premi Invio o
   il bottone; il campo resta aperto per inserimenti multipli.
 - **Dev** — aggiunge un nuovo ruolo/disciplina.
@@ -926,6 +928,63 @@ quale PDF/SVG la bandierina compare (vedi «Milestone da stampare» nel capitolo
   divisa in **bande verticali di uguale larghezza**, una per milestone, in
   ordine di creazione. Passando il mouse compaiono i nomi (tutti, anche se in
   vista compatta le bande disegnate sono meno).
+
+### Regole di automazione (Aggiungi ▸ Regole di automazione…)
+
+Una regola mette **da sola** una milestone nei progetti, contando le settimane
+da un punto di partenza (l'**ancora**), e la tiene sempre al suo posto. Esempi:
+
+- «**Collaudo** = **Fine dev Backend** + 2» — la milestone Collaudo va 2
+  settimane dopo l'ultima settimana con ore del dev Backend;
+- «**Rilascio** = **Milestone Collaudo** + 8» — il Rilascio va 8 settimane dopo
+  il Collaudo (le regole si possono concatenare).
+
+Nella finestra ogni regola è una riga:
+
+- **Attiva** — la regola agisce solo se spuntata. Una regola nuova (pulsante
+  **+ Nuova regola**) nasce **spenta**: prima la si configura, poi la si attiva;
+- **Nome** — libero, per riconoscerla (si conferma uscendo dal campo; Esc
+  annulla);
+- **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
+  una **priorità** o **un solo progetto**;
+- **Milestone** — quella da posizionare. Le milestone di un solo progetto sono
+  nell'elenco con la tripletta dopo il nome (es. «Demo interna · ABC»): valgono
+  solo in quel progetto, quindi scegliendone una l'ambito diventa **da solo**
+  «Progetto: ABC» e non si può cambiare;
+- **Ancora** — da dove si conta: **fine** o **inizio di un dev** (ultima o prima
+  settimana con ore > 0), **inizio** o **fine del progetto**, oppure **un'altra
+  milestone** (dove è collocata nel progetto);
+- **Settimane** — quante dopo (+) o prima (−) dell'ancora;
+- **Stato** — in quanti progetti la regola ha collocato la milestone, oppure un
+  avviso: «⚠ ciclo», «⚠ … inesistente», «spenta»;
+- 🗑 — elimina la regola: le milestone che aveva messo **restano dove sono** e da
+  quel momento si spostano a mano.
+
+Come funzionano:
+
+- **Sempre allineate** — le regole si ricalcolano **dopo ogni modifica** e
+  all'**apertura del file** (o quando arrivano le modifiche di un collega): se il
+  Backend lavora una settimana in più, il Collaudo si sposta da solo, e con lui il
+  Rilascio. Un **Annulla** annulla la modifica insieme al suo effetto sulle
+  milestone.
+- **La milestone c'è solo se c'è l'ancora** — se il dev non ha ore (o il
+  progetto non ha la data di fine, o la milestone di partenza non c'è), la
+  milestone viene tolta; ricompare quando l'ancora torna.
+- **Non si sposta a mano** — nel menù della griglia («Aggiungi milestone qui»)
+  una milestone governata da una regola è disattivata, sia per collocarla sia
+  per toglierla, e il suggerimento dice quale regola la governa. Anche «Sposta» e
+  «Cancella tutte le milestone» non la spostano: la regola la rimette a posto.
+- **Vince la più specifica** — se più regole posizionano la stessa milestone in
+  un progetto, vale quella dell'ambito più ristretto: **progetto**, poi
+  **categoria**, poi **priorità**, poi **tutti**; a parità, la creata prima.
+- **Cicli** — se una regola dipende da sé stessa (es. Collaudo dal Rilascio e
+  Rilascio dal Collaudo) resta **ferma** ed è segnalata «⚠ ciclo», come quelle che
+  ne dipendono.
+- **Riferimenti eliminati** — eliminando una milestone usata da una regola il
+  programma chiede conferma; eliminando una milestone o un dev usati, le regole
+  restano ma non agiscono e sono segnalate (anche fra i problemi del file).
+- Le regole sono **salvate nel file** (quindi condivise con i colleghi via git)
+  e valgono per i progetti aperti e chiusi.
 
 ---
 

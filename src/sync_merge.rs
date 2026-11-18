@@ -169,6 +169,7 @@ fn globals_changed(mine: &App, base: &App) -> bool {
         || mine.categories != base.categories
         || mine.priorities != base.priorities
         || mine.holidays != base.holidays
+        || mine.rules != base.rules
 }
 
 /// Fonde `mine` (stato locale) e `theirs` (file su disco appena caricato) usando
@@ -199,6 +200,7 @@ pub fn merge(
         theirs.categories = mine.categories.clone();
         theirs.priorities = mine.priorities.clone();
         theirs.holidays = mine.holidays.clone();
+        theirs.rules = mine.rules.clone();
     }
 
     theirs.recompute_week_range();

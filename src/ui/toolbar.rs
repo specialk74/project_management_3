@@ -169,6 +169,10 @@ pub(crate) fn toolbar(
                     state.show_registry = true;
                     ui.close_kind(egui::UiKind::Menu);
                 }
+                if ui.button("Regole di automazione…").clicked() {
+                    state.show_rules = true;
+                    ui.close_kind(egui::UiKind::Menu);
+                }
                 ui.separator();
 
                 add_field(

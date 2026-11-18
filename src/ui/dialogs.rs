@@ -726,7 +726,12 @@ pub(crate) fn milestone_manager_window(
                                     });
                                 }
                                 if ui.button("🗑").on_hover_text("Elimina milestone").clicked() {
-                                    actions.push(Action::DeleteMilestone { milestone: *id });
+                                    // Usata da una regola: prima si chiede.
+                                    if app.rules.using_milestone(*id).is_empty() {
+                                        actions.push(Action::DeleteMilestone { milestone: *id });
+                                    } else {
+                                        state.confirm_delete_milestone = Some(*id);
+                                    }
                                 }
                                 ui.end_row();
                             }

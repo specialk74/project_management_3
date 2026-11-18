@@ -38,6 +38,7 @@ mod help;
 mod matrix;
 mod pies;
 mod registry;
+mod rules;
 mod saturation;
 mod toasts;
 mod toolbar;
@@ -52,6 +53,7 @@ pub(crate) use help::*;
 pub(crate) use matrix::*;
 pub(crate) use pies::*;
 pub(crate) use registry::*;
+pub(crate) use rules::*;
 pub(crate) use saturation::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
@@ -1234,6 +1236,13 @@ pub struct UiState {
     // finestra «Worker, dev e categorie» (Aggiungi ▸ …): scheda, ricerca e
     // testo dei nomi in modifica (per riga, finché non si conferma)
     show_registry: bool,
+    // finestra «Regole di automazione» (Aggiungi ▸ …) e nome in modifica di
+    // ogni regola (finché non si conferma)
+    show_rules: bool,
+    rule_names: HashMap<crate::rules::RuleId, String>,
+    // milestone usata da qualche regola di cui si è chiesta l'eliminazione:
+    // prima la conferma (`confirm_delete_milestone_window`)
+    confirm_delete_milestone: Option<MilestoneId>,
     registry_tab: RegistryTab,
     registry_search: String,
     registry_names: HashMap<(RegistryTab, usize), String>,
@@ -1587,6 +1596,10 @@ pub(crate) enum Action {
     DeleteDev(DevId),
     DeleteCategory(CategoryId),
     DeletePriority(PriorityId),
+    /// Regole di automazione (`rules.rs`): nuova, modificata, eliminata.
+    AddRule(crate::rules::Rule),
+    UpdateRule(crate::rules::RuleId, crate::rules::Rule),
+    DeleteRule(crate::rules::RuleId),
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
         worker: WorkerId,
@@ -2287,6 +2300,8 @@ impl eframe::App for PjmApp {
             dev_totals_window(ui.ctx(), app, state, &mut actions);
             worker_visibility_window(ui.ctx(), app, state, &mut actions);
             registry_window(ui.ctx(), app, state, &mut actions);
+            rules_window(ui.ctx(), app, state, &mut actions);
+            confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -2402,6 +2417,10 @@ impl PjmApp {
     }
 
     fn mark_changed(&mut self) {
+        // Regole di automazione sempre allineate: dopo ogni modifica le
+        // milestone governate tornano dove dicono le regole (stesso passo di
+        // Annulla).
+        crate::rules::apply(&mut self.app);
         self.app.recompute_week_range();
         self.app.compute_sovra();
         self.ui.changed = true;
@@ -2420,6 +2439,13 @@ impl PjmApp {
     /// Cronologia da capo sullo stato attuale (file aperto, modifiche di un
     /// collega): non si può tornare a uno stato di prima.
     fn reset_undo(&mut self) {
+        // Il file appena aperto (o arrivato da un collega) si allinea subito
+        // alle regole; se cambia qualcosa va salvato.
+        if crate::rules::apply(&mut self.app).changed {
+            self.app.recompute_week_range();
+            self.app.compute_sovra();
+            self.ui.changed = true;
+        }
         self.ui.undo_dirty = false;
         let now = self.app.to_ron_string();
         self.ui.undo.reset(now);
@@ -3145,10 +3171,17 @@ impl PjmApp {
             }
             Action::DeleteDev(dev) => {
                 let name = self.app.devs.get(dev).map(|d| d.get_name()).unwrap_or_default();
+                let used = self.app.rules.using_dev(dev);
                 if self.app.delete_dev(dev) {
                     forget_dev(&mut self.ui, dev);
                     self.mark_changed();
                     self.ui.toast_ok(format!("Dev «{name}» eliminato."));
+                    if !used.is_empty() {
+                        self.ui.toast_warn(format!(
+                            "{} regole usavano il dev «{name}»: ora sono segnalate in «Regole di automazione».",
+                            used.len()
+                        ));
+                    }
                 } else {
                     self.ui.toast_warn(format!("«{name}» è ancora in qualche progetto: non eliminato."));
                 }
@@ -3162,6 +3195,25 @@ impl PjmApp {
                 } else {
                     self.ui
                         .toast_warn(format!("«{name}» è ancora usata da qualche progetto: non eliminata."));
+                }
+            }
+            Action::AddRule(rule) => {
+                self.app.rules.add(rule);
+                self.mark_changed();
+            }
+            Action::UpdateRule(id, rule) => {
+                if self.app.rules.update(id, rule) {
+                    self.mark_changed();
+                }
+            }
+            Action::DeleteRule(id) => {
+                let name = crate::rules::rule_label(&self.app, id);
+                if self.app.rules.remove(id) {
+                    self.ui.rule_names.remove(&id);
+                    self.mark_changed();
+                    self.ui.toast_ok(format!(
+                        "Regola «{name}» eliminata: le milestone che aveva messo restano, ora si spostano a mano."
+                    ));
                 }
             }
             Action::DeletePriority(pri) => {
@@ -3640,7 +3692,14 @@ impl PjmApp {
                 self.mark_changed();
             }
             Action::DeleteMilestone { milestone } => {
+                let used = self.app.rules.using_milestone(milestone);
                 self.app.milestones.del(milestone);
+                if !used.is_empty() {
+                    self.ui.toast_warn(format!(
+                        "Milestone eliminata: {} regole la usavano e ora sono segnalate in «Regole di automazione».",
+                        used.len()
+                    ));
+                }
                 // toglie ogni collocazione dai progetti
                 self.app.projects.purge_milestone(milestone);
                 self.mark_changed();

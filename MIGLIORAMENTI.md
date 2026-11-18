@@ -50,6 +50,55 @@ non il tempo di digitazione.
 - [ ] **54. Torte: fetta «Altri» per i progetti piccoli** — con molti progetti l'anello esterno della prima torta si riempie di fette sottilissime: sotto una soglia (es. 2% del worker) i progetti di una fetta dev·categoria si raggruppano in un'unica fetta «Altri», con l'elenco nel tooltip; le tabelle restano complete. Stessa resa nel PDF/SVG. _Tempo: ~1-2 h · Difficoltà: Bassa-Media._
 - [ ] **55. Torte: clic su una fetta di progetto → griglia** — salta al progetto nella griglia (come la ricerca per tripletta), per correggere subito gli effort. _Tempo: ~1 h · Difficoltà: Bassa._
 
+## G. Automazioni (regole senza scrivere codice)
+
+- [ ] **58. Regole di automazione** — regole scritte dall'utente che il programma
+  applica da solo, es. «milestone *Collaudo* = 2 settimane dopo la fine del dev
+  *Backend*» o «milestone *Rilascio* = 8 settimane dopo la milestone *Collaudo*».
+  _Tempo: ~2-3 giorni in tutto (fase 1 ~1 giorno) · Difficoltà: Alta._
+
+  **Scelte fatte (2026-11-18)**: le regole stanno **nel `.ron`** (quindi
+  condivise via git) e si creano da una **finestra del programma** con elenchi a
+  tendina, senza sintassi; sono **sempre allineate** (il risultato segue la sua
+  ancora: se il dev finisce più tardi, la milestone si sposta da sola); valgono
+  **per tutti i progetti, per una categoria / priorità, o per un solo progetto**
+  (vince la più specifica); oltre alle milestone serviranno date del progetto,
+  dev ed effort, avvisi.
+
+  **Forma di una regola**: *bersaglio* = *ancora* ± N settimane, in un *ambito*.
+  - *Ancore*: inizio / fine di un dev (prima / ultima settimana con effort),
+    inizio / fine del progetto, un'altra milestone.
+  - *Bersagli*: una milestone (fase 1), inizio / fine del progetto (fase 2).
+  - *Ambito*: tutti i progetti, una categoria, una priorità, un progetto.
+  - Interruttore «attiva» per regola; nome/descrizione libera.
+
+  **Semantica (confermata il 2026-11-18)**:
+  - Il bersaglio **esiste se e solo se esiste l'ancora**: niente effort sul dev →
+    la milestone non c'è; tolta la milestone *Collaudo* → sparisce anche
+    *Rilascio*.
+  - Una milestone governata da una regola **non si sposta a mano** in quel
+    progetto: nel menù della griglia è disabilitata, con il nome della regola
+    nel tooltip (altrimenti la regola la rimetterebbe subito a posto).
+  - Le regole si ricalcolano **dopo ogni modifica** (stesso passo dell'Annulla:
+    un Ctrl+Z annulla anche il loro effetto) e all'apertura del file; le catene
+    (A → B → C) si risolvono in ordine, un **ciclo** è segnalato e la regola
+    resta ferma.
+  - Una regola che usa una milestone o un dev eliminati è segnalata (e
+    l'eliminazione chiede conferma).
+
+  **Fasi**:
+  1. ~~Milestone rispetto a dev / progetto / altra milestone: modello, motore,
+     finestra «Regole…», blocco nel menù della griglia, test e manuale.~~
+     _(fatta 2026-11-18: `src/rules.rs` + `src/ui/rules.rs`, Aggiungi ▸ Regole
+     di automazione…; semantica confermata dall'utente)_
+  2. Date del progetto come bersaglio (es. «fine progetto = ultima milestone +
+     1 settimana»).
+  3. Dev ed effort (es. «se c'è il dev *Backend*, aggiungi il dev *Test*»; «il dev
+     *Test* parte 2 settimane dopo la fine del *Backend*»): spostare effort è
+     delicato, va pensata a parte.
+  4. Avvisi: regole che non cambiano nulla ma segnalano (toast, colore), es.
+     «*Rilascio* prima della fine del dev *Backend*».
+
 ---
 
 # Fatti
