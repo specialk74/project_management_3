@@ -1151,6 +1151,9 @@ pub struct UiState {
     // anni scelti nella combo (come matrice e torte): impostano Da/A; svuotata
     // se Da/A cambiano a mano. Solo sessione.
     worker_effort_years: std::collections::BTreeSet<i32>,
+    // worker scelti nella combo «Worker» (vuoto = tutti), solo sessione:
+    // valgono per la finestra e i suoi export
+    worker_effort_workers: std::collections::BTreeSet<WorkerId>,
     matrix_workers: HashSet<WorkerId>,
     matrix_worker_search: String,
     matrix_from: Option<i32>,
@@ -2288,9 +2291,7 @@ impl eframe::App for PjmApp {
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state, &mut actions);
-            matrix_select_window(ui.ctx(), app, state);
             matrix_window(ui.ctx(), app, state, &mut actions);
-            pies_select_window(ui.ctx(), app, state);
             pies_window(ui.ctx(), app, state, &mut actions);
             worker_effort_window(ui.ctx(), app, state, &mut actions);
             compare_window(ui.ctx(), app, state, &mut actions);
@@ -3425,8 +3426,7 @@ impl PjmApp {
             }
             Action::ExportWorkerEffort { from, to } => {
                 let weeks = crate::worker_effort::weeks(from, to);
-                let projects = worker_effort_projects(&self.app, &self.ui);
-                let data = crate::worker_effort::build(&self.app, &projects, &weeks);
+                let data = worker_effort_data(&self.app, &self.ui, &weeks);
                 match crate::pdf_export::build_worker_effort_pdf(&data, &weeks, from, to) {
                     Some(bytes) => save_pdf_dialog(
                         &mut self.ui,
@@ -3555,8 +3555,7 @@ impl PjmApp {
             }
             Action::ExportWorkerEffortCsv { from, to } => {
                 let weeks = crate::worker_effort::weeks(from, to);
-                let projects = worker_effort_projects(&self.app, &self.ui);
-                let data = crate::worker_effort::build(&self.app, &projects, &weeks);
+                let data = worker_effort_data(&self.app, &self.ui, &weeks);
                 let (csv, n) = crate::view_csv::worker_effort_csv(&data, &weeks);
                 self.save_view_csv("effort_per_worker", csv, n);
             }
@@ -4226,6 +4225,34 @@ pub(crate) fn drag_scroll() -> egui::scroll_area::ScrollSource {
         drag: egui::scroll_area::DragScroll::Always,
         ..Default::default()
     }
+}
+
+/// Finestra **vera del sistema operativo** (viewport immediate di egui): si
+/// sposta fuori dalla finestra principale e su un altro monitor. `key` la
+/// identifica, `size` è la dimensione iniziale. Ritorna `false` quando
+/// l'utente la chiude. Dove i viewport non ci sono (test, backend senza
+/// supporto) egui la disegna come finestra interna (`EmbeddedWindow`), come
+/// prima. Usata da Torte, Effort per worker, Matrice e Saturazione.
+pub(crate) fn os_window(
+    ctx: &egui::Context,
+    key: &str,
+    title: &str,
+    size: egui::Vec2,
+    mut add: impl FnMut(&mut egui::Ui),
+) -> bool {
+    let id = egui::ViewportId::from_hash_of(key);
+    let builder = egui::ViewportBuilder::default()
+        .with_title(title)
+        .with_inner_size(size)
+        .with_resizable(true);
+    ctx.show_viewport_immediate(id, builder, |ui, class| {
+        if matches!(class, egui::ViewportClass::EmbeddedWindow) {
+            add(ui);
+            return true;
+        }
+        egui::CentralPanel::default().show(ui, |ui| add(ui));
+        !ui.ctx().input(|i| i.viewport().close_requested())
+    })
 }
 
 /// Spazio verticale prima e dopo la linea che separa due worker.

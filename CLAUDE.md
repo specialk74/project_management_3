@@ -813,7 +813,11 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   session only; between Da and A the shared `years_combo` →
   `UiState.worker_effort_years` sets the range with `years_range`, a manual
   Da/A change or «Da oggi a un anno» clears it — test
-  `years_combo_sets_the_period_and_manual_change_clears_it`): read-only, one table per worker
+  `years_combo_sets_the_period_and_manual_change_clears_it`; **worker filter**
+  `workers_combo` → `UiState.worker_effort_workers: BTreeSet<WorkerId>` (empty =
+  all, «all ticked» rules, `forget_worker` cleans it), applied by
+  `worker_effort_data(app, state, weeks)` = window + PDF/CSV export handlers
+  (`WeWorker.id` added) — test `worker_filter_limits_the_tables_and_the_exports`): read-only, one table per worker
   (`show_in_find`, stacked in one `ScrollArea::both` with `drag_scroll()`; workers
   separated like the pies: `worker_heading` band for the name row and
   `worker_divider` between workers, both in `mod.rs` — tests
@@ -894,7 +898,16 @@ each (still also capped at 30% of the screen; test
 `pdf_export_window_lists_show_at_most_10_rows`).
 
 Each modeless window is a `fn xxx_window(ctx, …)` guarded by a `UiState` field and
-called from the windows block in `ui()`. Examples: `dev_manage_window`
+called from the windows block in `ui()`. **Saturazione, Matrice, Torte and Effort
+per worker are real OS windows**: their body goes through `os_window(ctx, key,
+title, size, |ui| …) -> bool` (`mod.rs`, `ctx.show_viewport_immediate` +
+`CentralPanel`; returns false on the OS close button → `show_* = false`). With
+`ViewportClass::EmbeddedWindow` (tests, backends without viewports) egui draws
+an inner `Window` instead, so the UI tests keep working unchanged. Immediate =
+same frame and same `&App`/`&mut UiState` as before (no `Arc`). The worker
+pickers `matrix_select_window`/`pies_select_window` are called **inside** their
+viewport body (otherwise they'd pop up in the main window). Main-window
+shortcuts only fire while the main window has focus. Examples: `dev_manage_window`
 (`state.dev_manage`), `pdf_export_window` (`state.pdf_export`), `help_window`
 (`state.show_help`), `filters_window` (dialog unica dei filtri), `milestone_manager_window`,
 `move_dialog_window`, `popup_window` (single `Popup` enum for tripletta/start/end/

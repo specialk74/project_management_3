@@ -53,6 +53,61 @@ pub(crate) fn worker_effort_projects(app: &App, state: &UiState) -> Vec<ProjectI
     body_projects(app, state.project_view, &ProjectFilter::from_state(state))
 }
 
+/// Tabelle della finestra (e dei suoi export): i worker con «Elenchi» e, se
+/// la combo «Worker» ne ha scelti, solo quelli.
+pub(crate) fn worker_effort_data(app: &App, state: &UiState, weeks: &[i32]) -> Vec<WeWorker> {
+    let projects = worker_effort_projects(app, state);
+    let mut data = crate::worker_effort::build(app, &projects, weeks);
+    data.retain(|w| ticked_in_all(&state.worker_effort_workers, &w.id));
+    data
+}
+
+/// Larghezza della combo «Worker».
+const WE_WORKERS_COMBO_W: f32 = 160.0;
+
+/// Combo «Worker» (worker con «Elenchi»): come le altre combo, «tutti» =
+/// tutti spuntati, si tolgono uno a uno, l'ultimo rimasto non si toglie.
+fn workers_combo(ui: &mut egui::Ui, app: &App, set: &mut std::collections::BTreeSet<WorkerId>) {
+    let all = matrix_candidates(app);
+    let ids: Vec<WorkerId> = all.iter().map(|(w, _)| *w).collect();
+    // Un worker scelto e poi tolto da «Elenchi» non conta più.
+    set.retain(|w| ids.contains(w));
+    let text = if set.is_empty() {
+        "Worker: tutti".to_string()
+    } else {
+        let names: Vec<&str> = all
+            .iter()
+            .filter(|(w, _)| set.contains(w))
+            .map(|(_, n)| n.as_str())
+            .collect();
+        format!("Worker: {}", names.join(", "))
+    };
+    egui::ComboBox::from_id_salt("worker_effort_workers")
+        .selected_text(text)
+        .width(WE_WORKERS_COMBO_W)
+        .height(400.0)
+        .show_ui(ui, |ui| {
+            for (w, name) in &all {
+                let mut on = ticked_in_all(set, w);
+                let enabled = can_untick(set, ids.len(), w);
+                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, name)).changed() {
+                    toggle_in_all(set, &ids, w, on);
+                }
+            }
+            if set.len() == ids.len() {
+                set.clear();
+            }
+            if !set.is_empty() {
+                ui.separator();
+                if ui.button("Tutti").clicked() {
+                    set.clear();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Togli la spunta ai worker da nascondere (anche negli export).");
+}
+
 /// Periodo di default: dalla settimana corrente a un anno da oggi (stesso
 /// giorno dell'anno prossimo).
 fn default_range() -> (i32, i32) {
@@ -350,19 +405,11 @@ pub(crate) fn worker_effort_window(
     if !state.show_worker_effort {
         return;
     }
-    let mut open = true;
-    egui::Window::new("Effort per worker")
-        .collapsible(true)
-        .resizable(true)
-        .default_size(egui::vec2(900.0, 560.0))
-        .default_pos(egui::pos2(80.0, 60.0))
-        .open(&mut open)
-        .show(ctx, |ui| {
+    let open = os_window(ctx, "worker_effort_window", "Effort per worker", egui::vec2(900.0, 560.0), |ui| {
             let (mut from, mut to) = state.worker_effort_range.unwrap_or_else(default_range);
             let mut changed = false;
             let weeks = crate::worker_effort::weeks(from, to);
-            let projects = worker_effort_projects(app, state);
-            let data = crate::worker_effort::build(app, &projects, &weeks);
+            let data = worker_effort_data(app, state, &weeks);
             let any_rows = data.iter().any(|w| !w.rows.is_empty());
             // Cambio a mano di Da/A (o «Da oggi a un anno»): svuota gli anni.
             let mut manual = false;
@@ -391,6 +438,9 @@ pub(crate) fn worker_effort_window(
                 years_changed = years_combo(ui, app, "worker_effort_years", &mut state.worker_effort_years);
                 ui.separator();
                 manual |= picker(ui, "A:", "worker_effort_to", &mut to);
+                ui.separator();
+                workers_combo(ui, app, &mut state.worker_effort_workers);
+                ui.separator();
                 if ui
                     .button("Da oggi a un anno")
                     .on_hover_text("Rimette il periodo di partenza: da oggi a un anno da oggi.")
@@ -864,6 +914,47 @@ mod tests {
             .filter(|cs| matches!(&cs.shape, egui::epaint::Shape::Rect(r) if same_rgb(r.fill, strip_bg(false)) && r.rect.contains(egui::pos2(r.rect.center().x, a))))
             .count();
         assert!(bands >= 1, "nome di Alice su una fascia");
+    }
+
+    /// Combo «Worker»: con un worker scelto la finestra (e gli export, che
+    /// usano gli stessi dati) mostrano solo lui; vuota = tutti.
+    #[test]
+    fn worker_filter_limits_the_tables_and_the_exports() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), alice, Effort(8));
+        app.projects.add_effort(p, fe, WeekId(base as usize), bob, Effort(8));
+        let weeks = vec![base];
+        let mut state = UiState {
+            show_worker_effort: true,
+            worker_effort_range: Some((base, base + 6)),
+            project_view: ProjectViewMode::All,
+            ..Default::default()
+        };
+        let names = |state: &UiState| -> Vec<String> {
+            worker_effort_data(&app, state, &weeks).into_iter().map(|w| w.name).collect()
+        };
+        assert_eq!(names(&state), ["Alice", "Bob"]);
+        state.worker_effort_workers = [bob].into();
+        assert_eq!(names(&state), ["Bob"]);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1400.0, 900.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                worker_effort_window(ui.ctx(), &app, &mut state, &mut Vec::new())
+            }));
+        }
+        let texts = drawn_texts(&out.unwrap());
+        assert!(texts.iter().any(|t| t == "Worker: Bob"), "{texts:?}");
+        assert!(!texts.iter().any(|t| t == "Alice"), "Alice filtrata: {texts:?}");
     }
 
     #[test]

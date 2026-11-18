@@ -1080,14 +1080,9 @@ pub(crate) fn matrix_window(
         crate::worker_matrix::sort_by_worker(&mut m, w);
     }
 
-    let mut open = true;
-    egui::Window::new("Matrice progetti × worker")
-        .collapsible(true)
-        .resizable(true)
-        .default_size(egui::vec2(900.0, 560.0))
-        .default_pos(egui::pos2(80.0, 60.0))
-        .open(&mut open)
-        .show(ctx, |ui| {
+    let open = os_window(ctx, "matrix_window", "Matrice progetti × worker", egui::vec2(900.0, 560.0), |ui| {
+            // La scelta dei worker («Worker…») si apre dentro questa finestra.
+            matrix_select_window(ui.ctx(), app, state);
             // Da/A cambiati a mano: la combo anni non descrive più l'intervallo.
             let mut manual = false;
             let mut years_changed = false;

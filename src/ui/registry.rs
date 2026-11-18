@@ -375,6 +375,7 @@ pub(crate) fn forget_worker(state: &mut UiState, worker: WorkerId, name: &str) {
     }
     state.matrix_workers.remove(&worker);
     state.pies_workers.remove(&worker);
+    state.worker_effort_workers.remove(&worker);
     state.sat_selected.remove(&worker);
     if state.footer_selected_worker == Some(worker) {
         state.footer_selected_worker = None;

@@ -16,7 +16,7 @@ use crate::app::App;
 use crate::date_utils::dates::{days_to_local, local_to_days, primo_giorno_settimana_corrente};
 use crate::project_utils::project::ProjectId;
 use crate::single_dev_utils::single_dev::{WEEK_STEP, WeekId};
-use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus};
+use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
 /// Una riga della tabella di un worker: un dev di un progetto.
 pub struct WeRow {
@@ -30,6 +30,7 @@ pub struct WeRow {
 
 /// La tabella di un worker; `rows` vuoto = nessun effort nel periodo.
 pub struct WeWorker {
+    pub id: WorkerId,
     pub name: String,
     pub rows: Vec<WeRow>,
     /// Ferie / malattia per settimana del periodo (parallelo alle settimane):
@@ -233,6 +234,7 @@ pub fn build(app: &App, projects: &[ProjectId], weeks: &[i32]) -> Vec<WeWorker> 
                 .map(|&w| app.workers.get_effective_max_hours(wid, w as usize))
                 .collect();
             WeWorker {
+                id: wid,
                 name,
                 rows,
                 status,
@@ -254,6 +256,7 @@ mod tests {
     #[test]
     fn chart_breaks_on_vacation_sick_and_zero_max() {
         let w = WeWorker {
+            id: WORKER_ID_ZERO,
             name: "Alice".into(),
             rows: vec![WeRow {
                 project: "ABC".into(),

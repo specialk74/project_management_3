@@ -4915,6 +4915,7 @@ mod tests {
     fn worker_effort_chart_breaks_and_sits_above_the_table() {
         use crate::worker_effort::{WeRow, WeWorker};
         let w = WeWorker {
+            id: crate::workers_utils::worker::WORKER_ID_ZERO,
             name: "Alice".into(),
             rows: vec![WeRow {
                 project: "ABC".into(),

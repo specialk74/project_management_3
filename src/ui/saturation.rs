@@ -314,22 +314,14 @@ pub(crate) fn saturation_window(
         }
     }
 
-    let mut open = true;
     let mut jump_week: Option<i32> = None;
     // Evidenziazione worker + settimana della cella puntata (frame precedente).
     let hover = state.sat_hover;
     let mut hover_next: Option<(WorkerId, usize)> = None;
 
-    egui::Window::new("Saturazione worker")
-        .collapsible(true)
-        // Ridimensionabile in larghezza e altezza, fino a tutto lo schermo: le
-        // aree di scorrimento riempiono lo spazio disponibile.
-        .resizable(true)
-        .default_width(900.0)
-        .default_height(560.0)
-        .default_pos(egui::pos2(80.0, 60.0))
-        .open(&mut open)
-        .show(ctx, |ui| {
+    // Finestra del sistema, ridimensionabile: le aree di scorrimento
+    // riempiono lo spazio disponibile.
+    let open = os_window(ctx, "saturation_window", "Saturazione worker", egui::vec2(900.0, 560.0), |ui| {
             ui.horizontal(|ui| {
                 ui.label("Vista:");
                 ui.selectable_value(&mut state.saturation_monthly, false, "Settimana");

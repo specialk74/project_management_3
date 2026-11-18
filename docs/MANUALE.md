@@ -278,6 +278,16 @@ Progetti, Stato progetti, Confronta): mostrano **al massimo 15 progetti**, gli
 altri si raggiungono scorrendo l'elenco. Così anche su uno schermo piccolo i
 bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 
+**Finestre separate**: **Saturazione worker**, **Matrice progetti/worker**,
+**Torte dev/categorie per worker** ed **Effort per worker** (menù Vista) si
+aprono come **finestre vere del sistema**, con la loro barra del titolo: si
+possono spostare fuori dalla finestra principale (anche su un altro monitor),
+ridimensionare e chiudere con il pulsante di chiusura del sistema. La scelta
+dei worker («Worker…») di matrice e torte si apre dentro la loro finestra. Le
+scorciatoie da tastiera del programma (es. `Cmd/Ctrl+S`) funzionano quando è
+attiva la finestra principale. Le altre finestre (filtri, export, dialog…)
+restano dentro la finestra principale.
+
 ---
 
 ## 5. Barra dei menù
@@ -1615,8 +1625,10 @@ che la contiene); all'apertura va dalla settimana corrente a **un anno da oggi**
 **Da oggi a un anno** lo rimette così. Fra le due date c'è la combo **Anni**,
 come nella matrice e nelle torte: spuntando uno o più anni il periodo va dal 1°
 gennaio del più vecchio al 31 dicembre del più recente; cambiando a mano **Da**
-o **A** (o con «Da oggi a un anno») la combo si svuota. Periodo e anni sono
-ricordati finché il programma è aperto.
+o **A** (o con «Da oggi a un anno») la combo si svuota. Accanto, la combo
+**Worker** (tutti spuntati per default, l'ultimo rimasto non si toglie,
+**Tutti** li rimette) mostra solo i worker scelti, anche negli export **PDF** e
+**CSV**. Periodo, anni e worker sono ricordati finché il programma è aperto.
 
 I progetti sono quelli **del corpo centrale**: modalità Vista ▸ Progetti
 (`Cmd/Ctrl+1…4`) e filtri Progetti, Categorie e Anni. Un worker senza nessuna
