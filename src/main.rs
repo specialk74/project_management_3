@@ -11,6 +11,7 @@ mod priorities;
 mod project_diff;
 mod project_utils;
 mod rules;
+mod rules_text;
 mod single_dev_utils;
 mod single_effort_utils;
 mod sync_merge;

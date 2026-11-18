@@ -728,6 +728,190 @@ pub fn all_warnings(app: &App) -> Vec<(ProjectId, RuleWarning)> {
         .collect()
 }
 
+/// Perché l'ancora `a` manca nel progetto (per la diagnosi).
+fn missing_reason(app: &App, proj: ProjectId, a: Anchor) -> String {
+    let dev = |d: DevId| app.devs.get(d).map(|x| x.get_name()).unwrap_or_else(|| "?".into());
+    match a {
+        Anchor::DevStart(d) | Anchor::DevEnd(d) | Anchor::DevPresent(d) => {
+            if app.projects.list_devs(proj).contains(&d) {
+                format!("il dev {} non ha ore", dev(d))
+            } else {
+                format!("il dev {} non è nel progetto", dev(d))
+            }
+        }
+        Anchor::FirstEffort | Anchor::LastEffort => "nessun dev del progetto ha ore".into(),
+        Anchor::ProjectStart => "il progetto non ha la data di inizio".into(),
+        Anchor::ProjectEnd => "il progetto non ha la data di fine".into(),
+        Anchor::FirstMilestone | Anchor::LastMilestone => {
+            "nessuna milestone collocata (oltre a quella della regola)".into()
+        }
+        Anchor::Milestone(m) => format!(
+            "la milestone {} non è collocata nel progetto",
+            app.milestones.get_name(m).unwrap_or("?")
+        ),
+    }
+}
+
+/// Cosa fa la regola `id` nel progetto (già nell'ambito) e perché.
+fn diagnose_project(app: &App, id: RuleId, r: &Rule, proj: ProjectId) -> String {
+    let date = |w: WeekId| crate::date_utils::dates::week_label(w.0 as i32);
+    let mut ctx = Ctx { app, proj, gov: governing(app, proj), memo: HashMap::new() };
+    let anchor = ctx.anchor(r.anchor, r.target);
+    match r.target.kind() {
+        RuleKind::Aligned => {
+            if !placeable(app, proj, r.target) {
+                return "la milestone è di un altro progetto: qui non si colloca".into();
+            }
+            match ctx.gov.get(&r.target) {
+                Some(&other) if other != id => {
+                    return format!(
+                        "non agisce: vince la regola «{}» (ambito più specifico, o a parità creata prima)",
+                        rule_label(app, other)
+                    );
+                }
+                None => return "non agisce (regola non applicabile qui)".into(),
+                _ => {}
+            }
+            let ev = evaluate(app, proj);
+            if ev.blocked.contains(&id) {
+                return "ferma: ciclo (la regola dipende da sé stessa, anche attraverso altre regole)".into();
+            }
+            let is_date = r.target.milestone().is_none();
+            match (anchor, ev.values.get(&r.target).copied().flatten()) {
+                (Ok(Some(a)), Some(w)) => {
+                    let what = if is_date { "data" } else { "milestone" };
+                    format!("{what} il {} (ancora il {})", date(w), date(a))
+                }
+                (Ok(None), _) if is_date => format!(
+                    "ancora mancante ({}): la data resta com'è",
+                    missing_reason(app, proj, r.anchor)
+                ),
+                (Ok(None), _) => format!(
+                    "ancora mancante ({}): la milestone non è collocata",
+                    missing_reason(app, proj, r.anchor)
+                ),
+                _ => "nessun valore calcolato".into(),
+            }
+        }
+        RuleKind::AddDev => {
+            let Anchor::DevPresent(a) = r.anchor else {
+                return "ancora non adatta".into();
+            };
+            let b = app.devs.get(r.target_dev()).map(|x| x.get_name()).unwrap_or_else(|| "?".into());
+            if app.projects.list_devs(proj).contains(&a) {
+                format!("c'è la condizione: il dev {b} è (o viene messo) nel progetto")
+            } else {
+                format!("{}: niente da aggiungere", missing_reason(app, proj, r.anchor))
+            }
+        }
+        RuleKind::MoveDev => {
+            let dev = r.target_dev();
+            let Some((first, _)) = app.projects.get_single_dev(proj, dev).and_then(|sd| sd.effort_span()) else {
+                return format!("{}: niente da spostare", missing_reason(app, proj, Anchor::DevStart(dev)));
+            };
+            match anchor {
+                Err(()) => "ferma: ciclo nelle regole da cui dipende l'ancora".into(),
+                Ok(None) => format!("ancora mancante ({}): niente da spostare", missing_reason(app, proj, r.anchor)),
+                Ok(Some(a)) => {
+                    let to = shifted(a, r.offset_weeks);
+                    if to == first {
+                        format!("allineata: le ore partono il {}", date(first))
+                    } else {
+                        let w = (to.0 as i64 - first.0 as i64) / 7;
+                        format!(
+                            "da spostare: prima settimana {} → {} ({}{w} sett.), usa «Applica ora…»",
+                            date(first),
+                            date(to),
+                            if w > 0 { "+" } else { "" }
+                        )
+                    }
+                }
+            }
+        }
+        RuleKind::Warning => {
+            let Target::Check(point, _) = r.target else {
+                return String::new();
+            };
+            let p = ctx.anchor(point, r.target);
+            match (p, anchor) {
+                (Err(()), _) | (_, Err(())) => "non controllata: ciclo nelle regole da cui dipende".into(),
+                (Ok(None), _) => format!("non controllata: {}", missing_reason(app, proj, point)),
+                (_, Ok(None)) => format!("non controllata: {}", missing_reason(app, proj, r.anchor)),
+                (Ok(Some(pw)), Ok(Some(a))) => {
+                    match warnings(app, proj).into_iter().find(|w| w.rule == id) {
+                        Some(w) => format!("AVVISO: {}", w.text),
+                        None => format!(
+                            "rispettata: punto il {}, soglia il {}",
+                            date(pw),
+                            date(shifted(a, r.offset_weeks))
+                        ),
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Diagnosi di tutte le regole, da salvare in un file di testo («Log…»):
+/// per ogni regola cosa dice, i riferimenti mancanti e, progetto per
+/// progetto (nell'ambito), cosa fa e perché; i progetti fuori ambito sono
+/// solo contati ed elencati.
+pub fn diagnose(app: &App, when: &str) -> String {
+    use crate::rules_text::{anchor_text, scope_text, target_text};
+    let mut out = format!("Diagnosi delle regole di automazione — {when}\n");
+    if app.rules.is_empty() {
+        out.push_str("\nNessuna regola.\n");
+        return out;
+    }
+    let projects: Vec<ProjectId> = app.projects.list().into_iter().map(|(p, _)| p).collect();
+    let pname = |p: ProjectId| app.projects.get(p).map(|x| x.label(p)).unwrap_or_default();
+    for (id, r) in app.rules.list() {
+        let st = status(app, id);
+        let plus = if r.offset_weeks > 0 { "+" } else { "" };
+        out.push_str(&format!(
+            "\n== Regola {} «{}» — {} ==\n   cosa = {}\n   ancora = {}\n   settimane = {plus}{}\n   progetti = {}\n",
+            id.0,
+            rule_label(app, id),
+            if r.enabled { "attiva" } else { "SPENTA" },
+            target_text(app, r.target),
+            anchor_text(app, r.anchor),
+            r.offset_weeks,
+            scope_text(app, r.scope)
+        ));
+        if !st.missing.is_empty() {
+            out.push_str(&format!("   ⚠ inesistente: {} — la regola non agisce.\n", st.missing.join(", ")));
+            continue;
+        }
+        if st.bad_anchor {
+            out.push_str("   ⚠ l'ancora non va bene per «cosa» — la regola non agisce.\n");
+            continue;
+        }
+        if !r.enabled {
+            out.push_str("   spenta: non agisce in nessun progetto (spunta «Attiva»).\n");
+            continue;
+        }
+        if r.target.kind() == RuleKind::MoveDev {
+            out.push_str("   (si applica solo su comando, con «Applica ora…»)\n");
+        }
+        let (inside, outside): (Vec<ProjectId>, Vec<ProjectId>) =
+            projects.iter().partition(|p| r.scope.matches(app, **p));
+        if inside.is_empty() {
+            out.push_str("   nessun progetto nell'ambito.\n");
+        }
+        for p in inside {
+            out.push_str(&format!("   - {}: {}\n", pname(p), diagnose_project(app, id, r, p)));
+        }
+        if !outside.is_empty() {
+            let mut names: Vec<String> = outside.iter().take(10).map(|p| pname(*p)).collect();
+            if outside.len() > 10 {
+                names.push("…".into());
+            }
+            out.push_str(&format!("   fuori ambito: {} progetti ({})\n", outside.len(), names.join(", ")));
+        }
+    }
+    out
+}
+
 /// Nome della regola, o una descrizione se non ne ha («Regola 3»).
 pub fn rule_label(app: &App, id: RuleId) -> String {
     match app.rules.get(id) {
@@ -1156,5 +1340,41 @@ mod tests {
         after.enabled = false;
         f.app.rules.update(r, after);
         assert!(warnings(&f.app, f.p).is_empty(), "spenta");
+    }
+
+    /// Diagnosi: per ogni progetto dell'ambito cosa fa la regola e perché
+    /// (collocata, ancora mancante con il motivo, vince un'altra regola,
+    /// ciclo), e i progetti fuori ambito.
+    #[test]
+    fn diagnosis_explains_why_a_rule_does_or_does_not_act() {
+        let mut f = fx();
+        let cat = f.app.categories.add("Cliente");
+        let q = f.app.projects.add("y", Some("XYZ"), None);
+        f.app.projects.set_category(q, Some(cat));
+        f.app.projects.add_dev(q, f.be); // senza ore
+        let r = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        let win = f.app.rules.add(rule(RuleScope::Project(f.p), f.demo, Anchor::DevEnd(f.fe), 0));
+        f.app.rules.add(rule(RuleScope::All, f.demo, Anchor::DevEnd(f.be), 0));
+        let off = f.app.rules.add(Rule { enabled: false, ..rule(RuleScope::Category(cat), f.rilascio, Anchor::ProjectEnd, 0) });
+        apply(&mut f.app);
+        let log = diagnose(&f.app, "oggi");
+        let d = |x: usize| crate::date_utils::dates::week_label(x as i32);
+        let be_end = f.base + 21;
+        for part in [
+            format!("== Regola {} «Regola {}» — attiva ==", r.0, r.0),
+            "   cosa = milestone \"Collaudo\"\n   ancora = fine dev \"Backend\"\n   settimane = +2".to_string(),
+            format!("   - ABC: milestone il {} (ancora il {})", d(be_end + 14), d(be_end)),
+            "   - XYZ: ancora mancante (il dev Backend non ha ore): la milestone non è collocata".to_string(),
+            format!("   - ABC: non agisce: vince la regola «Regola {}»", win.0),
+            format!("== Regola {} «Regola {}» — SPENTA ==", off.0, off.0),
+            "   spenta: non agisce in nessun progetto".to_string(),
+        ] {
+            assert!(log.contains(&part), "manca «{part}» in:\n{log}");
+        }
+        let scoped = f.app.rules.add(rule(RuleScope::Category(cat), f.rilascio, Anchor::DevEnd(f.fe), 0));
+        let log = diagnose(&f.app, "oggi");
+        assert!(log.contains("   - XYZ: ancora mancante (il dev Frontend non è nel progetto)"), "{log}");
+        assert!(log.contains("   fuori ambito: 1 progetti (ABC)"), "{log}");
+        let _ = scoped;
     }
 }

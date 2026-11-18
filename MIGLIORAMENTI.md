@@ -59,7 +59,7 @@ non il tempo di digitazione.
 - [x] **58. Regole di automazione** — regole scritte dall'utente che il programma
   applica da solo, es. «milestone *Collaudo* = 2 settimane dopo la fine del dev
   *Backend*» o «milestone *Rilascio* = 8 settimane dopo la milestone *Collaudo*».
-  _(fatto 2026-11-18, tutte e quattro le fasi)_
+  _(fatto 2026-11-18, tutte e cinque le fasi)_
 
   **Scelte fatte (2026-11-18)**: le regole stanno **nel `.ron`** (quindi
   condivise via git) e si creano da una **finestra del programma** con elenchi a
@@ -111,6 +111,12 @@ non il tempo di digitazione.
      «Avviso: punto non prima di / non dopo ancora ± N», controllato solo se
      punto e ancora esistono; «⚠» accanto alla tripletta, notifica per gli
      avvisi nuovi, finestra «Avvisi delle regole» con salto al progetto)_
+  5. ~~Regole in testo e log~~ _(fatta 2026-11-18: «Esporta in testo… /
+     Importa da testo…» nella finestra delle regole, un blocco `[regola]` per
+     regola con riferimenti per nome, l'importazione aggiunge e salta le
+     identiche, le righe non valide nel resoconto; «Log…» salva la diagnosi di
+     ogni regola progetto per progetto — `src/rules_text.rs`,
+     `rules::diagnose`)_
 
 ## A. Robustezza & dati condivisi
 

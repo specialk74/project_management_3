@@ -1248,6 +1248,8 @@ pub struct UiState {
     // finestra «Avvisi delle regole» e avvisi già noti (progetto, regola):
     // una notifica solo per quelli nuovi
     show_rule_warnings: bool,
+    // resoconto dell'ultima «Importa da testo…» delle regole (righe scartate)
+    rules_import_errors: Option<Vec<String>>,
     known_warnings: std::collections::BTreeSet<(ProjectId, crate::rules::RuleId)>,
     registry_tab: RegistryTab,
     registry_search: String,
@@ -1608,6 +1610,11 @@ pub(crate) enum Action {
     DeleteRule(crate::rules::RuleId),
     /// «Applica ora» di una regola «Ore del dev»: sposta le ore adesso.
     ApplyRuleNow(crate::rules::RuleId),
+    /// Regole in testo (`rules_text.rs`): esporta / importa, e il log di
+    /// diagnosi (`rules::diagnose`).
+    ExportRulesText,
+    ImportRulesText,
+    ExportRulesLog,
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
         worker: WorkerId,
@@ -2312,6 +2319,7 @@ impl eframe::App for PjmApp {
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             rule_preview_window(ui.ctx(), app, state, &mut actions);
             rule_warnings_window(ui.ctx(), app, state);
+            rules_import_report_window(ui.ctx(), state);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
@@ -2436,6 +2444,28 @@ impl PjmApp {
         self.ui.changed = true;
         self.ui.undo_dirty = true;
         self.refresh_warnings(true);
+    }
+
+    /// Importa le regole da un testo: aggiunte (le identiche saltate),
+    /// resoconto in una notifica e, se ci sono righe scartate, nella finestra
+    /// del resoconto.
+    fn import_rules_text(&mut self, text: &str) {
+        let rep = crate::rules_text::import_rules(&mut self.app, text);
+        if rep.added > 0 {
+            self.mark_changed();
+        }
+        let msg = format!(
+            "Regole importate: {} nuove, {} già presenti, {} scartate.",
+            rep.added,
+            rep.duplicates,
+            rep.errors.len()
+        );
+        if rep.errors.is_empty() {
+            self.ui.toast_ok(msg);
+        } else {
+            self.ui.toast_warn(msg);
+            self.ui.rules_import_errors = Some(rep.errors);
+        }
     }
 
     /// Avvisi delle regole: ricorda quelli attuali e, con `notify`, segnala
@@ -3240,6 +3270,28 @@ impl PjmApp {
                 if self.app.rules.update(id, rule) {
                     self.mark_changed();
                 }
+            }
+            Action::ExportRulesText => {
+                if self.app.rules.is_empty() {
+                    self.ui.toast_warn("Nessuna regola da esportare.");
+                } else {
+                    let text = crate::rules_text::export_rules(&self.app);
+                    save_export_dialog(&mut self.ui, "Testo", "txt", &dated_file_name("regole", "txt"), text);
+                }
+            }
+            Action::ImportRulesText => {
+                let Some(path) = rfd::FileDialog::new().add_filter("Testo", &["txt"]).pick_file() else {
+                    return;
+                };
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => self.import_rules_text(&text),
+                    Err(e) => self.ui.toast_error(format!("Lettura di «{}» non riuscita: {e}", path.display())),
+                }
+            }
+            Action::ExportRulesLog => {
+                let when = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+                let text = crate::rules::diagnose(&self.app, &when);
+                save_export_dialog(&mut self.ui, "Log", "txt", &dated_file_name("regole_log", "txt"), text);
             }
             Action::ApplyRuleNow(id) => {
                 let moves = crate::rules::pending_moves(&self.app, id);

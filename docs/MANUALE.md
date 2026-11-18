@@ -1049,6 +1049,48 @@ Backend. Il controllo vale solo dove **il punto e l'ancora esistono entrambi**
 
 Nello stato della regola: «rispettata» oppure «⚠ N avvisi».
 
+**Regole in testo** — in cima alla finestra, **Esporta in testo…** salva tutte
+le regole in un file di testo leggibile e **Importa da testo…** aggiunge quelle
+di un file (le regole identiche a una già presente si saltano; nessuna regola
+esistente cambia; un Annulla toglie l'importazione). Così le regole si copiano
+da un file `.ron` a un altro, o si scrivono a mano. I riferimenti sono **per
+nome**: una regola che nomina una milestone, un dev, una categoria, una
+priorità o un progetto che nel file aperto non esiste **non viene importata** e
+la finestra «Regole non importate» dice quale riga e perché. Il formato è un
+blocco per regola:
+
+```
+[regola]
+nome = Collaudo dopo il Backend
+attiva = sì
+progetti = tutti
+cosa = milestone "Collaudo"
+ancora = fine dev "Backend"
+settimane = +2
+```
+
+- `attiva`: `sì` / `no`; `settimane`: un numero (anche `-1`, `+2`);
+- `progetti`: `tutti`, `categoria "…"`, `priorità "…"`, `progetto "ABC"`;
+- `cosa`: `milestone "…"`, `inizio progetto`, `fine progetto`, `aggiungi dev
+  "…"`, `ore dev "…"`, `avviso <punto> non prima di`, `avviso <punto> non dopo`;
+- `ancora` e `<punto>`: `fine dev "…"`, `inizio dev "…"`, `se c'è il dev "…"`,
+  `primo effort`, `ultimo effort`, `inizio progetto`, `fine progetto`, `prima
+  milestone`, `ultima milestone`, `milestone "…"`;
+- una milestone di un solo progetto: `milestone "Demo" del progetto "ABC"`;
+- le parole chiave sono in minuscolo, i nomi fra virgolette (maiuscole e
+  minuscole non contano); una virgoletta dentro un nome si scrive `\"`; le righe
+  che iniziano con `#` sono commenti.
+
+**Log** — il pulsante **Log…** salva un file di testo che spiega **perché una
+regola fa o non fa qualcosa**: per ogni regola cosa dice e, progetto per
+progetto (quelli dell'ambito), cosa succede, es. «ABC: milestone il 26-03-16
+(ancora il 26-03-02)», «XYZ: ancora mancante (il dev Backend non ha ore): la
+milestone non è collocata», «ABC: non agisce: vince la regola «…» (ambito più
+specifico)», «ferma: ciclo», «da spostare: prima settimana … → … usa «Applica
+ora…»», «AVVISO: …», «rispettata: …»; poi i progetti fuori ambito. Le regole
+spente, con riferimenti inesistenti o con un'ancora non adatta sono indicate
+in testa.
+
 ---
 
 ## 12. Il confine di fine anno

@@ -4158,3 +4158,49 @@ fn warning_rule_row_shows_point_comparison_and_count() {
     }
     assert!(actions.is_empty(), "disegnare non modifica la regola");
 }
+
+/// «Importa da testo…»: le regole buone si aggiungono (e si annullano con
+/// Annulla), le scartate finiscono nel resoconto; i pulsanti di testo e log
+/// mandano le loro azioni.
+#[test]
+fn rules_text_import_reports_and_buttons_send_actions() {
+    let mut app = App::new();
+    app.devs.add("Backend");
+    app.milestones.add("Collaudo");
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    let text = "[regola]\nnome = Buona\ncosa = milestone \"Collaudo\"\nancora = fine dev \"Backend\"\n\n[regola]\ncosa = milestone \"Altro\"\nancora = fine progetto\n";
+    pjm.import_rules_text(text);
+    pjm.record_undo();
+    assert_eq!(pjm.app.rules.list().len(), 1);
+    assert!(pjm.ui.toasts[0].text.starts_with("Regole importate: 1 nuove, 0 già presenti, 1 scartate."));
+    let errors = pjm.ui.rules_import_errors.clone().expect("resoconto");
+    assert!(errors[0].contains("milestone «Altro» inesistente"), "{errors:?}");
+    pjm.apply(Action::Undo);
+    assert!(pjm.app.rules.is_empty(), "Annulla toglie l'importazione");
+    pjm.apply(Action::Redo);
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1700.0, 800.0)), ..Default::default() };
+    let PjmApp { app, ui: state } = &mut pjm;
+    state.show_rules = true;
+    for label in ["Esporta in testo…", "Importa da testo…", "Log…"] {
+        let mut actions = Vec::new();
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), app, state, &mut actions)));
+        }
+        let pos = text_pos(&out.unwrap(), label).unwrap_or_else(|| panic!("manca «{label}»"));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            let mut i = input.clone();
+            i.events = vec![ev];
+            let _ = ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), app, state, &mut actions));
+        }
+        let ok = match label {
+            "Esporta in testo…" => matches!(actions.as_slice(), [Action::ExportRulesText]),
+            "Importa da testo…" => matches!(actions.as_slice(), [Action::ImportRulesText]),
+            _ => matches!(actions.as_slice(), [Action::ExportRulesLog]),
+        };
+        assert!(ok, "«{label}»: {} azioni", actions.len());
+    }
+}

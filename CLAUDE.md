@@ -96,7 +96,8 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/pdf_export.rs` — PDF Gantt export (`build_pdf`, `build_pdf_project`).
 - `src/effort_csv.rs` — CSV export of the effort matrix (File ▸ Esporta CSV…).
 - `src/rules.rs` — automation rules (milestones placed relative to an anchor), see
-  «Automation rules» below; window in `src/ui/rules.rs`.
+  «Automation rules» below; window in `src/ui/rules.rs`; text export/import in
+  `src/rules_text.rs`.
 - `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
   Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
   dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project, with Priority and
@@ -1253,7 +1254,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `project_row_shows_the_priority_beside_the_tripletta`,
   `matrix_pdf_shows_the_priority_and_its_filter`. In the pies the combo sits
   between Categorie and Dev.
-- **Automation rules** (MIGLIORAMENTI #58, phases 1–4; `src/rules.rs`, window
+- **Automation rules** (MIGLIORAMENTI #58, phases 1–5; `src/rules.rs`, window
   `src/ui/rules.rs`, Aggiungi ▸ Regole di automazione…): `App.rules: Rules`
   (`BTreeMap<RuleId, Rule>` + `last_id`, `#[serde(default, skip_serializing_if
   = "Rules::is_empty")]`, globals in `sync_merge`/`undo_diff`). `Rule { name,
@@ -1300,7 +1301,23 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   «Cosa» cell shows point + comparison combos for a `Check` (window default
   width 1600 so the row fits). Tests `warning_rules_flag_violations_only_when_both_points_exist`,
   `rule_warnings_notify_new_ones_and_show_in_grid_and_list`,
-  `warning_rule_row_shows_point_comparison_and_count`. **Always aligned**: `rules::apply(&mut app)` runs inside
+  `warning_rule_row_shows_point_comparison_and_count`.
+  **Phase 5**: `src/rules_text.rs` — `export_rules(app)` (one `[regola]` block
+  per rule, `chiave = valore`, references **by name** in quotes, `\"` escape;
+  `target_text`/`anchor_text`/`scope_text` also used by the log) and
+  `parse_rules`/`import_rules(app, text) -> ImportReport { added, duplicates,
+  errors }` (adds, skips identical rules, every bad block reported with its
+  line; keywords lowercase, names case-insensitive; a project-owned milestone
+  is `milestone "X" del progetto "ABC"`). `rules::diagnose(app, when)` = the
+  «Log…» text: per rule header + missing refs / bad anchor / disabled, then per
+  in-scope project `diagnose_project` (placed / anchor missing with
+  `missing_reason` / beaten by a more specific rule / cycle / move pending /
+  warning or respected), out-of-scope projects counted. Window buttons →
+  `Action::ExportRulesText` / `ImportRulesText` (rfd pick → `PjmApp::import_rules_text`,
+  toast + `UiState.rules_import_errors` → `rules_import_report_window`) /
+  `ExportRulesLog` (`save_export_dialog`). Tests in `rules_text.rs`,
+  `diagnosis_explains_why_a_rule_does_or_does_not_act`,
+  `rules_text_import_reports_and_buttons_send_actions`. **Always aligned**: `rules::apply(&mut app)` runs inside
   `PjmApp::mark_changed` (so after every mutating action, before the undo
   snapshot — Undo reverts the effect too) and in `reset_undo` (file opened /
   reloaded / merged: `changed = true` if it moved something). Per project,

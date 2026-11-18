@@ -259,6 +259,29 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 if ui.button("+ Nuova regola").clicked() {
                     actions.push(Action::AddRule(new_rule(app)));
                 }
+                ui.separator();
+                if ui
+                    .add_enabled(!app.rules.is_empty(), egui::Button::new("Esporta in testo…"))
+                    .on_hover_text("Salva le regole in un file di testo leggibile (riferimenti per nome).")
+                    .clicked()
+                {
+                    actions.push(Action::ExportRulesText);
+                }
+                if ui
+                    .button("Importa da testo…")
+                    .on_hover_text("Aggiunge le regole di un file di testo (quelle identiche si saltano).")
+                    .clicked()
+                {
+                    actions.push(Action::ImportRulesText);
+                }
+                if ui
+                    .add_enabled(!app.rules.is_empty(), egui::Button::new("Log…"))
+                    .on_hover_text("Salva un file di testo che spiega, regola per regola e progetto per progetto, cosa fa ogni regola e perché.")
+                    .clicked()
+                {
+                    actions.push(Action::ExportRulesLog);
+                }
+                ui.separator();
                 let n = crate::rules::all_warnings(app).len();
                 let label = if n == 0 { "Avvisi…".to_string() } else { format!("⚠ Avvisi ({n})…") };
                 if ui.button(label).on_hover_text("Elenco degli avvisi delle regole in tutti i progetti.").clicked() {
@@ -534,5 +557,37 @@ pub(crate) fn rule_warnings_window(ctx: &egui::Context, app: &App, state: &mut U
         });
     if !open {
         state.show_rule_warnings = false;
+    }
+}
+
+/// Resoconto di «Importa da testo…»: le righe scartate e il motivo.
+pub(crate) fn rules_import_report_window(ctx: &egui::Context, state: &mut UiState) {
+    let Some(errors) = &state.rules_import_errors else {
+        return;
+    };
+    let mut open = true;
+    let mut close = false;
+    egui::Window::new("Regole non importate")
+        .collapsible(false)
+        .resizable(true)
+        .default_width(640.0)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label("Queste regole del file non sono state importate (le altre sì):");
+            egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    for e in errors {
+                        ui.label(egui::RichText::new(e).color(warn_amber()));
+                    }
+                });
+            ui.separator();
+            if ui.button("Chiudi").clicked() {
+                close = true;
+            }
+        });
+    if !open || close {
+        state.rules_import_errors = None;
     }
 }
