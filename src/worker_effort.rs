@@ -76,6 +76,48 @@ impl WeWorker {
         }
     }
 
+    /// Settimana `i` fuori dal grafico (ferie, malattia o max ore 0): lì
+    /// le due linee, ore e max, si interrompono.
+    pub fn chart_gap(&self, i: usize) -> bool {
+        self.status.get(i).copied().flatten().is_some() || self.max.get(i).copied().unwrap_or(0) == 0
+    }
+
+    /// Tratti continui del grafico: indici `(primo, ultimo)` (inclusi) delle
+    /// settimane consecutive fra `range` che non sono `chart_gap`.
+    pub fn chart_runs(&self, range: std::ops::Range<usize>) -> Vec<(usize, usize)> {
+        let mut out: Vec<(usize, usize)> = Vec::new();
+        for i in range {
+            if self.chart_gap(i) {
+                continue;
+            }
+            match out.last_mut() {
+                Some(last) if last.1 + 1 == i => last.1 = i,
+                _ => out.push((i, i)),
+            }
+        }
+        out
+    }
+
+    /// Valore del grafico nella settimana `i`: le ore in percentuale del max
+    /// della settimana (il max è sempre 100%). 0 se il max è 0 (settimana che
+    /// comunque non si disegna).
+    pub fn chart_pct(&self, i: usize) -> f32 {
+        let max = self.max.get(i).copied().unwrap_or(0);
+        if max == 0 { 0.0 } else { self.week_total(i) as f32 * 100.0 / max as f32 }
+    }
+
+    /// Fondo scala del grafico (%): 100, o la percentuale più alta delle
+    /// settimane disegnate in `range` arrotondata per eccesso a un multiplo
+    /// di 10.
+    pub fn chart_top(&self, range: std::ops::Range<usize>) -> u32 {
+        let top = range
+            .filter(|&i| !self.chart_gap(i))
+            .map(|i| self.chart_pct(i).ceil() as u32)
+            .max()
+            .unwrap_or(0);
+        top.div_ceil(10).max(10) * 10
+    }
+
     /// Il worker lavora su un solo dev in tutte le sue righe (anche in
     /// progetti diversi)?
     pub fn single_dev(&self) -> bool {
@@ -205,6 +247,35 @@ mod tests {
     use super::*;
     use crate::date_utils::dates::current_monday_days;
     use crate::single_effort_utils::single_effort::Effort;
+
+    /// Grafico: ferie, malattia e max 0 interrompono le linee; i tratti
+    /// sono le settimane consecutive rimaste; valori in % del max della
+    /// settimana, scala da 100% in su (arrotondata a 10).
+    #[test]
+    fn chart_breaks_on_vacation_sick_and_zero_max() {
+        let w = WeWorker {
+            name: "Alice".into(),
+            rows: vec![WeRow {
+                project: "ABC".into(),
+                dev: "Frontend".into(),
+                hours: vec![Some(30), Some(99), Some(45), None, Some(8), Some(50), Some(20)],
+            }],
+            status: vec![None, Some(WeekStatus::Ferie), None, None, Some(WeekStatus::Malattia), None, None],
+            max: vec![40, 40, 40, 40, 40, 0, 32],
+        };
+        let gaps: Vec<bool> = (0..7).map(|i| w.chart_gap(i)).collect();
+        assert_eq!(gaps, [false, true, false, false, true, true, false]);
+        assert_eq!(w.chart_runs(0..7), [(0, 0), (2, 3), (6, 6)]);
+        assert_eq!(w.chart_runs(3..7), [(3, 3), (6, 6)], "solo dentro il blocco");
+        // In % del max: 30/40 = 75%, 45/40 = 112.5%, 20/32 = 62.5%.
+        assert_eq!(w.chart_pct(0), 75.0);
+        assert_eq!(w.chart_pct(2), 112.5);
+        assert_eq!(w.chart_pct(5), 0.0, "max 0");
+        // 99h (ferie) e 50h (max 0) non contano: il più alto è 112.5% → 120.
+        assert_eq!(w.chart_top(0..7), 120);
+        assert_eq!(w.chart_top(6..7), 100, "sotto il max: scala al 100%");
+        assert_eq!(w.chart_top(4..6), 100, "niente da disegnare: 100%");
+    }
 
     #[test]
     fn weeks_cover_every_week_overlapping_the_period() {

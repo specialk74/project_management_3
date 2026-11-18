@@ -63,6 +63,96 @@ fn default_range() -> (i32, i32) {
     (current_monday_days(), to)
 }
 
+/// Altezza del grafico sopra la tabella e margini interni (sopra e sotto).
+const WE_CHART_H: f32 = 110.0;
+const WE_CHART_PAD: f32 = 8.0;
+
+/// Colore della linea delle ore (la linea del max è rossa).
+fn we_hours_color() -> Color32 {
+    g(Color32::from_rgb(0x5B, 0x8D, 0xEF))
+}
+
+/// Grafico sopra la tabella di un worker, con le colonne della tabella: in x
+/// le settimane (un punto al centro di ogni colonna), in y la percentuale
+/// **normalizzata al max della settimana** (limite della settimana, max del
+/// worker o 40h): linea blu = totale della settimana ÷ max, linea rossa = il
+/// max, quindi sempre 100%. Nelle settimane di
+/// ferie, malattia o con max 0 entrambe le linee si interrompono; un tratto di
+/// una sola settimana è un punto. Nella colonna delle etichette la scala e la
+/// legenda; passando col mouse, data, ore e max della settimana.
+fn draw_worker_chart(ui: &mut egui::Ui, w: &WeWorker, weeks: &[i32]) {
+    let n = weeks.len();
+    let size = egui::vec2(WE_LABEL_W + n as f32 * WE_CELL_W, WE_CHART_H);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    let p = ui.painter_at(rect);
+    let x0 = rect.left() + WE_LABEL_W;
+    let col_mid = |i: usize| x0 + (i as f32 + 0.5) * WE_CELL_W;
+    let (y_bot, y_top) = (rect.bottom() - WE_CHART_PAD, rect.top() + WE_CHART_PAD);
+    let top = w.chart_top(0..n) as f32;
+    let y_of = |h: f32| y_bot - (y_bot - y_top) * h / top;
+    let font = egui::FontId::proportional(WE_HEAD_FONT);
+    let thin = Stroke::new(1.0, strip_border());
+    // Griglia: 0, 50%, 100% e il fondo scala se è oltre, con le percentuali
+    // nella colonna delle etichette.
+    let mut grid = vec![0.0, 50.0, 100.0];
+    if top > 100.0 {
+        grid.push(top);
+    }
+    for h in grid {
+        let y = y_of(h);
+        p.hline(x0..=rect.right(), y, thin);
+        p.text(
+            egui::pos2(x0 - 4.0, y),
+            Align2::RIGHT_CENTER,
+            format!("{}%", h as u32),
+            font.clone(),
+            text_dim(),
+        );
+    }
+    p.vline(x0, y_top..=y_bot, thin);
+    // Legenda in alto a sinistra.
+    let legend = [("Ore", we_hours_color()), ("Max", g(error_red()))];
+    for (k, (label, color)) in legend.iter().enumerate() {
+        let y = rect.top() + 12.0 + k as f32 * 14.0;
+        let lx = rect.left() + 4.0;
+        p.line_segment([egui::pos2(lx, y), egui::pos2(lx + 14.0, y)], Stroke::new(2.0, *color));
+        p.text(egui::pos2(lx + 18.0, y), Align2::LEFT_CENTER, *label, font.clone(), text());
+    }
+    // Le due linee, un tratto per ogni gruppo di settimane senza interruzioni.
+    let hours = |i: usize| w.chart_pct(i);
+    let max = |_: usize| 100.0_f32;
+    for (a, b) in w.chart_runs(0..n) {
+        for (value, color) in [(&max as &dyn Fn(usize) -> f32, g(error_red())), (&hours, we_hours_color())] {
+            let pts: Vec<egui::Pos2> = (a..=b).map(|i| egui::pos2(col_mid(i), y_of(value(i)))).collect();
+            if pts.len() == 1 {
+                p.circle_filled(pts[0], 2.5, color);
+            } else {
+                p.add(egui::Shape::line(pts, Stroke::new(2.0, color)));
+            }
+        }
+    }
+    // Tooltip della settimana sotto il puntatore.
+    if let Some(pos) = resp.hover_pos()
+        && pos.x >= x0
+    {
+        let i = ((pos.x - x0) / WE_CELL_W) as usize;
+        if let Some(&wk) = weeks.get(i) {
+            let detail = match w.status.get(i).copied().flatten() {
+                Some(WeekStatus::Ferie) => "ferie".to_string(),
+                Some(WeekStatus::Malattia) => "malattia".to_string(),
+                None if w.max.get(i).copied().unwrap_or(0) == 0 => "max 0h".to_string(),
+                None => format!(
+                    "{}h su {}h ({}%)",
+                    w.week_total(i),
+                    w.max[i],
+                    w.chart_pct(i).round() as u32
+                ),
+            };
+            resp.on_hover_text_at_pointer(format!("{}: {detail}", week_label(wk)));
+        }
+    }
+}
+
 /// Tabella di un worker, disegnata a coordinate: tre righe di intestazione
 /// (anno e mese raggruppati sulle loro settimane, poi il giorno del lunedì),
 /// poi una riga per progetto × dev con le ore e in fondo la riga dei totali
@@ -274,11 +364,11 @@ pub(crate) fn worker_effort_window(
             let projects = worker_effort_projects(app, state);
             let data = crate::worker_effort::build(app, &projects, &weeks);
             let any_rows = data.iter().any(|w| !w.rows.is_empty());
+            // Cambio a mano di Da/A (o «Da oggi a un anno»): svuota gli anni.
+            let mut manual = false;
+            let mut years_changed = false;
             ui.horizontal(|ui| {
-                for (label, salt, day) in [
-                    ("Da:", "worker_effort_from", &mut from),
-                    ("A:", "worker_effort_to", &mut to),
-                ] {
+                let picker = |ui: &mut egui::Ui, label: &str, salt: &str, day: &mut i32| -> bool {
                     ui.label(egui::RichText::new(label).strong());
                     let mut date = days_to_jiff(*day);
                     let r = ui.add(
@@ -290,15 +380,32 @@ pub(crate) fn worker_effort_window(
                         && let Some(d) = jiff_to_days(date)
                     {
                         *day = d;
-                        changed = true;
+                        return true;
                     }
-                }
+                    false
+                };
+                manual |= picker(ui, "Da:", "worker_effort_from", &mut from);
+                ui.separator();
+                // Come in matrice e torte: gli anni impostano Da/A (1/1 del più
+                // vecchio → 31/12 del più recente).
+                years_changed = years_combo(ui, app, "worker_effort_years", &mut state.worker_effort_years);
+                ui.separator();
+                manual |= picker(ui, "A:", "worker_effort_to", &mut to);
                 if ui
                     .button("Da oggi a un anno")
                     .on_hover_text("Rimette il periodo di partenza: da oggi a un anno da oggi.")
                     .clicked()
                 {
                     (from, to) = default_range();
+                    manual = true;
+                }
+                if years_changed {
+                    if let Some(range) = years_range(&state.worker_effort_years) {
+                        (from, to) = range;
+                        changed = true;
+                    }
+                } else if manual {
+                    state.worker_effort_years.clear();
                     changed = true;
                 }
                 if ui
@@ -325,7 +432,9 @@ pub(crate) fn worker_effort_window(
                      Categorie e Anni. Celle vuote: worker non assegnato. Blu: ferie, \
                      rosso: malattia. Totale rosso: oltre le ore max della settimana; \
                      arancione: sotto l'80% delle ore max; colonna gialla: nessuna ora \
-                     nella settimana.",
+                     nella settimana. Grafico: ore della settimana in % delle ore max (blu) e il \
+                     max al 100% (rosso), interrotti nelle settimane di ferie, malattia o \
+                     con max 0.",
                 )
                 .small()
                 .color(text_dim()),
@@ -344,10 +453,14 @@ pub(crate) fn worker_effort_window(
                 .scroll_source(drag_scroll())
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    for w in &data {
-                        ui.add_space(6.0);
+                    for (i, w) in data.iter().enumerate() {
+                        if i > 0 {
+                            worker_divider(ui);
+                        } else {
+                            ui.add_space(6.0);
+                        }
                         // Un solo dev: righe con la sola tripletta, il dev va qui.
-                        ui.horizontal(|ui| {
+                        worker_heading(ui, |ui| {
                             ui.label(egui::RichText::new(&w.name).strong().size(15.0));
                             if let Some(dev) = w.only_dev() {
                                 ui.label(
@@ -363,6 +476,7 @@ pub(crate) fn worker_effort_window(
                             );
                             continue;
                         }
+                        draw_worker_chart(ui, w, &weeks);
                         draw_worker_table(ui, w, &weeks, this_week);
                     }
                 });
@@ -627,6 +741,129 @@ mod tests {
         assert!(long_h > short_h + 5.0, "{long_h} vs {short_h}");
         assert!(texts.iter().any(|t| t == long), "nome intero: {texts:?}");
         assert!(!texts.iter().any(|t| t.ends_with('…')), "{texts:?}");
+    }
+
+    /// Grafico sopra la tabella: legenda Ore / Max, linea rossa del max e
+    /// blu delle ore, interrotte nella settimana di ferie (un punto prima, un
+    /// tratto dopo).
+    #[test]
+    fn chart_sits_above_the_table_and_breaks_on_vacation() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let base = current_monday_days();
+        for i in [0, 2, 3] {
+            app.projects.add_effort(p, fe, WeekId((base + 7 * i) as usize), alice, Effort(8));
+        }
+        app.workers.set_week_status(alice, (base + 7) as usize, Some(WeekStatus::Ferie));
+        let weeks: Vec<i32> = (0..4).map(|i| base + 7 * i).collect();
+        let data = crate::worker_effort::build(&app, &[p], &weeks);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            ..Default::default()
+        };
+        let out = ctx.run_ui_test(input, |ui| {
+            draw_worker_chart(ui, &data[0], &weeks);
+            draw_worker_table(ui, &data[0], &weeks, base);
+        });
+        let max_y = text_pos(&out, "Max").expect("legenda").y;
+        let total_y = text_pos(&out, "Totale").expect("tabella").y;
+        assert!(text_pos(&out, "Ore").is_some());
+        assert!(max_y < total_y, "grafico sopra la tabella");
+        let red = g(error_red());
+        let (mut paths, mut points) = (0, 0);
+        for cs in &out.shapes {
+            match &cs.shape {
+                egui::epaint::Shape::Path(ps) if ps.stroke.color == egui::epaint::ColorMode::Solid(red) => {
+                    paths += 1
+                }
+                egui::epaint::Shape::Circle(c) if c.fill == red => points += 1,
+                _ => {}
+            }
+        }
+        assert_eq!((points, paths), (1, 1), "settimana 0 sola, poi 2-3 dopo le ferie");
+    }
+
+    /// Combo «Anni» come nelle torte: spuntare un anno imposta il periodo
+    /// dal 1/1 al 31/12; «Da oggi a un anno» la svuota e rimette il periodo
+    /// di partenza.
+    #[test]
+    fn years_combo_sets_the_period_and_manual_change_clears_it() {
+        let mut app = App::new();
+        let d = |y, m, dd| local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, dd).unwrap());
+        app.projects.add("Progetto", Some("ABC"), Some(WeekId(d(2026, 3, 2) as usize)));
+        let mut state = UiState {
+            show_worker_effort: true,
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1400.0, 800.0)),
+            ..Default::default()
+        };
+        let run = |state: &mut UiState, events: Vec<egui::Event>| {
+            let mut i = input.clone();
+            i.events = events;
+            ctx.run_ui_test(i, |ui| worker_effort_window(ui.ctx(), &app, state, &mut Vec::new()))
+        };
+        let click = |state: &mut UiState, label: &str| {
+            run(state, vec![]);
+            let out = run(state, vec![]);
+            let pos = text_pos(&out, label).unwrap_or_else(|| panic!("manca «{label}»: {:?}", drawn_texts(&out)));
+            for ev in click_events(pos, egui::PointerButton::Primary) {
+                run(state, vec![ev]);
+            }
+        };
+        click(&mut state, "Anni: —");
+        click(&mut state, "2026");
+        assert_eq!(state.worker_effort_years, [2026].into());
+        assert_eq!(state.worker_effort_range, Some((d(2026, 1, 1), d(2026, 12, 31))));
+        click(&mut state, "Da oggi a un anno");
+        assert!(state.worker_effort_years.is_empty(), "cambio a mano: anni svuotati");
+        assert_eq!(state.worker_effort_range, Some(default_range()));
+    }
+
+    /// Worker ben separati: nome in una fascia colorata e, fra un worker e
+    /// l'altro, una linea spessa (una sola per due worker), fra i due nomi.
+    #[test]
+    fn workers_are_separated_by_a_thick_line_and_a_heading_band() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let fe = app.devs.add("Frontend");
+        let p = app.projects.add("Progetto", Some("ABC"), None);
+        let base = current_monday_days();
+        app.projects.add_effort(p, fe, WeekId(base as usize), alice, Effort(8));
+        app.projects.add_effort(p, fe, WeekId(base as usize), bob, Effort(8));
+        let mut state = UiState {
+            show_worker_effort: true,
+            worker_effort_range: Some((base, base + 7)),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 1200.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                worker_effort_window(ui.ctx(), &app, &mut state, &mut Vec::new())
+            }));
+        }
+        let out = out.unwrap();
+        let lines = worker_divider_rects(&out);
+        assert_eq!(lines.len(), 1, "una linea fra due worker");
+        let (a, b) = (text_pos(&out, "Alice").unwrap().y, text_pos(&out, "Bob").unwrap().y);
+        assert!(a < lines[0].center().y && lines[0].center().y < b, "linea fra i due: {a} {lines:?} {b}");
+        let bands = out
+            .shapes
+            .iter()
+            .filter(|cs| matches!(&cs.shape, egui::epaint::Shape::Rect(r) if same_rgb(r.fill, strip_bg(false)) && r.rect.contains(egui::pos2(r.rect.center().x, a))))
+            .count();
+        assert!(bands >= 1, "nome di Alice su una fascia");
     }
 
     #[test]

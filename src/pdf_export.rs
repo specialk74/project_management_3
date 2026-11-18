@@ -3416,8 +3416,13 @@ const WE_X0: f32 = X_LABEL;
 /// un anno da oggi, 53 colonne) stia in una pagina; i nomi lunghi si troncano.
 const WE_LABEL_W: f32 = 21.0;
 const WE_CELL_W: f32 = 4.9;
-/// Prima riga della tabella (sotto titolo e sottotitolo) e fondo utile.
-const WE_TOP: f32 = PAGE_H - 26.0;
+/// Grafico ore / max sotto titolo e sottotitolo: bordo alto e altezza (mm).
+const WE_CHART_TOP: f32 = PAGE_H - 26.0;
+const WE_CHART_H: f32 = 30.0;
+/// Colore della linea delle ore (la linea del max è rossa).
+const WE_HOURS: (f32, f32, f32) = (0.36, 0.55, 0.94);
+/// Prima riga della tabella (sotto il grafico) e fondo utile.
+const WE_TOP: f32 = WE_CHART_TOP - WE_CHART_H - 4.0;
 const WE_BOT: f32 = FOOTER_TOP + 4.0;
 /// Altezza di una riga dell'intestazione (anno, mese, giorno) e di una riga ore.
 const WE_HEAD_H: f32 = 3.6;
@@ -3547,6 +3552,7 @@ fn worker_effort_pages(
             };
             out.extend(text_left(X_LABEL, PAGE_H - 14.0, &title, 14.0, true, BLACK));
             out.extend(text_left(X_LABEL, PAGE_H - 20.0, subtitle, 9.0, false, TEXT_GRAY));
+            out.extend(we_chart_shapes(w, cols.clone()));
 
             // Intestazione: anno e mese raggruppati, poi il giorno del lunedì.
             let head_bot = WE_TOP - 3.0 * WE_HEAD_H;
@@ -3691,6 +3697,50 @@ fn worker_effort_pages(
         }
     }
     pages
+}
+
+/// Grafico di una pagina «Effort by worker», per le settimane `cols` (indici
+/// nel periodo) con le colonne della tabella sotto, in % del max della
+/// settimana: linea blu = totale ÷ max, rossa = il max (100%); entrambe si
+/// interrompono nelle settimane di
+/// ferie, malattia o con max 0 (`WeWorker::chart_gap`), un tratto di una
+/// settimana è un punto. Scala e legenda nella colonna delle etichette.
+fn we_chart_shapes(w: &crate::worker_effort::WeWorker, cols: std::ops::Range<usize>) -> Vec<Shape> {
+    let mut out = Vec::new();
+    let x0 = WE_X0 + WE_LABEL_W;
+    let x1 = x0 + cols.len() as f32 * WE_CELL_W;
+    let mid = |i: usize| x0 + ((i - cols.start) as f32 + 0.5) * WE_CELL_W;
+    let (y_bot, y_top) = (WE_CHART_TOP - WE_CHART_H + 2.0, WE_CHART_TOP - 2.0);
+    let top = w.chart_top(cols.clone()) as f32;
+    let y_of = |h: f32| y_bot + (y_top - y_bot) * h / top;
+    let mut grid = vec![0.0, 50.0, 100.0];
+    if top > 100.0 {
+        grid.push(top);
+    }
+    for h in grid {
+        let y = y_of(h);
+        out.extend(line(x0, y, x1, y, 0.2, GRAY_LT));
+        out.extend(text_right(x0 - 1.0, y - 0.8, &format!("{}%", h as u32), WE_FONT, false, TEXT_GRAY));
+    }
+    out.extend(line(x0, y_bot, x0, y_top, 0.2, GRAY_LT));
+    for (k, (label, color)) in [("Hours", WE_HOURS), ("Max", RED)].into_iter().enumerate() {
+        let y = y_top - 1.0 - k as f32 * 3.5;
+        out.extend(line(WE_X0, y, WE_X0 + 4.0, y, 0.6, color));
+        out.extend(text_left(WE_X0 + 5.0, y - 0.8, label, WE_FONT, false, BLACK));
+    }
+    let hours = |i: usize| w.chart_pct(i);
+    let max = |_: usize| 100.0_f32;
+    for (a, b) in w.chart_runs(cols.clone()) {
+        for (value, color) in [(&max as &dyn Fn(usize) -> f32, RED), (&hours, WE_HOURS)] {
+            let pts: Vec<(f32, f32)> = (a..=b).map(|i| (mid(i), y_of(value(i)))).collect();
+            if pts.len() == 1 {
+                out.extend(dots(&pts, 0.5, color));
+            } else {
+                out.extend(polyline(&pts, 0.5, color));
+            }
+        }
+    }
+    out
 }
 
 /// Colore di una settimana di ferie / malattia.
@@ -4856,6 +4906,51 @@ mod tests {
         app.workers.set_max_hours(mario, 0);
         let pies = build(&app);
         assert!(pies_capacity_pages(&app, &pies[0], "x", false, Some("created")).is_empty());
+    }
+
+    /// Grafico «Effort by worker»: legenda, scala, linee rossa (max) e blu
+    /// (ore) interrotte nelle settimane di ferie / malattia / max 0, e la
+    /// tabella sotto il grafico; nelle pagine c'è il grafico.
+    #[test]
+    fn worker_effort_chart_breaks_and_sits_above_the_table() {
+        use crate::worker_effort::{WeRow, WeWorker};
+        let w = WeWorker {
+            name: "Alice".into(),
+            rows: vec![WeRow {
+                project: "ABC".into(),
+                dev: "Frontend".into(),
+                hours: vec![Some(30), Some(8), Some(45), Some(20), Some(10)],
+            }],
+            status: vec![None, Some(WeekStatus::Ferie), None, None, None],
+            max: vec![40, 40, 40, 0, 40],
+        };
+        let shapes = we_chart_shapes(&w, 0..5);
+        let t = texts(&shapes);
+        // 45/40 = 112.5% → scala a 120%.
+        for s in ["Hours", "Max", "0%", "50%", "100%", "120%"] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        // Tratti: settimana 0 (punto), 2 (punto), 4 (punto): niente segmenti
+        // colorati, solo punti, 3 per linea.
+        let colored = |c: (f32, f32, f32)| {
+            let polys = shapes.iter().filter(|s| matches!(s, Shape::Poly { color, .. } if *color == c)).count();
+            let lines = shapes.iter().filter(|s| matches!(s, Shape::Line { color, .. } if *color == c)).count();
+            (polys, lines)
+        };
+        assert_eq!(colored(RED), (3, 1), "3 punti del max (+ il segno della legenda)");
+        assert_eq!(colored(WE_HOURS).0, 3);
+        // Senza interruzioni: un tratto unico di 4 segmenti per linea.
+        let w2 = WeWorker { status: vec![None; 5], max: vec![40; 5], ..w };
+        let shapes = we_chart_shapes(&w2, 0..5);
+        let red_lines = shapes.iter().filter(|s| matches!(s, Shape::Line { color, .. } if *color == RED)).count();
+        assert_eq!(red_lines, 4 + 1, "4 segmenti + legenda");
+        // In pagina: grafico sopra la tabella.
+        let base = current_monday_days();
+        let weeks: Vec<i32> = (0..5).map(|i| base + 7 * i).collect();
+        let pages = worker_effort_pages(&w2, &weeks, "sub", base, "created");
+        let t = texts(&pages[0]);
+        assert!(t.iter().any(|x| x == "Hours"), "{t:?}");
+        const { assert!(WE_TOP < WE_CHART_TOP - WE_CHART_H, "tabella sotto il grafico") };
     }
 
     /// Torte dei worker: una pagina per worker con ore (chi ne ha 0 è

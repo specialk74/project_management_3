@@ -772,7 +772,7 @@ fn future_text(pie: &WorkerPie) -> egui::RichText {
 /// Le due torte di un worker, ciascuna con la sua tabella sotto (come nel
 /// PDF); i due blocchi affiancati se c'è spazio, altrimenti uno sotto l'altro.
 fn draw_worker_pies(ui: &mut egui::Ui, app: &App, pie: &WorkerPie, split: bool) {
-    ui.horizontal(|ui| {
+    worker_heading(ui, |ui| {
         ui.label(egui::RichText::new(&pie.name).strong().size(16.0));
         let summary = if split {
             format!(
@@ -994,7 +994,7 @@ pub(crate) fn pies_window(
                 .show(ui, |ui| {
                     for (i, pie) in pies.iter().enumerate() {
                         if i > 0 {
-                            ui.separator();
+                            worker_divider(ui);
                         }
                         draw_worker_pies(ui, app, pie, split);
                     }
@@ -1364,6 +1364,41 @@ mod tests {
         app.workers.set_max_hours(mario, 0);
         let (texts, _) = draw(&app);
         assert!(texts.iter().any(|s| s.starts_with("Nessuna capacità nel periodo")), "{texts:?}");
+    }
+
+    /// Fra le torte di due worker c'è una linea spessa, e il nome di ogni
+    /// worker sta in una fascia colorata.
+    #[test]
+    fn pies_of_two_workers_are_separated_by_a_thick_line() {
+        let (app, mario, luigi) = sample();
+        let mut state = UiState {
+            show_pies: true,
+            pies_workers: [mario, luigi].into_iter().collect(),
+            pies_from: Some(20000),
+            pies_to: Some(20006),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1600.0, 2400.0)),
+            ..Default::default()
+        };
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| pies_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+        }
+        let out = out.unwrap();
+        let lines = worker_divider_rects(&out);
+        assert_eq!(lines.len(), 1, "una linea fra due worker");
+        let ys: Vec<f32> = ["Mario", "Luigi"].iter().map(|n| text_pos(&out, n).unwrap().y).collect();
+        let (top, bottom) = (ys[0].min(ys[1]), ys[0].max(ys[1]));
+        assert!(top < lines[0].center().y && lines[0].center().y < bottom, "{ys:?} {lines:?}");
+        let bands = out
+            .shapes
+            .iter()
+            .filter(|cs| matches!(&cs.shape, egui::epaint::Shape::Rect(r) if same_rgb(r.fill, strip_bg(false))))
+            .count();
+        assert!(bands >= 2, "una fascia per worker");
     }
 
     /// La finestra ha la combo «Stato» e il filtro vale per le torte: con

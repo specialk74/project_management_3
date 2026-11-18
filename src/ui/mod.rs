@@ -1148,6 +1148,9 @@ pub struct UiState {
     // Da/A in giorni (`None` = da oggi a fine griglia). Solo sessione.
     show_worker_effort: bool,
     worker_effort_range: Option<(i32, i32)>,
+    // anni scelti nella combo (come matrice e torte): impostano Da/A; svuotata
+    // se Da/A cambiano a mano. Solo sessione.
+    worker_effort_years: std::collections::BTreeSet<i32>,
     matrix_workers: HashSet<WorkerId>,
     matrix_worker_search: String,
     matrix_from: Option<i32>,
@@ -4223,6 +4226,60 @@ pub(crate) fn drag_scroll() -> egui::scroll_area::ScrollSource {
         drag: egui::scroll_area::DragScroll::Always,
         ..Default::default()
     }
+}
+
+/// Spazio verticale prima e dopo la linea che separa due worker.
+pub(crate) const WORKER_GAP: f32 = 14.0;
+
+/// Separatore fra i blocchi di due worker («Effort per worker», torte):
+/// spazio, linea spessa a tutta larghezza, spazio.
+pub(crate) fn worker_divider(ui: &mut egui::Ui) {
+    ui.add_space(WORKER_GAP);
+    let w = ui.available_width().max(ui.min_rect().width());
+    let (r, _) = ui.allocate_exact_size(egui::vec2(w, 3.0), Sense::hover());
+    ui.painter().rect_filled(r, 1.0, text_dim());
+    ui.add_space(WORKER_GAP);
+}
+
+/// Intestazione del blocco di un worker: una fascia colorata a tutta
+/// larghezza con dentro, in riga, quello che disegna `add` (nome, riepilogo).
+pub(crate) fn worker_heading<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let w = ui.available_width().max(ui.min_rect().width());
+    let r = egui::Frame::new()
+        .fill(strip_bg(false))
+        .corner_radius(4.0)
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.set_min_width(w - 16.0);
+            ui.horizontal(add).inner
+        })
+        .inner;
+    ui.add_space(4.0);
+    r
+}
+
+/// Stesso colore a meno dell'alfa (RGB non premoltiplicato): una finestra
+/// appena aperta sfuma, e nei primi frame i colori hanno alfa basso.
+#[cfg(test)]
+pub(crate) fn same_rgb(a: Color32, b: Color32) -> bool {
+    a.to_srgba_unmultiplied()[..3] == b.to_srgba_unmultiplied()[..3]
+}
+
+/// Rettangoli della linea fra due worker (`worker_divider`) in un frame
+/// disegnato: per i test delle due finestre.
+#[cfg(test)]
+pub(crate) fn worker_divider_rects(out: &egui::FullOutput) -> Vec<Rect> {
+    out.shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Rect(r)
+                if same_rgb(r.fill, text_dim()) && (r.rect.height() - 3.0).abs() < 0.1 =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Checkbox "Select All" condivisa dai dialog con un elenco selezionabile.

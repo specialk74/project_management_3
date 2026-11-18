@@ -810,8 +810,16 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   **Effort per worker…** (`src/ui/worker_effort.rs`, data in `src/worker_effort.rs`;
   `UiState.show_worker_effort` + `worker_effort_range: Option<(i32, i32)>`, `None` =
   `default_range()` = current Monday → today + 12 months, button «Da oggi a un anno»,
-  session only): read-only, one table per worker
-  (`show_in_find`, stacked in one `ScrollArea::both` with `drag_scroll()`), **painted
+  session only; between Da and A the shared `years_combo` →
+  `UiState.worker_effort_years` sets the range with `years_range`, a manual
+  Da/A change or «Da oggi a un anno» clears it — test
+  `years_combo_sets_the_period_and_manual_change_clears_it`): read-only, one table per worker
+  (`show_in_find`, stacked in one `ScrollArea::both` with `drag_scroll()`; workers
+  separated like the pies: `worker_heading` band for the name row and
+  `worker_divider` between workers, both in `mod.rs` — tests
+  `workers_are_separated_by_a_thick_line_and_a_heading_band`,
+  `pies_of_two_workers_are_separated_by_a_thick_line`, helper
+  `worker_divider_rects`/`same_rgb`), **painted
   at coordinates** by `draw_worker_table` (an `egui::Grid` can't span columns). Header
   = three rows: year and month **grouped** over their weeks (`worker_effort::spans`
   with `year_of` / `month_of`; a week belongs to its Monday's month; GUI months
@@ -842,6 +850,20 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `week_totals_are_red_over_the_week_max_and_yellow_when_empty`,
   `week_totals_are_red_over_max_and_empty_weeks_are_yellow`,
   `worker_effort_pdf_has_week_totals_red_over_max_and_yellow_when_empty`.
+  **Chart above each table** (GUI `draw_worker_chart`, `WE_CHART_H` 110 px, same
+  columns: point at each column centre; PDF `we_chart_shapes(w, cols)` on every
+  page for that page's week block, between `WE_CHART_TOP` and `WE_CHART_TOP -
+  WE_CHART_H`, so `WE_TOP` = table top moved down), **normalized to the
+  week's max**: blue = `chart_pct(i)` = `week_total(i)` ÷ `max[i]` × 100
+  (`we_hours_color()` / `WE_HOURS`), red = the max = flat 100% (effective
+  max, 40h default). `WeWorker::chart_gap(i)` (Ferie, Malattia or max 0) breaks **both**
+  lines; `chart_runs(range)` = consecutive non-gap weeks (a single week = a
+  dot), `chart_top(range)` = highest drawn % rounded up to 10, at least 100.
+  Scale (0 / 50 / 100% + top when above) and legend in the label column; GUI
+  hover tooltip = «32h su 40h (80%)» (or ferie/malattia/max 0). Tests
+  `chart_breaks_on_vacation_sick_and_zero_max`,
+  `chart_sits_above_the_table_and_breaks_on_vacation`,
+  `worker_effort_chart_breaks_and_sits_above_the_table`.
   GUI colour tests compare **unmultiplied RGB**:
   a new egui window fades in, so the first frames have a low alpha. Projects = `worker_effort_projects` = `body_projects(app,
   project_view, ProjectFilter::from_state)`, shared with the export. No totals.

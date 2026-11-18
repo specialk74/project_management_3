@@ -1489,6 +1489,10 @@ tabelle, totale e occupazione, seguono i filtri **Dev**, **Categorie** e
 e delle priorità selezionati
 (senza filtri, tutto il lavoro del worker).
 
+Ogni worker inizia con una **fascia grigia** con il nome e i suoi numeri (ore,
+disponibili, occupazione), e fra un worker e il successivo c'è una **linea
+spessa** a tutta larghezza, così i blocchi non si confondono.
+
 Ogni torta ha la sua tabella **sotto**, come nel PDF, centrata sopra di essa (se
 la tabella è più stretta della torta, è la tabella a essere centrata), e le due
 torte di ogni riga stanno una
@@ -1553,8 +1557,25 @@ periodo finisce prima della settimana corrente.
 ### Effort per worker (Vista ▸ Effort per worker…)
 Finestra di sola lettura con **una tabella per ogni worker**, una sotto l'altra
 (tutti i worker con la spunta **Elenchi** di «Filtri ▸ Worker (visibilità e
-ghost)…»):
+ghost)…»). Ogni worker ha il nome in una **fascia grigia** e fra un worker e il
+successivo c'è una **linea spessa**, come nelle torte:
 
+- **sopra la tabella un grafico** con le stesse colonne: in orizzontale le
+  settimane (un punto sopra ogni colonna), in verticale la **percentuale
+  rispetto alle ore max** del worker in quella settimana (il limite della
+  settimana se c'è, altrimenti il suo massimo, 40h se non ne ha uno). La linea
+  **blu** sono le ore della settimana (la riga «Totale») divise per il max, es.
+  32h su 40h = 80%; la linea **rossa** è il max, quindi sempre al **100%**: la
+  blu sopra la rossa vuol dire oltre il massimo. La scala va da 0 a 100% (o più
+  su, arrotondata a 10, se una settimana lo supera). Nelle settimane di
+  **ferie**, **malattia** o con **max 0** entrambe le linee si **interrompono**
+  (il grafico ha un buco); una settimana isolata fra due interruzioni è un
+  punto. A sinistra la scala (0%, 50%, 100% e il fondo scala se è oltre) e la
+  legenda; passando col mouse su una settimana compaiono data, ore, max e
+  percentuale, es. «32h su 40h (80%)» (oppure ferie / malattia / max 0).
+  Il grafico c'è anche nel PDF, sopra la tabella di ogni pagina (legenda
+  «Hours» / «Max»): per fargli posto la tabella ha qualche riga in meno per
+  pagina;
 - **in alto** le settimane del periodo, su **tre righe** per tenere strette le
   colonne: l'**anno** e il **mese** (scritti una volta sopra tutte le loro
   settimane) e sotto il **giorno del lunedì** («02», «09»…), in grassetto per la
@@ -1591,8 +1612,11 @@ ghost)…»):
 
 Il periodo si sceglie con i calendari **Da** / **A** (ogni data vale la settimana
 che la contiene); all'apertura va dalla settimana corrente a **un anno da oggi**, e
-**Da oggi a un anno** lo rimette così. Il periodo è ricordato finché il
-programma è aperto.
+**Da oggi a un anno** lo rimette così. Fra le due date c'è la combo **Anni**,
+come nella matrice e nelle torte: spuntando uno o più anni il periodo va dal 1°
+gennaio del più vecchio al 31 dicembre del più recente; cambiando a mano **Da**
+o **A** (o con «Da oggi a un anno») la combo si svuota. Periodo e anni sono
+ricordati finché il programma è aperto.
 
 I progetti sono quelli **del corpo centrale**: modalità Vista ▸ Progetti
 (`Cmd/Ctrl+1…4`) e filtri Progetti, Categorie e Anni. Un worker senza nessuna
