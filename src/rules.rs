@@ -27,7 +27,7 @@ use crate::categories::CategoryId;
 use crate::dev_utils::dev::DevId;
 use crate::milestones::MilestoneId;
 use crate::priorities::PriorityId;
-use crate::project_utils::project::ProjectId;
+use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::single_dev_utils::single_dev::WeekId;
 
 #[derive(Serialize, Deserialize, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Debug, Default)]
@@ -212,9 +212,46 @@ pub struct Rule {
     pub target: Target,
     pub anchor: Anchor,
     pub offset_weeks: i32,
+    /// Progetti non attivi a cui la regola vale lo stesso (di norma nessuno:
+    /// solo i progetti **attivi**).
+    #[serde(default, skip_serializing_if = "Inactive::is_none")]
+    pub inactive: Inactive,
+}
+
+/// Stati di progetto, oltre ad «Attivo», a cui una regola vale. Di norma
+/// nessuno: una regola non tocca (né controlla) i progetti on-hold o chiusi,
+/// che altrimenti si vedrebbero spostare milestone e date già consegnate.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Inactive {
+    #[serde(default)]
+    pub on_hold: bool,
+    #[serde(default)]
+    pub closed: bool,
+}
+
+impl Inactive {
+    /// Solo progetti attivi.
+    pub fn is_none(&self) -> bool {
+        !self.on_hold && !self.closed
+    }
+
+    /// La regola vale per un progetto in questo stato?
+    pub fn allows(self, s: ProjectStatus) -> bool {
+        match s {
+            ProjectStatus::Active => true,
+            ProjectStatus::OnHold => self.on_hold,
+            ProjectStatus::Closed => self.closed,
+        }
+    }
 }
 
 impl Rule {
+    /// La regola vale per il progetto: è nell'ambito e il suo stato è fra
+    /// quelli ammessi (`inactive`).
+    pub fn applies_to(&self, app: &App, proj: ProjectId) -> bool {
+        self.scope.matches(app, proj) && self.inactive.allows(app.projects.status(proj))
+    }
+
     /// Il dev del bersaglio (per «Aggiungi dev» e lo spostamento delle ore).
     pub fn target_dev(&self) -> DevId {
         match self.target {
@@ -239,6 +276,8 @@ struct RuleFile {
     anchor: Anchor,
     #[serde(default)]
     offset_weeks: i32,
+    #[serde(default)]
+    inactive: Inactive,
 }
 
 /// Campo facoltativo scritto come valore semplice (non `Some(…)`).
@@ -258,6 +297,7 @@ impl From<RuleFile> for Rule {
             target,
             anchor: f.anchor,
             offset_weeks: f.offset_weeks,
+            inactive: f.inactive,
         }
     }
 }
@@ -347,7 +387,7 @@ pub fn governing(app: &App, proj: ProjectId) -> BTreeMap<Target, RuleId> {
         if !r.enabled
             || r.target.kind() != RuleKind::Aligned
             || !anchor_fits(r.target, r.anchor)
-            || !r.scope.matches(app, proj)
+            || !r.applies_to(app, proj)
             || !placeable(app, proj, r.target)
         {
             continue;
@@ -567,6 +607,91 @@ pub fn apply(app: &mut App) -> Outcome {
     out
 }
 
+/// Una modifica che una regola farebbe a un progetto (anteprima
+/// dell'attivazione, `preview_changes`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuleChange {
+    pub proj: ProjectId,
+    pub text: String,
+}
+
+/// Cosa cambierebbe nei progetti mettendo `rule` al posto della regola `id`
+/// (o aggiungendola, se `id` non c'è): le regole si applicano a due copie dei
+/// dati, prima e dopo, e si confrontano dev, date e milestone. Vuoto se non
+/// cambia nulla (anche per avvisi e spostamenti di ore, che non agiscono da
+/// soli).
+pub fn preview_changes(app: &App, id: RuleId, rule: &Rule) -> Vec<RuleChange> {
+    preview_with(app, |rules| {
+        if !rules.update(id, rule.clone()) && rules.get(id).is_none() {
+            rules.add(rule.clone());
+        }
+    })
+}
+
+/// Cosa cambierebbe nei progetti aggiungendo le regole (anteprima
+/// dell'importazione da testo).
+pub fn preview_added(app: &App, added: &[Rule]) -> Vec<RuleChange> {
+    preview_with(app, |rules| {
+        for r in added {
+            rules.add(r.clone());
+        }
+    })
+}
+
+/// Applica le regole a due copie dei dati, prima e dopo `edit` delle regole,
+/// e confronta.
+fn preview_with(app: &App, edit: impl FnOnce(&mut Rules)) -> Vec<RuleChange> {
+    let mut before = app.clone();
+    apply(&mut before);
+    let mut after = app.clone();
+    edit(&mut after.rules);
+    apply(&mut after);
+    changes_between(&before, &after)
+}
+
+/// Differenze di dev, date e milestone fra due versioni degli stessi
+/// progetti, in ordine di griglia.
+fn changes_between(before: &App, after: &App) -> Vec<RuleChange> {
+    let date = |w: Option<WeekId>| w.map_or_else(|| "—".to_string(), |w| crate::date_utils::dates::week_label(w.0 as i32));
+    let ms_name = |m: MilestoneId| after.milestones.get_name(m).unwrap_or("?").to_string();
+    let mut out = Vec::new();
+    for (proj, _) in after.projects.list() {
+        let mut push = |text: String| out.push(RuleChange { proj, text });
+        let old_devs = before.projects.list_devs(proj);
+        for d in after.projects.list_devs(proj) {
+            if !old_devs.contains(&d) {
+                let name = after.devs.get(d).map(|x| x.get_name()).unwrap_or_else(|| "?".into());
+                push(format!("aggiunto il dev {name}"));
+            }
+        }
+        for (label, b, a) in [
+            ("inizio", before.projects.get_project_start_week(proj), after.projects.get_project_start_week(proj)),
+            ("fine", before.projects.get_project_end_week(proj), after.projects.get_project_end_week(proj)),
+        ] {
+            if a != b {
+                push(format!("{label} progetto: {} → {}", date(b), date(a)));
+            }
+        }
+        let old: BTreeMap<MilestoneId, WeekId> = before.projects.list_project_milestones(proj).into_iter().collect();
+        let new: BTreeMap<MilestoneId, WeekId> = after.projects.list_project_milestones(proj).into_iter().collect();
+        for (m, w) in &new {
+            match old.get(m) {
+                None => push(format!("milestone {} collocata il {}", ms_name(*m), date(Some(*w)))),
+                Some(o) if o != w => {
+                    push(format!("milestone {}: {} → {}", ms_name(*m), date(Some(*o)), date(Some(*w))))
+                }
+                _ => {}
+            }
+        }
+        for (m, w) in &old {
+            if !new.contains_key(m) {
+                push(format!("milestone {} tolta (era il {})", ms_name(*m), date(Some(*w))));
+            }
+        }
+    }
+    out
+}
+
 /// Dev che le regole «Aggiungi dev» vogliono nel progetto (attive, con
 /// l'ambito che lo comprende e la condizione vera), con la prima regola che
 /// lo chiede: la finestra dei dev non li fa togliere.
@@ -578,7 +703,7 @@ pub fn required_devs(app: &App, proj: ProjectId) -> BTreeMap<DevId, RuleId> {
             && r.enabled
             && a != b
             && app.devs.get(b).is_some()
-            && r.scope.matches(app, proj)
+            && r.applies_to(app, proj)
             && devs.contains(&a)
         {
             out.entry(b).or_insert(id);
@@ -623,7 +748,7 @@ pub fn pending_moves(app: &App, id: RuleId) -> Vec<DevMove> {
     }
     let mut out = Vec::new();
     for (proj, _) in app.projects.list() {
-        if !r.scope.matches(app, proj) {
+        if !r.applies_to(app, proj) {
             continue;
         }
         let Some((first, last)) = app.projects.get_single_dev(proj, dev).and_then(|sd| sd.effort_span()) else {
@@ -707,7 +832,7 @@ pub fn warnings(app: &App, proj: ProjectId) -> Vec<RuleWarning> {
     let mut out = Vec::new();
     for (id, r) in checks {
         let Target::Check(point, cmp) = r.target else { continue };
-        if !r.scope.matches(app, proj) {
+        if !r.applies_to(app, proj) {
             continue;
         }
         let (Ok(Some(p)), Ok(Some(a))) = (ctx.anchor(point, r.target), ctx.anchor(r.anchor, r.target)) else {
@@ -894,14 +1019,15 @@ pub fn diagnose(app: &App, when: &str) -> String {
         let st = status(app, id);
         let plus = if r.offset_weeks > 0 { "+" } else { "" };
         out.push_str(&format!(
-            "\n== Regola {} «{}» — {} ==\n   cosa = {}\n   ancora = {}\n   settimane = {plus}{}\n   progetti = {}\n",
+            "\n== Regola {} «{}» — {} ==\n   cosa = {}\n   ancora = {}\n   settimane = {plus}{}\n   progetti = {}\n   stati = {}\n",
             id.0,
             rule_label(app, id),
             if r.enabled { "attiva" } else { "SPENTA" },
             target_text(app, r.target),
             anchor_text(app, r.anchor),
             r.offset_weeks,
-            scope_text(app, &r.scope)
+            scope_text(app, &r.scope),
+            crate::rules_text::states_text(r.inactive)
         ));
         if !st.missing.is_empty() {
             out.push_str(&format!("   ⚠ inesistente: {} — la regola non agisce.\n", st.missing.join(", ")));
@@ -919,7 +1045,7 @@ pub fn diagnose(app: &App, when: &str) -> String {
             out.push_str("   (si applica solo su comando, con «Applica ora…»)\n");
         }
         let (inside, outside): (Vec<ProjectId>, Vec<ProjectId>) =
-            projects.iter().partition(|p| r.scope.matches(app, **p));
+            projects.iter().partition(|p| r.applies_to(app, **p));
         if inside.is_empty() {
             out.push_str("   nessun progetto nell'ambito.\n");
         }
@@ -931,7 +1057,11 @@ pub fn diagnose(app: &App, when: &str) -> String {
             if outside.len() > 10 {
                 names.push("…".into());
             }
-            out.push_str(&format!("   fuori ambito: {} progetti ({})\n", outside.len(), names.join(", ")));
+            out.push_str(&format!(
+                "   fuori ambito (o in uno stato escluso): {} progetti ({})\n",
+                outside.len(),
+                names.join(", ")
+            ));
         }
     }
     out
@@ -1000,7 +1130,7 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         RuleKind::Aligned => {}
         RuleKind::AddDev => {
             for (proj, _) in app.projects.list() {
-                if r.enabled && r.scope.matches(app, proj) {
+                if r.enabled && r.applies_to(app, proj) {
                     st.governed += 1;
                     if required_devs(app, proj).get(&r.target_dev()) == Some(&id) {
                         st.placed += 1;
@@ -1015,7 +1145,7 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         }
         RuleKind::Warning => {
             for (proj, _) in app.projects.list() {
-                if r.scope.matches(app, proj) {
+                if r.applies_to(app, proj) {
                     st.governed += 1;
                     if warnings(app, proj).iter().any(|w| w.rule == id) {
                         st.placed += 1;
@@ -1084,7 +1214,7 @@ mod tests {
     }
 
     fn date_rule(scope: RuleScope, target: Target, anchor: Anchor, offset_weeks: i32) -> Rule {
-        Rule { name: String::new(), enabled: true, scope, target, anchor, offset_weeks }
+        Rule { name: String::new(), enabled: true, scope, target, anchor, offset_weeks, inactive: Inactive::default() }
     }
 
     fn at(app: &App, p: ProjectId, m: MilestoneId) -> Option<WeekId> {
@@ -1403,7 +1533,7 @@ mod tests {
         let scoped = f.app.rules.add(rule(RuleScope::Category(cat), f.rilascio, Anchor::DevEnd(f.fe), 0));
         let log = diagnose(&f.app, "oggi");
         assert!(log.contains("   - XYZ: ancora mancante (il dev Frontend non è nel progetto)"), "{log}");
-        assert!(log.contains("   fuori ambito: 1 progetti (ABC)"), "{log}");
+        assert!(log.contains("   fuori ambito (o in uno stato escluso): 1 progetti (ABC)"), "{log}");
         let _ = scoped;
     }
 
@@ -1453,5 +1583,99 @@ mod tests {
         let pri = f.app.rules.add(rule(RuleScope::Priority(must), f.collaudo, Anchor::DevEnd(f.be), 2));
         assert_eq!(governing_rule(&f.app, f.p, Target::Milestone(f.collaudo)), Some(pri));
         assert!(RuleScope::AllExcept(vec![]).rank() > RuleScope::All.rank());
+    }
+
+    /// Di norma una regola vale solo per i progetti attivi: in un progetto
+    /// on-hold o chiuso non colloca nulla e non sposta ciò che c'è (la
+    /// milestone già collocata resta dov'è, non più governata), non aggiunge
+    /// dev e non avvisa; con `inactive` acceso vale anche lì.
+    #[test]
+    fn rules_act_only_on_active_projects_unless_asked() {
+        let mut f = fx();
+        let test = f.app.devs.add("Test");
+        let r = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        let add = f.app.rules.add(date_rule(RuleScope::All, Target::AddDev(test), Anchor::DevPresent(f.be), 0));
+        let warn = f.app.rules.add(date_rule(
+            RuleScope::All,
+            Target::Check(Anchor::Milestone(f.collaudo), Cmp::NotAfter),
+            Anchor::DevEnd(f.be),
+            0,
+        ));
+        f.app.projects.set_status(f.p, ProjectStatus::Closed);
+        apply(&mut f.app);
+        assert_eq!(at(&f.app, f.p, f.collaudo), None, "chiuso: niente milestone");
+        assert!(!f.app.projects.list_devs(f.p).contains(&test), "chiuso: niente dev");
+        assert!(governing(&f.app, f.p).is_empty());
+        // Attivo: la regola agisce; poi on-hold: la milestone resta dov'è
+        // anche se l'ancora si sposta.
+        f.app.projects.set_status(f.p, ProjectStatus::Active);
+        apply(&mut f.app);
+        let placed = WeekId(f.base + 7 * 5);
+        assert_eq!(at(&f.app, f.p, f.collaudo), Some(placed));
+        assert_eq!(warnings(&f.app, f.p).len(), 1, "Collaudo dopo la fine del Backend");
+        f.app.projects.set_status(f.p, ProjectStatus::OnHold);
+        f.app.projects.add_effort(f.p, f.be, WeekId(f.base + 7 * 4), f.app.workers.list()[0].0, Effort(8));
+        apply(&mut f.app);
+        assert_eq!(at(&f.app, f.p, f.collaudo), Some(placed), "on-hold: non si sposta");
+        assert!(warnings(&f.app, f.p).is_empty(), "on-hold: nessun avviso");
+        assert_eq!(status(&f.app, r).governed, 0);
+        // Con on-hold ammesso, la regola torna ad agire.
+        for id in [r, add, warn] {
+            let mut x = f.app.rules.get(id).unwrap().clone();
+            x.inactive.on_hold = true;
+            f.app.rules.update(id, x);
+        }
+        apply(&mut f.app);
+        assert_eq!(at(&f.app, f.p, f.collaudo), Some(WeekId(f.base + 7 * 6)));
+        assert!(f.app.projects.list_devs(f.p).contains(&test));
+        assert_eq!(warnings(&f.app, f.p).len(), 1);
+        // On-hold ammesso, closed no.
+        f.app.projects.set_status(f.p, ProjectStatus::Closed);
+        assert!(governing(&f.app, f.p).is_empty());
+    }
+
+    /// `inactive` nel `.ron`: assente nelle regole vecchie (= solo attivi) e
+    /// scritto solo quando non è quello di norma.
+    #[test]
+    fn inactive_states_round_trip_and_default_to_active_only() {
+        let mut f = fx();
+        f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        let ron = f.app.to_ron_string();
+        assert!(!ron.contains("inactive"), "di norma non si scrive: {ron}");
+        let mut x = f.app.rules.get(RuleId(1)).unwrap().clone();
+        x.inactive = Inactive { on_hold: false, closed: true };
+        f.app.rules.update(RuleId(1), x);
+        let ron = f.app.to_ron_string();
+        assert!(ron.contains("inactive"), "{ron}");
+        assert_eq!(App::from_ron_str(&ron).expect("rilettura").rules, f.app.rules);
+    }
+
+    /// Anteprima: cosa farebbe la regola se attivata, progetto per progetto;
+    /// nulla per una regola che non cambierebbe niente.
+    #[test]
+    fn preview_lists_what_a_rule_would_change() {
+        let mut f = fx();
+        f.app.projects.set_project_end_week(f.p, Some(WeekId(f.base + 7 * 10)));
+        f.app.projects.add_project_milestone(f.p, f.rilascio, WeekId(f.base));
+        let mut ms = rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2);
+        ms.enabled = false;
+        let id = f.app.rules.add(ms.clone());
+        assert!(preview_changes(&f.app, id, &ms).is_empty(), "spenta: nulla");
+        ms.enabled = true;
+        let ch = preview_changes(&f.app, id, &ms);
+        assert_eq!(ch.len(), 1, "{ch:?}");
+        assert_eq!(ch[0].proj, f.p);
+        assert!(ch[0].text.starts_with("milestone Collaudo collocata il "), "{}", ch[0].text);
+        // Data e milestone spostata / tolta.
+        let end = date_rule(RuleScope::All, Target::ProjectEnd, Anchor::LastEffort, 1);
+        let texts: Vec<String> = preview_changes(&f.app, RuleId(99), &end).into_iter().map(|c| c.text).collect();
+        assert_eq!(texts.len(), 1);
+        assert!(texts[0].starts_with("fine progetto: "), "{texts:?}");
+        let gone = rule(RuleScope::All, f.rilascio, Anchor::Milestone(f.demo), 0);
+        let texts: Vec<String> = preview_changes(&f.app, RuleId(99), &gone).into_iter().map(|c| c.text).collect();
+        assert_eq!(texts.len(), 1);
+        assert!(texts[0].starts_with("milestone Rilascio tolta"), "{texts:?}");
+        // I dati non cambiano.
+        assert_eq!(at(&f.app, f.p, f.collaudo), None);
     }
 }

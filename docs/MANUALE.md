@@ -947,7 +947,14 @@ Una regola mette **da sola** una milestone, oppure la **data di inizio** o di
 Nella finestra ogni regola è una riga:
 
 - **Attiva** — la regola agisce solo se spuntata. Una regola nuova (pulsante
-  **+ Nuova regola**) nasce **spenta**: prima la si configura, poi la si attiva;
+  **+ Nuova regola**) nasce **spenta**: prima la si configura, poi la si attiva.
+  Se attivandola cambierebbe qualcosa, prima si apre la finestra **Attivare la
+  regola?** con l'elenco, progetto per progetto, di cosa farebbe (milestone
+  collocate, spostate o tolte, date di inizio / fine, dev aggiunti; accanto ai
+  progetti on-hold o closed il loro stato): **Applica** la attiva, **Annulla**
+  la lascia spenta. Lo stesso (**Modificare la regola?**) quando di una regola
+  già attiva si cambiano progetti, stati, cosa o ancora; le settimane e il nome
+  invece si applicano subito;
 - **Nome** — libero, per riconoscerla (si conferma uscendo dal campo; Esc
   annulla);
 - **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
@@ -956,7 +963,10 @@ Nella finestra ogni regola è una riga:
   «Tutti i progetti»); la tendina mostra «Progetto: ABC» o «Progetti: ABC,
   XYZ». Con **Tutti i progetti tranne…** le stesse spunte diventano i progetti
   da **escludere** (la tendina mostra «Tutti tranne: ABC, XYZ»): utile quando
-  la regola vale quasi ovunque;
+  la regola vale quasi ovunque. Accanto, la tendina degli **stati**: di norma
+  **Solo attivi** — la regola non tocca (e non controlla) i progetti on-hold o
+  closed —, oppure **Attivi + on-hold**, **Attivi + closed**, **Tutti gli
+  stati**;
 - **Cosa** — la milestone da posizionare, oppure **Inizio progetto (data)** /
   **Fine progetto (data)** (in cima all'elenco), oppure — in fondo — **Aggiungi
   dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto) e
@@ -1010,8 +1020,12 @@ Come funzionano:
 - **Riferimenti eliminati** — eliminando una milestone usata da una regola il
   programma chiede conferma; eliminando una milestone o un dev usati, le regole
   restano ma non agiscono e sono segnalate (anche fra i problemi del file).
-- Le regole sono **salvate nel file** (quindi condivise con i colleghi via git)
-  e valgono per i progetti aperti e chiusi.
+- Le regole sono **salvate nel file** (quindi condivise con i colleghi via git).
+- **Solo progetti attivi** — di norma una regola vale solo per i progetti
+  **attivi**: quando un progetto passa a on-hold o closed le sue milestone e
+  date restano dove sono (non più governate, si modificano a mano) e non dà più
+  avvisi. Per farla valere anche lì, si sceglie lo stato nella tendina accanto
+  ai progetti.
 
 **Dev ed effort** — due tipi di regola in più:
 
@@ -1062,7 +1076,10 @@ Nello stato della regola: «rispettata» oppure «⚠ N avvisi».
 **Regole in testo** — in cima alla finestra, **Esporta in testo…** salva tutte
 le regole in un file di testo leggibile e **Importa da testo…** aggiunge quelle
 di un file (le regole identiche a una già presente si saltano; nessuna regola
-esistente cambia; un Annulla toglie l'importazione). Così le regole si copiano
+esistente cambia; un Annulla toglie l'importazione). Se le regole importate
+(quelle con `attiva = sì`) cambierebbero qualcosa nei progetti, prima si apre
+**Importare le regole?** con l'elenco delle modifiche, come quando si attiva
+una regola: **Applica** importa, **Annulla** non importa nulla. Così le regole si copiano
 da un file `.ron` a un altro, o si scrivono a mano. I riferimenti sono **per
 nome**: una regola che nomina una milestone, un dev, una categoria, una
 priorità o un progetto che nel file aperto non esiste **non viene importata** e
@@ -1074,6 +1091,7 @@ blocco per regola:
 nome = Collaudo dopo il Backend
 attiva = sì
 progetti = tutti
+stati = attivi
 cosa = milestone "Collaudo"
 ancora = fine dev "Backend"
 settimane = +2
@@ -1083,6 +1101,8 @@ settimane = +2
 - `progetti`: `tutti`, `categoria "…"`, `priorità "…"`, `progetto "ABC"`,
   `progetti "ABC", "XYZ"` (più progetti, separati da virgole), `tutti tranne
   "ABC", "XYZ"` (tutti meno quelli elencati);
+- `stati` (facoltativa, se manca vale `attivi`): `attivi`, eventualmente seguito
+  da `on-hold` e / o `closed` separati da virgole (es. `attivi, closed`);
 - `cosa`: `milestone "…"`, `inizio progetto`, `fine progetto`, `aggiungi dev
   "…"`, `ore dev "…"`, `avviso <punto> non prima di`, `avviso <punto> non dopo`;
 - `ancora` e `<punto>`: `fine dev "…"`, `inizio dev "…"`, `se c'è il dev "…"`,
@@ -1099,7 +1119,8 @@ progetto (quelli dell'ambito), cosa succede, es. «ABC: milestone il 26-03-16
 (ancora il 26-03-02)», «XYZ: ancora mancante (il dev Backend non ha ore): la
 milestone non è collocata», «ABC: non agisce: vince la regola «…» (ambito più
 specifico)», «ferma: ciclo», «da spostare: prima settimana … → … usa «Applica
-ora…»», «AVVISO: …», «rispettata: …»; poi i progetti fuori ambito. Le regole
+ora…»», «AVVISO: …», «rispettata: …»; poi i progetti fuori ambito o in uno
+stato escluso. Le regole
 spente, con riferimenti inesistenti o con un'ancora non adatta sono indicate
 in testa.
 

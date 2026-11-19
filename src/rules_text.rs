@@ -10,6 +10,7 @@
 //! nome = Collaudo dopo il Backend
 //! attiva = sì
 //! progetti = tutti
+//! stati = attivi
 //! cosa = milestone "Collaudo"
 //! ancora = fine dev "Backend"
 //! settimane = +2
@@ -19,6 +20,8 @@
 //! virgoletta nel nome):
 //! - `progetti`: `tutti` · `categoria "X"` · `priorità "X"` · `progetto "ABC"` ·
 //!   `progetti "ABC", "XYZ"` · `tutti tranne "ABC", "XYZ"`
+//! - `stati` (facoltativa, assente = `attivi`): `attivi` più, separati da
+//!   virgole, `on-hold` e / o `closed` (o `chiusi`)
 //! - `cosa`: `milestone "X"` · `inizio progetto` · `fine progetto` ·
 //!   `aggiungi dev "X"` · `ore dev "X"` · `avviso <punto> non prima di` ·
 //!   `avviso <punto> non dopo`
@@ -32,7 +35,7 @@ use crate::app::App;
 use crate::dev_utils::dev::DevId;
 use crate::milestones::MilestoneId;
 use crate::project_utils::project::ProjectId;
-use crate::rules::{Anchor, Cmp, Rule, RuleScope, Target};
+use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleScope, Target};
 
 /// Nome fra virgolette (con `\"` e `\\`).
 fn quote(s: &str) -> String {
@@ -123,6 +126,39 @@ fn project_list(app: &App, s: &str) -> Result<Vec<ProjectId>, String> {
     }
 }
 
+/// Stati a cui vale la regola: `attivi`, più `on-hold` / `closed`.
+pub(crate) fn states_text(i: Inactive) -> String {
+    let mut out = vec!["attivi"];
+    if i.on_hold {
+        out.push("on-hold");
+    }
+    if i.closed {
+        out.push("closed");
+    }
+    out.join(", ")
+}
+
+/// Legge `stati`: parole separate da virgole fra `attivi` (obbligatoria: le
+/// regole valgono sempre per i progetti attivi), `on-hold`, `closed` /
+/// `chiusi`.
+fn parse_states(s: &str) -> Result<Inactive, String> {
+    let mut out = Inactive::default();
+    let mut active = false;
+    for w in s.split(',').map(|w| w.trim().to_lowercase()) {
+        match w.as_str() {
+            "attivi" => active = true,
+            "on-hold" => out.on_hold = true,
+            "closed" | "chiusi" => out.closed = true,
+            "" => return Err("«stati» con un elemento vuoto".into()),
+            v => return Err(format!("«stati» non riconosciuto: «{v}» (attivi, on-hold, closed)")),
+        }
+    }
+    if !active {
+        return Err("«stati» deve comprendere «attivi»".into());
+    }
+    Ok(out)
+}
+
 /// Il file di testo con tutte le regole del `.ron`.
 pub fn export_rules(app: &App) -> String {
     let mut out = String::from(
@@ -133,10 +169,11 @@ pub fn export_rules(app: &App) -> String {
     for (_, r) in app.rules.list() {
         let plus = if r.offset_weeks > 0 { "+" } else { "" };
         out.push_str(&format!(
-            "\n[regola]\nnome = {}\nattiva = {}\nprogetti = {}\ncosa = {}\nancora = {}\nsettimane = {plus}{}\n",
+            "\n[regola]\nnome = {}\nattiva = {}\nprogetti = {}\nstati = {}\ncosa = {}\nancora = {}\nsettimane = {plus}{}\n",
             r.name.replace('\n', " "),
             if r.enabled { "sì" } else { "no" },
             scope_text(app, &r.scope),
+            states_text(r.inactive),
             target_text(app, r.target),
             anchor_text(app, r.anchor),
             r.offset_weeks
@@ -334,6 +371,7 @@ fn parse_block(app: &App, b: &Block) -> Result<Rule, String> {
         target: Target::ProjectEnd,
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
+        inactive: Default::default(),
     };
     let (mut has_target, mut has_anchor) = (false, false);
     for (line, key, value) in &b.fields {
@@ -348,6 +386,7 @@ fn parse_block(app: &App, b: &Block) -> Result<Rule, String> {
                 }
             }
             "progetti" => rule.scope = parse_scope(app, value).map_err(at)?,
+            "stati" => rule.inactive = parse_states(value).map_err(at)?,
             "cosa" => {
                 rule.target = parse_target(app, value).map_err(at)?;
                 has_target = true;
@@ -418,20 +457,48 @@ pub struct ImportReport {
     pub errors: Vec<String>,
 }
 
-/// Aggiunge al `.ron` le regole del testo (le identiche a una già presente
-/// si saltano; nessuna regola esistente cambia).
-pub fn import_rules(app: &mut App, text: &str) -> ImportReport {
-    let (rules, errors) = parse_rules(app, text);
-    let mut rep = ImportReport { errors, ..Default::default() };
-    for r in rules {
-        if app.rules.list().iter().any(|(_, x)| **x == r) {
-            rep.duplicates += 1;
-        } else {
+/// Un'importazione preparata ma non ancora fatta: le regole da aggiungere
+/// (già senza le identiche a una presente o a una precedente del testo), con
+/// i conteggi del resoconto. Si fa con `ImportPlan::apply`, dopo l'eventuale
+/// anteprima delle modifiche (`rules::preview_added`).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ImportPlan {
+    pub rules: Vec<Rule>,
+    pub duplicates: usize,
+    pub errors: Vec<String>,
+}
+
+impl ImportPlan {
+    /// Aggiunge le regole al `.ron` (nessuna regola esistente cambia).
+    pub fn apply(self, app: &mut App) -> ImportReport {
+        let added = self.rules.len();
+        for r in self.rules {
             app.rules.add(r);
-            rep.added += 1;
+        }
+        ImportReport { added, duplicates: self.duplicates, errors: self.errors }
+    }
+}
+
+/// Le regole del testo da aggiungere al `.ron` (le identiche a una già
+/// presente si saltano), senza ancora aggiungerle.
+pub fn plan_import(app: &App, text: &str) -> ImportPlan {
+    let (rules, errors) = parse_rules(app, text);
+    let mut plan = ImportPlan { errors, ..Default::default() };
+    for r in rules {
+        if app.rules.list().iter().any(|(_, x)| **x == r) || plan.rules.contains(&r) {
+            plan.duplicates += 1;
+        } else {
+            plan.rules.push(r);
         }
     }
-    rep
+    plan
+}
+
+/// Aggiunge al `.ron` le regole del testo (le identiche a una già presente
+/// si saltano; nessuna regola esistente cambia).
+#[cfg(test)]
+pub fn import_rules(app: &mut App, text: &str) -> ImportReport {
+    plan_import(app, text).apply(app)
 }
 
 #[cfg(test)]
@@ -454,6 +521,7 @@ mod tests {
             target,
             anchor,
             offset_weeks,
+            inactive: Default::default(),
         };
         app.rules.add(rule("Collaudo", RuleScope::All, Target::Milestone(collaudo), Anchor::DevEnd(be), 2, true));
         app.rules.add(rule("", RuleScope::Category(cat), Target::ProjectEnd, Anchor::LastMilestone, -1, false));
@@ -552,6 +620,7 @@ colore = rosso
             target: Target::ProjectEnd,
             anchor: Anchor::LastEffort,
             offset_weeks: 1,
+            inactive: Default::default(),
         });
         let text = export_rules(&app);
         assert!(text.contains("progetti = progetti \"ABC\", \"XYZ\""), "{text}");
@@ -584,6 +653,7 @@ colore = rosso
                 target: Target::ProjectEnd,
                 anchor: Anchor::LastEffort,
                 offset_weeks: 0,
+                inactive: Default::default(),
             });
         }
         let text = export_rules(&app);
@@ -597,5 +667,30 @@ colore = rosso
         let a: Vec<&Rule> = app.rules.list().into_iter().map(|(_, r)| r).collect();
         let b: Vec<&Rule> = other.rules.list().into_iter().map(|(_, r)| r).collect();
         assert_eq!(a, b);
+    }
+
+    /// `stati`: scritta sempre, letta facoltativa (assente = solo attivi),
+    /// errori per parole sconosciute o senza «attivi».
+    #[test]
+    fn states_round_trip_and_bad_values_are_reported() {
+        let mut app = sample();
+        let mut r = app.rules.get(crate::rules::RuleId(1)).unwrap().clone();
+        r.inactive = Inactive { on_hold: true, closed: true };
+        app.rules.update(crate::rules::RuleId(1), r);
+        let text = export_rules(&app);
+        assert!(text.contains("stati = attivi, on-hold, closed\n"), "{text}");
+        assert!(text.contains("stati = attivi\n"), "{text}");
+        let mut other = sample();
+        other.rules = Default::default();
+        import_rules(&mut other, &text);
+        let a: Vec<&Rule> = app.rules.list().into_iter().map(|(_, r)| r).collect();
+        let b: Vec<&Rule> = other.rules.list().into_iter().map(|(_, r)| r).collect();
+        assert_eq!(a, b);
+        assert_eq!(parse_states("Attivi, chiusi"), Ok(Inactive { on_hold: false, closed: true }));
+        for (bad, msg) in [("on-hold", "deve comprendere «attivi»"), ("attivi, sospesi", "non riconosciuto"), ("attivi,", "vuoto")] {
+            let t = format!("[regola]\nstati = {bad}\ncosa = fine progetto\nancora = ultimo effort\n");
+            let (rules, errs) = parse_rules(&app, &t);
+            assert!(rules.is_empty() && errs.len() == 1 && errs[0].contains(msg), "{bad}: {errs:?}");
+        }
     }
 }

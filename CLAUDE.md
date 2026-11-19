@@ -1318,6 +1318,36 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `ExportRulesLog` (`save_export_dialog`). Tests in `rules_text.rs`,
   `diagnosis_explains_why_a_rule_does_or_does_not_act`,
   `rules_text_import_reports_and_buttons_send_actions`.
+  **Project status** (MIGLIORAMENTI #59): `Rule.inactive: Inactive {
+  on_hold, closed }` (`#[serde(default, skip_serializing_if =
+  "Inactive::is_none")]`, default = **active projects only**); every engine
+  path uses `Rule::applies_to(app, proj)` = `scope.matches` &&
+  `inactive.allows(status)` (never `scope.matches` alone). A project that
+  leaves the allowed states keeps its placements/dates, just ungoverned.
+  Window: `states_combo` (`STATE_CHOICES`) beside the scope combo; text form
+  `stati = attivi[, on-hold][, closed]` (`states_text`/`parse_states`, line
+  optional, «attivi» required). Tests
+  `rules_act_only_on_active_projects_unless_asked`,
+  `inactive_states_round_trip_and_default_to_active_only`,
+  `states_round_trip_and_bad_values_are_reported`.
+  **Preview on activation**: row edits go through `update_or_confirm` — when
+  the edited rule is enabled and the change is activation / scope / states /
+  target / anchor (not offset or name), `rules::preview_changes(app, id,
+  &rule)` (apply on two clones, `changes_between` diffs devs, start/end,
+  milestones → `Vec<RuleChange { proj, text }>`) and, if non-empty, sets
+  `UiState.rule_activation: Option<RuleActivation>` instead of sending
+  `UpdateRule`; `rule_activation_window` («Attivare/Modificare la regola?»,
+  via `confirm_window`) sends it on «Applica». `RuleActivation { pending:
+  RulePending { Update { id, rule, was_enabled } | Import(ImportPlan) },
+  changes }`: **text import** goes through it too — `PjmApp::import_rules_text`
+  = `rules_text::plan_import` (parse + dedupe, nothing added) →
+  `rules::preview_added` (both previews share `preview_with`) → window
+  «Importare le regole?» → `Action::ImportRules(plan)` → `finish_import`
+  (`ImportPlan::apply`, toast + report); no changes ⇒ imported at once;
+  «Annulla» ⇒ info toast. `import_rules` is now `#[cfg(test)]`. Tests
+  `preview_lists_what_a_rule_would_change`,
+  `activating_a_rule_shows_the_changes_before_applying`,
+  `importing_rules_that_change_projects_asks_first`.
   **«All but …»**: `RuleScope::AllExcept(Vec<ProjectId>)` (`excluded()`), rank
   between `All` and `Priority` (ranks now All 0 < AllExcept 1 < Priority 2 <
   Category 3 < Project(s) 4); in `scope_combo` the «Tutti i progetti tranne…»

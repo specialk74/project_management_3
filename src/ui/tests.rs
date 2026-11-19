@@ -3810,6 +3810,7 @@ fn rules_apply_on_every_change_and_undo_with_it() {
         target: crate::rules::Target::Milestone(collaudo),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
+        inactive: Default::default(),
     };
     pjm.apply(Action::AddRule(rule.clone()));
     pjm.record_undo();
@@ -3850,6 +3851,7 @@ fn opening_a_file_aligns_it_to_the_rules() {
         target: crate::rules::Target::Milestone(rilascio),
         anchor: Anchor::ProjectEnd,
         offset_weeks: -1,
+        inactive: Default::default(),
     });
     let ron = app.to_ron_string();
     let back = App::from_ron_str(&ron).expect("regole nel .ron");
@@ -3898,6 +3900,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
         target: crate::rules::Target::Milestone(collaudo),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
+        inactive: Default::default(),
     });
     let texts = drawn_texts(&ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
     for t in ["Fine dev Backend", "Collaudo", "Tutti i progetti", "in 0 progetti"] {
@@ -3925,6 +3928,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
         target: crate::rules::Target::Milestone(own),
         anchor: Anchor::ProjectEnd,
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -3961,6 +3965,7 @@ fn rule_name_column_is_wide() {
         target: Target::ProjectEnd,
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -3998,6 +4003,7 @@ fn rule_preview_lists_the_moves_and_applies_them() {
         target: Target::DevStart(test),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 1,
+        inactive: Default::default(),
     });
     let mut state = UiState { rule_preview: Some(id), ..Default::default() };
     let ctx = egui::Context::default();
@@ -4046,6 +4052,7 @@ fn a_dev_required_by_a_rule_cannot_be_removed() {
         target: Target::AddDev(test),
         anchor: Anchor::DevPresent(be),
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     crate::rules::apply(&mut app);
     assert!(app.projects.list_devs(p).contains(&test));
@@ -4087,6 +4094,7 @@ fn rule_warnings_notify_new_ones_and_show_in_grid_and_list() {
         target: Target::Check(Anchor::Milestone(rilascio), Cmp::NotBefore),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     // Avviso già presente all'apertura: niente notifica.
     app.projects.add_project_milestone(p, rilascio, WeekId(base));
@@ -4143,6 +4151,7 @@ fn warning_rule_row_shows_point_comparison_and_count() {
         target: Target::Check(Anchor::Milestone(rilascio), Cmp::NotBefore),
         anchor: Anchor::DevEnd(be),
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -4220,6 +4229,7 @@ fn rules_window_picks_several_projects_and_clones_a_rule() {
         target: Target::ProjectEnd,
         anchor: Anchor::LastEffort,
         offset_weeks: 1,
+        inactive: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -4286,6 +4296,7 @@ fn rules_window_all_except_excludes_the_ticked_project() {
         target: Target::ProjectEnd,
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
+        inactive: Default::default(),
     });
     let ctx = egui::Context::default();
     let input = egui::RawInput { screen_rect: Some(screen(1700.0, 900.0)), ..Default::default() };
@@ -4321,4 +4332,154 @@ fn rules_window_all_except_excludes_the_ticked_project() {
     click(&app, &mut state, "Tutti tranne: —");
     let a = click(&app, &mut state, "XYZ");
     assert_eq!(scope_of(&a), Some(RuleScope::AllExcept(vec![q])));
+}
+
+/// Spuntare «Attiva» su una regola che cambierebbe dei progetti non la
+/// salva subito: apre l'anteprima con le modifiche (e lo stato dei progetti
+/// non attivi); «Applica» manda l'`UpdateRule`, «Annulla» no. La combo degli
+/// stati parte da «Solo attivi».
+#[test]
+fn activating_a_rule_shows_the_changes_before_applying() {
+    use crate::rules::{Anchor, Inactive, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    let base = 20004;
+    app.projects.add_effort(p, be, WeekId(base), w, Effort(8));
+    let collaudo = app.milestones.add("Collaudo");
+    let rule = Rule {
+        name: "Collaudo".into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: Target::Milestone(collaudo),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 2,
+        inactive: Inactive { on_hold: false, closed: true },
+    };
+    let id = app.rules.add(rule.clone());
+    let q = app.projects.add("y", Some("XYZ"), None);
+    app.projects.add_dev(q, be);
+    app.projects.add_effort(q, be, WeekId(base), w, Effort(8));
+    app.projects.set_status(q, crate::project_utils::project::ProjectStatus::Closed);
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1900.0, 900.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, events: Vec<egui::Event>| {
+        let mut i = input.clone();
+        i.events = events;
+        ctx.run_ui_test(i, |ui| {
+            rules_window(ui.ctx(), &app, state, actions);
+            rule_activation_window(ui.ctx(), &app, state, actions);
+        })
+    };
+    frame(&mut state, &mut actions, vec![]);
+    let out = frame(&mut state, &mut actions, vec![]);
+    assert!(text_pos(&out, "Attivi + closed").is_some(), "{:?}", drawn_texts(&out));
+    // La spunta «Attiva»: sotto la sua intestazione, all'altezza del nome.
+    let name = text_pos(&out, "Collaudo").expect("nome della regola");
+    let head = text_pos(&out, "Attiva").expect("colonna Attiva");
+    let tick = egui::pos2(head.x, name.y);
+    for ev in click_events(tick, egui::PointerButton::Primary) {
+        frame(&mut state, &mut actions, vec![ev]);
+    }
+    assert!(actions.is_empty(), "niente salvataggio prima della conferma");
+    let act = state.rule_activation.as_ref().expect("anteprima aperta");
+    assert!(matches!(&act.pending, RulePending::Update { rule, was_enabled: false, .. } if rule.enabled));
+    assert_eq!(act.changes.len(), 2, "ABC e XYZ (closed ammesso)");
+    frame(&mut state, &mut actions, vec![]);
+    let out = frame(&mut state, &mut actions, vec![]);
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "Attivare la regola?"), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "XYZ") && texts.iter().any(|t| t == "Closed"), "{texts:?}");
+    let pos = text_pos(&out, "Applica").expect("Applica");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frame(&mut state, &mut actions, vec![ev]);
+    }
+    assert!(state.rule_activation.is_none());
+    match actions.as_slice() {
+        [Action::UpdateRule(r, x)] => assert!(*r == id && x.enabled && x.inactive == rule.inactive),
+        _ => panic!("attesa una UpdateRule, ricevute {}", actions.len()),
+    }
+}
+
+/// «Importa da testo…» con regole che cambierebbero dei progetti: prima
+/// l'anteprima («Importare le regole?»), nulla aggiunto finché non si
+/// conferma; «Applica» → `ImportRules` aggiunge e dà il resoconto,
+/// «Annulla» non aggiunge nulla e lo dice.
+#[test]
+fn importing_rules_that_change_projects_asks_first() {
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.projects.add_effort(p, be, WeekId(20004), w, Effort(8));
+    let collaudo = app.milestones.add("Collaudo");
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    let text = "[regola]\nnome = Buona\nattiva = sì\ncosa = milestone \"Collaudo\"\nancora = fine dev \"Backend\"\nsettimane = +2\n\n[regola]\ncosa = milestone \"Altro\"\nancora = fine progetto\n";
+    pjm.import_rules_text(text);
+    assert!(pjm.app.rules.is_empty(), "niente prima della conferma");
+    let act = pjm.ui.rule_activation.as_ref().expect("anteprima");
+    let RulePending::Import(plan) = &act.pending else { panic!("attesa un'importazione") };
+    assert_eq!((plan.rules.len(), plan.errors.len()), (1, 1));
+    assert_eq!(act.changes.len(), 1);
+
+    // La finestra: titolo e progetto, poi «Applica».
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), ..Default::default() };
+    let PjmApp { app, ui: state } = &mut pjm;
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rule_activation_window(ui.ctx(), app, state, &mut actions)));
+    }
+    let out = out.unwrap();
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "Importare le regole?") && texts.iter().any(|t| t == "ABC"), "{texts:?}");
+    let pos = text_pos(&out, "Applica").expect("Applica");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| rule_activation_window(ui.ctx(), app, state, &mut actions));
+    }
+    assert!(state.rule_activation.is_none());
+    let [Action::ImportRules(_)] = actions.as_slice() else { panic!("attesa ImportRules: {}", actions.len()) };
+    for a in actions {
+        pjm.apply(a);
+    }
+    assert_eq!(pjm.app.rules.list().len(), 1);
+    assert!(pjm.app.projects.list_project_milestones(p).iter().any(|(m, _)| *m == collaudo), "regola applicata");
+    assert!(pjm.ui.toasts.iter().any(|t| t.text.starts_with("Regole importate: 1 nuove, 0 già presenti, 1 scartate.")));
+    assert!(pjm.ui.rules_import_errors.is_some());
+
+    // Di nuovo: la regola è già presente, quindi nulla da chiedere. Una
+    // a pari ambito non cambierebbe nulla (vince la più vecchia); una più
+    // specifica sì: si chiede e si annulla.
+    pjm.import_rules_text(text);
+    assert!(pjm.ui.rule_activation.is_none(), "identica: nessuna anteprima");
+    pjm.import_rules_text(&text.replace("+2", "+3"));
+    assert!(pjm.ui.rule_activation.is_none(), "perde contro la più vecchia: nessuna anteprima");
+    assert_eq!(pjm.app.rules.list().len(), 2);
+    let other = text.replace("+2", "+4").replace("nome = Buona\n", "nome = Buona\nprogetti = progetto \"ABC\"\n");
+    pjm.import_rules_text(&other);
+    assert!(pjm.ui.rule_activation.is_some());
+    let PjmApp { app, ui: state } = &mut pjm;
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rule_activation_window(ui.ctx(), app, state, &mut actions)));
+    }
+    let pos = text_pos(&out.unwrap(), "Annulla").expect("Annulla");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| rule_activation_window(ui.ctx(), app, state, &mut actions));
+    }
+    assert!(actions.is_empty() && state.rule_activation.is_none());
+    assert_eq!(pjm.app.rules.list().len(), 2, "nulla aggiunto");
+    assert!(pjm.ui.toasts.iter().any(|t| t.text.starts_with("Importazione delle regole annullata")));
 }

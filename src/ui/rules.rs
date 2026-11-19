@@ -3,14 +3,19 @@
 //! a tendina — attiva, nome, ambito, milestone, ancora, scostamento in
 //! settimane — con lo stato (in quanti progetti agisce, ciclo, riferimenti
 //! eliminati). Ogni modifica è un'`Action` (`AddRule` / `UpdateRule` /
-//! `DeleteRule`); le regole si riapplicano in `mark_changed`.
+//! `DeleteRule`); le regole si riapplicano in `mark_changed`. Attivare una
+//! regola (o cambiarne ambito, stati, cosa, ancora) che toccherebbe dei
+//! progetti passa prima dall'anteprima `rule_activation_window`.
 
 use super::*;
-use crate::rules::{Anchor, Cmp, Rule, RuleId, RuleScope, Target};
+use crate::project_utils::project::ProjectStatus;
+use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleId, RuleScope, Target};
 
 /// Larghezze delle colonne (combo).
 pub(crate) const RULE_NAME_W: f32 = 300.0;
 const RULE_SCOPE_W: f32 = 170.0;
+/// Stati di progetto (accanto all'ambito).
+const RULE_STATES_W: f32 = 120.0;
 const RULE_TARGET_W: f32 = 220.0;
 const RULE_ANCHOR_W: f32 = 200.0;
 /// Punto controllato da un avviso (accanto a «Avviso»).
@@ -226,6 +231,7 @@ pub(crate) fn new_rule(app: &App) -> Rule {
         target,
         anchor,
         offset_weeks: 0,
+        inactive: Default::default(),
     }
 }
 
@@ -306,6 +312,54 @@ fn status_text(app: &App, id: RuleId, rule: &Rule) -> (String, Color32, String) 
     )
 }
 
+/// Stati di progetto a cui vale la regola, oltre agli attivi.
+const STATE_CHOICES: [(bool, bool, &str); 4] = [
+    (false, false, "Solo attivi"),
+    (true, false, "Attivi + on-hold"),
+    (false, true, "Attivi + closed"),
+    (true, true, "Tutti gli stati"),
+];
+
+/// Combo degli stati di progetto (`Rule::inactive`): ritorna la nuova scelta
+/// se cambiata.
+fn states_combo(ui: &mut egui::Ui, salt: impl std::hash::Hash + std::fmt::Debug, current: Inactive) -> Option<Inactive> {
+    let options: Vec<(Inactive, String)> = STATE_CHOICES
+        .iter()
+        .map(|&(on_hold, closed, l)| (Inactive { on_hold, closed }, l.to_string()))
+        .collect();
+    choice_combo(ui, salt, RULE_STATES_W, current, &options)
+}
+
+/// Una modifica di una regola dalla finestra: se la regola (dopo) è attiva e
+/// la modifica può toccare dei progetti — attivazione, ambito, stati, cosa,
+/// ancora — e li toccherebbe davvero, prima si mostra cosa cambia
+/// (`rule_activation_window`); altrimenti si salva subito. Settimane e nome
+/// passano diretti (si regolano a piccoli passi).
+pub(crate) fn update_or_confirm(
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    id: RuleId,
+    before: &Rule,
+    after: Rule,
+) {
+    let wide = after.enabled
+        && (!before.enabled
+            || after.scope != before.scope
+            || after.inactive != before.inactive
+            || after.target != before.target
+            || after.anchor != before.anchor);
+    if wide {
+        let changes = crate::rules::preview_changes(app, id, &after);
+        if !changes.is_empty() {
+            let pending = RulePending::Update { id, rule: after, was_enabled: before.enabled };
+            state.rule_activation = Some(RuleActivation { pending, changes });
+            return;
+        }
+    }
+    actions.push(Action::UpdateRule(id, after));
+}
+
 pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     if !state.show_rules {
         return;
@@ -330,7 +384,10 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                      toglie). «Ore del dev B» sposta in blocco tutte le ore di B perché partano N \
                      settimane dopo l'ancora, solo con «Applica ora…». «Avviso» non cambia nulla: \
                      segnala (⚠ accanto alla tripletta, notifica, «Avvisi…») quando il punto scelto \
-                     sta prima / dopo l'ancora ± N.",
+                     sta prima / dopo l'ancora ± N. Una regola vale solo per i progetti \
+                     attivi, salvo scegliere anche on-hold / closed accanto all'ambito. Prima di \
+                     attivare una regola (o di cambiarne ambito, stati, cosa o ancora) si vede \
+                     l'elenco di quello che cambierebbe, da confermare.",
                 )
                 .small()
                 .color(text_dim()),
@@ -407,17 +464,22 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             // Milestone di un progetto: vale solo lì, quindi
                             // l'ambito è quel progetto e non si sceglie.
                             let own = r.target.milestone().and_then(|m| app.milestones.owner(m)).is_some();
-                            let scope = ui.add_enabled_ui(!own, |ui| {
-                                scope_combo(ui, app, ("rule_scope", id), &r.scope)
+                            ui.horizontal(|ui| {
+                                let scope = ui.add_enabled_ui(!own, |ui| {
+                                    scope_combo(ui, app, ("rule_scope", id), &r.scope)
+                                });
+                                if own {
+                                    scope.response.on_hover_text(
+                                        "Milestone di un solo progetto: la regola vale solo lì.",
+                                    );
+                                }
+                                if let Some(s) = scope.inner {
+                                    r.scope = s;
+                                }
+                                if let Some(i) = states_combo(ui, ("rule_states", id), r.inactive) {
+                                    r.inactive = i;
+                                }
                             });
-                            if own {
-                                scope.response.on_hover_text(
-                                    "Milestone di un solo progetto: la regola vale solo lì.",
-                                );
-                            }
-                            if let Some(s) = scope.inner {
-                                r.scope = s;
-                            }
                             // «Cosa»; per un avviso, accanto il punto e il confronto.
                             ui.horizontal(|ui| {
                                 let targets = target_options(app, r.target);
@@ -482,7 +544,7 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             });
                             ui.end_row();
                             if r != rule {
-                                actions.push(Action::UpdateRule(id, r));
+                                update_or_confirm(app, state, actions, id, &rule, r);
                             }
                         }
                     });
@@ -600,6 +662,79 @@ pub(crate) fn rule_preview_window(
         });
     if !open || close {
         state.rule_preview = None;
+    }
+}
+
+/// Conferma di regole che cambierebbero dei progetti — una regola attivata
+/// (o modificata da attiva) o le regole di un'importazione da testo:
+/// l'elenco delle modifiche per progetto (con lo stato, se non è attivo),
+/// poi «Applica» → `Action::UpdateRule` / `Action::ImportRules`, o «Annulla»
+/// (la regola resta com'era / nulla viene importato).
+pub(crate) fn rule_activation_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    let Some(act) = &state.rule_activation else {
+        return;
+    };
+    let (title, who) = match &act.pending {
+        RulePending::Update { id, was_enabled, .. } => (
+            if *was_enabled { "Modificare la regola?" } else { "Attivare la regola?" },
+            format!("La regola «{}» farebbe", crate::rules::rule_label(app, *id)),
+        ),
+        RulePending::Import(plan) => (
+            "Importare le regole?",
+            match plan.rules.len() {
+                1 => "La regola da importare farebbe".to_string(),
+                n => format!("Le {n} regole da importare farebbero"),
+            },
+        ),
+    };
+    let projects: Vec<ProjectId> = {
+        let mut v: Vec<ProjectId> = act.changes.iter().map(|c| c.proj).collect();
+        v.dedup();
+        v
+    };
+    let answer = confirm_window(ctx, title, "Applica", |ui| {
+        ui.label(format!("{who} {} modifiche in {} progetti:", act.changes.len(), projects.len()));
+        egui::ScrollArea::vertical()
+            .scroll_source(drag_scroll())
+            .max_height(ui.ctx().content_rect().height() * 0.5)
+            .show(ui, |ui| {
+                for &p in &projects {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(project_label(app, p)).strong());
+                        let st = app.projects.status(p);
+                        if st != ProjectStatus::Active {
+                            ui.label(egui::RichText::new(st.label()).small().color(warn_amber()));
+                        }
+                    });
+                    for c in act.changes.iter().filter(|c| c.proj == p) {
+                        ui.label(format!("    • {}", c.text));
+                    }
+                }
+            });
+        ui.label(
+            egui::RichText::new("Con «Applica» le modifiche si fanno subito (Ctrl+Z le annulla).")
+                .small()
+                .color(text_dim()),
+        );
+        ui.separator();
+    });
+    match answer {
+        Some(true) => match state.rule_activation.take().map(|a| a.pending) {
+            Some(RulePending::Update { id, rule, .. }) => actions.push(Action::UpdateRule(id, rule)),
+            Some(RulePending::Import(plan)) => actions.push(Action::ImportRules(plan)),
+            None => {}
+        },
+        Some(false) => {
+            if let Some(RulePending::Import(_)) = state.rule_activation.take().map(|a| a.pending) {
+                state.toast_info("Importazione delle regole annullata: nessuna regola aggiunta.");
+            }
+        }
+        None => {}
     }
 }
 

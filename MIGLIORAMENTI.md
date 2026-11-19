@@ -118,6 +118,18 @@ non il tempo di digitazione.
      ogni regola progetto per progetto — `src/rules_text.rs`,
      `rules::diagnose`)_
 
+- [x] **59. Regole: solo progetti attivi e anteprima all'attivazione**
+  _(fatto 2026-11-19)_ — (1) di norma una regola vale solo per i progetti
+  **attivi** (prima toccava anche on-hold e closed, riscrivendo milestone e
+  date di progetti già consegnati); accanto all'ambito la tendina «Solo attivi
+  / Attivi + on-hold / Attivi + closed / Tutti gli stati», nel testo `stati =
+  …`; un progetto che esce dagli stati ammessi tiene milestone e date, non più
+  governate. (2) attivare una regola — o cambiare ambito, stati, cosa, ancora
+  di una regola attiva — che cambierebbe dei progetti apre prima «Attivare la
+  regola?» con l'elenco delle modifiche per progetto; «Applica» / «Annulla».
+  Lo stesso per **Importa da testo…**: se le regole importate cambierebbero
+  dei progetti, prima «Importare le regole?»; «Annulla» non importa nulla.
+
 ## A. Robustezza & dati condivisi
 
 - [x] **2. Backup a rotazione** — tiene le ultime N versioni del `.ron` come rete di sicurezza. _(fatto: `App::rotate_backups`, `<file>.bak1..bak5` a ogni salvataggio; test `backup_rotation_keeps_previous_version`)_

@@ -969,6 +969,22 @@ impl UndoFlash {
     }
 }
 
+/// Regole da confermare prima di salvarle, perché cambierebbero questi
+/// progetti (`rule_activation_window`).
+pub(crate) struct RuleActivation {
+    pub(crate) pending: RulePending,
+    pub(crate) changes: Vec<crate::rules::RuleChange>,
+}
+
+/// Cosa aspetta la conferma.
+pub(crate) enum RulePending {
+    /// Una regola attivata (o, già attiva, con ambito / stati / cosa /
+    /// ancora cambiati) → `Action::UpdateRule`.
+    Update { id: crate::rules::RuleId, rule: crate::rules::Rule, was_enabled: bool },
+    /// Regole importate da testo → `Action::ImportRules`.
+    Import(crate::rules_text::ImportPlan),
+}
+
 #[derive(Default)]
 pub struct UiState {
     current_file: String,
@@ -1245,6 +1261,9 @@ pub struct UiState {
     confirm_delete_milestone: Option<MilestoneId>,
     // regola «Ore del dev» di cui si mostra l'anteprima di «Applica ora…»
     rule_preview: Option<crate::rules::RuleId>,
+    // regola che si sta attivando (o modificando da attiva): le modifiche che
+    // farebbe ai progetti, da confermare (`rule_activation_window`)
+    rule_activation: Option<RuleActivation>,
     // finestra «Avvisi delle regole» e avvisi già noti (progetto, regola):
     // una notifica solo per quelli nuovi
     show_rule_warnings: bool,
@@ -1614,6 +1633,8 @@ pub(crate) enum Action {
     /// diagnosi (`rules::diagnose`).
     ExportRulesText,
     ImportRulesText,
+    /// Importazione da testo confermata (dopo l'anteprima delle modifiche).
+    ImportRules(crate::rules_text::ImportPlan),
     ExportRulesLog,
     /// Fa comparire (o no) il worker negli elenchi di scelta (`show_in_find`).
     SetWorkerShownInFind {
@@ -2318,6 +2339,7 @@ impl eframe::App for PjmApp {
             rules_window(ui.ctx(), app, state, &mut actions);
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             rule_preview_window(ui.ctx(), app, state, &mut actions);
+            rule_activation_window(ui.ctx(), app, state, &mut actions);
             rule_warnings_window(ui.ctx(), app, state);
             rules_import_report_window(ui.ctx(), state);
             clone_project_window(ui.ctx(), app, state, &mut actions);
@@ -2449,8 +2471,22 @@ impl PjmApp {
     /// Importa le regole da un testo: aggiunte (le identiche saltate),
     /// resoconto in una notifica e, se ci sono righe scartate, nella finestra
     /// del resoconto.
+    /// Importa le regole di un testo: se le regole nuove cambierebbero dei
+    /// progetti, prima l'anteprima (`rule_activation_window`, «Applica» →
+    /// `Action::ImportRules`); altrimenti subito.
     fn import_rules_text(&mut self, text: &str) {
-        let rep = crate::rules_text::import_rules(&mut self.app, text);
+        let plan = crate::rules_text::plan_import(&self.app, text);
+        let changes = crate::rules::preview_added(&self.app, &plan.rules);
+        if changes.is_empty() {
+            self.finish_import(plan);
+        } else {
+            self.ui.rule_activation = Some(RuleActivation { pending: RulePending::Import(plan), changes });
+        }
+    }
+
+    /// Aggiunge le regole di un'importazione e ne dà il resoconto.
+    fn finish_import(&mut self, plan: crate::rules_text::ImportPlan) {
+        let rep = plan.apply(&mut self.app);
         if rep.added > 0 {
             self.mark_changed();
         }
@@ -3288,6 +3324,7 @@ impl PjmApp {
                     Err(e) => self.ui.toast_error(format!("Lettura di «{}» non riuscita: {e}", path.display())),
                 }
             }
+            Action::ImportRules(plan) => self.finish_import(plan),
             Action::ExportRulesLog => {
                 let when = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
                 let text = crate::rules::diagnose(&self.app, &when);
