@@ -1344,7 +1344,21 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `rules::preview_added` (both previews share `preview_with`) → window
   «Importare le regole?» → `Action::ImportRules(plan)` → `finish_import`
   (`ImportPlan::apply`, toast + report); no changes ⇒ imported at once;
-  «Annulla» ⇒ info toast. `import_rules` is now `#[cfg(test)]`. Tests
+  «Annulla» ⇒ info toast. `import_rules` is now `#[cfg(test)]`.
+  **Orphans** (disable / delete / narrow): `rules::orphans(app, id,
+  after: Option<&Rule>) -> Vec<Orphan { proj, milestone, week }>` = placements
+  governed by `id` that **no** rule would govern with `after` in its place
+  (`None` = deleted; a clone with the new rules, `governing` only, no
+  `apply`); a milestone taken over by another rule isn't one. `update_or_confirm`
+  now triggers on any structural change (enabled flip too): `changes` when
+  the rule ends enabled, `orphans` when it was enabled; 🗑 →
+  `delete_or_confirm` (`RulePending::Delete(id)`). `RuleActivation` carries
+  `orphans` + `remove_orphans` (checkbox «Toglile dai progetti», off by
+  default); «Applica» pushes the rule action **then** one
+  `RemoveProjectMilestone` per orphan (one undo step). Dates and added devs
+  are never offered for removal. The `DeleteRule` toast is just «Regola …
+  eliminata.». Tests `orphans_are_placements_no_rule_would_govern_any_more`,
+  `deleting_a_rule_asks_whether_to_remove_its_milestones`. Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.

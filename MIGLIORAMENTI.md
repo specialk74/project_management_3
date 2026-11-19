@@ -129,6 +129,11 @@ non il tempo di digitazione.
   regola?» con l'elenco delle modifiche per progetto; «Applica» / «Annulla».
   Lo stesso per **Importa da testo…**: se le regole importate cambierebbero
   dei progetti, prima «Importare le regole?»; «Annulla» non importa nulla.
+  (3) spegnere / eliminare una regola (o restringerne l'ambito, cambiarne la
+  milestone…) che lascerebbe delle milestone senza regola apre «Spegnere /
+  Eliminare la regola?» con il loro elenco e la spunta «Toglile dai
+  progetti» (spenta = restano, come prima); date e dev aggiunti restano
+  sempre.
 
 ## A. Robustezza & dati condivisi
 

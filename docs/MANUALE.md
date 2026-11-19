@@ -954,7 +954,10 @@ Nella finestra ogni regola è una riga:
   progetti on-hold o closed il loro stato): **Applica** la attiva, **Annulla**
   la lascia spenta. Lo stesso (**Modificare la regola?**) quando di una regola
   già attiva si cambiano progetti, stati, cosa o ancora; le settimane e il nome
-  invece si applicano subito;
+  invece si applicano subito. **Spegnendo** una regola (o restringendone
+  l'ambito, cambiandone la milestone…) che aveva collocato delle milestone ora
+  senza regola, la stessa finestra (**Spegnere la regola?**) le elenca con la
+  spunta **Toglile dai progetti**, come per l'eliminazione (vedi 🗑);
 - **Nome** — libero, per riconoscerla (si conferma uscendo dal campo; Esc
   annulla);
 - **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
@@ -985,8 +988,11 @@ Nella finestra ogni regola è una riga:
 - **Clona** — aggiunge in fondo una **copia** della regola (stessi valori, nome
   «… (copia)»), **spenta**: la si modifica e poi la si attiva (due regole uguali
   attive si farebbero concorrenza);
-- 🗑 — elimina la regola: le milestone che aveva messo **restano dove sono** e da
-  quel momento si spostano a mano.
+- 🗑 — elimina la regola. Se aveva collocato delle milestone che nessun'altra
+  regola tiene allineate, prima si apre **Eliminare la regola?** con il loro
+  elenco e la spunta **Toglile dai progetti**: spenta (di norma) restano dove
+  sono e da quel momento si spostano a mano, accesa vengono tolte. Le date di
+  inizio / fine e i dev che la regola aveva messo restano comunque.
 
 Come funzionano:
 

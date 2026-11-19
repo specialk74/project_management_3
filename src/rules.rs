@@ -649,6 +649,55 @@ fn preview_with(app: &App, edit: impl FnOnce(&mut Rules)) -> Vec<RuleChange> {
     changes_between(&before, &after)
 }
 
+/// Una milestone collocata da una regola che, dopo una modifica (spenta,
+/// eliminata, ambito ristretto, altro bersaglio…), non sarebbe più governata
+/// da nessuna regola: resterebbe dov'è, da spostare a mano.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Orphan {
+    pub proj: ProjectId,
+    pub milestone: MilestoneId,
+    pub week: WeekId,
+}
+
+/// Le milestone che la regola `id` governa e ha collocato e che, mettendo
+/// `after` al suo posto (`None` = regola eliminata), nessuna regola
+/// governerebbe più. Una milestone che passa a un'altra regola non è
+/// orfana (quella la tiene allineata). Le date del progetto e i dev aggiunti
+/// non sono qui: restano comunque.
+pub fn orphans(app: &App, id: RuleId, after: Option<&Rule>) -> Vec<Orphan> {
+    let mut next = app.rules.clone();
+    match after {
+        Some(r) => {
+            next.update(id, r.clone());
+        }
+        None => {
+            next.remove(id);
+        }
+    }
+    let mut after_app: Option<App> = None;
+    let mut out = Vec::new();
+    for (proj, _) in app.projects.list() {
+        let placed: BTreeMap<MilestoneId, WeekId> = app.projects.list_project_milestones(proj).into_iter().collect();
+        for (t, rid) in governing(app, proj) {
+            let Target::Milestone(m) = t else { continue };
+            let Some(&week) = placed.get(&m) else { continue };
+            if rid != id {
+                continue;
+            }
+            // Le regole dopo la modifica, sugli stessi dati: chi governa?
+            let a = after_app.get_or_insert_with(|| {
+                let mut a = app.clone();
+                a.rules = next.clone();
+                a
+            });
+            if !governing(a, proj).contains_key(&t) {
+                out.push(Orphan { proj, milestone: m, week });
+            }
+        }
+    }
+    out
+}
+
 /// Differenze di dev, date e milestone fra due versioni degli stessi
 /// progetti, in ordine di griglia.
 fn changes_between(before: &App, after: &App) -> Vec<RuleChange> {
@@ -1677,5 +1726,34 @@ mod tests {
         assert!(texts[0].starts_with("milestone Rilascio tolta"), "{texts:?}");
         // I dati non cambiano.
         assert_eq!(at(&f.app, f.p, f.collaudo), None);
+    }
+
+    /// Orfane: le milestone collocate dalla regola che, spenta, eliminata o
+    /// ristretta, nessuna regola governerebbe più; non quelle che passano a
+    /// un'altra regola, né quelle mai collocate.
+    #[test]
+    fn orphans_are_placements_no_rule_would_govern_any_more() {
+        let mut f = fx();
+        let q = f.app.projects.add("y", Some("XYZ"), None);
+        let r = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        // Rilascio: nessuna ancora in XYZ né in ABC (Demo non collocata).
+        f.app.rules.add(rule(RuleScope::All, f.rilascio, Anchor::Milestone(f.demo), 0));
+        apply(&mut f.app);
+        let placed = WeekId(f.base + 7 * 5);
+        let want = vec![Orphan { proj: f.p, milestone: f.collaudo, week: placed }];
+        assert_eq!(orphans(&f.app, r, None), want, "eliminata");
+        let mut off = f.app.rules.get(r).unwrap().clone();
+        off.enabled = false;
+        assert_eq!(orphans(&f.app, r, Some(&off)), want, "spenta");
+        let mut narrow = f.app.rules.get(r).unwrap().clone();
+        narrow.scope = RuleScope::Projects(vec![q]);
+        assert_eq!(orphans(&f.app, r, Some(&narrow)), want, "ambito ristretto");
+        let mut moved = f.app.rules.get(r).unwrap().clone();
+        moved.offset_weeks = 4;
+        assert!(orphans(&f.app, r, Some(&moved)).is_empty(), "stessa milestone, ancora governata");
+        // Un'altra regola (meno specifica, creata dopo) la prenderebbe in carico.
+        f.app.rules.add(rule(RuleScope::AllExcept(vec![]), f.collaudo, Anchor::LastEffort, 1));
+        assert!(orphans(&f.app, r, None).is_empty(), "passa all'altra regola");
+        assert_eq!(at(&f.app, f.p, f.collaudo), Some(placed), "nulla cambia nei dati");
     }
 }

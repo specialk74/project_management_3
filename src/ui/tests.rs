@@ -4483,3 +4483,87 @@ fn importing_rules_that_change_projects_asks_first() {
     assert_eq!(pjm.app.rules.list().len(), 2, "nulla aggiunto");
     assert!(pjm.ui.toasts.iter().any(|t| t.text.starts_with("Importazione delle regole annullata")));
 }
+
+/// 🗑 su una regola che ha collocato delle milestone: prima la conferma con
+/// l'elenco e la spunta «Toglile dai progetti»; con la spunta, «Applica»
+/// elimina la regola **e** toglie la milestone (che nessuna regola rimette).
+/// Spegnere una regola senza milestone collocate passa diretto.
+#[test]
+fn deleting_a_rule_asks_whether_to_remove_its_milestones() {
+    use crate::rules::{Anchor, Inactive, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.projects.add_effort(p, be, WeekId(20004), w, Effort(8));
+    let collaudo = app.milestones.add("Collaudo");
+    let rilascio = app.milestones.add("Rilascio");
+    let rule = |target, anchor| Rule {
+        name: String::new(),
+        enabled: true,
+        scope: RuleScope::All,
+        target,
+        anchor,
+        offset_weeks: 2,
+        inactive: Inactive::default(),
+    };
+    let id = app.rules.add(rule(Target::Milestone(collaudo), Anchor::DevEnd(be)));
+    // Rilascio non ha ancora (nessuna milestone Demo): nulla di collocato.
+    let idle = app.rules.add(rule(Target::Milestone(rilascio), Anchor::ProjectEnd));
+    crate::rules::apply(&mut app);
+    let placed = |app: &App| app.projects.list_project_milestones(p).iter().any(|(m, _)| *m == collaudo);
+    assert!(placed(&app));
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+
+    // Spegnere la regola che non ha collocato nulla: subito.
+    let mut actions = Vec::new();
+    let before = pjm.app.rules.get(idle).unwrap().clone();
+    let off = Rule { enabled: false, ..before.clone() };
+    update_or_confirm(&pjm.app, &mut pjm.ui, &mut actions, idle, &before, off);
+    assert!(matches!(actions.as_slice(), [Action::UpdateRule(..)]) && pjm.ui.rule_activation.is_none());
+
+    // 🗑 sulla regola del Collaudo: conferma con l'elenco.
+    let mut actions = Vec::new();
+    delete_or_confirm(&pjm.app, &mut pjm.ui, &mut actions, id);
+    assert!(actions.is_empty());
+    let act = pjm.ui.rule_activation.as_ref().expect("conferma");
+    assert!(matches!(act.pending, RulePending::Delete(x) if x == id));
+    assert_eq!(act.orphans.len(), 1);
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), ..Default::default() };
+    let PjmApp { app, ui: state } = &mut pjm;
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, events: Vec<egui::Event>| {
+        let mut i = input.clone();
+        i.events = events;
+        ctx.run_ui_test(i, |ui| rule_activation_window(ui.ctx(), app, state, actions))
+    };
+    frame(state, &mut actions, vec![]);
+    let out = frame(state, &mut actions, vec![]);
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "Eliminare la regola?"), "{texts:?}");
+    assert!(texts.iter().any(|t| t.contains("Collaudo (")), "{texts:?}");
+    for label in ["Toglile dai progetti", "Applica"] {
+        let out = frame(state, &mut actions, vec![]);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("manca «{label}»"));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, &mut actions, vec![ev]);
+        }
+    }
+    assert!(state.rule_activation.is_none());
+    assert!(
+        matches!(actions.as_slice(), [Action::DeleteRule(x), Action::RemoveProjectMilestone { milestone, .. }] if *x == id && *milestone == collaudo),
+        "{} azioni",
+        actions.len()
+    );
+    for a in actions {
+        pjm.apply(a);
+    }
+    assert!(pjm.app.rules.get(id).is_none());
+    assert!(!placed(&pjm.app), "milestone tolta");
+    pjm.record_undo();
+    pjm.apply(Action::Undo);
+    assert!(pjm.app.rules.get(id).is_some() && placed(&pjm.app), "un Annulla rimette regola e milestone");
+}

@@ -330,11 +330,13 @@ fn states_combo(ui: &mut egui::Ui, salt: impl std::hash::Hash + std::fmt::Debug,
     choice_combo(ui, salt, RULE_STATES_W, current, &options)
 }
 
-/// Una modifica di una regola dalla finestra: se la regola (dopo) è attiva e
-/// la modifica può toccare dei progetti — attivazione, ambito, stati, cosa,
-/// ancora — e li toccherebbe davvero, prima si mostra cosa cambia
-/// (`rule_activation_window`); altrimenti si salva subito. Settimane e nome
-/// passano diretti (si regolano a piccoli passi).
+/// Una modifica di una regola dalla finestra. Se è una modifica «di
+/// struttura» — accesa / spenta, ambito, stati, cosa, ancora — prima si
+/// guarda cosa comporta: le modifiche che la regola (se attiva) farebbe ai
+/// progetti e le milestone che resterebbero senza regola (se era attiva);
+/// se c'è qualcosa, la conferma (`rule_activation_window`), altrimenti si
+/// salva subito. Settimane e nome passano diretti (si regolano a piccoli
+/// passi).
 pub(crate) fn update_or_confirm(
     app: &App,
     state: &mut UiState,
@@ -343,21 +345,33 @@ pub(crate) fn update_or_confirm(
     before: &Rule,
     after: Rule,
 ) {
-    let wide = after.enabled
-        && (!before.enabled
-            || after.scope != before.scope
-            || after.inactive != before.inactive
-            || after.target != before.target
-            || after.anchor != before.anchor);
-    if wide {
-        let changes = crate::rules::preview_changes(app, id, &after);
-        if !changes.is_empty() {
+    let structural = after.enabled != before.enabled
+        || after.scope != before.scope
+        || after.inactive != before.inactive
+        || after.target != before.target
+        || after.anchor != before.anchor;
+    if structural {
+        let changes = if after.enabled { crate::rules::preview_changes(app, id, &after) } else { Vec::new() };
+        let orphans = if before.enabled { crate::rules::orphans(app, id, Some(&after)) } else { Vec::new() };
+        if !changes.is_empty() || !orphans.is_empty() {
             let pending = RulePending::Update { id, rule: after, was_enabled: before.enabled };
-            state.rule_activation = Some(RuleActivation { pending, changes });
+            state.rule_activation = Some(RuleActivation { pending, changes, orphans, remove_orphans: false });
             return;
         }
     }
     actions.push(Action::UpdateRule(id, after));
+}
+
+/// 🗑 di una regola: se lascerebbe delle milestone senza regola prima si
+/// chiede (lasciarle o toglierle), altrimenti si elimina subito.
+pub(crate) fn delete_or_confirm(app: &App, state: &mut UiState, actions: &mut Vec<Action>, id: RuleId) {
+    let orphans = crate::rules::orphans(app, id, None);
+    if orphans.is_empty() {
+        actions.push(Action::DeleteRule(id));
+    } else {
+        state.rule_activation =
+            Some(RuleActivation { pending: RulePending::Delete(id), changes: Vec::new(), orphans, remove_orphans: false });
+    }
 }
 
 pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
@@ -538,8 +552,12 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                 {
                                     actions.push(Action::AddRule(cloned_rule(app, id, &rule)));
                                 }
-                                if ui.button("🗑").on_hover_text("Elimina la regola (le milestone restano dove sono).").clicked() {
-                                    actions.push(Action::DeleteRule(id));
+                                if ui
+                                    .button("🗑")
+                                    .on_hover_text("Elimina la regola (se ha collocato delle milestone, chiede se lasciarle o toglierle).")
+                                    .clicked()
+                                {
+                                    delete_or_confirm(app, state, actions, id);
                                 }
                             });
                             ui.end_row();
@@ -665,25 +683,33 @@ pub(crate) fn rule_preview_window(
     }
 }
 
-/// Conferma di regole che cambierebbero dei progetti — una regola attivata
-/// (o modificata da attiva) o le regole di un'importazione da testo:
-/// l'elenco delle modifiche per progetto (con lo stato, se non è attivo),
-/// poi «Applica» → `Action::UpdateRule` / `Action::ImportRules`, o «Annulla»
-/// (la regola resta com'era / nulla viene importato).
+/// Conferma di una modifica alle regole — una regola attivata, modificata,
+/// spenta o eliminata, o le regole di un'importazione da testo: l'elenco
+/// delle modifiche che farebbe ai progetti (con lo stato, se non è attivo) e
+/// delle milestone che resterebbero senza regola, con la spunta per
+/// toglierle; poi «Applica» (→ `UpdateRule` / `DeleteRule` / `ImportRules`,
+/// più un `RemoveProjectMilestone` per ogni milestone da togliere) o
+/// «Annulla» (nulla cambia).
 pub(crate) fn rule_activation_window(
     ctx: &egui::Context,
     app: &App,
     state: &mut UiState,
     actions: &mut Vec<Action>,
 ) {
-    let Some(act) = &state.rule_activation else {
+    let Some(act) = state.rule_activation.as_mut() else {
         return;
     };
+    let rule_name = |id: RuleId| crate::rules::rule_label(app, id);
     let (title, who) = match &act.pending {
-        RulePending::Update { id, was_enabled, .. } => (
-            if *was_enabled { "Modificare la regola?" } else { "Attivare la regola?" },
-            format!("La regola «{}» farebbe", crate::rules::rule_label(app, *id)),
+        RulePending::Update { id, rule, was_enabled } => (
+            match (*was_enabled, rule.enabled) {
+                (true, false) => "Spegnere la regola?",
+                (true, true) => "Modificare la regola?",
+                _ => "Attivare la regola?",
+            },
+            format!("La regola «{}» farebbe", rule_name(*id)),
         ),
+        RulePending::Delete(id) => ("Eliminare la regola?", format!("La regola «{}» farebbe", rule_name(*id))),
         RulePending::Import(plan) => (
             "Importare le regole?",
             match plan.rules.len() {
@@ -692,30 +718,71 @@ pub(crate) fn rule_activation_window(
             },
         ),
     };
-    let projects: Vec<ProjectId> = {
-        let mut v: Vec<ProjectId> = act.changes.iter().map(|c| c.proj).collect();
-        v.dedup();
-        v
+    // Progetti nell'ordine in cui compaiono.
+    let in_order = |ps: &mut Vec<ProjectId>| {
+        let mut seen = std::collections::HashSet::new();
+        ps.retain(|p| seen.insert(*p));
+    };
+    let mut projects: Vec<ProjectId> = act.changes.iter().map(|c| c.proj).collect();
+    in_order(&mut projects);
+    let mut orphan_projects: Vec<ProjectId> = act.orphans.iter().map(|o| o.proj).collect();
+    in_order(&mut orphan_projects);
+    let project_head = |ui: &mut egui::Ui, p: ProjectId| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(project_label(app, p)).strong());
+            let st = app.projects.status(p);
+            if st != ProjectStatus::Active {
+                ui.label(egui::RichText::new(st.label()).small().color(warn_amber()));
+            }
+        });
     };
     let answer = confirm_window(ctx, title, "Applica", |ui| {
-        ui.label(format!("{who} {} modifiche in {} progetti:", act.changes.len(), projects.len()));
-        egui::ScrollArea::vertical()
-            .scroll_source(drag_scroll())
-            .max_height(ui.ctx().content_rect().height() * 0.5)
-            .show(ui, |ui| {
-                for &p in &projects {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(project_label(app, p)).strong());
-                        let st = app.projects.status(p);
-                        if st != ProjectStatus::Active {
-                            ui.label(egui::RichText::new(st.label()).small().color(warn_amber()));
+        let max_h = ui.ctx().content_rect().height() * if act.orphans.is_empty() || act.changes.is_empty() { 0.5 } else { 0.25 };
+        if !act.changes.is_empty() {
+            ui.label(format!("{who} {} modifiche in {} progetti:", act.changes.len(), projects.len()));
+            egui::ScrollArea::vertical()
+                .id_salt("rule_activation_changes")
+                .scroll_source(drag_scroll())
+                .max_height(max_h)
+                .show(ui, |ui| {
+                    for &p in &projects {
+                        project_head(ui, p);
+                        for c in act.changes.iter().filter(|c| c.proj == p) {
+                            ui.label(format!("    • {}", c.text));
                         }
-                    });
-                    for c in act.changes.iter().filter(|c| c.proj == p) {
-                        ui.label(format!("    • {}", c.text));
                     }
-                }
-            });
+                });
+        }
+        if !act.orphans.is_empty() {
+            if !act.changes.is_empty() {
+                ui.separator();
+            }
+            ui.label(format!(
+                "{} milestone in {} progetti resterebbero dove sono, ma senza più una regola che le tenga allineate:",
+                act.orphans.len(),
+                orphan_projects.len()
+            ));
+            egui::ScrollArea::vertical()
+                .id_salt("rule_activation_orphans")
+                .scroll_source(drag_scroll())
+                .max_height(max_h)
+                .show(ui, |ui| {
+                    for &p in &orphan_projects {
+                        project_head(ui, p);
+                        for o in act.orphans.iter().filter(|o| o.proj == p) {
+                            let name = app.milestones.get_name(o.milestone).unwrap_or("?");
+                            ui.label(format!("    • {name} ({})", week_label(o.week.0 as i32)));
+                        }
+                    }
+                });
+            ui.checkbox(&mut act.remove_orphans, "Toglile dai progetti")
+                .on_hover_text("Spenta: restano al loro posto e si spostano a mano.");
+            ui.label(
+                egui::RichText::new("Le date di inizio / fine e i dev aggiunti dalla regola restano comunque.")
+                    .small()
+                    .color(text_dim()),
+            );
+        }
         ui.label(
             egui::RichText::new("Con «Applica» le modifiche si fanno subito (Ctrl+Z le annulla).")
                 .small()
@@ -724,11 +791,21 @@ pub(crate) fn rule_activation_window(
         ui.separator();
     });
     match answer {
-        Some(true) => match state.rule_activation.take().map(|a| a.pending) {
-            Some(RulePending::Update { id, rule, .. }) => actions.push(Action::UpdateRule(id, rule)),
-            Some(RulePending::Import(plan)) => actions.push(Action::ImportRules(plan)),
-            None => {}
-        },
+        Some(true) => {
+            if let Some(act) = state.rule_activation.take() {
+                match act.pending {
+                    RulePending::Update { id, rule, .. } => actions.push(Action::UpdateRule(id, rule)),
+                    RulePending::Delete(id) => actions.push(Action::DeleteRule(id)),
+                    RulePending::Import(plan) => actions.push(Action::ImportRules(plan)),
+                }
+                // Dopo la regola: così nessuna regola le rimette a posto.
+                if act.remove_orphans {
+                    for o in act.orphans {
+                        actions.push(Action::RemoveProjectMilestone { proj: o.proj, milestone: o.milestone });
+                    }
+                }
+            }
+        }
         Some(false) => {
             if let Some(RulePending::Import(_)) = state.rule_activation.take().map(|a| a.pending) {
                 state.toast_info("Importazione delle regole annullata: nessuna regola aggiunta.");

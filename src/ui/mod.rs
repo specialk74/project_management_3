@@ -970,10 +970,15 @@ impl UndoFlash {
 }
 
 /// Regole da confermare prima di salvarle, perché cambierebbero questi
-/// progetti (`rule_activation_window`).
+/// progetti o lascerebbero delle milestone senza regola
+/// (`rule_activation_window`).
 pub(crate) struct RuleActivation {
     pub(crate) pending: RulePending,
     pub(crate) changes: Vec<crate::rules::RuleChange>,
+    /// Milestone che resterebbero senza regola (`rules::orphans`) e la
+    /// spunta «togliele dai progetti» (di norma spenta: restano).
+    pub(crate) orphans: Vec<crate::rules::Orphan>,
+    pub(crate) remove_orphans: bool,
 }
 
 /// Cosa aspetta la conferma.
@@ -983,6 +988,8 @@ pub(crate) enum RulePending {
     Update { id: crate::rules::RuleId, rule: crate::rules::Rule, was_enabled: bool },
     /// Regole importate da testo → `Action::ImportRules`.
     Import(crate::rules_text::ImportPlan),
+    /// Regola da eliminare → `Action::DeleteRule`.
+    Delete(crate::rules::RuleId),
 }
 
 #[derive(Default)]
@@ -2480,7 +2487,12 @@ impl PjmApp {
         if changes.is_empty() {
             self.finish_import(plan);
         } else {
-            self.ui.rule_activation = Some(RuleActivation { pending: RulePending::Import(plan), changes });
+            self.ui.rule_activation = Some(RuleActivation {
+                pending: RulePending::Import(plan),
+                changes,
+                orphans: Vec::new(),
+                remove_orphans: false,
+            });
         }
     }
 
@@ -3346,9 +3358,7 @@ impl PjmApp {
                 if self.app.rules.remove(id) {
                     self.ui.rule_names.remove(&id);
                     self.mark_changed();
-                    self.ui.toast_ok(format!(
-                        "Regola «{name}» eliminata: le milestone che aveva messo restano, ora si spostano a mano."
-                    ));
+                    self.ui.toast_ok(format!("Regola «{name}» eliminata."));
                 }
             }
             Action::DeletePriority(pri) => {
