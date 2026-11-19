@@ -776,6 +776,12 @@ pub(crate) fn draw_dev_cells(
         .filter(|e| e.proj == proj && e.dev == dev)
         .map(|e| e.week);
     let sd = app.projects.get_single_dev(proj, dev);
+    // Bersagli governati da una regola di automazione: «⚙» nella fascia alta.
+    let governed = if app.rules.is_empty() {
+        std::collections::BTreeMap::new()
+    } else {
+        crate::rules::governing(app, proj)
+    };
 
     let mut running = 0i32;
     let mut next_x = rect.left();
@@ -833,8 +839,12 @@ pub(crate) fn draw_dev_cells(
         //    tasto destro sulla riga in alto per aggiungere/rimuovere. ──
         let ms_here = milestones_in_group(app, proj, ws);
         paint_milestone_bands(ui, app, col_rect, &ms_here);
+        let rule_notes = rule_notes_here(app, &governed, &ms_here, is_start, is_deadline);
+        if !rule_notes.is_empty() {
+            paint_rule_mark(ui, col_rect);
+        }
         draw_milestone_strip(
-            ui, app, state, actions, proj, dev, *w, &ms_here, col_rect, merged,
+            ui, app, state, actions, proj, dev, *w, &ms_here, &rule_notes, col_rect, merged,
         );
 
         // ── Vista compatta: una barra (altezza ∝ effort) per settimana attiva ──
@@ -965,6 +975,43 @@ fn draw_year_end_cell(
 
 /// Unione (senza ripetizioni) delle milestone di tutte le settimane del gruppo
 /// mergiato — una sola settimana al livello di zoom 0.
+/// Le righe del tooltip per ciò che nella colonna è governato da una regola
+/// di automazione: le milestone collocate lì e la data di inizio / fine se
+/// cade lì. Vuoto = niente «⚙».
+fn rule_notes_here(
+    app: &App,
+    governed: &std::collections::BTreeMap<crate::rules::Target, crate::rules::RuleId>,
+    ms_here: &[MilestoneId],
+    is_start: bool,
+    is_deadline: bool,
+) -> Vec<String> {
+    use crate::rules::Target;
+    let note = |what: &str, r: &crate::rules::RuleId| format!("{RULE_MARK} {what}: regola «{}»", crate::rules::rule_label(app, *r));
+    let mut out = Vec::new();
+    for m in ms_here {
+        if let Some(r) = governed.get(&Target::Milestone(*m)) {
+            out.push(note(app.milestones.get_name(*m).unwrap_or("?"), r));
+        }
+    }
+    if is_start && let Some(r) = governed.get(&Target::ProjectStart) {
+        out.push(note("Inizio progetto", r));
+    }
+    if is_deadline && let Some(r) = governed.get(&Target::ProjectEnd) {
+        out.push(note("Fine progetto", r));
+    }
+    out
+}
+
+/// «⚙» sul lato destro della fascia alta della colonna: lì c'è qualcosa
+/// governato da una regola. Su un dischetto col colore del testo, così si
+/// legge sopra a qualunque milestone.
+pub(crate) fn paint_rule_mark(ui: &egui::Ui, col_rect: Rect) {
+    let r = (ROW_H / 2.0 - 2.0).min(col_rect.width() / 2.0 - 1.0).max(3.0);
+    let c = egui::pos2(col_rect.right() - r - 1.0, col_rect.top() + ROW_H / 2.0);
+    ui.painter().circle_filled(c, r, text());
+    ui.painter().text(c, Align2::CENTER_CENTER, RULE_MARK, mono(r * 1.6), bg());
+}
+
 fn milestones_in_group(app: &App, proj: ProjectId, ws: &[i32]) -> Vec<MilestoneId> {
     let mut v = Vec::new();
     for wk in ws.iter() {
@@ -993,21 +1040,29 @@ fn draw_milestone_strip(
     dev: DevId,
     w: i32,
     ms_here: &[MilestoneId],
+    rule_notes: &[String],
     col_rect: Rect,
     merged: bool,
 ) {
     let top = Rect::from_min_size(col_rect.min, Vec2::new(col_rect.width(), ROW_H));
+    // Nomi delle milestone e, sotto, cosa è governato da una regola.
     let names = || -> String {
-        ms_here
+        let ms = ms_here
             .iter()
             .filter_map(|m| app.milestones.get_name(*m).map(|s| s.to_string()))
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", ");
+        std::iter::once(ms)
+            .chain(rule_notes.iter().cloned())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
     };
+    let has_tip = !ms_here.is_empty() || !rule_notes.is_empty();
 
     if merged {
         // Colonna mergiata: milestone solo informative (tooltip), niente menù.
-        if !ms_here.is_empty() {
+        if has_tip {
             ui.interact(
                 top,
                 egui::Id::unique(("msrow_m", proj.0, dev.0, w)),
@@ -1023,7 +1078,7 @@ fn draw_milestone_strip(
         egui::Id::unique(("msrow", proj.0, dev.0, w)),
         Sense::click(),
     );
-    if !ms_here.is_empty() {
+    if has_tip {
         resp = resp.on_hover_text(names());
     }
     let week_id = WeekId(w as usize);
@@ -2158,10 +2213,14 @@ pub(crate) fn draw_project_info(
             week_label(wk.0 as i32)
         })
         .unwrap_or_default();
+    // Data governata da una regola di automazione: «⚙» davanti, non si
+    // modifica a mano.
+    let start_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectStart);
+    let start_mark = if start_rule.is_some() { format!("{RULE_MARK} ") } else { String::new() };
     let start_txt = if start_date.is_empty() {
-        "Inizio: —".to_string()
+        format!("{start_mark}Inizio: —")
     } else {
-        format!("Inizio: {}", start_date)
+        format!("{start_mark}Inizio: {}", start_date)
     };
     let sr = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
     ui.painter().text(
@@ -2172,8 +2231,6 @@ pub(crate) fn draw_project_info(
         text_dim(),
     );
     let srr = ui.interact(sr, egui::Id::unique(("start", proj.0)), Sense::click());
-    // Data governata da una regola di automazione: non si modifica a mano.
-    let start_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectStart);
     if srr.secondary_clicked() && start_rule.is_none() {
         state.popup = Some(Popup::Start {
             proj,
@@ -2194,10 +2251,12 @@ pub(crate) fn draw_project_info(
             week_label(wk.0 as i32)
         })
         .unwrap_or_default();
+    let end_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectEnd);
+    let end_mark = if end_rule.is_some() { format!("{RULE_MARK} ") } else { String::new() };
     let end_txt = if end_date.is_empty() {
-        "Fine: —".to_string()
+        format!("{end_mark}Fine: —")
     } else {
-        format!("Fine: {}", end_date)
+        format!("{end_mark}Fine: {}", end_date)
     };
     let er = Rect::from_min_size(egui::pos2(x, y), Vec2::new(w, ROW_H));
     ui.painter().text(
@@ -2208,7 +2267,6 @@ pub(crate) fn draw_project_info(
         text_dim(),
     );
     let err = ui.interact(er, egui::Id::unique(("end", proj.0)), Sense::click());
-    let end_rule = crate::rules::governing_rule(app, proj, crate::rules::Target::ProjectEnd);
     if err.secondary_clicked() && end_rule.is_none() {
         state.popup = Some(Popup::End {
             proj,

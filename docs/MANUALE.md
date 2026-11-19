@@ -1005,6 +1005,12 @@ Come funzionano:
   progetto non ha la data di fine, o la milestone di partenza non c'è), la
   milestone viene tolta; ricompare quando l'ancora torna. Una **data** del
   progetto invece, senza ancora, **resta com'è** (non viene cancellata).
+- **Si riconosce in griglia** — dove una regola ha collocato una milestone, o
+  dove cade una data di inizio / fine che una regola governa, la fascia in alto
+  della colonna mostra a destra un piccolo **⚙**; passandoci sopra il suggerimento dice
+  quale regola (es. «⚙ Collaudo: regola «Collaudo dopo il Backend»»). Nella
+  colonna di sinistra le date governate hanno **⚙** davanti («⚙ Inizio: …»).
+  Le milestone messe a mano non hanno il segno.
 - **Non si sposta a mano** — nel menù della griglia («Aggiungi milestone qui»)
   una milestone governata da una regola è disattivata, sia per collocarla sia
   per toglierla, e il suggerimento dice quale regola la governa. Anche «Sposta» e

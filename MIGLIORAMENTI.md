@@ -133,7 +133,10 @@ non il tempo di digitazione.
   milestone…) che lascerebbe delle milestone senza regola apre «Spegnere /
   Eliminare la regola?» con il loro elenco e la spunta «Toglile dai
   progetti» (spenta = restano, come prima); date e dev aggiunti restano
-  sempre.
+  sempre. (4) in griglia un «⚙» nella fascia alta della colonna segna le
+  milestone e le date di inizio / fine governate da una regola (tooltip con
+  la regola), e «⚙» davanti a «Inizio:/Fine:» governate nella colonna di
+  sinistra.
 
 ## A. Robustezza & dati condivisi
 

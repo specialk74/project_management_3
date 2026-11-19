@@ -1358,7 +1358,16 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `RemoveProjectMilestone` per orphan (one undo step). Dates and added devs
   are never offered for removal. The `DeleteRule` toast is just «Regola …
   eliminata.». Tests `orphans_are_placements_no_rule_would_govern_any_more`,
-  `deleting_a_rule_asks_whether_to_remove_its_milestones`. Tests
+  `deleting_a_rule_asks_whether_to_remove_its_milestones`.
+  **Mark in the grid**: `RULE_MARK` («⚙», `mod.rs`). `draw_dev_cells` computes
+  `governing(app, proj)` once per dev block (skipped when there are no rules);
+  per column the private `rule_notes_here(app, &governed, &ms_here, is_start,
+  is_deadline)` lists governed milestones / start / end there and, if any,
+  `paint_rule_mark` draws «⚙» (`bg()` on a `text()` disc, readable on any
+  band) at the right end of the top `ROW_H` strip; the notes are appended to the
+  strip's tooltip (`draw_milestone_strip(…, rule_notes, …)`, also on merged
+  columns). `draw_project_info` prefixes governed «Inizio:/Fine:» with «⚙ ».
+  Test `governed_milestones_and_dates_are_marked_in_the_grid`. Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.

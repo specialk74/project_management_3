@@ -969,6 +969,10 @@ impl UndoFlash {
     }
 }
 
+/// Segno di ciò che una regola di automazione governa (milestone e date in
+/// griglia, date nella colonna di sinistra).
+pub(crate) const RULE_MARK: &str = "⚙";
+
 /// Regole da confermare prima di salvarle, perché cambierebbero questi
 /// progetti o lascerebbero delle milestone senza regola
 /// (`rule_activation_window`).

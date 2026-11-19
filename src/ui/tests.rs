@@ -4567,3 +4567,67 @@ fn deleting_a_rule_asks_whether_to_remove_its_milestones() {
     pjm.apply(Action::Undo);
     assert!(pjm.app.rules.get(id).is_some() && placed(&pjm.app), "un Annulla rimette regola e milestone");
 }
+
+/// Ciò che una regola governa si riconosce in griglia: «⚙» nella fascia alta
+/// della colonna della milestone governata e della data di inizio governata
+/// (non su una milestone messa a mano), e davanti a «Inizio:» nella colonna
+/// di sinistra.
+#[test]
+fn governed_milestones_and_dates_are_marked_in_the_grid() {
+    use crate::rules::{Anchor, Inactive, Rule, RuleScope, Target};
+    let (mut app, _alice, week) = highlight_fixture();
+    let (proj, _) = app.projects.list()[0];
+    let dev = app.devs.list()[0].0;
+    let collaudo = app.milestones.add("Collaudo");
+    let rilascio = app.milestones.add("Rilascio");
+    app.projects.add_project_milestone(proj, rilascio, WeekId(week as usize + 14));
+    let rule = |target, anchor, offset_weeks| Rule {
+        name: "R".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target,
+        anchor,
+        offset_weeks,
+        inactive: Inactive::default(),
+    };
+    app.rules.add(rule(Target::Milestone(collaudo), Anchor::DevEnd(dev), 1));
+    app.rules.add(rule(Target::ProjectStart, Anchor::FirstEffort, 0));
+    crate::rules::apply(&mut app);
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), ..Default::default() };
+    let draw = |state: &mut UiState, app: &App, left: bool| {
+        ctx.run_ui_test(input.clone(), |ui| {
+            let layout = body_layout(ui, app, state, &Filter::default(), &None);
+            let mut actions = Vec::new();
+            if left {
+                left_column(ui, app, state, &mut actions, &Filter::default(), &None, &layout);
+            } else {
+                grid(ui, app, state, &mut actions, &Filter::default(), &layout);
+            }
+        })
+    };
+    let marks = |out: &egui::FullOutput| drawn_texts(out).iter().filter(|t| *t == RULE_MARK).count();
+    assert_eq!(marks(&draw(&mut state, &app, false)), 2, "inizio e Collaudo, non il Rilascio");
+    let texts = drawn_texts(&draw(&mut state, &app, true));
+    assert!(texts.iter().any(|t| t.starts_with("⚙ Inizio: ")), "{texts:?}");
+    assert!(texts.iter().any(|t| t.starts_with("Fine: ")), "fine non governata: {texts:?}");
+    // Regola spenta: nessun segno.
+    let id = app.rules.list()[0].0;
+    let mut off = app.rules.get(id).unwrap().clone();
+    off.enabled = false;
+    app.rules.update(id, off);
+    assert_eq!(marks(&draw(&mut state, &app, false)), 1, "resta solo l'inizio");
+}
+
+/// Il «⚙» di una regola sta sul lato destro della fascia alta della colonna.
+#[test]
+fn rule_mark_sits_on_the_right_of_the_column() {
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(400.0, 300.0)), ..Default::default() };
+    let col = Rect::from_min_size(egui::pos2(100.0, 50.0), Vec2::new(COL_W, 200.0));
+    let out = ctx.run_ui_test(input, |ui| paint_rule_mark(ui, col));
+    let pos = text_pos(&out, RULE_MARK).expect("segno disegnato");
+    assert!(pos.x > col.center().x && pos.x < col.right(), "a destra: {pos:?} in {col:?}");
+    assert!((pos.y - (col.top() + ROW_H / 2.0)).abs() < 2.0, "nella fascia alta: {pos:?}");
+}
