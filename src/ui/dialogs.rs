@@ -124,7 +124,14 @@ pub(crate) fn bulk_fill_window(
         .parse::<usize>()
         .ok()
         .filter(|n| *n > 0);
-    // Settimane realmente scrivibili (la griglia finisce a `end_week`).
+    // Settimane in cui si scrive, per worker scelto: saltano le Ferie (la
+    // fine scivola avanti) e si fermano alla fine della griglia.
+    let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
+    chosen.sort_by_key(|w| w.0);
+    let plans: Vec<(WorkerId, Vec<WeekId>)> = weeks
+        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, *w, WeekId(bf.week as usize), n))).collect())
+        .unwrap_or_default();
+    // Settimane realmente scrivibili senza ferie (la griglia finisce a `end_week`).
     let available =
         ((app.end_week.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
     let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
@@ -239,28 +246,56 @@ pub(crate) fn bulk_fill_window(
                 ui.colored_label(Color32::RED, msg);
             }
             if let (Some(e), Some(n)) = (effort, weeks) {
-                let last = bulk_fill_last_week(bf.week, effective);
-                let last_label = week_label(last);
+                // Fine: l'ultima settimana scritta (la più lontana, se le
+                // ferie allungano qualcuno).
+                let last = plans
+                    .iter()
+                    .filter_map(|(_, ws)| ws.last().map(|w| w.0 as i32))
+                    .max()
+                    .unwrap_or_else(|| bulk_fill_last_week(bf.week, effective));
                 ui.label(format!(
                     "{} worker × {} h × {} settimane ({} → {})",
                     bf.selected.len(),
                     e,
-                    effective,
+                    n,
                     start_label,
-                    last_label
+                    week_label(last)
                 ));
-                if effective < n {
-                    ui.colored_label(
-                        Color32::RED,
-                        format!(
-                            "Solo {} settimane disponibili fino alla fine della griglia.",
-                            effective
-                        ),
-                    );
+                // Per worker: ferie saltate e settimane mancanti a fine griglia.
+                for (w, ws) in &plans {
+                    let name = app.workers.get_name_by_id(*w);
+                    let end = ws.last().map(|x| x.0).unwrap_or(bf.week as usize);
+                    let skipped: Vec<String> = (0..)
+                        .map(|i| bf.week as usize + i * WEEK_STEP)
+                        .take_while(|d| *d <= end)
+                        .filter(|d| app.workers.get_week_status(*w, *d) == Some(WeekStatus::Ferie))
+                        .map(|d| week_label(d as i32))
+                        .collect();
+                    if !skipped.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{name}: in ferie il {} (saltate) → fino al {}",
+                                skipped.join(", "),
+                                week_label(end as i32)
+                            ))
+                            .color(info_blue()),
+                        );
+                    }
+                    if ws.len() < n {
+                        ui.colored_label(
+                            Color32::RED,
+                            format!(
+                                "{name}: solo {} settimane disponibili fino alla fine della griglia.",
+                                ws.len()
+                            ),
+                        );
+                    }
                 }
             }
 
-            let valid = !bf.selected.is_empty() && effort.is_some() && effective > 0;
+            let valid = !bf.selected.is_empty()
+                && effort.is_some()
+                && plans.iter().any(|(_, ws)| !ws.is_empty());
             ui.separator();
             ui.horizontal(|ui| {
                 if ui
@@ -282,15 +317,13 @@ pub(crate) fn bulk_fill_window(
         });
 
     if confirm {
-        let mut workers: Vec<WorkerId> = bf.selected.iter().copied().collect();
-        workers.sort_by_key(|w| w.0);
         actions.push(Action::BulkFillEffort {
             proj: bf.proj,
             dev: bf.dev,
             start: WeekId(bf.week as usize),
-            workers,
+            workers: chosen,
             effort: Effort(effort.unwrap_or(0)),
-            weeks: effective,
+            weeks: weeks.unwrap_or(0),
         });
     }
     if confirm || cancel || !open {

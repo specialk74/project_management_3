@@ -969,6 +969,30 @@ impl UndoFlash {
     }
 }
 
+/// Filtro per tipo della finestra delle regole (solo sessione).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum RuleTypeFilter {
+    #[default]
+    All,
+    /// Milestone.
+    Milestone,
+    /// Inizio / fine progetto.
+    Date,
+    /// Aggiungi dev / ore del dev.
+    Dev,
+    /// Avvisi.
+    Warning,
+}
+
+/// Filtro attive / spente della finestra delle regole (solo sessione).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum RuleEnabledFilter {
+    #[default]
+    All,
+    Enabled,
+    Disabled,
+}
+
 /// Segno di ciò che una regola di automazione governa (milestone e date in
 /// griglia, date nella colonna di sinistra).
 pub(crate) const RULE_MARK: &str = "⚙";
@@ -1267,6 +1291,11 @@ pub struct UiState {
     // ogni regola (finché non si conferma)
     show_rules: bool,
     rule_names: HashMap<crate::rules::RuleId, String>,
+    // filtri della finestra delle regole: ricerca (nome e riassunto), tipo,
+    // attive / spente (solo sessione)
+    rules_search: String,
+    rules_type_filter: RuleTypeFilter,
+    rules_enabled_filter: RuleEnabledFilter,
     // milestone usata da qualche regola di cui si è chiesta l'eliminazione:
     // prima la conferma (`confirm_delete_milestone_window`)
     confirm_delete_milestone: Option<MilestoneId>,
@@ -4919,10 +4948,28 @@ fn move_project_bound(app: &mut App, proj: ProjectId, bound: ProjectBound, week:
     old != Some(week) || !loss.is_empty()
 }
 
-/// Scrive `effort` per ognuno dei `workers` in `weeks` settimane consecutive a
-/// partire da `start` (inclusa), andando in avanti. Sovrascrive il valore già
-/// presente per quel worker e si ferma alla fine della griglia (`end_week`).
-/// Ritorna `true` se ha scritto qualcosa.
+/// Le settimane in cui «Aggiungi efforts» scrive per `worker`: le prime
+/// `weeks` a partire da `start` (inclusa), andando in avanti, **saltando
+/// quelle in cui il worker è in Ferie** (la Malattia no): così il worker ha
+/// sempre `weeks` settimane di effort e, con delle ferie in mezzo, la fine
+/// scivola più avanti (anche oltre la data «fino al» della dialog). Si ferma
+/// alla fine della griglia (`end_week`), quindi può essere più corta.
+pub(crate) fn bulk_fill_weeks(app: &App, worker: WorkerId, start: WeekId, weeks: usize) -> Vec<WeekId> {
+    let mut out = Vec::with_capacity(weeks);
+    let mut w = start;
+    while out.len() < weeks && w <= app.end_week {
+        if app.workers.get_week_status(worker, w.0) != Some(WeekStatus::Ferie) {
+            out.push(w);
+        }
+        w = WeekId(w.0 + WEEK_STEP);
+    }
+    out
+}
+
+/// Scrive `effort` per ognuno dei `workers` nelle sue settimane
+/// (`bulk_fill_weeks`: `weeks` settimane da `start`, saltando le Ferie, fino
+/// alla fine della griglia). Sovrascrive il valore già presente per quel
+/// worker. Ritorna `true` se ha scritto qualcosa.
 fn bulk_fill_effort(
     app: &mut App,
     proj: ProjectId,
@@ -4932,16 +4979,9 @@ fn bulk_fill_effort(
     effort: Effort,
     weeks: usize,
 ) -> bool {
-    if workers.is_empty() || weeks == 0 {
-        return false;
-    }
     let mut written = false;
-    for i in 0..weeks {
-        let w = WeekId(start.0 + i * WEEK_STEP);
-        if w > app.end_week {
-            break;
-        }
-        for wid in workers {
+    for wid in workers {
+        for w in bulk_fill_weeks(app, *wid, start, weeks) {
             app.projects.add_effort(proj, dev, w, *wid, effort);
             written = true;
         }

@@ -1196,6 +1196,20 @@ pub struct RuleStatus {
     pub missing: Vec<&'static str>,
     /// L'ancora non va bene per il bersaglio (`anchor_fits`).
     pub bad_anchor: bool,
+    /// Attiva: progetti nell'ambito ma in uno stato escluso (on-hold /
+    /// closed senza `inactive`).
+    pub excluded_state: usize,
+    /// Allineate: progetti in cui la regola varrebbe ma il bersaglio lo
+    /// governa un'altra regola (più specifica o, a parità, più vecchia).
+    pub beaten: usize,
+}
+
+impl RuleStatus {
+    /// Allineate: progetti governati in cui l'ancora manca (la milestone non
+    /// c'è; la data resta com'era).
+    pub fn no_anchor(&self) -> usize {
+        self.governed.saturating_sub(self.placed)
+    }
 }
 
 /// I riferimenti della regola che non esistono più (milestone, dev,
@@ -1241,6 +1255,14 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
     };
     st.missing = missing_refs(app, r);
     st.bad_anchor = !anchor_fits(r.target, r.anchor);
+    if r.enabled {
+        st.excluded_state = app
+            .projects
+            .list()
+            .into_iter()
+            .filter(|(p, _)| r.scope.matches(app, *p) && !r.inactive.allows(app.projects.status(*p)))
+            .count();
+    }
     match r.target.kind() {
         RuleKind::Aligned => {}
         RuleKind::AddDev => {
@@ -1271,8 +1293,15 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         }
     }
     for (proj, _) in app.projects.list() {
-        if governing(app, proj).get(&r.target) != Some(&id) {
-            continue;
+        match governing(app, proj).get(&r.target) {
+            Some(&g) if g == id => {}
+            Some(_) => {
+                if r.enabled && anchor_fits(r.target, r.anchor) && r.applies_to(app, proj) {
+                    st.beaten += 1;
+                }
+                continue;
+            }
+            None => continue,
         }
         st.governed += 1;
         let ev = evaluate(app, proj);
@@ -1848,5 +1877,32 @@ mod tests {
         let lines = project_rules(&f.app, f.p);
         let l = lines.iter().find(|l| l.rule == ok).unwrap();
         assert_eq!((l.applies, l.text.as_str()), (false, "il progetto è Closed: la regola vale solo per attivi"));
+    }
+
+    /// Stato di una regola: oltre ai progetti in cui agisce, quelli senza
+    /// ancora, quelli dove vince un'altra regola e quelli esclusi per stato.
+    #[test]
+    fn status_counts_no_anchor_beaten_and_excluded_projects() {
+        let mut f = fx();
+        let q = f.app.projects.add("y", Some("XYZ"), None); // senza Backend
+        let c = f.app.projects.add("z", Some("CLO"), None);
+        f.app.projects.add_dev(c, f.be);
+        f.app.projects.add_effort(c, f.be, WeekId(f.base), f.app.workers.list()[0].0, Effort(8));
+        f.app.projects.set_status(c, ProjectStatus::Closed);
+        let all = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        apply(&mut f.app);
+        let st = status(&f.app, all);
+        assert_eq!((st.governed, st.placed, st.no_anchor(), st.beaten, st.excluded_state), (2, 1, 1, 0, 1));
+        // Una regola per ABC vince lì: la generale perde ABC.
+        f.app.rules.add(rule(RuleScope::Projects(vec![f.p]), f.collaudo, Anchor::DevEnd(f.be), 3));
+        apply(&mut f.app);
+        let st = status(&f.app, all);
+        assert_eq!((st.governed, st.placed, st.beaten, st.excluded_state), (1, 0, 1, 1), "{st:?}");
+        assert!(f.app.projects.list_devs(q).is_empty());
+        // Spenta: niente conteggi d'esclusione.
+        let mut off = f.app.rules.get(all).unwrap().clone();
+        off.enabled = false;
+        f.app.rules.update(all, off);
+        assert_eq!(status(&f.app, all).excluded_state, 0);
     }
 }

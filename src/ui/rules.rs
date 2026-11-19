@@ -267,49 +267,113 @@ fn status_text(app: &App, id: RuleId, rule: &Rule) -> (String, Color32, String) 
     if !rule.enabled {
         return ("spenta".into(), text_dim(), "Spunta «Attiva» per applicarla.".into());
     }
-    match rule.target.kind() {
-        RuleKind::Aligned => {}
-        RuleKind::AddDev => {
-            return (
-                format!("in {} progetti", st.placed),
-                text_dim(),
-                format!(
-                    "Progetti nell'ambito: {}; in {} c'è il dev della condizione, quindi il dev \
-                     viene aggiunto (e non si toglie finché la condizione vale).",
-                    st.governed, st.placed
-                ),
-            );
+    // Dopo il testo principale, i progetti in cui non agisce e perché.
+    let mut extra = Vec::new();
+    let mut extra_tip = Vec::new();
+    if rule.target.kind() == RuleKind::Aligned {
+        if st.no_anchor() > 0 {
+            extra.push(format!("{} senza ancora", st.no_anchor()));
+            extra_tip.push(format!(
+                "{} senza ancora: lì l'ancora manca, quindi la milestone non c'è (una data resta com'è).",
+                st.no_anchor()
+            ));
         }
-        RuleKind::MoveDev => {
-            let text = if st.placed == 0 { "allineata".to_string() } else { format!("{} da spostare", st.placed) };
-            return (
-                text,
-                text_dim(),
-                "Si applica su comando: «Applica ora…» mostra cosa si sposta prima di farlo.".into(),
-            );
+        if st.beaten > 0 {
+            extra.push(format!("{} ad altre regole", st.beaten));
+            extra_tip.push(format!(
+                "{} ad altre regole: lì lo stesso bersaglio lo governa una regola più specifica (o, a parità, più vecchia).",
+                st.beaten
+            ));
         }
+    }
+    if st.excluded_state > 0 {
+        extra.push(format!("{} esclusi per stato", st.excluded_state));
+        extra_tip.push(format!(
+            "{} esclusi per stato: progetti dell'ambito on-hold / closed, che la regola non tocca \
+             (si cambia con la tendina degli stati accanto ai progetti).",
+            st.excluded_state
+        ));
+    }
+    let (main, color, tip) = match rule.target.kind() {
+        RuleKind::Aligned => (
+            format!("in {} progetti", st.placed),
+            text_dim(),
+            format!(
+                "In {} progetti la regola governa il bersaglio; in {} l'ancora c'è e il bersaglio è al suo posto.",
+                st.governed, st.placed
+            ),
+        ),
+        RuleKind::AddDev => (
+            format!("in {} progetti", st.placed),
+            text_dim(),
+            format!(
+                "Progetti nell'ambito: {}; in {} c'è il dev della condizione, quindi il dev \
+                 viene aggiunto (e non si toglie finché la condizione vale).",
+                st.governed, st.placed
+            ),
+        ),
+        RuleKind::MoveDev => (
+            if st.placed == 0 { "allineata".to_string() } else { format!("{} da spostare", st.placed) },
+            text_dim(),
+            "Si applica su comando: «Applica ora…» mostra cosa si sposta prima di farlo.".into(),
+        ),
         RuleKind::Warning => {
             let tip = format!(
                 "Progetti nell'ambito: {}; con l'avviso: {} (controllati solo dove punto e ancora \
                  esistono). L'elenco è in «Avvisi…».",
                 st.governed, st.placed
             );
-            return if st.placed == 0 {
+            if st.placed == 0 {
                 ("rispettata".into(), text_dim(), tip)
             } else {
                 (format!("⚠ {} avvisi", st.placed), warn_amber(), tip)
-            };
+            }
         }
-    }
-    (
-        format!("in {} progetti", st.placed),
-        text_dim(),
-        format!(
-            "Progetti in cui la regola governa la milestone: {}; con l'ancora presente (milestone collocata): {}. \
-             Dove un'altra regola più specifica governa la stessa milestone, vince quella.",
-            st.governed, st.placed
-        ),
-    )
+    };
+    let text = std::iter::once(main).chain(extra).collect::<Vec<_>>().join(" · ");
+    let tip = std::iter::once(tip).chain(extra_tip).collect::<Vec<_>>().join("\n");
+    (text, color, tip)
+}
+
+/// Voci delle tendine dei filtri.
+const RULE_TYPE_CHOICES: [(RuleTypeFilter, &str); 5] = [
+    (RuleTypeFilter::All, "Tutti i tipi"),
+    (RuleTypeFilter::Milestone, "Milestone"),
+    (RuleTypeFilter::Date, "Date del progetto"),
+    (RuleTypeFilter::Dev, "Dev"),
+    (RuleTypeFilter::Warning, "Avvisi"),
+];
+const RULE_ENABLED_CHOICES: [(RuleEnabledFilter, &str); 3] = [
+    (RuleEnabledFilter::All, "Attive e spente"),
+    (RuleEnabledFilter::Enabled, "Solo attive"),
+    (RuleEnabledFilter::Disabled, "Solo spente"),
+];
+
+/// La regola passa i filtri della finestra? Ricerca (senza maiuscole) nel
+/// nome e nel riassunto (`rule_summary`: milestone, dev, ancora…), tipo
+/// del bersaglio, attiva / spenta.
+pub(crate) fn rule_passes_filters(
+    app: &App,
+    id: RuleId,
+    r: &Rule,
+    search: &str,
+    kind: RuleTypeFilter,
+    enabled: RuleEnabledFilter,
+) -> bool {
+    let kind_ok = match kind {
+        RuleTypeFilter::All => true,
+        RuleTypeFilter::Milestone => matches!(r.target, Target::Milestone(_)),
+        RuleTypeFilter::Date => matches!(r.target, Target::ProjectStart | Target::ProjectEnd),
+        RuleTypeFilter::Dev => matches!(r.target, Target::AddDev(_) | Target::DevStart(_)),
+        RuleTypeFilter::Warning => matches!(r.target, Target::Check(..)),
+    };
+    let enabled_ok = match enabled {
+        RuleEnabledFilter::All => true,
+        RuleEnabledFilter::Enabled => r.enabled,
+        RuleEnabledFilter::Disabled => !r.enabled,
+    };
+    let text = format!("{} {}", crate::rules::rule_label(app, id), crate::rules_text::rule_summary(app, r));
+    kind_ok && enabled_ok && search_matches(&search.trim().to_lowercase(), &text)
 }
 
 /// Stati di progetto a cui vale la regola, oltre agli attivi.
@@ -441,9 +505,52 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 ui.label(egui::RichText::new("(nasce spenta: configurala, poi spunta «Attiva»)").small().color(text_dim()));
             });
             ui.separator();
-            let rules: Vec<(RuleId, Rule)> = app.rules.list().into_iter().map(|(id, r)| (id, r.clone())).collect();
-            if rules.is_empty() {
+            let all: Vec<(RuleId, Rule)> = app.rules.list().into_iter().map(|(id, r)| (id, r.clone())).collect();
+            if all.is_empty() {
                 ui.label(egui::RichText::new("Nessuna regola.").color(text_dim()));
+                return;
+            }
+            // Filtri: ricerca, tipo, attive / spente.
+            ui.horizontal(|ui| {
+                ui.label("Cerca:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.rules_search)
+                        .desired_width(220.0)
+                        .hint_text("nome, milestone, dev…"),
+                );
+                let types: Vec<(RuleTypeFilter, String)> =
+                    RULE_TYPE_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
+                if let Some(t) = choice_combo(ui, "rules_type_filter", 150.0, state.rules_type_filter, &types) {
+                    state.rules_type_filter = t;
+                }
+                let ens: Vec<(RuleEnabledFilter, String)> =
+                    RULE_ENABLED_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
+                if let Some(e) = choice_combo(ui, "rules_enabled_filter", 130.0, state.rules_enabled_filter, &ens) {
+                    state.rules_enabled_filter = e;
+                }
+                let filtering = !state.rules_search.trim().is_empty()
+                    || state.rules_type_filter != RuleTypeFilter::All
+                    || state.rules_enabled_filter != RuleEnabledFilter::All;
+                if filtering && ui.button("✖ Filtri").on_hover_text("Mostra tutte le regole").clicked() {
+                    state.rules_search.clear();
+                    state.rules_type_filter = RuleTypeFilter::All;
+                    state.rules_enabled_filter = RuleEnabledFilter::All;
+                }
+            });
+            let rules: Vec<(RuleId, Rule)> = all
+                .iter()
+                .filter(|(id, r)| {
+                    rule_passes_filters(app, *id, r, &state.rules_search, state.rules_type_filter, state.rules_enabled_filter)
+                })
+                .cloned()
+                .collect();
+            if rules.len() < all.len() {
+                ui.label(
+                    egui::RichText::new(format!("{} di {} regole", rules.len(), all.len())).small().color(text_dim()),
+                );
+            }
+            if rules.is_empty() {
+                ui.label(egui::RichText::new("Nessuna regola corrisponde ai filtri.").color(text_dim()));
                 return;
             }
 

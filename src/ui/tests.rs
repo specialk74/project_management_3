@@ -4686,3 +4686,137 @@ fn project_rules_window_opens_from_the_tripletta_mark() {
     assert!(texts.iter().any(|s| s == "milestone \"Collaudo\" = fine dev \"Frontend\" +1 sett."), "{texts:?}");
     assert!(texts.iter().any(|s| s.starts_with("→ milestone il ")), "{texts:?}");
 }
+
+/// Filtri della finestra delle regole: la ricerca guarda nome e riassunto
+/// (es. il nome della milestone), il tipo e attive / spente si combinano;
+/// la finestra mostra solo le regole che passano e «N di M regole».
+#[test]
+fn rules_window_filters_by_search_type_and_enabled() {
+    use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let be = app.devs.add("Backend");
+    let collaudo = app.milestones.add("Collaudo");
+    let rule = |name: &str, target, anchor, enabled| Rule {
+        name: name.into(),
+        enabled,
+        scope: RuleScope::All,
+        target,
+        anchor,
+        offset_weeks: 0,
+        inactive: Inactive::default(),
+    };
+    let a = app.rules.add(rule("Primo", Target::Milestone(collaudo), Anchor::DevEnd(be), true));
+    let b = app.rules.add(rule("Secondo", Target::ProjectEnd, Anchor::LastEffort, false));
+    let c = app.rules.add(rule(
+        "Terzo",
+        Target::Check(Anchor::Milestone(collaudo), Cmp::NotAfter),
+        Anchor::ProjectEnd,
+        true,
+    ));
+    let pass = |id, search: &str, t, e| {
+        rule_passes_filters(&app, id, app.rules.get(id).unwrap(), search, t, e)
+    };
+    use {RuleEnabledFilter as E, RuleTypeFilter as T};
+    assert!(pass(a, "collAUDO", T::All, E::All), "dal riassunto, senza maiuscole");
+    assert!(pass(c, "collaudo", T::All, E::All), "anche il punto dell'avviso");
+    assert!(!pass(b, "collaudo", T::All, E::All));
+    assert!(pass(b, "", T::Date, E::Disabled) && !pass(b, "", T::Date, E::Enabled));
+    assert!(pass(c, "", T::Warning, E::All) && !pass(a, "", T::Warning, E::All));
+    assert!(pass(a, "", T::Milestone, E::Enabled) && !pass(a, "", T::Dev, E::All));
+
+    let mut state = UiState { show_rules: true, rules_search: "terzo".into(), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1700.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    assert!(texts.iter().any(|t| t == "1 di 3 regole"), "{texts:?}");
+    // I nomi stanno nei campi di testo delle righe: solo «Terzo».
+    assert!(texts.iter().any(|t| t == "Terzo") && !texts.iter().any(|t| t == "Primo" || t == "Secondo"), "{texts:?}");
+}
+
+/// «Aggiungi efforts»: la settimana in cui il worker è in **Ferie** si salta
+/// e l'effort va alla successiva, così le settimane di effort restano N (la
+/// fine scivola avanti); la Malattia non si salta; la settimana spostata si
+/// sovrascrive; ogni worker segue le sue ferie; ci si ferma a fine griglia.
+#[test]
+fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("Progetto", Some("ABC"), None);
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_status(alice, wk(2).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_status(bob, wk(1).0, Some(WeekStatus::Malattia));
+    // Valore già presente nella settimana dove scivola Alice: si sovrascrive.
+    app.projects.add_effort(proj, dev, wk(4), alice, Effort(2));
+
+    assert_eq!(bulk_fill_weeks(&app, alice, start, 3), vec![wk(0), wk(3), wk(4)]);
+    assert_eq!(bulk_fill_weeks(&app, bob, start, 3), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
+    assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3));
+    let at = |app: &App, w: WeekId, who| {
+        app.projects
+            .get_single_dev(proj, dev)
+            .and_then(|sd| sd.get_all(w))
+            .and_then(|sew| sew.worker_id.get(&who).map(|e| e.get_effort().0))
+    };
+    for (i, want) in [Some(8), None, None, Some(8), Some(8)].into_iter().enumerate() {
+        assert_eq!(at(&app, wk(i), alice), want, "Alice, settimana {i}");
+    }
+    for (i, want) in [Some(8), Some(8), Some(8), None].into_iter().enumerate() {
+        assert_eq!(at(&app, wk(i), bob), want, "Bob, settimana {i}");
+    }
+    // A fine griglia: le ferie nell'ultima settimana accorciano.
+    let last = app.end_week;
+    let prev = WeekId(last.0 - WEEK_STEP);
+    app.workers.set_week_status(alice, last.0, Some(WeekStatus::Ferie));
+    assert_eq!(bulk_fill_weeks(&app, alice, prev, 2), vec![prev]);
+}
+
+/// La dialog dice, per worker, quali settimane di ferie salta e fin dove
+/// arriva; «Inserisci» manda il numero di settimane chiesto.
+#[test]
+fn bulk_fill_window_reports_skipped_vacation_weeks() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("Progetto", Some("ABC"), None);
+    let start = app.start_week.0;
+    app.workers.set_week_status(alice, start + WEEK_STEP, Some(WeekStatus::Ferie));
+    let mut bf = BulkFill { weeks_text: "3".into(), effort_text: "8".into(), ..BulkFill::new(proj, dev, start as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| bulk_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let out = out.unwrap();
+    let texts = drawn_texts(&out);
+    let skipped = format!(
+        "Alice: in ferie il {} (saltate) → fino al {}",
+        week_label((start + WEEK_STEP) as i32),
+        week_label((start + 3 * WEEK_STEP) as i32)
+    );
+    assert!(texts.contains(&skipped), "{skipped}: {texts:?}");
+    let summary = format!("1 worker × 8 h × 3 settimane ({} → {})", week_label(start as i32), week_label((start + 3 * WEEK_STEP) as i32));
+    assert!(texts.contains(&summary), "{summary}: {texts:?}");
+    let mut actions = Vec::new();
+    let pos = text_pos(&out, "Inserisci").expect("Inserisci");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| bulk_fill_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(
+        matches!(actions.as_slice(), [Action::BulkFillEffort { weeks: 3, workers, .. }] if workers == &vec![alice]),
+        "{} azioni",
+        actions.len()
+    );
+}

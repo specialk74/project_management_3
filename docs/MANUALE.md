@@ -715,8 +715,15 @@ numerici equivale a Inserisci, **Annulla**/**Esc** chiude senza scrivere.
 Note importanti:
 - se un worker selezionato ha **già** un effort in una delle settimane toccate,
   il valore viene **sovrascritto** (la sua eventuale nota resta);
+- le settimane in cui un worker è in **Ferie** (stato della settimana nel
+  footer) vengono **saltate**: il suo effort va alla prima settimana libera
+  successiva, così ha comunque **S** settimane di effort e la sua fine scivola
+  più avanti — anche oltre la data scelta con «fino al». Ogni worker segue le
+  sue ferie; la **Malattia** non si salta. La finestra lo dice per ogni worker
+  («Alice: in ferie il … (saltate) → fino al …») e il riepilogo mostra
+  l'ultima settimana effettivamente riempita;
 - le settimane oltre la **fine della griglia** vengono scartate: la finestra
-  segnala quante settimane sono effettivamente disponibili;
+  segnala, per worker, quante settimane sono effettivamente disponibili;
 - il tasto destro su una cella **non vuota** continua a fare quello di sempre,
   cioè aprire la **nota** della cella (vedi capitolo 9).
 
@@ -944,6 +951,12 @@ Una regola mette **da sola** una milestone, oppure la **data di inizio** o di
 - «**Inizio progetto (data)** = **Primo effort (tutti i dev)**» — il progetto
   inizia con la prima settimana in cui qualcuno ci lavora.
 
+Sopra l'elenco, i **filtri** (solo per la sessione): **Cerca** (nel nome e
+nella regola stessa, quindi anche per milestone, dev o ancora: «collaudo»
+trova le regole che mettono o usano il Collaudo), il **tipo** (Milestone, Date
+del progetto, Dev, Avvisi) e **attive / spente**; sotto compare «N di M
+regole» e **✖ Filtri** li toglie tutti.
+
 Nella finestra ogni regola è una riga:
 
 - **Attiva** — la regola agisce solo se spuntata. Una regola nuova (pulsante
@@ -984,7 +997,11 @@ Nella finestra ogni regola è una riga:
   **un'altra milestone** (dove è collocata nel progetto);
 - **Settimane** — quante dopo (+) o prima (−) dell'ancora;
 - **Stato** — in quanti progetti la regola ha collocato la milestone, oppure un
-  avviso: «⚠ ciclo», «⚠ … inesistente», «spenta»;
+  avviso: «⚠ ciclo», «⚠ … inesistente», «spenta». Dopo, separati da «·», i
+  progetti in cui **non** agisce e perché: «N senza ancora» (l'ancora manca,
+  quindi la milestone non c'è), «N ad altre regole» (lì vince una regola più
+  specifica), «N esclusi per stato» (progetti on-hold / closed che la regola
+  non tocca); il suggerimento li spiega;
 - **Clona** — aggiunge in fondo una **copia** della regola (stessi valori, nome
   «… (copia)»), **spenta**: la si modifica e poi la si attiva (due regole uguali
   attive si farebbero concorrenza);

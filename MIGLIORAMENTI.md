@@ -139,6 +139,10 @@ non il tempo di digitazione.
   sinistra. (5) «⚙» accanto alla tripletta (e la voce «Regole di questo
   progetto…» nel menù della fascia milestone) apre «Regole — ABC»: le regole
   che agiscono lì e cosa fanno, e quelle che non agiscono con il motivo.
+  (6) finestra delle regole: filtri (ricerca su nome e regola, tipo,
+  attive / spente, «N di M regole») e colonna «Stato» con i progetti in cui
+  la regola non agisce («senza ancora», «ad altre regole», «esclusi per
+  stato»).
 
 ## A. Robustezza & dati condivisi
 

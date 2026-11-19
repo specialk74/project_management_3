@@ -1062,7 +1062,18 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   weeks)` (free fn in `mod.rs`, unit-tested): writes the effort to every selected
   worker for N consecutive weeks starting at the clicked week (**inclusive**, going
   forward), **overwriting** any existing value for that worker (`add_effort` keeps the
-  note), and stops at `app.end_week` — the dialog shows the effective week count. Only
+  note), and stops at `app.end_week` — the dialog shows the effective week count.
+  **Vacation weeks are skipped**: the weeks come from `bulk_fill_weeks(app,
+  worker, start, n)` (`mod.rs`) = the first `n` weeks from `start` where that
+  worker is **not** in `WeekStatus::Ferie` (Malattia is not skipped), up to
+  `end_week` — so each worker still gets `n` weeks and the end slides later,
+  even past the «fino al» date (user's choice); the shifted week is
+  overwritten like any other. The dialog computes the same plans per selected
+  worker: summary end = farthest last week, a blue line per worker with
+  skipped weeks («Alice: in ferie il … (saltate) → fino al …») and a red one
+  if the grid end cuts it; `BulkFillEffort.weeks` is the requested `n`. Tests
+  `bulk_fill_skips_vacation_weeks_to_the_next_free_one`,
+  `bulk_fill_window_reports_skipped_vacation_weeks`. Only
   on non-merged columns (merged/zoom cells `continue` before the slot loop).
   «oppure fino al:» is a `DatePickerButton` **linked** to «Per quante settimane»
   (no extra state: the date shown is `bulk_fill_last_week(start, n)`, a picked
@@ -1382,7 +1393,19 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   agiscono qui» in a `CollapsingHeader`, button to the rules window). Tests
   `project_rules_explain_each_rule_from_the_project`,
   `rule_summary_reads_like_the_text_format`,
-  `project_rules_window_opens_from_the_tripletta_mark`. Tests
+  `project_rules_window_opens_from_the_tripletta_mark`.
+  **Window filters** (session only): `UiState.rules_search` /
+  `rules_type_filter: RuleTypeFilter { All, Milestone, Date, Dev, Warning }` /
+  `rules_enabled_filter: RuleEnabledFilter` (types in `mod.rs`), a row above
+  the grid; `rule_passes_filters(app, id, rule, search, type, enabled)`
+  searches `rule_label` + `rule_summary` (lowercased for `search_matches`);
+  «N di M regole» and «✖ Filtri». **Status column**: `RuleStatus` also has
+  `excluded_state` (enabled rule, in scope, status not allowed), `beaten`
+  (aligned: applies but another rule governs the target) and `no_anchor()`
+  (= governed − placed); `status_text` appends them with « · » and explains
+  each in the tooltip. Tests
+  `status_counts_no_anchor_beaten_and_excluded_projects`,
+  `rules_window_filters_by_search_type_and_enabled`. Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.
