@@ -815,6 +815,90 @@ pub(crate) fn rule_activation_window(
     }
 }
 
+/// Finestra «Regole di questo progetto»: per ogni regola, se agisce sul
+/// progetto e cosa fa lì (la diagnosi del Log, `rules::project_rules`), o
+/// perché no; in fondo il pulsante per la finestra delle regole. Si ricalcola
+/// a ogni frame, così segue le modifiche fatte con la finestra aperta.
+pub(crate) fn project_rules_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    let Some(proj) = state.project_rules else {
+        return;
+    };
+    if app.projects.get(proj).is_none() {
+        state.project_rules = None;
+        return;
+    }
+    let lines = crate::rules::project_rules(app, proj);
+    let (here, other): (Vec<_>, Vec<_>) = lines.iter().partition(|l| l.applies);
+    let mut open = true;
+    let mut open_rules = false;
+    egui::Window::new(format!("Regole — {}", project_label(app, proj)))
+        .id(egui::Id::unique("project_rules_window"))
+        .collapsible(false)
+        .resizable(true)
+        .default_width(620.0)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            let st = app.projects.status(proj);
+            if st != ProjectStatus::Active {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Progetto {}: valgono solo le regole che comprendono questo stato.",
+                        st.label()
+                    ))
+                    .color(warn_amber()),
+                );
+            }
+            if lines.is_empty() {
+                ui.label(egui::RichText::new("Nessuna regola.").color(text_dim()));
+            }
+            let row = |ui: &mut egui::Ui, l: &crate::rules::ProjectRuleLine| {
+                let Some(r) = app.rules.get(l.rule) else { return };
+                ui.label(egui::RichText::new(crate::rules::rule_label(app, l.rule)).strong());
+                ui.label(
+                    egui::RichText::new(crate::rules_text::rule_summary(app, r)).small().color(text_dim()),
+                );
+                let warn = l.text.starts_with("AVVISO") || l.text.starts_with("ferma");
+                let color = if warn { warn_amber() } else { text() };
+                ui.label(egui::RichText::new(format!("→ {}", l.text)).color(color));
+                ui.add_space(4.0);
+            };
+            egui::ScrollArea::vertical()
+                .scroll_source(drag_scroll())
+                .max_height(ui.ctx().content_rect().height() * 0.6)
+                .show(ui, |ui| {
+                    if !lines.is_empty() {
+                        ui.heading(format!("Agiscono qui ({})", here.len()));
+                        if here.is_empty() {
+                            ui.label(egui::RichText::new("Nessuna.").color(text_dim()));
+                        }
+                        for l in &here {
+                            row(ui, l);
+                        }
+                    }
+                    if !other.is_empty() {
+                        ui.separator();
+                        egui::CollapsingHeader::new(format!("Non agiscono qui ({})", other.len()))
+                            .id_salt("project_rules_other")
+                            .show(ui, |ui| {
+                                for l in &other {
+                                    row(ui, l);
+                                }
+                            });
+                    }
+                });
+            ui.separator();
+            if ui.button("Regole di automazione…").clicked() {
+                open_rules = true;
+            }
+        });
+    if open_rules {
+        state.show_rules = true;
+    }
+    if !open {
+        state.project_rules = None;
+    }
+}
+
 /// Finestra «Avvisi delle regole»: per ogni progetto con avvisi, la
 /// tripletta (clic = salta al progetto nella griglia), la regola e il testo.
 pub(crate) fn rule_warnings_window(ctx: &egui::Context, app: &App, state: &mut UiState) {

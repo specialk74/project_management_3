@@ -1011,6 +1011,17 @@ Come funzionano:
   quale regola (es. «⚙ Collaudo: regola «Collaudo dopo il Backend»»). Nella
   colonna di sinistra le date governate hanno **⚙** davanti («⚙ Inizio: …»).
   Le milestone messe a mano non hanno il segno.
+- **Regole di questo progetto** — se nel progetto c'è qualcosa governato da una
+  regola, accanto alla tripletta compare **⚙** (prima dell'eventuale ⚠);
+  cliccandolo, oppure con il tasto destro sulla fascia in alto delle colonne ▸
+  **Regole di questo progetto…**, si apre la finestra **Regole — ABC**: per
+  ogni regola che **agisce qui** il nome, la regola in una riga (es.
+  «milestone "Collaudo" = fine dev "Backend" +2 sett.») e cosa fa in questo
+  progetto (es. «→ milestone il 26-03-16 (ancora il 26-03-02)»); sotto, da
+  aprire, quelle che **non agiscono qui** con il motivo (spenta, fuori ambito,
+  stato del progetto escluso, riferimento eliminato). È la stessa spiegazione
+  del Log, ma solo per quel progetto e a schermo; il pulsante **Regole di
+  automazione…** apre la finestra delle regole.
 - **Non si sposta a mano** — nel menù della griglia («Aggiungi milestone qui»)
   una milestone governata da una regola è disattivata, sia per collocarla sia
   per toglierla, e il suggerimento dice quale regola la governa. Anche «Sposta» e

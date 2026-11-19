@@ -1367,7 +1367,22 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   band) at the right end of the top `ROW_H` strip; the notes are appended to the
   strip's tooltip (`draw_milestone_strip(…, rule_notes, …)`, also on merged
   columns). `draw_project_info` prefixes governed «Inizio:/Fine:» with «⚙ ».
-  Test `governed_milestones_and_dates_are_marked_in_the_grid`. Tests
+  Test `governed_milestones_and_dates_are_marked_in_the_grid`.
+  **Rules of one project**: `rules::project_rules(app, proj) ->
+  Vec<ProjectRuleLine { rule, applies, text }>` (every rule: applying ones
+  with `diagnose_project`, the others with the reason — missing refs via the
+  new `missing_refs` (also used by `status`), bad anchor, «spenta», out of
+  scope, status excluded); `project_is_governed` = a governed target that is
+  **present** (placed milestone, existing date) or a required dev — not just
+  `governing` non-empty, which an «All» rule makes true everywhere.
+  `rules_text::rule_summary` = one-line rule. UI: «⚙» right of the tripletta
+  (left of «⚠») when governed, and «Regole di questo progetto…» at the bottom
+  of the milestone strip context menu → `UiState.project_rules:
+  Option<ProjectId>` → `project_rules_window` (recomputed each frame, «Non
+  agiscono qui» in a `CollapsingHeader`, button to the rules window). Tests
+  `project_rules_explain_each_rule_from_the_project`,
+  `rule_summary_reads_like_the_text_format`,
+  `project_rules_window_opens_from_the_tripletta_mark`. Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.

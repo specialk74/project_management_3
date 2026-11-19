@@ -126,6 +126,23 @@ fn project_list(app: &App, s: &str) -> Result<Vec<ProjectId>, String> {
     }
 }
 
+/// La regola in una riga, con le parole del formato testo: «milestone
+/// "Collaudo" = fine dev "Backend" +2 sett.», «aggiungi dev "Test" se c'è il
+/// dev "Backend"», «avviso … non dopo fine dev "Backend"».
+pub(crate) fn rule_summary(app: &App, r: &Rule) -> String {
+    let weeks = match r.offset_weeks {
+        0 => String::new(),
+        n if n > 0 => format!(" +{n} sett."),
+        n => format!(" {n} sett."),
+    };
+    let (t, a) = (target_text(app, r.target), anchor_text(app, r.anchor));
+    match r.target {
+        Target::AddDev(_) => format!("{t} {a}"),
+        Target::Check(..) => format!("{t} {a}{weeks}"),
+        _ => format!("{t} = {a}{weeks}"),
+    }
+}
+
 /// Stati a cui vale la regola: `attivi`, più `on-hold` / `closed`.
 pub(crate) fn states_text(i: Inactive) -> String {
     let mut out = vec!["attivi"];
@@ -692,5 +709,21 @@ colore = rosso
             let (rules, errs) = parse_rules(&app, &t);
             assert!(rules.is_empty() && errs.len() == 1 && errs[0].contains(msg), "{bad}: {errs:?}");
         }
+    }
+
+    /// Riassunto in una riga: «=», settimane solo se diverse da 0, «Aggiungi
+    /// dev» senza «=».
+    #[test]
+    fn rule_summary_reads_like_the_text_format() {
+        let app = sample();
+        let rules: Vec<&Rule> = app.rules.list().into_iter().map(|(_, r)| r).collect();
+        assert_eq!(rule_summary(&app, rules[0]), "milestone \"Collaudo\" = fine dev \"Backend\" +2 sett.");
+        assert_eq!(rule_summary(&app, rules[1]), "fine progetto = ultima milestone -1 sett.");
+        let mut add = rules[0].clone();
+        add.target = Target::AddDev(crate::dev_utils::dev::DevId(99));
+        add.anchor = Anchor::FirstEffort;
+        add.offset_weeks = 0;
+        assert!(rule_summary(&app, &add).starts_with("aggiungi dev "), "{}", rule_summary(&app, &add));
+        assert!(rule_summary(&app, &add).ends_with(" primo effort"));
     }
 }

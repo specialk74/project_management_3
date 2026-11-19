@@ -136,7 +136,9 @@ non il tempo di digitazione.
   sempre. (4) in griglia un «⚙» nella fascia alta della colonna segna le
   milestone e le date di inizio / fine governate da una regola (tooltip con
   la regola), e «⚙» davanti a «Inizio:/Fine:» governate nella colonna di
-  sinistra.
+  sinistra. (5) «⚙» accanto alla tripletta (e la voce «Regole di questo
+  progetto…» nel menù della fascia milestone) apre «Regole — ABC»: le regole
+  che agiscono lì e cosa fanno, e quelle che non agiscono con il motivo.
 
 ## A. Robustezza & dati condivisi
 

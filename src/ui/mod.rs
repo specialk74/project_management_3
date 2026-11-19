@@ -1275,6 +1275,9 @@ pub struct UiState {
     // regola che si sta attivando (o modificando da attiva): le modifiche che
     // farebbe ai progetti, da confermare (`rule_activation_window`)
     rule_activation: Option<RuleActivation>,
+    // finestra «Regole di questo progetto» (⚙ accanto alla tripletta, o il
+    // menù della fascia milestone): il progetto mostrato
+    project_rules: Option<ProjectId>,
     // finestra «Avvisi delle regole» e avvisi già noti (progetto, regola):
     // una notifica solo per quelli nuovi
     show_rule_warnings: bool,
@@ -2351,6 +2354,7 @@ impl eframe::App for PjmApp {
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             rule_preview_window(ui.ctx(), app, state, &mut actions);
             rule_activation_window(ui.ctx(), app, state, &mut actions);
+            project_rules_window(ui.ctx(), app, state);
             rule_warnings_window(ui.ctx(), app, state);
             rules_import_report_window(ui.ctx(), state);
             clone_project_window(ui.ctx(), app, state, &mut actions);

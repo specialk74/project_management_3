@@ -1259,6 +1259,14 @@ fn draw_milestone_strip(
 
         ui.separator();
         bound_menu(ui, app, state, actions, proj, week_id);
+        ui.separator();
+        if ui
+            .add_enabled(!app.rules.is_empty(), egui::Button::new("Regole di questo progetto…"))
+            .clicked()
+        {
+            state.project_rules = Some(proj);
+            ui.close();
+        }
     });
 }
 
@@ -2079,9 +2087,22 @@ pub(crate) fn draw_project_info(
     }
     tr.on_hover_text("Tasto sinistro: modifica tripletta · Tasto destro: note progetto");
 
+    // Regole che governano qualcosa nel progetto: «⚙» a destra della
+    // tripletta (prima dell'eventuale «⚠»), clic = «Regole di questo
+    // progetto».
+    let warns = crate::rules::warnings(app, proj);
+    if crate::rules::project_is_governed(app, proj) {
+        let dx = if warns.is_empty() { 16.0 } else { 32.0 };
+        let gr = Rect::from_min_size(egui::pos2(trip_rect.right() - dx, y), Vec2::new(16.0, ROW_H));
+        ui.painter().text(gr.center(), Align2::CENTER_CENTER, RULE_MARK, cell_font(), text_dim());
+        let resp = ui.interact(gr, egui::Id::unique(("rule_gov", proj.0)), Sense::click());
+        if resp.clicked() {
+            state.project_rules = Some(proj);
+        }
+        resp.on_hover_text("Qui agiscono regole di automazione (clic: quali e cosa fanno)");
+    }
     // Avvisi delle regole: «⚠» a destra della tripletta, l'elenco nel
     // suggerimento, clic = finestra «Avvisi delle regole».
-    let warns = crate::rules::warnings(app, proj);
     if !warns.is_empty() {
         let wr = Rect::from_min_size(egui::pos2(trip_rect.right() - 16.0, y), Vec2::new(16.0, ROW_H));
         ui.painter().text(wr.center(), Align2::CENTER_CENTER, "⚠", cell_font(), g(warn_amber()));

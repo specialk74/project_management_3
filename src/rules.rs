@@ -1116,6 +1116,64 @@ pub fn diagnose(app: &App, when: &str) -> String {
     out
 }
 
+/// Una regola vista da un progetto («Regole di questo progetto…»): se agisce
+/// lì e cosa fa (la diagnosi del Log), o perché no.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectRuleLine {
+    pub rule: RuleId,
+    pub applies: bool,
+    pub text: String,
+}
+
+/// Tutte le regole, dal punto di vista del progetto: quelle che valgono lì
+/// (attive, nell'ambito, stato ammesso, riferimenti esistenti) con cosa
+/// fanno e perché, le altre con il motivo per cui non agiscono.
+pub fn project_rules(app: &App, proj: ProjectId) -> Vec<ProjectRuleLine> {
+    let status = app.projects.status(proj);
+    app.rules
+        .list()
+        .into_iter()
+        .map(|(id, r)| {
+            let missing = missing_refs(app, r);
+            let no = |text: String| ProjectRuleLine { rule: id, applies: false, text };
+            if !missing.is_empty() {
+                no(format!("non agisce: {} inesistente", missing.join(", ")))
+            } else if !anchor_fits(r.target, r.anchor) {
+                no("non agisce: l'ancora non va bene per «cosa»".into())
+            } else if !r.enabled {
+                no("spenta".into())
+            } else if !r.scope.matches(app, proj) {
+                no(format!("fuori ambito (progetti: {})", crate::rules_text::scope_text(app, &r.scope)))
+            } else if !r.inactive.allows(status) {
+                no(format!(
+                    "il progetto è {}: la regola vale solo per {}",
+                    status.label(),
+                    crate::rules_text::states_text(r.inactive)
+                ))
+            } else {
+                ProjectRuleLine { rule: id, applies: true, text: diagnose_project(app, id, r, proj) }
+            }
+        })
+        .collect()
+}
+
+/// Il progetto ha qualcosa che le regole governano **ed è presente** — una
+/// milestone collocata, una data di inizio / fine che c'è — o un dev che una
+/// regola vuole? (Il «⚙» accanto alla tripletta, come i «⚙» in griglia: una
+/// regola per tutti i progetti senza ancora qui non conta.)
+pub fn project_is_governed(app: &App, proj: ProjectId) -> bool {
+    if app.rules.is_empty() {
+        return false;
+    }
+    let present = |t: &Target| match t {
+        Target::Milestone(m) => app.projects.list_project_milestones(proj).iter().any(|(x, _)| x == m),
+        Target::ProjectStart => app.projects.get_project_start_week(proj).is_some(),
+        Target::ProjectEnd => app.projects.get_project_end_week(proj).is_some(),
+        _ => false,
+    };
+    governing(app, proj).keys().any(present) || !required_devs(app, proj).is_empty()
+}
+
 /// Nome della regola, o una descrizione se non ne ha («Regola 3»).
 pub fn rule_label(app: &App, id: RuleId) -> String {
     match app.rules.get(id) {
@@ -1140,41 +1198,49 @@ pub struct RuleStatus {
     pub bad_anchor: bool,
 }
 
-pub fn status(app: &App, id: RuleId) -> RuleStatus {
-    let mut st = RuleStatus::default();
-    let Some(r) = app.rules.get(id) else {
-        return st;
-    };
+/// I riferimenti della regola che non esistono più (milestone, dev,
+/// categoria, priorità, progetti): con uno di questi la regola non agisce.
+fn missing_refs(app: &App, r: &Rule) -> Vec<&'static str> {
+    let mut missing = Vec::new();
     match r.target {
-        Target::Milestone(m) if app.milestones.get_name(m).is_none() => st.missing.push("milestone"),
-        Target::AddDev(d) | Target::DevStart(d) if app.devs.get(d).is_none() => st.missing.push("dev"),
+        Target::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone"),
+        Target::AddDev(d) | Target::DevStart(d) if app.devs.get(d).is_none() => missing.push("dev"),
         _ => {}
     }
-    st.bad_anchor = !anchor_fits(r.target, r.anchor);
     if let Target::Check(p, _) = r.target {
         match p {
-            Anchor::DevStart(d) | Anchor::DevEnd(d) if app.devs.get(d).is_none() => st.missing.push("dev controllato"),
-            Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => st.missing.push("milestone controllata"),
+            Anchor::DevStart(d) | Anchor::DevEnd(d) if app.devs.get(d).is_none() => missing.push("dev controllato"),
+            Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone controllata"),
             _ => {}
         }
     }
     match r.anchor {
         Anchor::DevStart(d) | Anchor::DevEnd(d) | Anchor::DevPresent(d) if app.devs.get(d).is_none() => {
-            st.missing.push("dev di partenza")
+            missing.push("dev di partenza")
         }
-        Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => st.missing.push("milestone di partenza"),
+        Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone di partenza"),
         _ => {}
     }
     match &r.scope {
-        RuleScope::Category(c) if app.categories.get_name(*c).is_none() => st.missing.push("categoria"),
-        RuleScope::Priority(p) if app.priorities.get_name(*p).is_none() => st.missing.push("priorità"),
+        RuleScope::Category(c) if app.categories.get_name(*c).is_none() => missing.push("categoria"),
+        RuleScope::Priority(p) if app.priorities.get_name(*p).is_none() => missing.push("priorità"),
         RuleScope::Project(_) | RuleScope::Projects(_)
             if r.scope.projects().iter().all(|p| app.projects.get(*p).is_none()) =>
         {
-            st.missing.push("progetto")
+            missing.push("progetto")
         }
         _ => {}
     }
+    missing
+}
+
+pub fn status(app: &App, id: RuleId) -> RuleStatus {
+    let mut st = RuleStatus::default();
+    let Some(r) = app.rules.get(id) else {
+        return st;
+    };
+    st.missing = missing_refs(app, r);
+    st.bad_anchor = !anchor_fits(r.target, r.anchor);
     match r.target.kind() {
         RuleKind::Aligned => {}
         RuleKind::AddDev => {
@@ -1755,5 +1821,32 @@ mod tests {
         f.app.rules.add(rule(RuleScope::AllExcept(vec![]), f.collaudo, Anchor::LastEffort, 1));
         assert!(orphans(&f.app, r, None).is_empty(), "passa all'altra regola");
         assert_eq!(at(&f.app, f.p, f.collaudo), Some(placed), "nulla cambia nei dati");
+    }
+
+    /// Le regole viste dal progetto: chi agisce (con la diagnosi), chi no e
+    /// perché — spenta, fuori ambito, stato escluso, riferimento eliminato.
+    #[test]
+    fn project_rules_explain_each_rule_from_the_project() {
+        let mut f = fx();
+        let q = f.app.projects.add("y", Some("XYZ"), None);
+        let ok = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 2));
+        let mut off_rule = rule(RuleScope::All, f.rilascio, Anchor::ProjectEnd, 0);
+        off_rule.enabled = false;
+        let off = f.app.rules.add(off_rule);
+        let out = f.app.rules.add(rule(RuleScope::Projects(vec![q]), f.demo, Anchor::ProjectEnd, 0));
+        let gone = f.app.rules.add(date_rule(RuleScope::All, Target::ProjectEnd, Anchor::DevEnd(DevId(999)), 0));
+        apply(&mut f.app);
+        assert!(project_is_governed(&f.app, f.p));
+        assert!(!project_is_governed(&f.app, q), "XYZ non ha ancore");
+        let lines = project_rules(&f.app, f.p);
+        let get = |id| lines.iter().find(|l| l.rule == id).unwrap();
+        assert!(get(ok).applies && get(ok).text.starts_with("milestone il "), "{:?}", get(ok));
+        assert_eq!((get(off).applies, get(off).text.as_str()), (false, "spenta"));
+        assert!(!get(out).applies && get(out).text.starts_with("fuori ambito (progetti: progetti \"XYZ\")"), "{:?}", get(out));
+        assert!(!get(gone).applies && get(gone).text.contains("dev di partenza inesistente"), "{:?}", get(gone));
+        f.app.projects.set_status(f.p, ProjectStatus::Closed);
+        let lines = project_rules(&f.app, f.p);
+        let l = lines.iter().find(|l| l.rule == ok).unwrap();
+        assert_eq!((l.applies, l.text.as_str()), (false, "il progetto è Closed: la regola vale solo per attivi"));
     }
 }

@@ -4631,3 +4631,58 @@ fn rule_mark_sits_on_the_right_of_the_column() {
     assert!(pos.x > col.center().x && pos.x < col.right(), "a destra: {pos:?} in {col:?}");
     assert!((pos.y - (col.top() + ROW_H / 2.0)).abs() < 2.0, "nella fascia alta: {pos:?}");
 }
+
+/// «⚙» accanto alla tripletta (solo se il progetto ha qualcosa governato):
+/// il clic apre «Regole — ABC», con le regole che agiscono qui (nome,
+/// riassunto, cosa fanno) e, a parte, quelle che non agiscono.
+#[test]
+fn project_rules_window_opens_from_the_tripletta_mark() {
+    use crate::rules::{Anchor, Inactive, Rule, RuleScope, Target};
+    let (mut app, _alice, _week) = highlight_fixture();
+    let (proj, _) = app.projects.list()[0];
+    let dev = app.devs.list()[0].0;
+    let collaudo = app.milestones.add("Collaudo");
+    let rule = |name: &str, enabled| Rule {
+        name: name.into(),
+        enabled,
+        scope: RuleScope::All,
+        target: Target::Milestone(collaudo),
+        anchor: Anchor::DevEnd(dev),
+        offset_weeks: 1,
+        inactive: Inactive::default(),
+    };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), ..Default::default() };
+    let left = |state: &mut UiState, app: &App, events: Vec<egui::Event>| {
+        let mut i = input.clone();
+        i.events = events;
+        ctx.run_ui_test(i, |ui| {
+            let layout = body_layout(ui, app, state, &Filter::default(), &None);
+            let mut actions = Vec::new();
+            left_column(ui, app, state, &mut actions, &Filter::default(), &None, &layout);
+        })
+    };
+    let mut state = UiState::default();
+    // Solo una regola spenta: nessun segno.
+    app.rules.add(rule("Spenta", false));
+    crate::rules::apply(&mut app);
+    assert!(text_pos(&left(&mut state, &app, vec![]), RULE_MARK).is_none());
+    app.rules.add(rule("Collaudo dopo il Frontend", true));
+    crate::rules::apply(&mut app);
+    left(&mut state, &app, vec![]);
+    let pos = text_pos(&left(&mut state, &app, vec![]), RULE_MARK).expect("⚙ accanto alla tripletta");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        left(&mut state, &app, vec![ev]);
+    }
+    assert_eq!(state.project_rules, Some(proj));
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| project_rules_window(ui.ctx(), &app, &mut state)));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    for t in ["Regole — ABC", "Agiscono qui (1)", "Collaudo dopo il Frontend", "Non agiscono qui (1)"] {
+        assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
+    }
+    assert!(texts.iter().any(|s| s == "milestone \"Collaudo\" = fine dev \"Frontend\" +1 sett."), "{texts:?}");
+    assert!(texts.iter().any(|s| s.starts_with("→ milestone il ")), "{texts:?}");
+}
