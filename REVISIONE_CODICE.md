@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~39.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 392 verdi |
+| Test | 275 verdi | 424 verdi |
 
 ## Ordine consigliato
 
@@ -531,3 +531,9 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi A13). jiff resta
   0.2.46 (disponibile la 1.0.1, bloccata da egui_extras 0.37). Build e clippy 0
   warning, 392 test verdi. Da provare a mano: gli export PDF.
+- **2026-11-19** — `cargo update`: printpdf 0.12.11 → 0.12.13 (con azul-*
+  0.0.20), pin-project 1.2.0, pin-project-lite, pollster; minimo di `printpdf`
+  in `Cargo.toml` allineato a 0.12.13. `cargo audit`: nessuna vulnerabilità,
+  gli stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi A13). jiff
+  resta 0.2.46 (1.0.1 bloccata da egui_extras 0.37). Build e clippy 0 warning,
+  424 test verdi. Da provare a mano: gli export PDF.
