@@ -1318,6 +1318,12 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `ExportRulesLog` (`save_export_dialog`). Tests in `rules_text.rs`,
   `diagnosis_explains_why_a_rule_does_or_does_not_act`,
   `rules_text_import_reports_and_buttons_send_actions`.
+  **«All but …»**: `RuleScope::AllExcept(Vec<ProjectId>)` (`excluded()`), rank
+  between `All` and `Priority` (ranks now All 0 < AllExcept 1 < Priority 2 <
+  Category 3 < Project(s) 4); in `scope_combo` the «Tutti i progetti tranne…»
+  entry turns the project checkboxes into exclusions; text form `tutti tranne
+  "ABC", "XYZ"` (also empty). Tests `all_except_skips_the_excluded_projects`,
+  `all_except_round_trips`, `rules_window_all_except_excludes_the_ticked_project`.
   **Several projects per rule**: `RuleScope::Projects(Vec<ProjectId>)` (old
   `Project(p)` still loads and works; `RuleScope` is no longer `Copy`;
   `matches`/`rank` take `&self`, rank 3 like `Project`; `projects()` lists

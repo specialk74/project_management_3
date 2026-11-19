@@ -147,6 +147,8 @@ pub enum RuleScope {
     Project(ProjectId),
     /// I progetti scelti (uno o più).
     Projects(Vec<ProjectId>),
+    /// Tutti i progetti tranne quelli elencati.
+    AllExcept(Vec<ProjectId>),
 }
 
 impl RuleScope {
@@ -158,17 +160,27 @@ impl RuleScope {
             RuleScope::Priority(p) => app.projects.get_priority(proj) == Some(*p),
             RuleScope::Project(p) => *p == proj,
             RuleScope::Projects(ps) => ps.contains(&proj),
+            RuleScope::AllExcept(ps) => !ps.contains(&proj),
         }
     }
 
     /// Specificità: vince il valore più alto (progetti scelti > categoria >
-    /// priorità > tutti).
+    /// priorità > tutti tranne … > tutti).
     pub fn rank(&self) -> u8 {
         match self {
             RuleScope::All => 0,
-            RuleScope::Priority(_) => 1,
-            RuleScope::Category(_) => 2,
-            RuleScope::Project(_) | RuleScope::Projects(_) => 3,
+            RuleScope::AllExcept(_) => 1,
+            RuleScope::Priority(_) => 2,
+            RuleScope::Category(_) => 3,
+            RuleScope::Project(_) | RuleScope::Projects(_) => 4,
+        }
+    }
+
+    /// I progetti esclusi (`AllExcept`); vuoto per gli altri ambiti.
+    pub fn excluded(&self) -> Vec<ProjectId> {
+        match self {
+            RuleScope::AllExcept(ps) => ps.clone(),
+            _ => Vec::new(),
         }
     }
 
@@ -1418,5 +1430,28 @@ mod tests {
         assert_eq!(at(&f.app, q, f.collaudo), Some(WeekId(f.base + 7)));
         assert_eq!(at(&f.app, z, f.collaudo), Some(WeekId(f.base + 63)), "ZZZ: la regola per tutti");
         assert_eq!(status(&f.app, r).placed, 2);
+    }
+
+    /// «Tutti tranne …»: vale ovunque tranne nei progetti esclusi; batte
+    /// «tutti» ma perde da priorità, categoria e progetti scelti.
+    #[test]
+    fn all_except_skips_the_excluded_projects() {
+        let mut f = fx();
+        let w = f.app.workers.list()[0].0;
+        let q = f.app.projects.add("y", Some("XYZ"), None);
+        f.app.projects.add_dev(q, f.be);
+        f.app.projects.add_effort(q, f.be, WeekId(f.base), w, Effort(8));
+        let all = f.app.rules.add(rule(RuleScope::All, f.collaudo, Anchor::DevEnd(f.be), 9));
+        let except = f.app.rules.add(rule(RuleScope::AllExcept(vec![q]), f.collaudo, Anchor::DevEnd(f.be), 1));
+        assert!(RuleScope::AllExcept(vec![q]).matches(&f.app, f.p));
+        assert!(!RuleScope::AllExcept(vec![q]).matches(&f.app, q));
+        apply(&mut f.app);
+        assert_eq!(governing_rule(&f.app, f.p, Target::Milestone(f.collaudo)), Some(except));
+        assert_eq!(governing_rule(&f.app, q, Target::Milestone(f.collaudo)), Some(all), "XYZ escluso: vale «tutti»");
+        let must = f.app.priorities.list()[0].0;
+        f.app.projects.set_priority(f.p, Some(must));
+        let pri = f.app.rules.add(rule(RuleScope::Priority(must), f.collaudo, Anchor::DevEnd(f.be), 2));
+        assert_eq!(governing_rule(&f.app, f.p, Target::Milestone(f.collaudo)), Some(pri));
+        assert!(RuleScope::AllExcept(vec![]).rank() > RuleScope::All.rank());
     }
 }

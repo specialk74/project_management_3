@@ -18,7 +18,7 @@
 //! Valori (parole chiave in minuscolo, nomi fra virgolette, `\"` per una
 //! virgoletta nel nome):
 //! - `progetti`: `tutti` · `categoria "X"` · `priorità "X"` · `progetto "ABC"` ·
-//!   `progetti "ABC", "XYZ"`
+//!   `progetti "ABC", "XYZ"` · `tutti tranne "ABC", "XYZ"`
 //! - `cosa`: `milestone "X"` · `inizio progetto` · `fine progetto` ·
 //!   `aggiungi dev "X"` · `ore dev "X"` · `avviso <punto> non prima di` ·
 //!   `avviso <punto> non dopo`
@@ -92,6 +92,34 @@ pub(crate) fn scope_text(app: &App, s: &RuleScope) -> String {
             let names: Vec<String> = ps.iter().map(|p| quote(&project_name(app, *p))).collect();
             format!("progetti {}", names.join(", "))
         }
+        RuleScope::AllExcept(ps) => {
+            let names: Vec<String> = ps.iter().map(|p| quote(&project_name(app, *p))).collect();
+            format!("tutti tranne {}", names.join(", ")).trim_end().to_string()
+        }
+    }
+}
+
+/// Elenco di progetti fra virgolette separati da virgole (`"ABC", "XYZ"`);
+/// vuoto se `s` è vuoto.
+fn project_list(app: &App, s: &str) -> Result<Vec<ProjectId>, String> {
+    let mut list = Vec::new();
+    let mut rest = s.trim();
+    if rest.is_empty() {
+        return Ok(list);
+    }
+    loop {
+        let (name, after) = quoted(rest)?;
+        let p = find_project(app, &name)?;
+        if !list.contains(&p) {
+            list.push(p);
+        }
+        let after = after.trim_start();
+        if after.is_empty() {
+            return Ok(list);
+        }
+        rest = after
+            .strip_prefix(',')
+            .ok_or_else(|| format!("attesa una virgola fra i progetti: «{}»", after.trim()))?;
     }
 }
 
@@ -255,6 +283,9 @@ fn parse_scope(app: &App, s: &str) -> Result<RuleScope, String> {
     if s == "tutti" {
         return Ok(RuleScope::All);
     }
+    if let Some(r) = strip(s, "tutti tranne") {
+        return Ok(RuleScope::AllExcept(project_list(app, r)?));
+    }
     if let Some(r) = strip(s, "categoria") {
         let name = only_quoted(r)?;
         return app
@@ -276,22 +307,10 @@ fn parse_scope(app: &App, s: &str) -> Result<RuleScope, String> {
             .ok_or_else(|| format!("priorità «{name}» inesistente"));
     }
     if let Some(r) = strip(s, "progetti") {
-        // `progetti "ABC", "XYZ"`.
-        let mut list = Vec::new();
-        let mut rest = r;
-        loop {
-            let (name, after) = quoted(rest)?;
-            let p = find_project(app, &name)?;
-            if !list.contains(&p) {
-                list.push(p);
-            }
-            let after = after.trim_start();
-            if after.is_empty() {
-                break;
-            }
-            rest = after
-                .strip_prefix(',')
-                .ok_or_else(|| format!("attesa una virgola fra i progetti: «{}»", after.trim()))?;
+        // `progetti "ABC", "XYZ"` (almeno uno).
+        let list = project_list(app, r)?;
+        if list.is_empty() {
+            return Err("«progetti» senza nessun progetto".into());
         }
         return Ok(RuleScope::Projects(list));
     }
@@ -549,5 +568,34 @@ colore = rosso
             let rep = import_rules(&mut other, &t);
             assert!(rep.errors.iter().any(|e| e.contains(err)), "{bad}: {:?}", rep.errors);
         }
+    }
+
+    /// `tutti tranne "ABC", "XYZ"` (anche senza progetti) va e torna.
+    #[test]
+    fn all_except_round_trips() {
+        let mut app = App::new();
+        let p = app.projects.add("x", Some("ABC"), None);
+        let q = app.projects.add("y", Some("XYZ"), None);
+        for scope in [RuleScope::AllExcept(vec![p, q]), RuleScope::AllExcept(vec![])] {
+            app.rules.add(Rule {
+                name: String::new(),
+                enabled: true,
+                scope,
+                target: Target::ProjectEnd,
+                anchor: Anchor::LastEffort,
+                offset_weeks: 0,
+            });
+        }
+        let text = export_rules(&app);
+        assert!(text.contains("progetti = tutti tranne \"ABC\", \"XYZ\"\n"), "{text}");
+        assert!(text.contains("progetti = tutti tranne\n"), "{text}");
+        let mut other = App::new();
+        other.projects.add("x", Some("ABC"), None);
+        other.projects.add("y", Some("XYZ"), None);
+        let rep = import_rules(&mut other, &text);
+        assert_eq!((rep.added, rep.errors.len()), (2, 0), "{:?}", rep.errors);
+        let a: Vec<&Rule> = app.rules.list().into_iter().map(|(_, r)| r).collect();
+        let b: Vec<&Rule> = other.rules.list().into_iter().map(|(_, r)| r).collect();
+        assert_eq!(a, b);
     }
 }

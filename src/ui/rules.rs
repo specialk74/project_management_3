@@ -57,12 +57,22 @@ fn scope_label(app: &App, scope: &RuleScope) -> String {
             let names: Vec<String> = ps.iter().map(|p| project_label(app, *p)).collect();
             if ps.len() == 1 { format!("Progetto: {}", names[0]) } else { format!("Progetti: {}", names.join(", ")) }
         }
+        RuleScope::AllExcept(ps) => {
+            let names: Vec<String> = ps.iter().map(|p| project_label(app, *p)).collect();
+            if names.is_empty() {
+                "Tutti tranne: —".into()
+            } else {
+                format!("Tutti tranne: {}", names.join(", "))
+            }
+        }
     }
 }
 
-/// Combo dell'ambito: in cima le scelte singole (tutti, una categoria, una
-/// priorità), sotto una spunta per progetto (uno o più: togliendo l'ultimo
-/// si torna a «tutti»). Ritorna il nuovo ambito se cambiato.
+/// Combo dell'ambito: in cima le scelte singole (tutti, «tutti tranne…», una
+/// categoria, una priorità), sotto una spunta per progetto: con «tutti
+/// tranne…» sono i progetti **esclusi**, altrimenti quelli **scelti** (uno o
+/// più: togliendo l'ultimo si torna a «tutti»). Ritorna il nuovo ambito se
+/// cambiato.
 fn scope_combo(ui: &mut egui::Ui, app: &App, salt: impl std::hash::Hash + std::fmt::Debug, scope: &RuleScope) -> Option<RuleScope> {
     let mut picked = None;
     egui::ComboBox::from_id_salt(salt)
@@ -70,6 +80,7 @@ fn scope_combo(ui: &mut egui::Ui, app: &App, salt: impl std::hash::Hash + std::f
         .width(RULE_SCOPE_W)
         .height(400.0)
         .show_ui(ui, |ui| {
+            let except = matches!(scope, RuleScope::AllExcept(_));
             let mut singles = vec![RuleScope::All];
             singles.extend(app.categories.list().into_iter().map(|(c, _)| RuleScope::Category(c)));
             singles.extend(app.priorities.list().into_iter().map(|(p, _)| RuleScope::Priority(p)));
@@ -78,9 +89,18 @@ fn scope_combo(ui: &mut egui::Ui, app: &App, salt: impl std::hash::Hash + std::f
                     picked = Some(s);
                 }
             }
+            if ui
+                .selectable_label(except, "Tutti i progetti tranne…")
+                .on_hover_text("Poi spunta qui sotto i progetti da escludere.")
+                .clicked()
+                && !except
+            {
+                picked = Some(RuleScope::AllExcept(Vec::new()));
+            }
             ui.separator();
-            ui.label(egui::RichText::new("Progetti (uno o più):").small().color(text_dim()));
-            let chosen = scope.projects();
+            let head = if except { "Progetti esclusi:" } else { "Progetti (uno o più):" };
+            ui.label(egui::RichText::new(head).small().color(text_dim()));
+            let chosen = if except { scope.excluded() } else { scope.projects() };
             for (p, _) in app.projects.list() {
                 let mut on = chosen.contains(&p);
                 if ui.checkbox(&mut on, project_label(app, p)).changed() {
@@ -92,7 +112,13 @@ fn scope_combo(ui: &mut egui::Ui, app: &App, salt: impl std::hash::Hash + std::f
                         .map(|(x, _)| x)
                         .filter(|x| if *x == p { on } else { chosen.contains(x) })
                         .collect();
-                    picked = Some(if set.is_empty() { RuleScope::All } else { RuleScope::Projects(set) });
+                    picked = Some(if except {
+                        RuleScope::AllExcept(set)
+                    } else if set.is_empty() {
+                        RuleScope::All
+                    } else {
+                        RuleScope::Projects(set)
+                    });
                 }
             }
         });

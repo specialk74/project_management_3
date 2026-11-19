@@ -4270,3 +4270,55 @@ fn rules_window_picks_several_projects_and_clones_a_rule() {
         _ => panic!("attesa una AddRule, ricevute {}", actions.len()),
     }
 }
+
+/// Tendina «Progetti»: «Tutti i progetti tranne…» e poi la spunta di un
+/// progetto lo **esclude**.
+#[test]
+fn rules_window_all_except_excludes_the_ticked_project() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    app.projects.add("x", Some("ABC"), None);
+    let q = app.projects.add("y", Some("XYZ"), None);
+    let id = app.rules.add(Rule {
+        name: "Fine".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::ProjectEnd,
+        anchor: Anchor::LastEffort,
+        offset_weeks: 0,
+    });
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1700.0, 900.0)), ..Default::default() };
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let click = |app: &App, state: &mut UiState, label: &str| -> Vec<Action> {
+        let mut actions = Vec::new();
+        let frame = |state: &mut UiState, actions: &mut Vec<Action>, events: Vec<egui::Event>| {
+            let mut i = input.clone();
+            i.events = events;
+            ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), app, state, actions))
+        };
+        frame(state, &mut actions, vec![]);
+        let out = frame(state, &mut actions, vec![]);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("manca «{label}»: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, &mut actions, vec![ev]);
+        }
+        actions
+    };
+    let scope_of = |actions: &[Action]| {
+        actions.iter().rev().find_map(|a| match a {
+            Action::UpdateRule(r, rule) if *r == id => Some(rule.scope.clone()),
+            _ => None,
+        })
+    };
+    click(&app, &mut state, "Tutti i progetti");
+    let a = click(&app, &mut state, "Tutti i progetti tranne…");
+    assert_eq!(scope_of(&a), Some(RuleScope::AllExcept(vec![])));
+    // La regola cambia davvero, poi si spunta XYZ fra gli esclusi.
+    let mut rule = app.rules.get(id).unwrap().clone();
+    rule.scope = RuleScope::AllExcept(vec![]);
+    app.rules.update(id, rule);
+    click(&app, &mut state, "Tutti tranne: —");
+    let a = click(&app, &mut state, "XYZ");
+    assert_eq!(scope_of(&a), Some(RuleScope::AllExcept(vec![q])));
+}

@@ -954,7 +954,9 @@ Nella finestra ogni regola è una riga:
   una **priorità**, oppure **uno o più progetti scelti**: nella tendina, sotto le
   scelte singole, c'è una spunta per ogni progetto (togliendo l'ultima si torna a
   «Tutti i progetti»); la tendina mostra «Progetto: ABC» o «Progetti: ABC,
-  XYZ»;
+  XYZ». Con **Tutti i progetti tranne…** le stesse spunte diventano i progetti
+  da **escludere** (la tendina mostra «Tutti tranne: ABC, XYZ»): utile quando
+  la regola vale quasi ovunque;
 - **Cosa** — la milestone da posizionare, oppure **Inizio progetto (data)** /
   **Fine progetto (data)** (in cima all'elenco), oppure — in fondo — **Aggiungi
   dev …** e **Ore del dev … (su comando)** (vedi «Dev ed effort» più sotto) e
@@ -1000,7 +1002,8 @@ Come funzionano:
 - **Vince la più specifica** — se più regole posizionano la stessa milestone in
   un progetto, vale quella dell'ambito più ristretto: **progetti scelti** (uno o
   più, contano allo stesso modo), poi
-  **categoria**, poi **priorità**, poi **tutti**; a parità, la creata prima.
+  **categoria**, poi **priorità**, poi **tutti tranne …**, poi **tutti**; a
+  parità, la creata prima.
 - **Cicli** — se una regola dipende da sé stessa (es. Collaudo dal Rilascio e
   Rilascio dal Collaudo) resta **ferma** ed è segnalata «⚠ ciclo», come quelle che
   ne dipendono.
@@ -1078,7 +1081,8 @@ settimane = +2
 
 - `attiva`: `sì` / `no`; `settimane`: un numero (anche `-1`, `+2`);
 - `progetti`: `tutti`, `categoria "…"`, `priorità "…"`, `progetto "ABC"`,
-  `progetti "ABC", "XYZ"` (più progetti, separati da virgole);
+  `progetti "ABC", "XYZ"` (più progetti, separati da virgole), `tutti tranne
+  "ABC", "XYZ"` (tutti meno quelli elencati);
 - `cosa`: `milestone "…"`, `inizio progetto`, `fine progetto`, `aggiungi dev
   "…"`, `ore dev "…"`, `avviso <punto> non prima di`, `avviso <punto> non dopo`;
 - `ancora` e `<punto>`: `fine dev "…"`, `inizio dev "…"`, `se c'è il dev "…"`,
