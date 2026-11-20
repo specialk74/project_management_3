@@ -87,9 +87,9 @@ pub(crate) fn note_editor_window(
 /// filtro, cioè `show_in_find`), ore settimanali e numero di settimane. Con OK
 /// scrive l'effort a tutti i worker selezionati per N settimane consecutive a
 /// partire dalla settimana della cella cliccata (inclusa), **sovrascrivendo**
-/// eventuali valori già presenti. Le settimane oltre la fine della griglia
-/// (`app.end_week`) vengono scartate: il conteggio effettivo è mostrato nella
-/// dialog.
+/// eventuali valori già presenti. Le settimane oltre la fine del progetto
+/// (o della griglia, `fill_limit`) vengono scartate: il conteggio effettivo è
+/// mostrato nella dialog.
 pub(crate) fn bulk_fill_window(
     ctx: &egui::Context,
     app: &App,
@@ -106,15 +106,7 @@ pub(crate) fn bulk_fill_window(
     let dev_label = dev_name(app, bf.dev);
     let start_label = week_label(bf.week);
 
-    // Worker elencabili (come la dialog dei filtri) filtrati dalla ricerca.
-    let q = bf.search.trim().to_lowercase();
-    let listed: Vec<(WorkerId, String)> = app
-        .workers
-        .list()
-        .into_iter()
-        .filter(|(id, _)| app.workers.is_shown_in_find(*id))
-        .filter(|(_, n)| search_matches(&q, n))
-        .collect();
+    let listed = bulk_fill_listed(app, &bf.search);
 
     // Valori inseriti: effort (ore/settimana) e numero di settimane.
     let effort = bf.effort_text.trim().parse::<usize>().ok();
@@ -125,15 +117,17 @@ pub(crate) fn bulk_fill_window(
         .ok()
         .filter(|n| *n > 0);
     // Settimane in cui si scrive, per worker scelto: saltano le Ferie (la
-    // fine scivola avanti) e si fermano alla fine della griglia.
+    // fine scivola avanti) e si fermano alla fine del progetto (o della griglia).
     let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
     chosen.sort_by_key(|w| w.0);
     let plans: Vec<(WorkerId, Vec<WeekId>)> = weeks
-        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, *w, WeekId(bf.week as usize), n))).collect())
+        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, *w, WeekId(bf.week as usize), n))).collect())
         .unwrap_or_default();
-    // Settimane realmente scrivibili senza ferie (la griglia finisce a `end_week`).
-    let available =
-        ((app.end_week.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
+    // Settimane realmente scrivibili senza ferie (fino alla fine del progetto
+    // o della griglia).
+    let limit = fill_limit_label(app, bf.proj);
+    let (end, _) = fill_limit(app, bf.proj);
+    let available = ((end.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
     let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
 
     let mut open = true;
@@ -153,44 +147,7 @@ pub(crate) fn bulk_fill_window(
             ui.separator();
 
             // ── Worker ──
-            let sf = ui.add(
-                egui::TextEdit::singleline(&mut bf.search)
-                    .hint_text("Cerca worker…")
-                    .desired_width(240.0),
-            );
-            if just_opened {
-                sf.request_focus();
-            }
-            let currently_all =
-                !listed.is_empty() && listed.iter().all(|(id, _)| bf.selected.contains(id));
-            if let Some(all) = select_all_checkbox(ui, currently_all) {
-                for (id, _) in &listed {
-                    if all {
-                        bf.selected.insert(*id);
-                    } else {
-                        bf.selected.remove(id);
-                    }
-                }
-            }
-            egui::ScrollArea::vertical()
-                .scroll_source(drag_scroll())
-                .max_height(220.0)
-                .show(ui, |ui| {
-                    ui.set_min_width(240.0);
-                    if listed.is_empty() {
-                        ui.label("(nessun worker)");
-                    }
-                    for (id, name) in &listed {
-                        let mut sel = bf.selected.contains(id);
-                        if ui.checkbox(&mut sel, name).changed() {
-                            if sel {
-                                bf.selected.insert(*id);
-                            } else {
-                                bf.selected.remove(id);
-                            }
-                        }
-                    }
-                });
+            bulk_fill_workers(ui, bf, &listed, just_opened);
 
             ui.separator();
 
@@ -285,7 +242,7 @@ pub(crate) fn bulk_fill_window(
                         ui.colored_label(
                             Color32::RED,
                             format!(
-                                "{name}: solo {} settimane disponibili fino alla fine della griglia.",
+                                "{name}: solo {} settimane disponibili fino alla {limit}.",
                                 ws.len()
                             ),
                         );
@@ -329,6 +286,176 @@ pub(crate) fn bulk_fill_window(
     if confirm || cancel || !open {
         state.bulk_fill = None;
         state.bulk_fill_was_open = false;
+    }
+}
+
+/// Worker elencabili nelle dialog di inserimento (come la dialog dei
+/// filtri: «Elenchi» accesa), filtrati dalla ricerca.
+fn bulk_fill_listed(app: &App, search: &str) -> Vec<(WorkerId, String)> {
+    let q = search.trim().to_lowercase();
+    app.workers
+        .list()
+        .into_iter()
+        .filter(|(id, _)| app.workers.is_shown_in_find(*id))
+        .filter(|(_, n)| search_matches(&q, n))
+        .collect()
+}
+
+/// Ricerca, Select All ed elenco con spunta dei worker (inserimento
+/// multiplo e automatico).
+fn bulk_fill_workers(ui: &mut egui::Ui, bf: &mut BulkFill, listed: &[(WorkerId, String)], just_opened: bool) {
+    let sf = ui.add(egui::TextEdit::singleline(&mut bf.search).hint_text("Cerca worker…").desired_width(240.0));
+    if just_opened {
+        sf.request_focus();
+    }
+    let currently_all = !listed.is_empty() && listed.iter().all(|(id, _)| bf.selected.contains(id));
+    if let Some(all) = select_all_checkbox(ui, currently_all) {
+        for (id, _) in listed {
+            if all {
+                bf.selected.insert(*id);
+            } else {
+                bf.selected.remove(id);
+            }
+        }
+    }
+    egui::ScrollArea::vertical().scroll_source(drag_scroll()).max_height(220.0).show(ui, |ui| {
+        ui.set_min_width(240.0);
+        if listed.is_empty() {
+            ui.label("(nessun worker)");
+        }
+        for (id, name) in listed {
+            let mut sel = bf.selected.contains(id);
+            if ui.checkbox(&mut sel, name).changed() {
+                if sel {
+                    bf.selected.insert(*id);
+                } else {
+                    bf.selected.remove(id);
+                }
+            }
+        }
+    });
+}
+
+/// «Aggiungi automatic effort…»: worker e ore a settimana; il sistema
+/// distribuisce le ore che mancano al pianificato del dev
+/// (`auto_fill_plan`). Riepilogo dal vivo: quanto c'è da distribuire, fin
+/// dove arriva, cosa resta fuori a fine griglia.
+pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    if state.auto_fill.is_none() {
+        return;
+    }
+    let just_opened = !state.auto_fill_was_open;
+    state.auto_fill_was_open = true;
+    let bf = state.auto_fill.as_mut().unwrap();
+    let dev_label = dev_name(app, bf.dev);
+    let start_label = week_label(bf.week);
+    let listed = bulk_fill_listed(app, &bf.search);
+    let hours = bf.effort_text.trim().parse::<usize>().ok().filter(|h| *h > 0);
+    // Worker scelti nell'ordine dell'elenco: è l'ordine in cui si riempie
+    // l'ultima settimana.
+    let chosen: Vec<WorkerId> =
+        app.workers.list().into_iter().map(|(id, _)| id).filter(|id| bf.selected.contains(id)).collect();
+    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0));
+
+    let mut open = true;
+    let mut confirm = false;
+    let mut cancel = false;
+    egui::Window::new("Inserimento automatico")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new(format!("{dev_label} — dalla settimana {start_label}")).color(text_dim()));
+            ui.label(format!(
+                "Effort pianificato {}h, già inserite {}h: da distribuire {}h.",
+                plan.planned,
+                plan.allocated,
+                plan.to_place()
+            ));
+            ui.separator();
+            bulk_fill_workers(ui, bf, &listed, just_opened);
+            ui.separator();
+            let mut submit = false;
+            ui.horizontal(|ui| {
+                ui.label("Ore a settimana (massimo):");
+                let r = ui.add(egui::TextEdit::singleline(&mut bf.effort_text).desired_width(50.0).hint_text("es. 8"));
+                submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            });
+            if hours.is_none() && !bf.effort_text.trim().is_empty() {
+                ui.colored_label(Color32::RED, "Ore non valide (numero intero, almeno 1).");
+            }
+            if plan.to_place() == 0 {
+                ui.colored_label(Color32::RED, "Niente da distribuire: le ore inserite coprono già il pianificato.");
+            } else if hours.is_some() && !chosen.is_empty() {
+                let placed: usize = plan.cells.iter().map(|(_, _, h)| h).sum();
+                match (plan.cells.first(), plan.cells.last()) {
+                    (Some((first, ..)), Some((last, ..))) => {
+                        ui.label(format!(
+                            "{placed}h in {} settimane ({} → {}), entro la capacità dei worker, saltando ferie e settimane già occupate.",
+                            plan.weeks(),
+                            week_label(first.0 as i32),
+                            week_label(last.0 as i32)
+                        ));
+                    }
+                    _ => {
+                        ui.colored_label(
+                            Color32::RED,
+                            format!("Nessuna settimana libera fino alla {}.", fill_limit_label(app, bf.proj)),
+                        );
+                    }
+                }
+                for w in &chosen {
+                    let (n, h) = plan
+                        .cells
+                        .iter()
+                        .filter(|(_, x, _)| x == w)
+                        .fold((0, 0), |(n, t), (_, _, h)| (n + 1, t + h));
+                    ui.label(
+                        egui::RichText::new(format!("{}: {h}h in {n} settimane", app.workers.get_name_by_id(*w)))
+                            .color(text_dim()),
+                    );
+                }
+                if plan.left > 0 {
+                    ui.colored_label(
+                        Color32::RED,
+                        format!(
+                            "Arrivati alla {}: restano {}h non inserite.",
+                            fill_limit_label(app, bf.proj),
+                            plan.left
+                        ),
+                    );
+                }
+            }
+            let valid = !plan.cells.is_empty();
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.add_enabled(valid, egui::Button::new("Inserisci")).clicked() {
+                    confirm = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+            if submit && valid {
+                confirm = true;
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                cancel = true;
+            }
+        });
+    if confirm {
+        actions.push(Action::AutoFillEffort {
+            proj: bf.proj,
+            dev: bf.dev,
+            start: WeekId(bf.week as usize),
+            workers: chosen,
+            hours: hours.unwrap_or(0),
+        });
+    }
+    if confirm || cancel || !open {
+        state.auto_fill = None;
+        state.auto_fill_was_open = false;
     }
 }
 

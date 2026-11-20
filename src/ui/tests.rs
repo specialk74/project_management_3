@@ -4784,8 +4784,8 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
     // Valore già presente nella settimana dove scivola Alice: si sovrascrive.
     app.projects.add_effort(proj, dev, wk(4), alice, Effort(2));
 
-    assert_eq!(bulk_fill_weeks(&app, alice, start, 3), vec![wk(0), wk(3), wk(4)]);
-    assert_eq!(bulk_fill_weeks(&app, bob, start, 3), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 3), vec![wk(0), wk(3), wk(4)]);
+    assert_eq!(bulk_fill_weeks(&app, proj, bob, start, 3), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
     assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3));
     let at = |app: &App, w: WeekId, who| {
         app.projects
@@ -4803,7 +4803,7 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
     let last = app.end_week;
     let prev = WeekId(last.0 - WEEK_STEP);
     app.workers.set_week_status(alice, last.0, Some(WeekStatus::Ferie));
-    assert_eq!(bulk_fill_weeks(&app, alice, prev, 2), vec![prev]);
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, prev, 2), vec![prev]);
 }
 
 /// La dialog dice, per worker, quali settimane di ferie salta e fin dove
@@ -5103,4 +5103,177 @@ fn rule_summary_is_a_bit_larger_than_small_text() {
     });
     let small = egui::Style::default().text_styles[&egui::TextStyle::Small].size;
     assert_eq!(size, Some(small + RULE_SUMMARY_FONT_DELTA));
+}
+
+/// Piano di «Aggiungi automatic effort»: da distribuire = pianificato −
+/// già inserite; ogni worker al massimo le ore indicate, solo interi;
+/// l'ultima settimana in ordine (il primo fino al massimo, poi il resto);
+/// mai oltre la capacità della settimana (massimo effettivo meno le ore su
+/// tutti i progetti); saltate per ogni worker le Ferie e le settimane in cui
+/// ha già ore sul dev; ci si ferma a fine griglia.
+#[test]
+fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let dev = app.devs.add("Frontend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, dev);
+    app.projects.add_dev_effort(p, dev, Effort(40));
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.add_effort(p, dev, wk(0), alice, Effort(6)); // già occupata
+    app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    app.compute_sovra();
+    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8);
+    assert_eq!((plan.planned, plan.allocated, plan.to_place(), plan.left), (40, 6, 34, 0));
+    assert_eq!(
+        plan.cells,
+        vec![(wk(0), bob, 8), (wk(1), bob, 8), (wk(2), alice, 8), (wk(2), bob, 8), (wk(3), alice, 2)]
+    );
+    assert_eq!(plan.weeks(), 4);
+    // Capacità: Bob ha già 36h su un altro progetto nella settimana 1 (resta
+    // 4h) e un limite di 0h nella 2 (piena: saltata).
+    let q = app.projects.add("y", Some("XYZ"), None);
+    app.projects.add_dev(q, dev);
+    app.projects.add_effort(q, dev, wk(1), bob, Effort(36));
+    app.workers.set_week_override(bob, wk(2).0, 0);
+    app.compute_sovra();
+    let plan = auto_fill_plan(&app, p, dev, start, &[bob], 8);
+    assert_eq!(
+        plan.cells,
+        vec![(wk(0), bob, 8), (wk(1), bob, 4), (wk(3), bob, 8), (wk(4), bob, 8), (wk(5), bob, 6)],
+        "mai oltre la capacità della settimana"
+    );
+    // Ore che non stanno nella griglia: restano fuori.
+    let last = app.end_week;
+    let plan = auto_fill_plan(&app, p, dev, WeekId(last.0 - WEEK_STEP), &[bob], 8);
+    assert_eq!((plan.cells.len(), plan.left), (2, 34 - 16));
+    // Niente da distribuire, nessun worker o 0 ore: nessuna cella.
+    app.projects.add_effort(p, dev, wk(6), bob, Effort(34));
+    app.compute_sovra();
+    assert!(auto_fill_plan(&app, p, dev, start, &[alice], 8).cells.is_empty());
+    assert!(auto_fill_plan(&app, p, dev, start, &[], 8).cells.is_empty());
+}
+
+/// Tasto destro sulla fascia milestone: «Aggiungi automatic effort…» sta
+/// sotto «Aggiungi efforts…», disattivato senza pianificato; con il
+/// pianificato apre la dialog, che mostra cosa resta da distribuire, e
+/// «Inserisci» scrive fino a esaurirlo.
+#[test]
+fn auto_fill_menu_item_and_dialog_fill_up_to_the_planned_effort() {
+    let (mut app, alice, week) = highlight_fixture(); // Alice 8h nella prima settimana
+    let dev = app.devs.list()[0].0;
+    let (p, _) = app.projects.list()[0];
+    let ctx = egui::Context::default();
+    let origin = Cell::new(egui::Pos2::ZERO);
+    let open_menu = |app: &App, state: &mut UiState| {
+        let frame = |state: &mut UiState, ev: Option<egui::Event>| {
+            let mut input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), ..Default::default() };
+            input.events.extend(ev);
+            let mut actions = Vec::new();
+            ctx.run_ui_test(input, |ui| {
+                origin.set(ui.cursor().min);
+                let layout = body_layout(ui, app, state, &Filter::default(), &None);
+                grid(ui, app, state, &mut actions, &Filter::default(), &layout);
+            })
+        };
+        let _ = frame(state, None);
+        let strip = egui::pos2(origin.get().x + COL_W * 1.5, origin.get().y + 1.0);
+        for ev in click_events(strip, egui::PointerButton::Secondary) {
+            let _ = frame(state, Some(ev));
+        }
+        let out = frame(state, None);
+        let below = text_pos(&out, "Aggiungi automatic effort…").expect("voce nuova");
+        let above = text_pos(&out, "Aggiungi efforts…").expect("voce esistente");
+        assert!(below.y > above.y, "sotto «Aggiungi efforts…»");
+        for ev in click_events(below, egui::PointerButton::Primary) {
+            let _ = frame(state, Some(ev));
+        }
+    };
+    // Senza pianificato: voce disattivata, nessuna dialog.
+    let mut state = UiState::default();
+    open_menu(&app, &mut state);
+    assert!(state.auto_fill.is_none(), "senza pianificato non si apre");
+    // Con 30h pianificate (8 già inserite): si apre sulla settimana cliccata.
+    app.projects.add_dev_effort(p, dev, Effort(30));
+    let mut state = UiState::default();
+    open_menu(&app, &mut state);
+    let bf = state.auto_fill.as_mut().expect("dialog automatica aperta");
+    assert_eq!(bf.week, week + WEEK_STEP as i32);
+    bf.selected.insert(alice);
+    bf.effort_text = "8".into();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| auto_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let out = out.unwrap();
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "Effort pianificato 30h, già inserite 8h: da distribuire 22h."), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "Alice: 22h in 3 settimane"), "{texts:?}");
+    let pos = text_pos(&out, "Inserisci").expect("Inserisci");
+    let mut actions = Vec::new();
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| auto_fill_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(state.auto_fill.is_none());
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    let sd = pjm.app.projects.get_single_dev(p, dev).unwrap();
+    assert_eq!(sd.effort_up_to(WeekId(usize::MAX)).0, 30, "esaurito il pianificato");
+    let w = |i: usize| sd.get_all(WeekId(week as usize + i * WEEK_STEP)).and_then(|s| s.worker_id.get(&alice)).map(|e| e.get_effort().0);
+    assert_eq!([w(1), w(2), w(3), w(4)], [Some(8), Some(8), Some(6), None]);
+}
+
+/// «Aggiungi efforts» e «Aggiungi automatic effort» non vanno oltre la fine
+/// del progetto (la sua settimana è l'ultima, inclusa): l'inserimento si
+/// ferma lì e la dialog lo dice; senza data di fine vale la fine della
+/// griglia.
+#[test]
+fn fills_stop_at_the_project_end() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    app.projects.add_dev_effort(proj, dev, Effort(100));
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    // Senza fine: la griglia.
+    assert_eq!(fill_limit(&app, proj), (app.end_week, false));
+    app.projects.set_project_end_week(proj, Some(wk(2)));
+    assert_eq!(fill_limit(&app, proj), (wk(2), true));
+    // Aggiungi efforts per 5 settimane: solo 3 (0, 1, 2).
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5), vec![wk(0), wk(1), wk(2)]);
+    // Automatico: 100h da 8h → solo 3 settimane, 76h restano fuori.
+    let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8);
+    assert_eq!((plan.cells.len(), plan.left), (3, 76));
+    assert!(plan.cells.iter().all(|(w, ..)| *w <= wk(2)));
+    // La dialog dell'inserimento multiplo lo dice.
+    let mut bf = BulkFill { weeks_text: "5".into(), effort_text: "8".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| bulk_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    assert!(texts.iter().any(|t| t == "Alice: solo 3 settimane disponibili fino alla fine del progetto."), "{texts:?}");
+    // E l'automatica.
+    let mut bf = BulkFill { effort_text: "8".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { auto_fill: Some(bf), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| auto_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let texts = drawn_texts(&out.unwrap());
+    assert!(texts.iter().any(|t| t == "Arrivati alla fine del progetto: restano 76h non inserite."), "{texts:?}");
 }

@@ -1069,6 +1069,10 @@ pub struct UiState {
     // inserimento multiplo (tasto destro su cella vuota): worker + ore + settimane
     bulk_fill: Option<BulkFill>,
     bulk_fill_was_open: bool,
+    // «Aggiungi automatic effort…» (stessa struttura dell'inserimento
+    // multiplo, senza settimane: `auto_fill_window`)
+    auto_fill: Option<BulkFill>,
+    auto_fill_was_open: bool,
     // conferma «Sposta inizio/fine progetto qua» quando si perdono effort/milestone
     bound_move: Option<BoundMove>,
     dev_manage: Option<ProjectId>,
@@ -1541,6 +1545,15 @@ pub(crate) enum Action {
     /// Inserimento multiplo: assegna `effort` a ciascun worker di `workers` in
     /// `weeks` settimane consecutive a partire da `start` (inclusa), andando in
     /// avanti. Sovrascrive il valore eventualmente già presente.
+    /// «Aggiungi automatic effort»: distribuisce quello che manca al
+    /// pianificato (`auto_fill_plan`).
+    AutoFillEffort {
+        proj: ProjectId,
+        dev: DevId,
+        start: WeekId,
+        workers: Vec<WorkerId>,
+        hours: usize,
+    },
     BulkFillEffort {
         proj: ProjectId,
         dev: DevId,
@@ -2377,6 +2390,7 @@ impl eframe::App for PjmApp {
             note_editor_window(ui.ctx(), state, &mut actions);
             popup_window(ui.ctx(), app, state, &mut actions);
             bulk_fill_window(ui.ctx(), app, state, &mut actions);
+            auto_fill_window(ui.ctx(), app, state, &mut actions);
             bound_move_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
@@ -3185,6 +3199,22 @@ impl PjmApp {
                     gather_slots(&self.app, proj, dev, week, row + 1, &self.ui.worker_filter);
                 let (text, note, _) = &slots[row];
                 self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
+            }
+            Action::AutoFillEffort { proj, dev, start, workers, hours } => {
+                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours);
+                for (w, wid, h) in &plan.cells {
+                    self.app.projects.add_effort(proj, dev, *w, *wid, Effort(*h));
+                }
+                if !plan.cells.is_empty() {
+                    self.mark_changed();
+                }
+                if plan.left > 0 {
+                    self.ui.toast_warn(format!(
+                        "Inserimento automatico: {}, restano {}h non inserite.",
+                        fill_limit_label(&self.app, proj),
+                        plan.left
+                    ));
+                }
             }
             Action::BulkFillEffort {
                 proj,
@@ -4991,16 +5021,120 @@ fn move_project_bound(app: &mut App, proj: ProjectId, bound: ProjectBound, week:
     old != Some(week) || !loss.is_empty()
 }
 
+/// Piano di «Aggiungi automatic effort» (`auto_fill_plan`): le celle da
+/// scrivere e quanto resta fuori.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct AutoFillPlan {
+    /// Effort pianificato del dev e ore già in griglia (tutte le settimane).
+    pub planned: usize,
+    pub allocated: usize,
+    /// (settimana, worker, ore) in ordine di settimana e di worker.
+    pub cells: Vec<(WeekId, WorkerId, usize)>,
+    /// Ore che non stanno fino alla fine del progetto (o della griglia).
+    pub left: usize,
+}
+
+impl AutoFillPlan {
+    /// Ore da distribuire: pianificato meno già inserite (mai negativo).
+    pub fn to_place(&self) -> usize {
+        self.planned.saturating_sub(self.allocated)
+    }
+
+    /// Settimane toccate.
+    pub fn weeks(&self) -> usize {
+        let mut ws: Vec<WeekId> = self.cells.iter().map(|(w, ..)| *w).collect();
+        ws.dedup();
+        ws.len()
+    }
+}
+
+/// «Aggiungi automatic effort»: distribuisce le ore che mancano al
+/// pianificato del dev (pianificato − ore già in griglia) dalla settimana
+/// `start` in avanti. Ogni settimana ogni worker (nell'ordine dato) prende
+/// al massimo `hours` ore — solo numeri interi —, finché non sono esaurite:
+/// nell'ultima settimana il primo prende fino al massimo, il successivo il
+/// resto. Si tiene conto della **capacità** del worker (come Saturazione e
+/// Torte): nella settimana non prende più del suo massimo effettivo (limite
+/// della settimana o massimo del worker) meno le ore che ha già su tutti i
+/// progetti (`App.sovra`); se è pieno, la settimana si salta. Per ogni worker
+/// si saltano anche le settimane in **Ferie** e quelle in cui ha già una
+/// cella su quel dev (non si sovrascrive). Si ferma alla fine del progetto
+/// (o della griglia, `fill_limit`): non va mai oltre (`left` = quello che
+/// non sta).
+pub(crate) fn auto_fill_plan(
+    app: &App,
+    proj: ProjectId,
+    dev: DevId,
+    start: WeekId,
+    workers: &[WorkerId],
+    hours: usize,
+) -> AutoFillPlan {
+    let sd = app.projects.get_single_dev(proj, dev);
+    let planned = sd.map_or(0, |sd| sd.planned_effort().0);
+    let allocated = sd.map_or(0, |sd| sd.effort_up_to(WeekId(usize::MAX)).0);
+    let mut plan = AutoFillPlan { planned, allocated, ..Default::default() };
+    let mut left = plan.to_place();
+    if workers.is_empty() || hours == 0 {
+        plan.left = left;
+        return plan;
+    }
+    let occupied = |w: WeekId, wid: WorkerId| {
+        sd.and_then(|sd| sd.get_all(w)).is_some_and(|sew| sew.worker_id.contains_key(&wid))
+    };
+    let end = fill_limit(app, proj).0;
+    let mut w = start;
+    while left > 0 && w <= end {
+        for wid in workers {
+            if left == 0 {
+                break;
+            }
+            if app.workers.get_week_status(*wid, w.0) == Some(WeekStatus::Ferie) || occupied(w, *wid) {
+                continue;
+            }
+            let busy = app.sovra.get(&(w, *wid)).map_or(0, |e| e.0);
+            let free = (app.workers.get_effective_max_hours(*wid, w.0) as usize).saturating_sub(busy);
+            let h = hours.min(left).min(free);
+            if h == 0 {
+                continue;
+            }
+            plan.cells.push((w, *wid, h));
+            left -= h;
+        }
+        w = WeekId(w.0 + WEEK_STEP);
+    }
+    plan.left = left;
+    plan
+}
+
+/// Ultima settimana in cui gli inserimenti di più settimane («Aggiungi
+/// efforts», «Aggiungi automatic effort») possono scrivere: la **fine del
+/// progetto** (inclusa) se c'è e cade prima della fine della griglia,
+/// altrimenti la fine della griglia. Il `bool` dice se è la fine del
+/// progetto (per i messaggi).
+pub(crate) fn fill_limit(app: &App, proj: ProjectId) -> (WeekId, bool) {
+    match app.projects.get_project_end_week(proj) {
+        Some(e) if e <= app.end_week => (e, true),
+        _ => (app.end_week, false),
+    }
+}
+
+/// «fine del progetto» o «fine della griglia», secondo `fill_limit`.
+pub(crate) fn fill_limit_label(app: &App, proj: ProjectId) -> &'static str {
+    if fill_limit(app, proj).1 { "fine del progetto" } else { "fine della griglia" }
+}
+
 /// Le settimane in cui «Aggiungi efforts» scrive per `worker`: le prime
 /// `weeks` a partire da `start` (inclusa), andando in avanti, **saltando
 /// quelle in cui il worker è in Ferie** (la Malattia no): così il worker ha
 /// sempre `weeks` settimane di effort e, con delle ferie in mezzo, la fine
 /// scivola più avanti (anche oltre la data «fino al» della dialog). Si ferma
-/// alla fine della griglia (`end_week`), quindi può essere più corta.
-pub(crate) fn bulk_fill_weeks(app: &App, worker: WorkerId, start: WeekId, weeks: usize) -> Vec<WeekId> {
+/// alla fine del progetto (o della griglia, `fill_limit`), quindi può essere
+/// più corta: non va mai oltre.
+pub(crate) fn bulk_fill_weeks(app: &App, proj: ProjectId, worker: WorkerId, start: WeekId, weeks: usize) -> Vec<WeekId> {
+    let end = fill_limit(app, proj).0;
     let mut out = Vec::with_capacity(weeks);
     let mut w = start;
-    while out.len() < weeks && w <= app.end_week {
+    while out.len() < weeks && w <= end {
         if app.workers.get_week_status(worker, w.0) != Some(WeekStatus::Ferie) {
             out.push(w);
         }
@@ -5011,7 +5145,7 @@ pub(crate) fn bulk_fill_weeks(app: &App, worker: WorkerId, start: WeekId, weeks:
 
 /// Scrive `effort` per ognuno dei `workers` nelle sue settimane
 /// (`bulk_fill_weeks`: `weeks` settimane da `start`, saltando le Ferie, fino
-/// alla fine della griglia). Sovrascrive il valore già presente per quel
+/// alla fine del progetto o della griglia). Sovrascrive il valore già presente per quel
 /// worker. Ritorna `true` se ha scritto qualcosa.
 fn bulk_fill_effort(
     app: &mut App,
@@ -5024,7 +5158,7 @@ fn bulk_fill_effort(
 ) -> bool {
     let mut written = false;
     for wid in workers {
-        for w in bulk_fill_weeks(app, *wid, start, weeks) {
+        for w in bulk_fill_weeks(app, proj, *wid, start, weeks) {
             app.projects.add_effort(proj, dev, w, *wid, effort);
             written = true;
         }

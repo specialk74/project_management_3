@@ -1066,7 +1066,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   **Vacation weeks are skipped**: the weeks come from `bulk_fill_weeks(app,
   worker, start, n)` (`mod.rs`) = the first `n` weeks from `start` where that
   worker is **not** in `WeekStatus::Ferie` (Malattia is not skipped), up to
-  `end_week` — so each worker still gets `n` weeks and the end slides later,
+  `fill_limit(app, proj)` = the **project end week** (inclusive) when set and
+  inside the grid, else `end_week` (`(WeekId, is_project_end)`;
+  `fill_limit_label` = «fine del progetto» / «fine della griglia» for the
+  messages; both fills never go past it — test
+  `fills_stop_at_the_project_end`; `bulk_fill_weeks` takes `proj`) — so each worker still gets `n` weeks and the end slides later,
   even past the «fino al» date (user's choice); the shifted week is
   overwritten like any other. The dialog computes the same plans per selected
   worker: summary end = farthest last week, a blue line per worker with
@@ -1085,6 +1089,25 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   Tests `bulk_fill_end_date_counts_weeks_inclusively`,
   `bulk_fill_window_shows_the_end_date_of_the_weeks`,
   `add_efforts_menu_item_opens_the_bulk_fill_on_the_clicked_week`.
+- **Automatic effort** (milestone strip menu ▸ «Aggiungi automatic effort…»,
+  right below «Aggiungi efforts…», enabled only when the dev's
+  `planned_effort` > 0): `UiState.auto_fill: Option<BulkFill>` (same struct,
+  weeks unused) → `auto_fill_window` (`dialogs.rs`; workers + «Ore a
+  settimana (massimo)»; the worker list is the shared `bulk_fill_listed` /
+  `bulk_fill_workers`, also used by `bulk_fill_window`) →
+  `Action::AutoFillEffort { proj, dev, start, workers, hours }` →
+  `auto_fill_plan(app, proj, dev, start, workers, hours) -> AutoFillPlan {
+  planned, allocated, cells: Vec<(WeekId, WorkerId, usize)>, left }`
+  (`mod.rs`, pure): to place = planned − all hours of the dev in the grid;
+  from `start`, each week each worker (list order) gets `min(hours, left)`
+  (integers only; last week filled in order), never above the week's free
+  capacity = `get_effective_max_hours(w, week)` − `App.sovra[(week, w)]`
+  (all projects; full ⇒ week skipped; same rule as Saturazione), skipping per worker `Ferie`
+  weeks and weeks where he already has a cell on that dev (no overwrite),
+  until `fill_limit(app, proj)` (`left` = what didn't fit, toasted). All four choices
+  were the user's. Tests
+  `auto_fill_plan_spreads_what_is_left_of_the_planned_effort`,
+  `auto_fill_menu_item_and_dialog_fill_up_to_the_planned_effort`.
 - **Cancella gli effort** (dev-name context menu, below «Elimina riga»): «Cancella
   gli effort…» (that dev) and «Cancella gli effort di tutti i dev…» (whole project)
   set `UiState.confirm_clear_efforts: Option<ClearEfforts { proj, dev: Option<DevId> }>`

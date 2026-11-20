@@ -722,8 +722,11 @@ Note importanti:
   sue ferie; la **Malattia** non si salta. La finestra lo dice per ogni worker
   («Alice: in ferie il … (saltate) → fino al …») e il riepilogo mostra
   l'ultima settimana effettivamente riempita;
-- le settimane oltre la **fine della griglia** vengono scartate: la finestra
-  segnala, per worker, quante settimane sono effettivamente disponibili;
+- l'inserimento **non va mai oltre la fine del progetto** (la settimana della
+  data di fine è l'ultima, inclusa; se il progetto non ha data di fine, vale la
+  fine della griglia): le settimane oltre vengono scartate e la finestra
+  segnala, per worker, quante settimane sono effettivamente disponibili «fino
+  alla fine del progetto»;
 - il tasto destro su una cella **non vuota** continua a fare quello di sempre,
   cioè aprire la **nota** della cella (vedi capitolo 9).
 
@@ -731,6 +734,32 @@ La stessa finestra si apre anche dal **tasto destro sulla riga in alto** della
 colonna-dev (la fascia delle milestone) ▸ **Aggiungi efforts…**: riempie il dev
 di quella colonna a partire dalla settimana cliccata, anche quando la cella è già
 occupata (vale la regola della sovrascrittura).
+
+### Inserimento automatico (fino al pianificato)
+Nello stesso menù, subito sotto, **Aggiungi automatic effort…** distribuisce da
+solo le ore che mancano all'**effort pianificato** del dev. È attivo solo se il
+dev ha un pianificato. La finestra **Inserimento automatico** chiede soltanto:
+
+- i **worker** (con ricerca e Select All, come l'inserimento multiplo);
+- le **ore a settimana**: il **massimo** che **ciascun** worker prende in una
+  settimana (numero intero).
+
+In cima mostra quanto c'è da distribuire: *pianificato − ore già inserite* in
+griglia per quel dev (tutte le settimane, tutti i worker). Poi, dalla settimana
+cliccata in avanti, ogni settimana ogni worker scelto prende le ore indicate,
+finché non sono esaurite; nell'**ultima** settimana i worker si riempiono **in
+ordine** (nell'ordine dell'elenco): il primo fino al massimo, il successivo il
+resto — sempre **numeri interi**, mai decimali. Si rispetta la **capacità** del
+worker, come in Saturazione: in una settimana non prende più del suo massimo
+effettivo (il limite di quella settimana o il suo massimo ore) meno le ore che
+ha già lì su **tutti** i progetti; se ne ha libere meno di quelle indicate prende
+solo quelle, se è pieno la settimana si salta. Per ogni worker si **saltano**
+le settimane in **Ferie** e quelle in cui ha **già** ore su quel dev (non
+vengono sovrascritte). Il riepilogo dice quante ore e in quante settimane (prima
+→ ultima) e quante ne prende ciascun worker. Come l'inserimento multiplo, **si
+ferma alla fine del progetto** (o della griglia, se non c'è data di fine) e non
+va oltre: in quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
+niente da distribuire e **Inserisci** resta disattivato.
 
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,

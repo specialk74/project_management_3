@@ -1218,6 +1218,25 @@ fn draw_milestone_strip(
             ui.close();
         }
 
+        // ── Aggiungi automatic effort → `auto_fill_window`: solo se il dev
+        //    ha un effort pianificato da distribuire ──
+        let planned = app.projects.get_single_dev(proj, dev).is_some_and(|sd| sd.planned_effort().0 > 0);
+        let auto = ui
+            .add_enabled(planned, egui::Button::new("Aggiungi automatic effort…"))
+            .on_hover_text(
+                "Scegli worker e ore a settimana: le ore che mancano al pianificato del dev \
+                 vengono distribuite dalla settimana cliccata in avanti.",
+            )
+            .on_disabled_hover_text("Prima imposta l'effort pianificato del dev.");
+        if auto.clicked() {
+            if let Some(old) = state.editing.take() {
+                actions.push(commit_editing(app, &old));
+            }
+            state.auto_fill = Some(BulkFill::new(proj, dev, w));
+            state.auto_fill_was_open = false;
+            ui.close();
+        }
+
         // ── Sottomenù: Sposta effort ──
         ui.menu_button("Sposta", |ui| {
             // Sposta blocco → blocco contiguo del dev attorno alla settimana.
