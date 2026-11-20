@@ -250,6 +250,7 @@ fn bulk_fill_window_renders() {
             selected: HashSet::new(),
             effort_text: "8".to_string(),
             weeks_text: "3".to_string(),
+            to_end: false,
         }),
         ..Default::default()
     };
@@ -5276,4 +5277,66 @@ fn fills_stop_at_the_project_end() {
     }
     let texts = drawn_texts(&out.unwrap());
     assert!(texts.iter().any(|t| t == "Arrivati alla fine del progetto: restano 76h non inserite."), "{texts:?}");
+}
+
+/// «Aggiungi efforts» ▸ «Fino a fine progetto»: spuntata, l'effort va a ogni
+/// worker scelto in tutte le settimane fino alla fine del progetto (inclusa),
+/// saltando le sue ferie e senza l'avviso «solo N settimane»; senza data di
+/// fine la spunta è disattivata.
+#[test]
+fn bulk_fill_until_the_project_end() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let open = || {
+        let mut bf = BulkFill { effort_text: "8".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+        bf.selected.insert(alice);
+        UiState { bulk_fill: Some(bf), ..Default::default() }
+    };
+    let frames = |app: &App, state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| bulk_fill_window(ui.ctx(), app, state, actions))
+    };
+    let tick = |app: &App, state: &mut UiState| {
+        let mut actions = Vec::new();
+        frames(app, state, &mut actions, None);
+        let out = frames(app, state, &mut actions, None);
+        let pos = text_pos(&out, "Fino a fine progetto").expect("spunta");
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frames(app, state, &mut actions, Some(ev));
+        }
+    };
+    // Senza data di fine: disattivata.
+    let mut state = open();
+    tick(&app, &mut state);
+    assert!(!state.bulk_fill.as_ref().unwrap().to_end);
+    // Con la fine alla settimana 3: spuntata, 4 settimane di calendario.
+    app.projects.set_project_end_week(proj, Some(wk(3)));
+    let mut state = open();
+    tick(&app, &mut state);
+    assert!(state.bulk_fill.as_ref().unwrap().to_end);
+    let mut actions = Vec::new();
+    let out = frames(&app, &mut state, &mut actions, None);
+    let texts = drawn_texts(&out);
+    let summary = format!("1 worker × 8 h × 4 settimane ({} → {})", week_label(wk(0).0 as i32), week_label(wk(3).0 as i32));
+    assert!(texts.contains(&summary), "{summary}: {texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("solo")), "nessun avviso: {texts:?}");
+    let pos = text_pos(&out, "Inserisci").expect("Inserisci");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frames(&app, &mut state, &mut actions, Some(ev));
+    }
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
+    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la fine");
 }

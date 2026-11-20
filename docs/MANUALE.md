@@ -706,6 +706,11 @@ modo rapido per riempire un blocco di effort senza scrivere cella per cella:
   riempita (**inclusa**). I due campi sono collegati: scegliendo la data il numero
   di settimane si aggiorna da solo, e viceversa. Una data prima della settimana
   di partenza viene segnalata e **Inserisci** resta disattivato.
+- **Fino a fine progetto**: spuntata, al posto del numero di settimane l'effort
+  va a ogni worker scelto in **tutte** le settimane dalla cella cliccata fino
+  alla **fine del progetto** (inclusa), saltando le sue ferie; i due campi
+  sopra si disattivano (la data mostra la fine del progetto). Disattivata se il
+  progetto non ha una data di fine.
 
 Sotto ai campi c'è il riepilogo dell'operazione (`N worker × H h × S settimane`
 con la prima e l'ultima settimana). Il pulsante **Inserisci** è attivo solo se

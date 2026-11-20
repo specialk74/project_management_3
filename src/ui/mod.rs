@@ -264,6 +264,9 @@ pub(crate) struct BulkFill {
     pub selected: HashSet<WorkerId>,
     pub effort_text: String,
     pub weeks_text: String,
+    /// «Fino a fine progetto»: al posto del numero di settimane, tutte quelle
+    /// fino alla fine del progetto (inclusa).
+    pub to_end: bool,
 }
 
 impl BulkFill {
@@ -278,6 +281,7 @@ impl BulkFill {
             selected: HashSet::new(),
             effort_text: String::new(),
             weeks_text: "1".to_string(),
+            to_end: false,
         }
     }
 }

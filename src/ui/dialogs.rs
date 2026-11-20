@@ -108,14 +108,24 @@ pub(crate) fn bulk_fill_window(
 
     let listed = bulk_fill_listed(app, &bf.search);
 
-    // Valori inseriti: effort (ore/settimana) e numero di settimane.
+    // Settimane di calendario fino alla fine del progetto (o della griglia).
+    let limit = fill_limit_label(app, bf.proj);
+    let (end, _) = fill_limit(app, bf.proj);
+    let available = ((end.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
+    // «Fino a fine progetto» solo se il progetto ha una data di fine.
+    let has_end = app.projects.get_project_end_week(bf.proj).is_some();
+    if !has_end {
+        bf.to_end = false;
+    }
+    // Valori inseriti: effort (ore/settimana) e numero di settimane (con
+    // «Fino a fine progetto»: tutte quelle fino alla fine; le Ferie saltate
+    // non la spostano, `bulk_fill_weeks` si ferma comunque lì).
     let effort = bf.effort_text.trim().parse::<usize>().ok();
-    let weeks = bf
-        .weeks_text
-        .trim()
-        .parse::<usize>()
-        .ok()
-        .filter(|n| *n > 0);
+    let weeks = if bf.to_end {
+        Some(available).filter(|n| *n > 0)
+    } else {
+        bf.weeks_text.trim().parse::<usize>().ok().filter(|n| *n > 0)
+    };
     // Settimane in cui si scrive, per worker scelto: saltano le Ferie (la
     // fine scivola avanti) e si fermano alla fine del progetto (o della griglia).
     let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
@@ -123,11 +133,6 @@ pub(crate) fn bulk_fill_window(
     let plans: Vec<(WorkerId, Vec<WeekId>)> = weeks
         .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, *w, WeekId(bf.week as usize), n))).collect())
         .unwrap_or_default();
-    // Settimane realmente scrivibili senza ferie (fino alla fine del progetto
-    // o della griglia).
-    let limit = fill_limit_label(app, bf.proj);
-    let (end, _) = fill_limit(app, bf.proj);
-    let available = ((end.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
     let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
 
     let mut open = true;
@@ -162,39 +167,51 @@ pub(crate) fn bulk_fill_window(
                 );
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             });
-            ui.horizontal(|ui| {
-                ui.label("Per quante settimane:");
-                let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
-                submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            });
-            // Oppure la data di fine: collegata al numero di settimane (la
-            // settimana che contiene la data scelta è l'ultima, inclusa).
-            ui.horizontal(|ui| {
-                ui.label("oppure fino al:");
-                let shown = bulk_fill_last_week(bf.week, weeks.unwrap_or(1));
-                let mut date = days_to_jiff(shown);
-                let r = ui.add(
-                    egui_extras::DatePickerButton::new(&mut date)
-                        .id_salt("bulk_fill_end")
-                        .format("%Y-%m-%d"),
+            let to_end = bf.to_end;
+            ui.add_enabled_ui(!to_end, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Per quante settimane:");
+                    let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
+                    submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                });
+                // Oppure la data di fine: collegata al numero di settimane (la
+                // settimana che contiene la data scelta è l'ultima, inclusa).
+                ui.horizontal(|ui| {
+                    ui.label("oppure fino al:");
+                    let shown = bulk_fill_last_week(bf.week, weeks.unwrap_or(1));
+                    let mut date = days_to_jiff(shown);
+                    let r = ui.add(
+                        egui_extras::DatePickerButton::new(&mut date)
+                            .id_salt("bulk_fill_end")
+                            .format("%Y-%m-%d"),
+                    );
+                    if r.changed()
+                        && let Some(d) = jiff_to_days(date)
+                    {
+                        bf.weeks_text = weeks_until(bf.week, d).to_string();
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Settimana in cui finisce l'inserimento (inclusa): il numero di \
+                     settimane si aggiorna da solo.",
                 );
-                if r.changed()
-                    && let Some(d) = jiff_to_days(date)
-                {
-                    bf.weeks_text = weeks_until(bf.week, d).to_string();
-                }
-            })
-            .response
-            .on_hover_text(
-                "Settimana in cui finisce l'inserimento (inclusa): il numero di \
-                 settimane si aggiorna da solo.",
-            );
+            });
+            // Oppure tutte le settimane fino alla fine del progetto.
+            ui.add_enabled(has_end, egui::Checkbox::new(&mut bf.to_end, "Fino a fine progetto"))
+                .on_hover_text(
+                    "Ogni worker scelto in tutte le settimane fino alla fine del progetto \
+                     (inclusa), saltando le sue ferie.",
+                )
+                .on_disabled_hover_text("Il progetto non ha una data di fine.");
 
             // Riepilogo / avvisi.
             if effort.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero).");
             }
-            if weeks.is_none() && !bf.weeks_text.trim().is_empty() {
+            if bf.to_end && weeks.is_none() {
+                ui.colored_label(Color32::RED, "La settimana di partenza è dopo la fine del progetto.");
+            } else if !bf.to_end && weeks.is_none() && !bf.weeks_text.trim().is_empty() {
                 let msg = if bf.weeks_text.trim().parse::<i64>().is_ok_and(|n| n <= 0) {
                     "La data di fine è prima della settimana di inizio."
                 } else {
@@ -238,7 +255,8 @@ pub(crate) fn bulk_fill_window(
                             .color(info_blue()),
                         );
                     }
-                    if ws.len() < n {
+                    // Con «Fino a fine progetto» è la fine voluta: nessun avviso.
+                    if ws.len() < n && !bf.to_end {
                         ui.colored_label(
                             Color32::RED,
                             format!(

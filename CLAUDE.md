@@ -1070,7 +1070,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   inside the grid, else `end_week` (`(WeekId, is_project_end)`;
   `fill_limit_label` = «fine del progetto» / «fine della griglia» for the
   messages; both fills never go past it — test
-  `fills_stop_at_the_project_end`; `bulk_fill_weeks` takes `proj`) — so each worker still gets `n` weeks and the end slides later,
+  `fills_stop_at_the_project_end`; `bulk_fill_weeks` takes `proj`). «Fino a fine progetto» checkbox (`BulkFill.to_end`, enabled only
+  when the project has an end date): `weeks` = calendar weeks from the start
+  to `fill_limit` (the vacation skipping can't push past the end anyway),
+  weeks field + date picker disabled, no red «solo N settimane» line; test
+  `bulk_fill_until_the_project_end` — so each worker still gets `n` weeks and the end slides later,
   even past the «fino al» date (user's choice); the shifted week is
   overwritten like any other. The dialog computes the same plans per selected
   worker: summary end = farthest last week, a blue line per worker with
