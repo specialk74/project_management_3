@@ -1405,7 +1405,36 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   (= governed − placed); `status_text` appends them with « · » and explains
   each in the tooltip. Tests
   `status_counts_no_anchor_beaten_and_excluded_projects`,
-  `rules_window_filters_by_search_type_and_enabled`. Tests
+  `rules_window_filters_by_search_type_and_enabled`.
+  **Warning lists + Blocca**: `Rule.check: CheckOpts { points, anchors, block }`
+  (`skip_serializing_if = "CheckOpts::is_default"`, also in `RuleFile`) =
+  the **extra** points/anchors of a `Check` (first point stays in
+  `Target::Check`, first anchor in `Rule::anchor`, so `Target` stays `Copy`);
+  `Rule::points()` / `anchors()` (deduped; extras only for `Check`),
+  `fits()` (replaces `anchor_fits(r.target, r.anchor)` everywhere),
+  `blocks()`. `warnings` checks **every pair** and `RuleWarning` carries
+  `point`, `anchor`, `gap` (days past the limit). `missing_refs`,
+  `using_milestone/using_dev` include the extras. **Blocking**:
+  `PjmApp::apply_guarded` (the action loop; not for Undo/Redo) stores
+  `UiState.block_base: Option<BlockBase { app, changed, undo_dirty }>` when
+  `rules::has_blocking`; `mark_changed`, after `rules::apply`, calls
+  `rules::block_regression(&base.app, &self.app)` (pairs of blocking rules:
+  new key or larger `gap` ⇒ message; skipped when `rules` differ — rule
+  edits never block) and on `Some` restores app/changed/undo_dirty, toasts a
+  warning and returns before `refresh_warnings`. Window: `multi_anchor_combo`
+  (checkbox per item, last can't be unticked) for points and anchors of a
+  warning, «Blocca» checkbox right after the target combo (the row is wider
+  than the 1600 px window now: horizontal scroll; after the grid
+  `ui.add_space(rules_bottom_pad(ui))` = scroll bar width + margins + 6, so
+  the floating h-scrollbar doesn't cover the last rule — the checkbox test
+  clicks the text centre to guard it). Text:
+  comma lists via `split_list` (quote-aware) / `parse_anchor_list`,
+  `rule_target_text` / `rule_anchor_text`, `blocca = sì`. Tests
+  `warning_lists_check_every_pair`,
+  `block_regression_spots_new_and_worse_violations_only`,
+  `warning_lists_and_block_round_trip`,
+  `blocking_rule_reverts_the_whole_action_that_violates_it`,
+  `rules_window_has_the_block_checkbox_for_warnings`. Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.

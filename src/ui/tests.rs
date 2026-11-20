@@ -3811,6 +3811,7 @@ fn rules_apply_on_every_change_and_undo_with_it() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
         inactive: Default::default(),
+        check: Default::default(),
     };
     pjm.apply(Action::AddRule(rule.clone()));
     pjm.record_undo();
@@ -3852,6 +3853,7 @@ fn opening_a_file_aligns_it_to_the_rules() {
         anchor: Anchor::ProjectEnd,
         offset_weeks: -1,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let ron = app.to_ron_string();
     let back = App::from_ron_str(&ron).expect("regole nel .ron");
@@ -3901,6 +3903,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let texts = drawn_texts(&ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
     for t in ["Fine dev Backend", "Collaudo", "Tutti i progetti", "in 0 progetti"] {
@@ -3929,6 +3932,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
         anchor: Anchor::ProjectEnd,
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -3966,6 +3970,7 @@ fn rule_name_column_is_wide() {
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -4004,6 +4009,7 @@ fn rule_preview_lists_the_moves_and_applies_them() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 1,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let mut state = UiState { rule_preview: Some(id), ..Default::default() };
     let ctx = egui::Context::default();
@@ -4053,6 +4059,7 @@ fn a_dev_required_by_a_rule_cannot_be_removed() {
         anchor: Anchor::DevPresent(be),
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     crate::rules::apply(&mut app);
     assert!(app.projects.list_devs(p).contains(&test));
@@ -4095,6 +4102,7 @@ fn rule_warnings_notify_new_ones_and_show_in_grid_and_list() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     // Avviso già presente all'apertura: niente notifica.
     app.projects.add_project_milestone(p, rilascio, WeekId(base));
@@ -4152,6 +4160,7 @@ fn warning_rule_row_shows_point_comparison_and_count() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -4230,6 +4239,7 @@ fn rules_window_picks_several_projects_and_clones_a_rule() {
         anchor: Anchor::LastEffort,
         offset_weeks: 1,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let mut state = UiState { show_rules: true, ..Default::default() };
     let ctx = egui::Context::default();
@@ -4297,6 +4307,7 @@ fn rules_window_all_except_excludes_the_ticked_project() {
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     });
     let ctx = egui::Context::default();
     let input = egui::RawInput { screen_rect: Some(screen(1700.0, 900.0)), ..Default::default() };
@@ -4357,6 +4368,7 @@ fn activating_a_rule_shows_the_changes_before_applying() {
         anchor: Anchor::DevEnd(be),
         offset_weeks: 2,
         inactive: Inactive { on_hold: false, closed: true },
+        check: Default::default(),
     };
     let id = app.rules.add(rule.clone());
     let q = app.projects.add("y", Some("XYZ"), None);
@@ -4507,6 +4519,7 @@ fn deleting_a_rule_asks_whether_to_remove_its_milestones() {
         anchor,
         offset_weeks: 2,
         inactive: Inactive::default(),
+        check: Default::default(),
     };
     let id = app.rules.add(rule(Target::Milestone(collaudo), Anchor::DevEnd(be)));
     // Rilascio non ha ancora (nessuna milestone Demo): nulla di collocato.
@@ -4589,6 +4602,7 @@ fn governed_milestones_and_dates_are_marked_in_the_grid() {
         anchor,
         offset_weeks,
         inactive: Inactive::default(),
+        check: Default::default(),
     };
     app.rules.add(rule(Target::Milestone(collaudo), Anchor::DevEnd(dev), 1));
     app.rules.add(rule(Target::ProjectStart, Anchor::FirstEffort, 0));
@@ -4650,6 +4664,7 @@ fn project_rules_window_opens_from_the_tripletta_mark() {
         anchor: Anchor::DevEnd(dev),
         offset_weeks: 1,
         inactive: Inactive::default(),
+        check: Default::default(),
     };
     let ctx = egui::Context::default();
     let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), ..Default::default() };
@@ -4704,6 +4719,7 @@ fn rules_window_filters_by_search_type_and_enabled() {
         anchor,
         offset_weeks: 0,
         inactive: Inactive::default(),
+        check: Default::default(),
     };
     let a = app.rules.add(rule("Primo", Target::Milestone(collaudo), Anchor::DevEnd(be), true));
     let b = app.rules.add(rule("Secondo", Target::ProjectEnd, Anchor::LastEffort, false));
@@ -4816,6 +4832,113 @@ fn bulk_fill_window_reports_skipped_vacation_weeks() {
     }
     assert!(
         matches!(actions.as_slice(), [Action::BulkFillEffort { weeks: 3, workers, .. }] if workers == &vec![alice]),
+        "{} azioni",
+        actions.len()
+    );
+}
+
+/// Regola d'avviso con «Blocca» (Test non prima della fine del Backend + 1):
+/// un inserimento multiplo che anticiperebbe il Test viene annullato **per
+/// intero** con una notifica, il file non risulta modificato e non nasce un
+/// passo di Annulla; uno che rispetta la regola passa.
+#[test]
+fn blocking_rule_reverts_the_whole_action_that_violates_it() {
+    use crate::rules::{Anchor, CheckOpts, Cmp, Inactive, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let w = app.workers.add("Mario");
+    let be = app.devs.add("Backend");
+    let test = app.devs.add("Test");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, be);
+    app.projects.add_dev(p, test);
+    let base = app.start_week.0;
+    let wk = |i: usize| WeekId(base + i * WEEK_STEP);
+    for i in 0..3 {
+        app.projects.add_effort(p, be, wk(i), w, Effort(8));
+    }
+    app.rules.add(Rule {
+        name: "Test dopo il Backend".into(),
+        enabled: true,
+        scope: RuleScope::All,
+        target: Target::Check(Anchor::DevStart(test), Cmp::NotBefore),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 1,
+        inactive: Inactive::default(),
+        check: CheckOpts { block: true, ..Default::default() },
+    });
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    pjm.reset_undo();
+    pjm.ui.changed = false;
+    let fill = |start: usize, weeks| Action::BulkFillEffort {
+        proj: p,
+        dev: test,
+        start: wk(start),
+        workers: vec![w],
+        effort: Effort(8),
+        weeks,
+    };
+    let cells = |pjm: &PjmApp| {
+        pjm.app.projects.get_single_dev(p, test).map(|sd| sd.get_weeks().len()).unwrap_or(0)
+    };
+    // Dalla settimana 2 per 4 settimane: la prima (2) è troppo presto
+    // (Backend finisce alla 2, quindi Test dalla 3): tutto annullato.
+    pjm.apply_guarded(fill(2, 4));
+    pjm.record_undo();
+    assert_eq!(cells(&pjm), 0, "nessuna settimana scritta");
+    assert!(!pjm.ui.changed, "il file non risulta modificato");
+    assert!(pjm.ui.undo.past.is_empty(), "nessun passo di Annulla");
+    let toast = pjm.ui.toasts.last().expect("notifica").text.clone();
+    assert!(toast.starts_with("Modifica annullata: la regola «Test dopo il Backend» la blocca — ABC: Inizio dev Test"), "{toast}");
+    // Dalla settimana 3: rispetta la regola.
+    pjm.apply_guarded(fill(3, 2));
+    assert_eq!(cells(&pjm), 2);
+    assert!(pjm.ui.changed);
+    // Ora allungare il Backend sposterebbe la soglia oltre l'inizio del Test:
+    // violazione nuova, bloccata anche se si tocca un altro dev.
+    let more_be = Action::BulkFillEffort { proj: p, dev: be, start: wk(3), workers: vec![w], effort: Effort(8), weeks: 1 };
+    pjm.apply_guarded(more_be);
+    assert!(pjm.app.projects.get_single_dev(p, be).unwrap().get_all(wk(3)).is_none(), "Backend non allungato");
+}
+
+/// Finestra delle regole: un avviso mostra la spunta «Blocca»; spuntarla
+/// manda l'`UpdateRule` con il blocco acceso.
+#[test]
+fn rules_window_has_the_block_checkbox_for_warnings() {
+    use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let be = app.devs.add("Backend");
+    let test = app.devs.add("Test");
+    let id = app.rules.add(Rule {
+        name: "Ordine".into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: Target::Check(Anchor::DevStart(test), Cmp::NotBefore),
+        anchor: Anchor::DevEnd(be),
+        offset_weeks: 0,
+        inactive: Inactive::default(),
+        check: Default::default(),
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    // Schermo 1536 px (1920 al 125%): la spunta deve restare in vista.
+    let input = egui::RawInput { screen_rect: Some(screen(1536.0, 800.0)), ..Default::default() };
+    let mut actions = Vec::new();
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions)));
+    }
+    let out = out.unwrap();
+    let pos = text_pos(&out, "Blocca").expect("spunta Blocca");
+    assert!(pos.x < 1536.0, "in vista: {pos:?}");
+    // Al centro del testo: sotto l'ultima riga c'è spazio, la barra di
+    // scorrimento orizzontale non la copre.
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events = vec![ev];
+        let _ = ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(
+        matches!(actions.as_slice(), [Action::UpdateRule(r, x)] if *r == id && x.check.block),
         "{} azioni",
         actions.len()
     );

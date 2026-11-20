@@ -50,6 +50,49 @@ fn choice_combo<T: PartialEq + Copy>(
     picked
 }
 
+/// Tendina a scelta multipla di ancore (punti o ancore di un avviso): una
+/// spunta per voce, almeno una resta (l'ultima non si toglie). Ritorna il
+/// nuovo elenco, nell'ordine delle voci, se cambiato. Il testo mostra le
+/// voci scelte separate da virgole (tutte nel suggerimento).
+fn multi_anchor_combo(
+    ui: &mut egui::Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    width: f32,
+    selected: &[Anchor],
+    options: &[(Anchor, String)],
+) -> Option<Vec<Anchor>> {
+    let label = |a: &Anchor| {
+        options.iter().find(|(v, _)| v == a).map_or_else(|| "⚠ inesistente".to_string(), |(_, l)| l.clone())
+    };
+    let text = selected.iter().map(label).collect::<Vec<_>>().join(", ");
+    let mut picked = None;
+    let resp = egui::ComboBox::from_id_salt(salt)
+        .selected_text(text.clone())
+        .width(width)
+        .height(400.0)
+        .show_ui(ui, |ui| {
+            for (v, l) in options {
+                let mut on = selected.contains(v);
+                let last = on && selected.len() == 1;
+                if ui.add_enabled(!last, egui::Checkbox::new(&mut on, l)).changed() {
+                    // Nell'ordine delle voci; quelle scelte non più in elenco
+                    // (riferimenti eliminati) restano in fondo.
+                    let mut next: Vec<Anchor> = options
+                        .iter()
+                        .map(|(x, _)| *x)
+                        .filter(|x| if x == v { on } else { selected.contains(x) })
+                        .collect();
+                    next.extend(selected.iter().filter(|x| !options.iter().any(|(o, _)| o == *x)));
+                    picked = Some(next);
+                }
+            }
+        });
+    if selected.len() > 1 {
+        resp.response.on_hover_text(text);
+    }
+    picked
+}
+
 /// Testo dell'ambito nella combo: «Tutti i progetti», «Categoria: …»,
 /// «Priorità: …», «Progetto: ABC» o «Progetti: ABC, XYZ».
 fn scope_label(app: &App, scope: &RuleScope) -> String {
@@ -232,6 +275,7 @@ pub(crate) fn new_rule(app: &App) -> Rule {
         anchor,
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     }
 }
 
@@ -438,6 +482,13 @@ pub(crate) fn delete_or_confirm(app: &App, state: &mut UiState, actions: &mut Ve
     }
 }
 
+/// Spazio sotto l'elenco delle regole: quanto occupa la barra di
+/// scorrimento orizzontale, più un margine.
+pub(crate) fn rules_bottom_pad(ui: &egui::Ui) -> f32 {
+    let sc = &ui.spacing().scroll;
+    sc.bar_width + sc.bar_inner_margin + sc.bar_outer_margin + 6.0
+}
+
 pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     if !state.show_rules {
         return;
@@ -607,14 +658,29 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                                 if let Some(t) = choice_combo(ui, ("rule_target", id), RULE_TARGET_W, r.target, &targets) {
                                     r.target = t;
                                 }
-                                if let Target::Check(point, cmp) = r.target {
+                                if let Target::Check(_, cmp) = r.target {
+                                    ui.checkbox(&mut r.check.block, "Blocca").on_hover_text(
+                                        "Impedisce le modifiche che creano o peggiorano una violazione: \
+                                         vengono annullate e una notifica spiega perché.",
+                                    );
+                                    // Uno o più punti (dev, milestone…): si
+                                    // controlla ogni coppia punto × ancora.
                                     let points = point_options(app);
-                                    let p = choice_combo(ui, ("rule_point", id), RULE_POINT_W, point, &points).unwrap_or(point);
+                                    let mut pts = r.points();
+                                    if let Some(next) = multi_anchor_combo(ui, ("rule_point", id), RULE_POINT_W, &pts, &points) {
+                                        pts = next;
+                                    }
                                     let cmps = [(Cmp::NotBefore, "non prima di".to_string()), (Cmp::NotAfter, "non dopo".to_string())];
                                     let c = choice_combo(ui, ("rule_cmp", id), 110.0, cmp, &cmps).unwrap_or(cmp);
-                                    r.target = Target::Check(p, c);
+                                    r.target = Target::Check(pts[0], c);
+                                    r.check.points = pts[1..].to_vec();
                                 }
                             });
+                            // Fuori dagli avvisi le opzioni d'avviso non servono.
+                            let check = matches!(r.target, Target::Check(..));
+                            if !check {
+                                r.check = Default::default();
+                            }
                             r.scope = auto_scope(app, r.target, r.scope.clone());
                             // Ancore adatte al bersaglio: se il bersaglio
                             // cambia tipo, l'ancora passa alla prima adatta.
@@ -624,10 +690,18 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             {
                                 r.anchor = *a;
                             }
+                            r.check.anchors.retain(|a| crate::rules::anchor_fits(r.target, *a));
                             let add_dev = r.target.kind() == crate::rules::RuleKind::AddDev;
-                            let check = matches!(r.target, Target::Check(..));
                             ui.label(if add_dev { "se" } else if check { "" } else { "=" });
-                            if let Some(a) = choice_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, r.anchor, &anchors) {
+                            if check {
+                                // Avviso: una o più ancore (dev, milestone…).
+                                if let Some(next) =
+                                    multi_anchor_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, &r.anchors(), &anchors)
+                                {
+                                    r.anchor = next[0];
+                                    r.check.anchors = next[1..].to_vec();
+                                }
+                            } else if let Some(a) = choice_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, r.anchor, &anchors) {
                                 r.anchor = a;
                             }
                             // «Aggiungi dev» non conta settimane.
@@ -673,6 +747,9 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                             }
                         }
                     });
+                    // Spazio sotto l'ultima regola: la barra di scorrimento
+                    // orizzontale (fluttuante) non copre più l'ultima riga.
+                    ui.add_space(rules_bottom_pad(ui));
                 });
         });
     if !open {

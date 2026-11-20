@@ -216,6 +216,35 @@ pub struct Rule {
     /// solo i progetti **attivi**).
     #[serde(default, skip_serializing_if = "Inactive::is_none")]
     pub inactive: Inactive,
+    /// Solo per gli avvisi: punti e ancore in più (ogni coppia punto ×
+    /// ancora si controlla) e la spunta «Blocca».
+    #[serde(default, skip_serializing_if = "CheckOpts::is_default")]
+    pub check: CheckOpts,
+}
+
+/// Opzioni di una regola d'avviso. Il primo punto sta in `Target::Check`, la
+/// prima ancora in `Rule::anchor`; qui gli **altri**, così una regola dice
+/// «dev1, dev2 non prima di dev3, dev4, Milestone1» e controlla tutte le
+/// coppie (`Rule::points` × `Rule::anchors`). Con `block` una modifica che
+/// crea o peggiora una violazione viene annullata (`block_regression`).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct CheckOpts {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<Anchor>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<Anchor>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub block: bool,
+}
+
+impl CheckOpts {
+    pub fn is_default(&self) -> bool {
+        *self == CheckOpts::default()
+    }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Stati di progetto, oltre ad «Attivo», a cui una regola vale. Di norma
@@ -246,6 +275,47 @@ impl Inactive {
 }
 
 impl Rule {
+    /// Punti controllati da un avviso (il primo e gli altri, senza
+    /// doppioni); vuoto per le altre regole.
+    pub fn points(&self) -> Vec<Anchor> {
+        let Target::Check(p, _) = self.target else {
+            return Vec::new();
+        };
+        let mut out = vec![p];
+        for x in &self.check.points {
+            if !out.contains(x) {
+                out.push(*x);
+            }
+        }
+        out
+    }
+
+    /// Ancore della regola: la principale e, per un avviso, le altre (senza
+    /// doppioni).
+    pub fn anchors(&self) -> Vec<Anchor> {
+        let mut out = vec![self.anchor];
+        if matches!(self.target, Target::Check(..)) {
+            for x in &self.check.anchors {
+                if !out.contains(x) {
+                    out.push(*x);
+                }
+            }
+        }
+        out
+    }
+
+    /// Ancore (e punti) adatti al bersaglio (`anchor_fits`), anche quelli in
+    /// più di un avviso.
+    pub fn fits(&self) -> bool {
+        self.anchors().iter().all(|a| anchor_fits(self.target, *a))
+            && self.points().iter().all(|p| !matches!(p, Anchor::DevPresent(_)))
+    }
+
+    /// Avviso con la spunta «Blocca».
+    pub fn blocks(&self) -> bool {
+        self.check.block && matches!(self.target, Target::Check(..))
+    }
+
     /// La regola vale per il progetto: è nell'ambito e il suo stato è fra
     /// quelli ammessi (`inactive`).
     pub fn applies_to(&self, app: &App, proj: ProjectId) -> bool {
@@ -278,6 +348,8 @@ struct RuleFile {
     offset_weeks: i32,
     #[serde(default)]
     inactive: Inactive,
+    #[serde(default)]
+    check: CheckOpts,
 }
 
 /// Campo facoltativo scritto come valore semplice (non `Some(…)`).
@@ -298,6 +370,7 @@ impl From<RuleFile> for Rule {
             anchor: f.anchor,
             offset_weeks: f.offset_weeks,
             inactive: f.inactive,
+            check: f.check,
         }
     }
 }
@@ -349,7 +422,11 @@ impl Rules {
     pub fn using_milestone(&self, m: MilestoneId) -> Vec<RuleId> {
         self.rules
             .iter()
-            .filter(|(_, r)| r.target == Target::Milestone(m) || r.anchor == Anchor::Milestone(m))
+            .filter(|(_, r)| {
+                r.target == Target::Milestone(m)
+                    || r.anchors().contains(&Anchor::Milestone(m))
+                    || r.points().contains(&Anchor::Milestone(m))
+            })
             .map(|(id, _)| *id)
             .collect()
     }
@@ -359,7 +436,9 @@ impl Rules {
         self.rules
             .iter()
             .filter(|(_, r)| {
-                matches!(r.anchor, Anchor::DevStart(x) | Anchor::DevEnd(x) | Anchor::DevPresent(x) if x == d)
+                let uses = |a: &Anchor| matches!(a, Anchor::DevStart(x) | Anchor::DevEnd(x) | Anchor::DevPresent(x) if *x == d);
+                r.anchors().iter().any(uses)
+                    || r.points().iter().any(uses)
                     || matches!(r.target, Target::AddDev(x) | Target::DevStart(x) if x == d)
             })
             .map(|(id, _)| *id)
@@ -386,7 +465,7 @@ pub fn governing(app: &App, proj: ProjectId) -> BTreeMap<Target, RuleId> {
     for (id, r) in app.rules.list() {
         if !r.enabled
             || r.target.kind() != RuleKind::Aligned
-            || !anchor_fits(r.target, r.anchor)
+            || !r.fits()
             || !r.applies_to(app, proj)
             || !placeable(app, proj, r.target)
         {
@@ -792,7 +871,7 @@ pub fn pending_moves(app: &App, id: RuleId) -> Vec<DevMove> {
     let Target::DevStart(dev) = r.target else {
         return Vec::new();
     };
-    if !anchor_fits(r.target, r.anchor) {
+    if !r.fits() {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -861,6 +940,11 @@ pub struct RuleWarning {
     /// Es. «Milestone Rilascio (26-03-02) è prima di Fine dev Backend + 1
     /// (26-03-09)».
     pub text: String,
+    /// La coppia che viola (punto, ancora) e di quanti giorni (> 0): serve a
+    /// capire se una modifica la peggiora (`block_regression`).
+    pub point: Anchor,
+    pub anchor: Anchor,
+    pub gap: i64,
 }
 
 /// Avvisi del progetto: le regole d'avviso attive, con l'ambito che lo
@@ -872,7 +956,7 @@ pub fn warnings(app: &App, proj: ProjectId) -> Vec<RuleWarning> {
         .rules
         .list()
         .into_iter()
-        .filter(|(_, r)| r.enabled && r.target.kind() == RuleKind::Warning && anchor_fits(r.target, r.anchor))
+        .filter(|(_, r)| r.enabled && r.target.kind() == RuleKind::Warning && r.fits())
         .collect();
     if checks.is_empty() {
         return Vec::new();
@@ -880,39 +964,96 @@ pub fn warnings(app: &App, proj: ProjectId) -> Vec<RuleWarning> {
     let mut ctx = Ctx { app, proj, gov: governing(app, proj), memo: HashMap::new() };
     let mut out = Vec::new();
     for (id, r) in checks {
-        let Target::Check(point, cmp) = r.target else { continue };
+        let Target::Check(_, cmp) = r.target else { continue };
         if !r.applies_to(app, proj) {
             continue;
         }
-        let (Ok(Some(p)), Ok(Some(a))) = (ctx.anchor(point, r.target), ctx.anchor(r.anchor, r.target)) else {
-            continue;
-        };
-        let limit = shifted(a, r.offset_weeks);
-        let (bad, word) = match cmp {
-            Cmp::NotBefore => (p < limit, "prima di"),
-            Cmp::NotAfter => (p > limit, "dopo"),
-        };
-        if !bad {
-            continue;
+        // Ogni coppia punto × ancora in cui esistono entrambi.
+        for point in r.points() {
+            let Ok(Some(p)) = ctx.anchor(point, r.target) else { continue };
+            for anchor in r.anchors() {
+                let Ok(Some(a)) = ctx.anchor(anchor, r.target) else { continue };
+                let limit = shifted(a, r.offset_weeks);
+                let (gap, word) = match cmp {
+                    Cmp::NotBefore => (limit.0 as i64 - p.0 as i64, "prima di"),
+                    Cmp::NotAfter => (p.0 as i64 - limit.0 as i64, "dopo"),
+                };
+                if gap <= 0 {
+                    continue;
+                }
+                let off = match r.offset_weeks {
+                    0 => String::new(),
+                    n if n > 0 => format!(" + {n}"),
+                    n => format!(" - {}", -n),
+                };
+                let date = |w: WeekId| crate::date_utils::dates::week_label(w.0 as i32);
+                out.push(RuleWarning {
+                    rule: id,
+                    text: format!(
+                        "{} ({}) è {word} {}{off} ({})",
+                        anchor_label(app, point),
+                        date(p),
+                        anchor_label(app, anchor),
+                        date(limit)
+                    ),
+                    point,
+                    anchor,
+                    gap,
+                });
+            }
         }
-        let off = match r.offset_weeks {
-            0 => String::new(),
-            n if n > 0 => format!(" + {n}"),
-            n => format!(" - {}", -n),
-        };
-        let date = |w: WeekId| crate::date_utils::dates::week_label(w.0 as i32);
-        out.push(RuleWarning {
-            rule: id,
-            text: format!(
-                "{} ({}) è {word} {}{off} ({})",
-                anchor_label(app, point),
-                date(p),
-                anchor_label(app, r.anchor),
-                date(limit)
-            ),
-        });
     }
     out
+}
+
+/// Le violazioni delle regole d'avviso con «Blocca», in tutti i progetti:
+/// (progetto, regola, punto, ancora) → (giorni di troppo, testo).
+type Violations = HashMap<(ProjectId, RuleId, Anchor, Anchor), (i64, String)>;
+
+fn blocking_violations(app: &App) -> Violations {
+    let mut out = Violations::new();
+    if !app.rules.list().iter().any(|(_, r)| r.enabled && r.blocks()) {
+        return out;
+    }
+    for (proj, _) in app.projects.list() {
+        for w in warnings(app, proj) {
+            if app.rules.get(w.rule).is_some_and(|r| r.blocks()) {
+                out.insert((proj, w.rule, w.point, w.anchor), (w.gap, w.text));
+            }
+        }
+    }
+    out
+}
+
+/// C'è almeno una regola attiva con «Blocca»? (Solo allora si tiene la
+/// copia dei dati prima di ogni modifica.)
+pub fn has_blocking(app: &App) -> bool {
+    app.rules.list().iter().any(|(_, r)| r.enabled && r.blocks())
+}
+
+/// Una modifica da `before` ad `after` viola una regola con «Blocca»? Sì se
+/// crea una coppia in violazione che prima non c'era o ne **peggiora** una
+/// (più giorni di troppo); le violazioni già presenti che restano uguali o
+/// migliorano passano. Le modifiche alle regole stesse non si bloccano
+/// (sono loro a decidere i vincoli). Ritorna il messaggio della prima.
+pub fn block_regression(before: &App, after: &App) -> Option<String> {
+    if before.rules != after.rules {
+        return None;
+    }
+    let old = blocking_violations(before);
+    let new = blocking_violations(after);
+    let mut bad: Vec<_> = new
+        .iter()
+        .filter(|(k, (gap, _))| old.get(*k).is_none_or(|(g, _)| gap > g))
+        .collect();
+    bad.sort_by_key(|((p, r, _, _), _)| (after.projects.list().iter().position(|(x, _)| x == p), *r));
+    let ((proj, rule, _, _), (_, text)) = bad.first()?;
+    let label = after.projects.get(*proj).map(|x| x.label(*proj)).unwrap_or_default();
+    let more = if bad.len() > 1 { format!(" (e altre {})", bad.len() - 1) } else { String::new() };
+    Some(format!(
+        "Modifica annullata: la regola «{}» la blocca — {label}: {text}{more}.",
+        rule_label(after, *rule)
+    ))
 }
 
 /// Avvisi di tutti i progetti, nell'ordine dei progetti.
@@ -1028,24 +1169,41 @@ fn diagnose_project(app: &App, id: RuleId, r: &Rule, proj: ProjectId) -> String 
             }
         }
         RuleKind::Warning => {
-            let Target::Check(point, _) = r.target else {
+            if !matches!(r.target, Target::Check(..)) {
                 return String::new();
-            };
-            let p = ctx.anchor(point, r.target);
-            match (p, anchor) {
-                (Err(()), _) | (_, Err(())) => "non controllata: ciclo nelle regole da cui dipende".into(),
-                (Ok(None), _) => format!("non controllata: {}", missing_reason(app, proj, point)),
-                (_, Ok(None)) => format!("non controllata: {}", missing_reason(app, proj, r.anchor)),
-                (Ok(Some(pw)), Ok(Some(a))) => {
-                    match warnings(app, proj).into_iter().find(|w| w.rule == id) {
-                        Some(w) => format!("AVVISO: {}", w.text),
-                        None => format!(
-                            "rispettata: punto il {}, soglia il {}",
-                            date(pw),
-                            date(shifted(a, r.offset_weeks))
-                        ),
+            }
+            // Coppie controllate (punto e ancora esistono entrambi).
+            let mut checked = 0;
+            let mut unchecked = Vec::new();
+            let mut last = None;
+            for point in r.points() {
+                for a in r.anchors() {
+                    match (ctx.anchor(point, r.target), ctx.anchor(a, r.target)) {
+                        (Err(()), _) | (_, Err(())) => unchecked.push("ciclo nelle regole da cui dipende".to_string()),
+                        (Ok(None), _) => unchecked.push(missing_reason(app, proj, point)),
+                        (_, Ok(None)) => unchecked.push(missing_reason(app, proj, a)),
+                        (Ok(Some(pw)), Ok(Some(aw))) => {
+                            checked += 1;
+                            last = Some((pw, shifted(aw, r.offset_weeks)));
+                        }
                     }
                 }
+            }
+            let ws: Vec<String> = warnings(app, proj).into_iter().filter(|w| w.rule == id).map(|w| w.text).collect();
+            if !ws.is_empty() {
+                return format!("AVVISO: {}", ws.join("; "));
+            }
+            unchecked.dedup();
+            match (checked, last) {
+                (0, _) => format!("non controllata: {}", unchecked.first().cloned().unwrap_or_default()),
+                (1, Some((pw, limit))) if unchecked.is_empty() => {
+                    format!("rispettata: punto il {}, soglia il {}", date(pw), date(limit))
+                }
+                _ if unchecked.is_empty() => format!("rispettata ({checked} coppie controllate)"),
+                _ => format!(
+                    "rispettata ({checked} coppie controllate; non controllate: {})",
+                    unchecked.join(", ")
+                ),
             }
         }
     }
@@ -1056,7 +1214,7 @@ fn diagnose_project(app: &App, id: RuleId, r: &Rule, proj: ProjectId) -> String 
 /// progetto (nell'ambito), cosa fa e perché; i progetti fuori ambito sono
 /// solo contati ed elencati.
 pub fn diagnose(app: &App, when: &str) -> String {
-    use crate::rules_text::{anchor_text, scope_text, target_text};
+    use crate::rules_text::scope_text;
     let mut out = format!("Diagnosi delle regole di automazione — {when}\n");
     if app.rules.is_empty() {
         out.push_str("\nNessuna regola.\n");
@@ -1072,8 +1230,8 @@ pub fn diagnose(app: &App, when: &str) -> String {
             id.0,
             rule_label(app, id),
             if r.enabled { "attiva" } else { "SPENTA" },
-            target_text(app, r.target),
-            anchor_text(app, r.anchor),
+            crate::rules_text::rule_target_text(app, r),
+            crate::rules_text::rule_anchor_text(app, r),
             r.offset_weeks,
             scope_text(app, &r.scope),
             crate::rules_text::states_text(r.inactive)
@@ -1092,6 +1250,9 @@ pub fn diagnose(app: &App, when: &str) -> String {
         }
         if r.target.kind() == RuleKind::MoveDev {
             out.push_str("   (si applica solo su comando, con «Applica ora…»)\n");
+        }
+        if r.blocks() {
+            out.push_str("   blocca: le modifiche che creano o peggiorano una violazione vengono annullate\n");
         }
         let (inside, outside): (Vec<ProjectId>, Vec<ProjectId>) =
             projects.iter().partition(|p| r.applies_to(app, **p));
@@ -1138,7 +1299,7 @@ pub fn project_rules(app: &App, proj: ProjectId) -> Vec<ProjectRuleLine> {
             let no = |text: String| ProjectRuleLine { rule: id, applies: false, text };
             if !missing.is_empty() {
                 no(format!("non agisce: {} inesistente", missing.join(", ")))
-            } else if !anchor_fits(r.target, r.anchor) {
+            } else if !r.fits() {
                 no("non agisce: l'ancora non va bene per «cosa»".into())
             } else if !r.enabled {
                 no("spenta".into())
@@ -1221,20 +1382,23 @@ fn missing_refs(app: &App, r: &Rule) -> Vec<&'static str> {
         Target::AddDev(d) | Target::DevStart(d) if app.devs.get(d).is_none() => missing.push("dev"),
         _ => {}
     }
-    if let Target::Check(p, _) = r.target {
+    for p in r.points() {
         match p {
             Anchor::DevStart(d) | Anchor::DevEnd(d) if app.devs.get(d).is_none() => missing.push("dev controllato"),
             Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone controllata"),
             _ => {}
         }
     }
-    match r.anchor {
-        Anchor::DevStart(d) | Anchor::DevEnd(d) | Anchor::DevPresent(d) if app.devs.get(d).is_none() => {
-            missing.push("dev di partenza")
+    for a in r.anchors() {
+        match a {
+            Anchor::DevStart(d) | Anchor::DevEnd(d) | Anchor::DevPresent(d) if app.devs.get(d).is_none() => {
+                missing.push("dev di partenza")
+            }
+            Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone di partenza"),
+            _ => {}
         }
-        Anchor::Milestone(m) if app.milestones.get_name(m).is_none() => missing.push("milestone di partenza"),
-        _ => {}
     }
+    missing.dedup();
     match &r.scope {
         RuleScope::Category(c) if app.categories.get_name(*c).is_none() => missing.push("categoria"),
         RuleScope::Priority(p) if app.priorities.get_name(*p).is_none() => missing.push("priorità"),
@@ -1254,7 +1418,7 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         return st;
     };
     st.missing = missing_refs(app, r);
-    st.bad_anchor = !anchor_fits(r.target, r.anchor);
+    st.bad_anchor = !r.fits();
     if r.enabled {
         st.excluded_state = app
             .projects
@@ -1296,7 +1460,7 @@ pub fn status(app: &App, id: RuleId) -> RuleStatus {
         match governing(app, proj).get(&r.target) {
             Some(&g) if g == id => {}
             Some(_) => {
-                if r.enabled && anchor_fits(r.target, r.anchor) && r.applies_to(app, proj) {
+                if r.enabled && r.fits() && r.applies_to(app, proj) {
                     st.beaten += 1;
                 }
                 continue;
@@ -1358,7 +1522,7 @@ mod tests {
     }
 
     fn date_rule(scope: RuleScope, target: Target, anchor: Anchor, offset_weeks: i32) -> Rule {
-        Rule { name: String::new(), enabled: true, scope, target, anchor, offset_weeks, inactive: Inactive::default() }
+        Rule { name: String::new(), enabled: true, scope, target, anchor, offset_weeks, inactive: Inactive::default(), check: CheckOpts::default() }
     }
 
     fn at(app: &App, p: ProjectId, m: MilestoneId) -> Option<WeekId> {
@@ -1904,5 +2068,88 @@ mod tests {
         off.enabled = false;
         f.app.rules.update(all, off);
         assert_eq!(status(&f.app, all).excluded_state, 0);
+    }
+
+    /// Avviso con più punti e più ancore: si controlla ogni coppia in cui
+    /// esistono entrambi; ogni coppia che viola è un avviso a sé (con quanti
+    /// giorni di troppo). Gli elementi in più contano per i riferimenti.
+    #[test]
+    fn warning_lists_check_every_pair() {
+        let mut f = fx();
+        // Frontend parte a base+14, Backend finisce a base+21.
+        f.app.projects.add_project_milestone(f.p, f.collaudo, WeekId(f.base + 7));
+        let mut r = date_rule(
+            RuleScope::All,
+            Target::Check(Anchor::DevStart(f.fe), Cmp::NotBefore),
+            Anchor::DevEnd(f.be),
+            0,
+        );
+        r.check.points = vec![Anchor::Milestone(f.demo)]; // non collocata: niente
+        r.check.anchors = vec![Anchor::Milestone(f.collaudo), Anchor::ProjectEnd]; // fine: assente
+        let id = f.app.rules.add(r.clone());
+        let ws = warnings(&f.app, f.p);
+        assert_eq!(ws.len(), 1, "{ws:?}");
+        assert_eq!((ws[0].point, ws[0].anchor, ws[0].gap), (Anchor::DevStart(f.fe), Anchor::DevEnd(f.be), 7));
+        assert!(ws[0].text.starts_with("Inizio dev Frontend"), "{}", ws[0].text);
+        // Collaudo dopo l'inizio del Frontend: una seconda coppia viola.
+        f.app.projects.add_project_milestone(f.p, f.collaudo, WeekId(f.base + 35));
+        assert_eq!(warnings(&f.app, f.p).len(), 2);
+        let d = diagnose_project(&f.app, id, &r, f.p);
+        assert!(d.starts_with("AVVISO: ") && d.contains("; "), "{d}");
+        // Riferimenti: anche gli elementi in più.
+        assert!(f.app.rules.using_milestone(f.demo).contains(&id));
+        assert!(f.app.rules.using_milestone(f.collaudo).contains(&id));
+        let mut gone = r.clone();
+        gone.check.anchors.push(Anchor::DevEnd(DevId(999)));
+        assert_eq!(missing_refs(&f.app, &gone), ["dev di partenza"]);
+        let mut bad = r.clone();
+        bad.check.points.push(Anchor::DevPresent(f.be));
+        assert!(!bad.fits());
+    }
+
+    /// «Blocca»: una modifica che crea una violazione o ne peggiora una si
+    /// riconosce; una che la lascia uguale o la migliora no; le regole senza
+    /// «Blocca» e le modifiche alle regole stesse non bloccano.
+    #[test]
+    fn block_regression_spots_new_and_worse_violations_only() {
+        let mut f = fx();
+        let w = f.app.workers.list()[0].0;
+        let mut r = date_rule(
+            RuleScope::All,
+            Target::Check(Anchor::DevStart(f.fe), Cmp::NotBefore),
+            Anchor::DevEnd(f.be),
+            0,
+        );
+        f.app.rules.add(r.clone());
+        let before = f.app.clone();
+        let mut early = f.app.clone();
+        early.projects.add_effort(f.p, f.fe, WeekId(f.base + 7), w, Effort(8));
+        assert_eq!(block_regression(&before, &early), None, "senza «Blocca» solo avviso");
+        r.check.block = true;
+        let mut blocking = f.app.clone();
+        blocking.rules.update(RuleId(1), r.clone());
+        assert!(has_blocking(&blocking));
+        // Già in violazione di 7 giorni: anticipare ancora peggiora.
+        let mut worse = blocking.clone();
+        worse.projects.add_effort(f.p, f.fe, WeekId(f.base + 7), w, Effort(8));
+        let msg = block_regression(&blocking, &worse).expect("peggiora");
+        assert!(msg.starts_with("Modifica annullata: la regola «Regola 1» la blocca — ABC: Inizio dev Frontend"), "{msg}");
+        // Uguale (ore in una settimana dove già lavora) o migliore: passa.
+        let mut same = blocking.clone();
+        same.projects.add_effort(f.p, f.fe, WeekId(f.base + 21), w, Effort(4));
+        assert_eq!(block_regression(&blocking, &same), None);
+        let mut better = blocking.clone();
+        better.projects.reset_effort(f.p, f.fe, WeekId(f.base + 14));
+        assert_eq!(block_regression(&blocking, &better), None);
+        // Una violazione nuova (prima in regola): bloccata.
+        let mut ok = blocking.clone();
+        ok.projects.reset_effort(f.p, f.fe, WeekId(f.base + 14));
+        ok.projects.reset_effort(f.p, f.fe, WeekId(f.base + 21));
+        assert!(warnings(&ok, f.p).is_empty());
+        let mut again = ok.clone();
+        again.projects.add_effort(f.p, f.fe, WeekId(f.base + 14), w, Effort(8));
+        assert!(block_regression(&ok, &again).is_some());
+        // Cambiano le regole: non si blocca.
+        assert_eq!(block_regression(&f.app, &worse), None);
     }
 }

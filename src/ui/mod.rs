@@ -997,6 +997,15 @@ pub(crate) enum RuleEnabledFilter {
 /// griglia, date nella colonna di sinistra).
 pub(crate) const RULE_MARK: &str = "⚙";
 
+/// Copia dei dati prima di un'azione, quando qualche regola d'avviso ha
+/// «Blocca»: se la modifica crea o peggiora una violazione, `mark_changed`
+/// rimette tutto com'era (dati, «modificato», Annulla).
+pub(crate) struct BlockBase {
+    pub(crate) app: App,
+    pub(crate) changed: bool,
+    pub(crate) undo_dirty: bool,
+}
+
 /// Regole da confermare prima di salvarle, perché cambierebbero questi
 /// progetti o lascerebbero delle milestone senza regola
 /// (`rule_activation_window`).
@@ -1304,6 +1313,9 @@ pub struct UiState {
     // regola che si sta attivando (o modificando da attiva): le modifiche che
     // farebbe ai progetti, da confermare (`rule_activation_window`)
     rule_activation: Option<RuleActivation>,
+    // copia dei dati presa prima dell'azione in corso (solo con regole che
+    // bloccano): vedi `PjmApp::apply_guarded`
+    block_base: Option<BlockBase>,
     // finestra «Regole di questo progetto» (⚙ accanto alla tripletta, o il
     // menù della fascia milestone): il progetto mostrato
     project_rules: Option<ProjectId>,
@@ -2407,7 +2419,7 @@ impl eframe::App for PjmApp {
         }
 
         for a in actions {
-            self.apply(a);
+            self.apply_guarded(a);
         }
         // Durante un trascinamento (selettore colore, valori trascinati…) i
         // dati cambiano a ogni frame: l'istantanea si prende al rilascio, così
@@ -2500,6 +2512,23 @@ impl PjmApp {
         }
     }
 
+    /// Applica un'azione; se qualche regola d'avviso ha «Blocca», prima tiene
+    /// una copia dei dati, che `mark_changed` usa per annullare una modifica
+    /// che crea o peggiora una violazione. Annulla / Ripeti non si
+    /// controllano (tornano a stati già esistiti).
+    fn apply_guarded(&mut self, a: Action) {
+        let guard = !matches!(a, Action::Undo | Action::Redo) && crate::rules::has_blocking(&self.app);
+        if guard {
+            self.ui.block_base = Some(BlockBase {
+                app: self.app.clone(),
+                changed: self.ui.changed,
+                undo_dirty: self.ui.undo_dirty,
+            });
+        }
+        self.apply(a);
+        self.ui.block_base = None;
+    }
+
     fn mark_changed(&mut self) {
         // Regole di automazione sempre allineate: dopo ogni modifica le
         // milestone governate tornano dove dicono le regole (stesso passo di
@@ -2507,6 +2536,17 @@ impl PjmApp {
         crate::rules::apply(&mut self.app);
         self.app.recompute_week_range();
         self.app.compute_sovra();
+        // Regole che bloccano: una modifica che crea o peggiora una
+        // violazione si annulla per intero, prima di qualunque notifica.
+        if let Some(base) = &self.ui.block_base
+            && let Some(msg) = crate::rules::block_regression(&base.app, &self.app)
+        {
+            self.app = base.app.clone();
+            self.ui.changed = base.changed;
+            self.ui.undo_dirty = base.undo_dirty;
+            self.ui.toast_warn(msg);
+            return;
+        }
         self.ui.changed = true;
         self.ui.undo_dirty = true;
         self.refresh_warnings(true);

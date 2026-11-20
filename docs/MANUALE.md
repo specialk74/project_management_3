@@ -1113,6 +1113,27 @@ Backend. Il controllo vale solo dove **il punto e l'ancora esistono entrambi**
 
 Nello stato della regola: «rispettata» oppure «⚠ N avvisi».
 
+**Più dev e milestone in un avviso** — le tendine del **punto** e
+dell'**ancora** di un avviso hanno una spunta per voce: se ne possono scegliere
+più d'una, e si controlla **ogni coppia** punto × ancora. Esempio: punto
+«Inizio dev dev1, Inizio dev dev2», **non prima di**, ancora «Fine dev dev3,
+Fine dev dev4, Milestone Milestone1» = né dev1 né dev2 possono partire prima
+che dev3 e dev4 siano finiti e prima di Milestone1. Ogni coppia in difetto è un
+avviso a sé (nell'elenco e nel suggerimento si vede quale); le coppie in cui
+manca un elemento (dev senza ore, milestone non collocata) non si controllano.
+
+**Blocca** — accanto ad «Avviso» c'è la spunta **Blocca**: con la regola attiva,
+una modifica che **crea** una violazione o ne **peggiora** una già presente
+(es. dev1 ancora più in anticipo) viene **annullata per intero** — anche un
+inserimento multiplo o uno «Sposta» di cui solo una parte viola — e una
+notifica dice quale regola e quale coppia; il file non risulta modificato e
+non nasce un passo di Annulla. Vale per **qualunque** modifica: effort (cella,
+incolla, inserimento multiplo, Sposta, «Applica ora…»), milestone, date del
+progetto, anche quando è una regola di automazione a spostare una milestone
+come conseguenza. Le violazioni **già presenti** (file di un collega, regola
+appena attivata) restano semplici avvisi: le modifiche che non le toccano o
+le riducono passano. Le modifiche alle **regole** stesse non si bloccano mai.
+
 **Regole in testo** — in cima alla finestra, **Esporta in testo…** salva tutte
 le regole in un file di testo leggibile e **Importa da testo…** aggiunge quelle
 di un file (le regole identiche a una già presente si saltano; nessuna regola
@@ -1148,6 +1169,11 @@ settimane = +2
 - `ancora` e `<punto>`: `fine dev "…"`, `inizio dev "…"`, `se c'è il dev "…"`,
   `primo effort`, `ultimo effort`, `inizio progetto`, `fine progetto`, `prima
   milestone`, `ultima milestone`, `milestone "…"`;
+- negli avvisi punti e ancore possono essere **elenchi** separati da virgole
+  (`cosa = avviso inizio dev "A", inizio dev "B" non prima di`, `ancora = fine
+  dev "C", milestone "M1"`; le virgole dentro le virgolette fanno parte del
+  nome) e la riga facoltativa `blocca = sì` accende «Blocca»; elenchi e
+  `blocca` fuori dagli avvisi sono errori;
 - una milestone di un solo progetto: `milestone "Demo" del progetto "ABC"`;
 - le parole chiave sono in minuscolo, i nomi fra virgolette (maiuscole e
   minuscole non contano); una virgoletta dentro un nome si scrive `\"`; le righe

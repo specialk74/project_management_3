@@ -143,6 +143,10 @@ non il tempo di digitazione.
   attive / spente, «N di M regole») e colonna «Stato» con i progetti in cui
   la regola non agisce («senza ancora», «ad altre regole», «esclusi per
   stato»).
+  (7) avvisi con **più punti e più ancore** (ogni coppia controllata) e la
+  spunta **«Blocca»**: una modifica qualunque che crea o peggiora una
+  violazione viene annullata per intero, con notifica; le violazioni già
+  presenti restano avvisi; le modifiche alle regole non si bloccano.
 
 ## A. Robustezza & dati condivisi
 

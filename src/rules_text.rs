@@ -30,6 +30,9 @@
 //!   `inizio progetto` · `fine progetto` · `prima milestone` ·
 //!   `ultima milestone` · `milestone "X"`
 //! - una milestone di un solo progetto: `milestone "X" del progetto "ABC"`.
+//! - avvisi: più punti e più ancore separati da virgole (`avviso fine dev
+//!   "A", inizio dev "B" non prima di` / `ancora = fine dev "C", milestone
+//!   "M"`: si controllano tutte le coppie) e `blocca = sì` (facoltativa).
 
 use crate::app::App;
 use crate::dev_utils::dev::DevId;
@@ -129,13 +132,61 @@ fn project_list(app: &App, s: &str) -> Result<Vec<ProjectId>, String> {
 /// La regola in una riga, con le parole del formato testo: «milestone
 /// "Collaudo" = fine dev "Backend" +2 sett.», «aggiungi dev "Test" se c'è il
 /// dev "Backend"», «avviso … non dopo fine dev "Backend"».
+/// «cosa» di una regola, con tutti i punti di un avviso (`avviso fine dev
+/// "A", inizio dev "B" non prima di`).
+pub(crate) fn rule_target_text(app: &App, r: &Rule) -> String {
+    match r.target {
+        Target::Check(_, cmp) => {
+            let pts: Vec<String> = r.points().into_iter().map(|p| anchor_text(app, p)).collect();
+            let word = if cmp == Cmp::NotBefore { "non prima di" } else { "non dopo" };
+            format!("avviso {} {word}", pts.join(", "))
+        }
+        t => target_text(app, t),
+    }
+}
+
+/// «ancora» di una regola, con tutte le ancore di un avviso.
+pub(crate) fn rule_anchor_text(app: &App, r: &Rule) -> String {
+    r.anchors().into_iter().map(|a| anchor_text(app, a)).collect::<Vec<_>>().join(", ")
+}
+
+/// Divide `s` alle virgole fuori dalle virgolette (i nomi possono
+/// contenerne; `\"` è una virgoletta nel nome).
+fn split_list(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut start, mut quoted, mut escaped) = (0, false, false);
+    for (i, c) in s.char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            ',' if !quoted => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&s[start..]);
+    out
+}
+
+/// Elenco di ancore separate da virgole (almeno una).
+fn parse_anchor_list(app: &App, s: &str) -> Result<Vec<Anchor>, String> {
+    let parts = split_list(s);
+    if parts.iter().any(|p| p.trim().is_empty()) {
+        return Err(format!("elemento vuoto nell'elenco: «{}»", s.trim()));
+    }
+    parts.into_iter().map(|p| parse_anchor(app, p)).collect()
+}
+
 pub(crate) fn rule_summary(app: &App, r: &Rule) -> String {
     let weeks = match r.offset_weeks {
         0 => String::new(),
         n if n > 0 => format!(" +{n} sett."),
         n => format!(" {n} sett."),
     };
-    let (t, a) = (target_text(app, r.target), anchor_text(app, r.anchor));
+    let (t, a) = (rule_target_text(app, r), rule_anchor_text(app, r));
     match r.target {
         Target::AddDev(_) => format!("{t} {a}"),
         Target::Check(..) => format!("{t} {a}{weeks}"),
@@ -191,10 +242,13 @@ pub fn export_rules(app: &App) -> String {
             if r.enabled { "sì" } else { "no" },
             scope_text(app, &r.scope),
             states_text(r.inactive),
-            target_text(app, r.target),
-            anchor_text(app, r.anchor),
+            rule_target_text(app, r),
+            rule_anchor_text(app, r),
             r.offset_weeks
         ));
+        if r.blocks() {
+            out.push_str("blocca = sì\n");
+        }
     }
     out
 }
@@ -304,30 +358,32 @@ fn parse_anchor(app: &App, s: &str) -> Result<Anchor, String> {
     })
 }
 
-fn parse_target(app: &App, s: &str) -> Result<Target, String> {
+/// «cosa»: il bersaglio e, per un avviso, gli altri punti dell'elenco.
+fn parse_target(app: &App, s: &str) -> Result<(Target, Vec<Anchor>), String> {
     let s = s.trim();
     if let Some(r) = strip(s, "avviso") {
         let r = r.trim();
-        if let Some(p) = r.strip_suffix("non prima di") {
-            return Ok(Target::Check(parse_anchor(app, p)?, Cmp::NotBefore));
-        }
-        if let Some(p) = r.strip_suffix("non dopo") {
-            return Ok(Target::Check(parse_anchor(app, p)?, Cmp::NotAfter));
+        for (suffix, cmp) in [("non prima di", Cmp::NotBefore), ("non dopo", Cmp::NotAfter)] {
+            if let Some(p) = r.strip_suffix(suffix) {
+                let mut pts = parse_anchor_list(app, p)?;
+                let first = pts.remove(0);
+                return Ok((Target::Check(first, cmp), pts));
+            }
         }
         return Err(format!("avviso senza «non prima di» / «non dopo» alla fine: «{s}»"));
     }
     if let Some(r) = strip(s, "aggiungi dev") {
-        return Ok(Target::AddDev(find_dev(app, &only_quoted(r)?)?));
+        return Ok((Target::AddDev(find_dev(app, &only_quoted(r)?)?), Vec::new()));
     }
     if let Some(r) = strip(s, "ore dev") {
-        return Ok(Target::DevStart(find_dev(app, &only_quoted(r)?)?));
+        return Ok((Target::DevStart(find_dev(app, &only_quoted(r)?)?), Vec::new()));
     }
     if let Some(r) = strip(s, "milestone") {
-        return Ok(Target::Milestone(find_milestone(app, r)?));
+        return Ok((Target::Milestone(find_milestone(app, r)?), Vec::new()));
     }
     match s {
-        "inizio progetto" => Ok(Target::ProjectStart),
-        "fine progetto" => Ok(Target::ProjectEnd),
+        "inizio progetto" => Ok((Target::ProjectStart, Vec::new())),
+        "fine progetto" => Ok((Target::ProjectEnd, Vec::new())),
         _ => Err(format!("«cosa» non riconosciuto: «{s}»")),
     }
 }
@@ -389,6 +445,7 @@ fn parse_block(app: &App, b: &Block) -> Result<Rule, String> {
         anchor: Anchor::LastEffort,
         offset_weeks: 0,
         inactive: Default::default(),
+        check: Default::default(),
     };
     let (mut has_target, mut has_anchor) = (false, false);
     for (line, key, value) in &b.fields {
@@ -405,12 +462,23 @@ fn parse_block(app: &App, b: &Block) -> Result<Rule, String> {
             "progetti" => rule.scope = parse_scope(app, value).map_err(at)?,
             "stati" => rule.inactive = parse_states(value).map_err(at)?,
             "cosa" => {
-                rule.target = parse_target(app, value).map_err(at)?;
+                let (t, pts) = parse_target(app, value).map_err(at)?;
+                rule.target = t;
+                rule.check.points = pts;
                 has_target = true;
             }
             "ancora" => {
-                rule.anchor = parse_anchor(app, value).map_err(at)?;
+                let mut list = parse_anchor_list(app, value).map_err(at)?;
+                rule.anchor = list.remove(0);
+                rule.check.anchors = list;
                 has_anchor = true;
+            }
+            "blocca" => {
+                rule.check.block = match value.to_lowercase().as_str() {
+                    "sì" | "si" => true,
+                    "no" => false,
+                    v => return Err(at(format!("«blocca» vuole sì / no, non «{v}»"))),
+                }
             }
             "settimane" => {
                 rule.offset_weeks = value
@@ -424,7 +492,15 @@ fn parse_block(app: &App, b: &Block) -> Result<Rule, String> {
     if !has_target || !has_anchor {
         return Err(format!("riga {}: mancano «cosa» o «ancora»", b.line));
     }
-    if !crate::rules::anchor_fits(rule.target, rule.anchor) {
+    if !matches!(rule.target, Target::Check(..)) {
+        if !rule.check.anchors.is_empty() {
+            return Err(format!("riga {}: più ancore solo per gli avvisi", b.line));
+        }
+        if rule.check.block {
+            return Err(format!("riga {}: «blocca» solo per gli avvisi", b.line));
+        }
+    }
+    if !rule.fits() {
         return Err(format!("riga {}: l'ancora non va bene per «cosa»", b.line));
     }
     Ok(rule)
@@ -539,6 +615,7 @@ mod tests {
             anchor,
             offset_weeks,
             inactive: Default::default(),
+            check: Default::default(),
         };
         app.rules.add(rule("Collaudo", RuleScope::All, Target::Milestone(collaudo), Anchor::DevEnd(be), 2, true));
         app.rules.add(rule("", RuleScope::Category(cat), Target::ProjectEnd, Anchor::LastMilestone, -1, false));
@@ -638,6 +715,7 @@ colore = rosso
             anchor: Anchor::LastEffort,
             offset_weeks: 1,
             inactive: Default::default(),
+            check: Default::default(),
         });
         let text = export_rules(&app);
         assert!(text.contains("progetti = progetti \"ABC\", \"XYZ\""), "{text}");
@@ -671,6 +749,7 @@ colore = rosso
                 anchor: Anchor::LastEffort,
                 offset_weeks: 0,
                 inactive: Default::default(),
+                check: Default::default(),
             });
         }
         let text = export_rules(&app);
@@ -725,5 +804,46 @@ colore = rosso
         add.offset_weeks = 0;
         assert!(rule_summary(&app, &add).starts_with("aggiungi dev "), "{}", rule_summary(&app, &add));
         assert!(rule_summary(&app, &add).ends_with(" primo effort"));
+    }
+
+    /// Avvisi con più punti e ancore e «blocca» vanno e tornano; le virgole
+    /// dentro i nomi fra virgolette non dividono; liste e «blocca» fuori
+    /// dagli avvisi sono errori.
+    #[test]
+    fn warning_lists_and_block_round_trip() {
+        let mut app = sample();
+        let c = app.milestones.add("Fase 1, parte A");
+        let be = app.devs.list()[0].0;
+        let test = app.devs.list()[1].0;
+        app.rules = Default::default();
+        app.rules.add(Rule {
+            name: "Ordine".into(),
+            enabled: true,
+            scope: RuleScope::All,
+            target: Target::Check(Anchor::DevStart(test), Cmp::NotBefore),
+            anchor: Anchor::DevEnd(be),
+            offset_weeks: 1,
+            inactive: Default::default(),
+            check: crate::rules::CheckOpts {
+                points: vec![Anchor::DevEnd(test)],
+                anchors: vec![Anchor::Milestone(c)],
+                block: true,
+            },
+        });
+        let text = export_rules(&app);
+        assert!(text.contains("cosa = avviso inizio dev \"Test\", fine dev \"Test\" non prima di\n"), "{text}");
+        assert!(text.contains("ancora = fine dev \"Backend\", milestone \"Fase 1, parte A\"\n"), "{text}");
+        assert!(text.contains("blocca = sì\n"), "{text}");
+        let (rules, errs) = parse_rules(&app, &text);
+        assert!(errs.is_empty(), "{errs:?}");
+        assert_eq!(rules[0], *app.rules.get(crate::rules::RuleId(1)).unwrap());
+        for (body, msg) in [
+            ("cosa = fine progetto\nancora = ultimo effort, primo effort\n", "più ancore solo per gli avvisi"),
+            ("cosa = fine progetto\nancora = ultimo effort\nblocca = sì\n", "«blocca» solo per gli avvisi"),
+            ("cosa = avviso inizio dev \"Test\", non dopo\nancora = ultimo effort\n", "elemento vuoto"),
+        ] {
+            let (rules, errs) = parse_rules(&app, &format!("[regola]\n{body}"));
+            assert!(rules.is_empty() && errs.len() == 1 && errs[0].contains(msg), "{body}: {errs:?}");
+        }
     }
 }
