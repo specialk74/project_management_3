@@ -711,6 +711,13 @@ modo rapido per riempire un blocco di effort senza scrivere cella per cella:
   alla **fine del progetto** (inclusa), saltando le sue ferie; i due campi
   sopra si disattivano (la data mostra la fine del progetto). Disattivata se il
   progetto non ha una data di fine.
+- **Fino a milestone**: scegli una delle milestone del progetto che cadono
+  dalla settimana cliccata in avanti (fino alla fine del progetto), ordinate
+  per data; l'effort va a ogni worker scelto in tutte le settimane fino a
+  quella della milestone (**inclusa**), saltando le sue ferie, e non va mai
+  oltre la milestone. Come per «Fino a fine progetto» i campi sopra si
+  disattivano; le due scelte si escludono a vicenda («—» la toglie). Inattiva
+  se non ci sono milestone dopo la settimana cliccata.
 
 Sotto ai campi c'è il riepilogo dell'operazione (`N worker × H h × S settimane`
 con la prima e l'ultima settimana). Il pulsante **Inserisci** è attivo solo se

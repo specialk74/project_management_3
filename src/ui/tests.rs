@@ -180,7 +180,8 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         start,
         &[w1, w2],
         Effort(8),
-        3
+        3,
+        None
     ));
 
     for i in 0..3 {
@@ -209,7 +210,8 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         after_end,
         &[w1],
         Effort(8),
-        5
+        5,
+        None
     ));
     // Selezione vuota o zero settimane: nessuna scrittura.
     assert!(!bulk_fill_effort(
@@ -219,7 +221,8 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         start,
         &[],
         Effort(8),
-        3
+        3,
+        None
     ));
     assert!(!bulk_fill_effort(
         &mut app,
@@ -228,7 +231,8 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         start,
         &[w1],
         Effort(8),
-        0
+        0,
+        None
     ));
 }
 
@@ -251,6 +255,7 @@ fn bulk_fill_window_renders() {
             effort_text: "8".to_string(),
             weeks_text: "3".to_string(),
             to_end: false,
+            to_milestone: None,
         }),
         ..Default::default()
     };
@@ -3823,7 +3828,7 @@ fn rules_apply_on_every_change_and_undo_with_it() {
     pjm.record_undo();
     assert_eq!(at(&pjm), Some(WeekId(base + 14)));
     // Una modifica qualunque (un effort in più) la fa seguire.
-    pjm.apply(Action::BulkFillEffort { proj: p, dev: be, start: WeekId(base + 7), workers: vec![w], effort: Effort(4), weeks: 1 });
+    pjm.apply(Action::BulkFillEffort { proj: p, dev: be, start: WeekId(base + 7), workers: vec![w], effort: Effort(4), weeks: 1, until: None });
     pjm.record_undo();
     assert_eq!(at(&pjm), Some(WeekId(base + 21)));
     // Annulla: torna l'effort di prima e con lui la milestone.
@@ -4785,9 +4790,9 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
     // Valore già presente nella settimana dove scivola Alice: si sovrascrive.
     app.projects.add_effort(proj, dev, wk(4), alice, Effort(2));
 
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 3), vec![wk(0), wk(3), wk(4)]);
-    assert_eq!(bulk_fill_weeks(&app, proj, bob, start, 3), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
-    assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3));
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 3, None), vec![wk(0), wk(3), wk(4)]);
+    assert_eq!(bulk_fill_weeks(&app, proj, bob, start, 3, None), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
+    assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3, None));
     let at = |app: &App, w: WeekId, who| {
         app.projects
             .get_single_dev(proj, dev)
@@ -4804,7 +4809,7 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
     let last = app.end_week;
     let prev = WeekId(last.0 - WEEK_STEP);
     app.workers.set_week_status(alice, last.0, Some(WeekStatus::Ferie));
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, prev, 2), vec![prev]);
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, prev, 2, None), vec![prev]);
 }
 
 /// La dialog dice, per worker, quali settimane di ferie salta e fin dove
@@ -4889,6 +4894,7 @@ fn blocking_rule_reverts_the_whole_action_that_violates_it() {
         workers: vec![w],
         effort: Effort(8),
         weeks,
+        until: None,
     };
     let cells = |pjm: &PjmApp| {
         pjm.app.projects.get_single_dev(p, test).map(|sd| sd.get_weeks().len()).unwrap_or(0)
@@ -4908,7 +4914,7 @@ fn blocking_rule_reverts_the_whole_action_that_violates_it() {
     assert!(pjm.ui.changed);
     // Ora allungare il Backend sposterebbe la soglia oltre l'inizio del Test:
     // violazione nuova, bloccata anche se si tocca un altro dev.
-    let more_be = Action::BulkFillEffort { proj: p, dev: be, start: wk(3), workers: vec![w], effort: Effort(8), weeks: 1 };
+    let more_be = Action::BulkFillEffort { proj: p, dev: be, start: wk(3), workers: vec![w], effort: Effort(8), weeks: 1, until: None };
     pjm.apply_guarded(more_be);
     assert!(pjm.app.projects.get_single_dev(p, be).unwrap().get_all(wk(3)).is_none(), "Backend non allungato");
 }
@@ -5250,7 +5256,7 @@ fn fills_stop_at_the_project_end() {
     app.projects.set_project_end_week(proj, Some(wk(2)));
     assert_eq!(fill_limit(&app, proj), (wk(2), true));
     // Aggiungi efforts per 5 settimane: solo 3 (0, 1, 2).
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5), vec![wk(0), wk(1), wk(2)]);
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5, None), vec![wk(0), wk(1), wk(2)]);
     // Automatico: 100h da 8h → solo 3 settimane, 76h restano fuori.
     let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8);
     assert_eq!((plan.cells.len(), plan.left), (3, 76));
@@ -5339,4 +5345,73 @@ fn bulk_fill_until_the_project_end() {
     }
     let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
     assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la fine");
+}
+
+#[test]
+fn bulk_fill_until_a_milestone() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.set_project_end_week(proj, Some(wk(6)));
+    app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    let collaudo = app.milestones.add("Collaudo");
+    let kickoff = app.milestones.add("Kickoff");
+    let oltre = app.milestones.add("Oltre");
+    app.projects.add_project_milestone(proj, collaudo, wk(3));
+    app.projects.add_project_milestone(proj, kickoff, wk(1));
+    app.projects.add_project_milestone(proj, oltre, wk(9));
+    // Solo da qui in avanti e non oltre la fine del progetto, per data.
+    assert_eq!(bulk_fill_milestones(&app, proj, wk(0)), vec![(kickoff, wk(1)), (collaudo, wk(3))]);
+    assert_eq!(bulk_fill_milestones(&app, proj, wk(2)), vec![(collaudo, wk(3))]);
+    // La milestone ferma l'inserimento anche quando le ferie lo allungherebbero.
+    assert_eq!(bulk_fill_weeks(&app, proj, alice, wk(0), 4, Some(wk(3))), vec![wk(0), wk(2), wk(3)]);
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut bf = BulkFill { effort_text: "8".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| bulk_fill_window(ui.ctx(), &app, state, actions))
+    };
+    frame(&mut state, &mut actions, None);
+    let out = frame(&mut state, &mut actions, None);
+    // Apre la scelta e prende «Collaudo».
+    let pos = text_pos(&out, "—").expect("combo milestone");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frame(&mut state, &mut actions, Some(ev));
+    }
+    let out = frame(&mut state, &mut actions, None);
+    let item = format!("Collaudo — {}", week_label(wk(3).0 as i32));
+    let pos = text_pos(&out, &item).expect("voce Collaudo");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frame(&mut state, &mut actions, Some(ev));
+    }
+    assert_eq!(state.bulk_fill.as_ref().unwrap().to_milestone, Some(collaudo));
+    let out = frame(&mut state, &mut actions, None);
+    let texts = drawn_texts(&out);
+    let summary = format!("1 worker × 8 h × 4 settimane ({} → {})", week_label(wk(0).0 as i32), week_label(wk(3).0 as i32));
+    assert!(texts.contains(&summary), "{summary}: {texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("solo")), "nessun avviso: {texts:?}");
+    let pos = text_pos(&out, "Inserisci").expect("Inserisci");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frame(&mut state, &mut actions, Some(ev));
+    }
+    assert!(
+        matches!(actions.as_slice(), [Action::BulkFillEffort { weeks: 4, until: Some(u), .. }] if *u == wk(3)),
+        "una sola BulkFillEffort fino alla milestone"
+    );
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
+    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la milestone");
 }

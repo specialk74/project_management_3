@@ -1074,7 +1074,13 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   when the project has an end date): `weeks` = calendar weeks from the start
   to `fill_limit` (the vacation skipping can't push past the end anyway),
   weeks field + date picker disabled, no red «solo N settimane» line; test
-  `bulk_fill_until_the_project_end` — so each worker still gets `n` weeks and the end slides later,
+  `bulk_fill_until_the_project_end`. «Fino a milestone» combo (`BulkFill.to_milestone`,
+  exclusive with `to_end`): choices = `bulk_fill_milestones(app, proj,
+  start)` (placed in the project from the start week to `fill_limit`, by
+  week); `weeks` = calendar weeks to the milestone, and
+  `BulkFillEffort.until: Option<WeekId>` → `bulk_fill_weeks(…, until)` stops
+  there (inclusive) even when vacations would push further; test
+  `bulk_fill_until_a_milestone` — so each worker still gets `n` weeks and the end slides later,
   even past the «fino al» date (user's choice); the shifted week is
   overwritten like any other. The dialog computes the same plans per selected
   worker: summary end = farthest last week, a blue line per worker with

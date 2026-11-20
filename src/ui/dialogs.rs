@@ -117,11 +117,22 @@ pub(crate) fn bulk_fill_window(
     if !has_end {
         bf.to_end = false;
     }
+    // «Fino a milestone»: le milestone del progetto da qui alla fine; una
+    // scelta che non è più in elenco si azzera.
+    let milestones = bulk_fill_milestones(app, bf.proj, WeekId(bf.week as usize));
+    if bf.to_milestone.is_some_and(|m| !milestones.iter().any(|(id, _)| *id == m)) {
+        bf.to_milestone = None;
+    }
+    let until: Option<WeekId> =
+        bf.to_milestone.and_then(|m| milestones.iter().find(|(id, _)| *id == m).map(|(_, w)| *w));
     // Valori inseriti: effort (ore/settimana) e numero di settimane (con
-    // «Fino a fine progetto»: tutte quelle fino alla fine; le Ferie saltate
-    // non la spostano, `bulk_fill_weeks` si ferma comunque lì).
+    // «Fino a fine progetto» / «Fino a milestone»: tutte quelle fino alla
+    // fine / alla milestone; le Ferie saltate non la spostano,
+    // `bulk_fill_weeks` si ferma comunque lì).
     let effort = bf.effort_text.trim().parse::<usize>().ok();
-    let weeks = if bf.to_end {
+    let weeks = if let Some(u) = until {
+        Some((u.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).filter(|n| *n > 0).map(|n| n as usize)
+    } else if bf.to_end {
         Some(available).filter(|n| *n > 0)
     } else {
         bf.weeks_text.trim().parse::<usize>().ok().filter(|n| *n > 0)
@@ -131,7 +142,7 @@ pub(crate) fn bulk_fill_window(
     let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
     chosen.sort_by_key(|w| w.0);
     let plans: Vec<(WorkerId, Vec<WeekId>)> = weeks
-        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, *w, WeekId(bf.week as usize), n))).collect())
+        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, *w, WeekId(bf.week as usize), n, until))).collect())
         .unwrap_or_default();
     let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
 
@@ -167,8 +178,8 @@ pub(crate) fn bulk_fill_window(
                 );
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             });
-            let to_end = bf.to_end;
-            ui.add_enabled_ui(!to_end, |ui| {
+            let fixed_end = bf.to_end || until.is_some();
+            ui.add_enabled_ui(!fixed_end, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Per quante settimane:");
                     let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
@@ -204,14 +215,57 @@ pub(crate) fn bulk_fill_window(
                      (inclusa), saltando le sue ferie.",
                 )
                 .on_disabled_hover_text("Il progetto non ha una data di fine.");
+            if bf.to_end {
+                bf.to_milestone = None;
+            }
+            // Oppure fino a una milestone del progetto (inclusa).
+            ui.add_enabled_ui(!milestones.is_empty(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Fino a milestone:");
+                    let ms_label = |m: MilestoneId, w: WeekId| {
+                        format!("{} — {}", app.milestones.get_name(m).unwrap_or("?"), week_label(w.0 as i32))
+                    };
+                    let selected = match until.zip(bf.to_milestone) {
+                        Some((w, m)) => ms_label(m, w),
+                        None => "—".to_string(),
+                    };
+                    let before = bf.to_milestone;
+                    egui::ComboBox::from_id_salt("bulk_fill_milestone")
+                        .selected_text(selected)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut bf.to_milestone, None, "—");
+                            for (m, w) in &milestones {
+                                let color = app
+                                    .milestones
+                                    .get_color(*m)
+                                    .map(|c| rule_ref_text(from_hex(c)))
+                                    .unwrap_or_else(text);
+                                ui.selectable_value(
+                                    &mut bf.to_milestone,
+                                    Some(*m),
+                                    egui::RichText::new(ms_label(*m, *w)).color(color),
+                                );
+                            }
+                        });
+                    if bf.to_milestone.is_some() && bf.to_milestone != before {
+                        bf.to_end = false;
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Ogni worker scelto in tutte le settimane fino a quella della milestone \
+                     (inclusa), saltando le sue ferie.",
+                )
+                .on_disabled_hover_text("Nessuna milestone del progetto da questa settimana in avanti.");
+            });
 
             // Riepilogo / avvisi.
             if effort.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero).");
             }
-            if bf.to_end && weeks.is_none() {
+            if until.is_none() && bf.to_end && weeks.is_none() {
                 ui.colored_label(Color32::RED, "La settimana di partenza è dopo la fine del progetto.");
-            } else if !bf.to_end && weeks.is_none() && !bf.weeks_text.trim().is_empty() {
+            } else if !fixed_end && weeks.is_none() && !bf.weeks_text.trim().is_empty() {
                 let msg = if bf.weeks_text.trim().parse::<i64>().is_ok_and(|n| n <= 0) {
                     "La data di fine è prima della settimana di inizio."
                 } else {
@@ -255,8 +309,8 @@ pub(crate) fn bulk_fill_window(
                             .color(info_blue()),
                         );
                     }
-                    // Con «Fino a fine progetto» è la fine voluta: nessun avviso.
-                    if ws.len() < n && !bf.to_end {
+                    // Con «Fino a fine progetto/milestone» è la fine voluta: nessun avviso.
+                    if ws.len() < n && !fixed_end {
                         ui.colored_label(
                             Color32::RED,
                             format!(
@@ -299,6 +353,7 @@ pub(crate) fn bulk_fill_window(
             workers: chosen,
             effort: Effort(effort.unwrap_or(0)),
             weeks: weeks.unwrap_or(0),
+            until,
         });
     }
     if confirm || cancel || !open {

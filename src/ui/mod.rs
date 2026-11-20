@@ -267,6 +267,9 @@ pub(crate) struct BulkFill {
     /// «Fino a fine progetto»: al posto del numero di settimane, tutte quelle
     /// fino alla fine del progetto (inclusa).
     pub to_end: bool,
+    /// «Fino a milestone»: al posto del numero di settimane, tutte quelle
+    /// fino alla settimana della milestone scelta (inclusa). Esclude `to_end`.
+    pub to_milestone: Option<MilestoneId>,
 }
 
 impl BulkFill {
@@ -282,6 +285,7 @@ impl BulkFill {
             effort_text: String::new(),
             weeks_text: "1".to_string(),
             to_end: false,
+            to_milestone: None,
         }
     }
 }
@@ -1565,6 +1569,9 @@ pub(crate) enum Action {
         workers: Vec<WorkerId>,
         effort: Effort,
         weeks: usize,
+        /// Ultima settimana scrivibile (inclusa) oltre a `fill_limit`:
+        /// la milestone di «Fino a milestone».
+        until: Option<WeekId>,
     },
     SetNote {
         proj: ProjectId,
@@ -3227,8 +3234,9 @@ impl PjmApp {
                 workers,
                 effort,
                 weeks,
+                until,
             } => {
-                if bulk_fill_effort(&mut self.app, proj, dev, start, &workers, effort, weeks) {
+                if bulk_fill_effort(&mut self.app, proj, dev, start, &workers, effort, weeks, until) {
                     self.mark_changed();
                 }
             }
@@ -5133,9 +5141,17 @@ pub(crate) fn fill_limit_label(app: &App, proj: ProjectId) -> &'static str {
 /// sempre `weeks` settimane di effort e, con delle ferie in mezzo, la fine
 /// scivola più avanti (anche oltre la data «fino al» della dialog). Si ferma
 /// alla fine del progetto (o della griglia, `fill_limit`), quindi può essere
-/// più corta: non va mai oltre.
-pub(crate) fn bulk_fill_weeks(app: &App, proj: ProjectId, worker: WorkerId, start: WeekId, weeks: usize) -> Vec<WeekId> {
-    let end = fill_limit(app, proj).0;
+/// più corta: non va mai oltre. `until` (la milestone di «Fino a milestone»)
+/// anticipa il limite.
+pub(crate) fn bulk_fill_weeks(
+    app: &App,
+    proj: ProjectId,
+    worker: WorkerId,
+    start: WeekId,
+    weeks: usize,
+    until: Option<WeekId>,
+) -> Vec<WeekId> {
+    let end = until.map_or(fill_limit(app, proj).0, |u| u.min(fill_limit(app, proj).0));
     let mut out = Vec::with_capacity(weeks);
     let mut w = start;
     while out.len() < weeks && w <= end {
@@ -5151,6 +5167,7 @@ pub(crate) fn bulk_fill_weeks(app: &App, proj: ProjectId, worker: WorkerId, star
 /// (`bulk_fill_weeks`: `weeks` settimane da `start`, saltando le Ferie, fino
 /// alla fine del progetto o della griglia). Sovrascrive il valore già presente per quel
 /// worker. Ritorna `true` se ha scritto qualcosa.
+#[allow(clippy::too_many_arguments)]
 fn bulk_fill_effort(
     app: &mut App,
     proj: ProjectId,
@@ -5159,15 +5176,31 @@ fn bulk_fill_effort(
     workers: &[WorkerId],
     effort: Effort,
     weeks: usize,
+    until: Option<WeekId>,
 ) -> bool {
     let mut written = false;
     for wid in workers {
-        for w in bulk_fill_weeks(app, proj, *wid, start, weeks) {
+        for w in bulk_fill_weeks(app, proj, *wid, start, weeks, until) {
             app.projects.add_effort(proj, dev, w, *wid, effort);
             written = true;
         }
     }
     written
+}
+
+/// Milestone proposte da «Fino a milestone»: quelle piazzate nel progetto
+/// dalla settimana `start` (inclusa) alla fine del progetto o della griglia
+/// (`fill_limit`), ordinate per settimana (poi per id).
+pub(crate) fn bulk_fill_milestones(app: &App, proj: ProjectId, start: WeekId) -> Vec<(MilestoneId, WeekId)> {
+    let end = fill_limit(app, proj).0;
+    let mut ms: Vec<(MilestoneId, WeekId)> = app
+        .projects
+        .list_project_milestones(proj)
+        .into_iter()
+        .filter(|(_, w)| *w >= start && *w <= end)
+        .collect();
+    ms.sort_by_key(|(m, w)| (w.0, m.0));
+    ms
 }
 
 fn dev_name(app: &App, dev: DevId) -> String {
