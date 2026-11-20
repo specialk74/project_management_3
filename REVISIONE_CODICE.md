@@ -537,3 +537,9 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   gli stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi A13). jiff
   resta 0.2.46 (1.0.1 bloccata da egui_extras 0.37). Build e clippy 0 warning,
   424 test verdi. Da provare a mano: gli export PDF.
+- **2026-11-20** — `cargo update`: allsorts-azul 0.17.2 → 0.17.3 (usata da
+  printpdf), cc 1.11.3, zcheapstr 1.4.0; nessuna dipendenza diretta cambiata,
+  quindi `Cargo.toml` invariato. `cargo audit` (531 pacchetti): nessuna
+  vulnerabilità, gli stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi
+  A13). jiff resta 0.2.46 (1.0.1 bloccata da egui_extras 0.37). Build e clippy
+  0 warning, 453 test verdi. Da provare a mano: un export PDF (allsorts).
