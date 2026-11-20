@@ -1308,9 +1308,8 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `PjmApp::refresh_warnings(notify)` (true in `mark_changed`; false in
   `reset_undo` and `restore_snapshot`; `UiState.known_warnings`), and
   `rule_warnings_window` (Vista ▸ Avvisi delle regole…, or «⚠ Avvisi (N)…» in
-  the rules window; project link → `jump_to_project`). In the rules window the
-  «Cosa» cell shows point + comparison combos for a `Check` (window default
-  width 1600 so the row fits). Tests `warning_rules_flag_violations_only_when_both_points_exist`,
+  the rules window; project link → `jump_to_project`). In the rules window's
+  detail a `Check` shows point + comparison combos. Tests `warning_rules_flag_violations_only_when_both_points_exist`,
   `rule_warnings_notify_new_ones_and_show_in_grid_and_list`,
   `warning_rule_row_shows_point_comparison_and_count`.
   **Phase 5**: `src/rules_text.rs` — `export_rules(app)` (one `[regola]` block
@@ -1423,18 +1422,47 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   edits never block) and on `Some` restores app/changed/undo_dirty, toasts a
   warning and returns before `refresh_warnings`. Window: `multi_anchor_combo`
   (checkbox per item, last can't be unticked) for points and anchors of a
-  warning, «Blocca» checkbox right after the target combo (the row is wider
-  than the 1600 px window now: horizontal scroll; after the grid
-  `ui.add_space(rules_bottom_pad(ui))` = scroll bar width + margins + 6, so
-  the floating h-scrollbar doesn't cover the last rule — the checkbox test
-  clicks the text centre to guard it). Text:
+  warning, «Blocca» checkbox in the detail. Text:
   comma lists via `split_list` (quote-aware) / `parse_anchor_list`,
   `rule_target_text` / `rule_anchor_text`, `blocca = sì`. Tests
   `warning_lists_check_every_pair`,
   `block_regression_spots_new_and_worse_violations_only`,
   `warning_lists_and_block_round_trip`,
   `blocking_rule_reverts_the_whole_action_that_violates_it`,
-  `rules_window_has_the_block_checkbox_for_warnings`. Tests
+  `rules_window_has_the_block_checkbox_for_warnings`.
+  **Window layout = list + detail** (it used to be one wide `egui::Grid` row
+  per rule that overflowed horizontally): `rules_window` (default width
+  `RULES_WINDOW_W` 1100) = `rules_toolbar`, a closed `CollapsingHeader` with
+  `RULES_HELP`, `rules_filters`, then `horizontal_top`: left
+  `RULES_LIST_W` (380) vertical `ScrollArea` of `rule_list_item` (Attiva
+  checkbox → `update_or_confirm`, name / `rule_summary` / `status_text` as
+  click-sensing labels → `UiState.rule_selected`), right `rule_detail` (a
+  two-column `Grid`, one field per row, all combos `RULE_FIELD_W` 320:
+  Attiva, Nome, Progetti + stati, Cosa, Controlla + confronto (warnings),
+  Ancora / Se, Settimane (not for AddDev), Blocca (warnings), Stato; then
+  Applica ora / Clona / 🗑 Elimina). Selection defaults to the first shown
+  rule; `Action::AddRule` selects the new rule. Test helper `text_rect`.
+  Tests `rules_window_fits_a_1536_px_screen`,
+  `rules_window_selects_a_rule_from_the_list`.
+  **Coloured dev / milestone names**: `ref_job(app, text, plain, font) ->
+  LayoutJob` (`ui/rules.rs`) colours every name that follows the word «dev» /
+  «milestone» (keyword case-insensitive, optional `"`, longest name first,
+  word boundaries) — dev in `dev_color` (its bg colour), milestone in its
+  colour, both through `rule_ref_text` (theme-aware: dark theme lum < 90 ⇒
+  lightened, light theme lum > 130 ⇒ darkened; `g`) — on `rule_ref_bg(dev)`
+  (`ui_style.rs`: dark theme `RULE_REF_DEV_BG` blue-grey / `RULE_REF_MS_BG`
+  brown, light theme `RULE_REF_DEV_BG_LIGHT` / `RULE_REF_MS_BG_LIGHT`
+  pale blue / pale amber); the rest gets `plain` (`PLACEHOLDER` = the
+  widget's colour). The one-line summary (list + «Regole — ABC») uses
+  `rule_summary_font` = Small + `RULE_SUMMARY_FONT_DELTA` (2). One rule for every text: `ref_choice_combo` (target and
+  single anchor; plain `choice_combo` = `combo_with` with a plain formatter)
+  and `multi_anchor_combo` (now takes `app`) — items and selected text —,
+  the list summary, `project_rules_window` (summary + result) and
+  `rule_warnings_window`. Milestone targets are labelled «Milestone X» so the
+  keyword is there. Tests `rule_texts_color_dev_and_milestone_names`,
+  `rule_name_chips_follow_the_theme`,
+  `rule_summary_is_a_bit_larger_than_small_text` (tests
+  read whole galley texts, so labels stay whole strings). Tests
   `preview_lists_what_a_rule_would_change`,
   `activating_a_rule_shows_the_changes_before_applying`,
   `importing_rules_that_change_projects_asks_first`.
@@ -1465,11 +1493,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   on them) as `blocked` (left untouched). The target **exists iff the anchor
   exists** (dev anchors via `effort_span`, > 0 hours). Grid: in «Aggiungi
   milestone qui» governed milestones are disabled (place and «Rimuovi»), tooltip
-  with `rule_label`. Window: one `egui::Grid` row per rule (`choice_combo` for
+  with `rule_label`. Window (now list + detail, see below; `choice_combo` for
   scope / target / anchor — a project-owned target forces the scope to
   `RuleScope::Project(owner)` via `auto_scope` (scope combo disabled, also
   applied to `new_rule` and to existing rules when the window draws; test
-  `project_milestone_rules_get_the_project_as_scope`), `DragValue` for weeks, name field `add_sized([RULE_NAME_W, …])` — inside an `egui::Grid` a `TextEdit`'s `desired_width` is capped by the column width fixed on the first frame (test `rule_name_column_is_wide`) —, name buffered in
+  `project_milestone_rules_get_the_project_as_scope`), `DragValue` for weeks, name buffered in
   `UiState.rule_names` and committed on lost focus) → `Action::AddRule` (new
   rules start **disabled**) / `UpdateRule` / `DeleteRule` (placements stay);
   status from `rules::status` (placed/governed, blocked, missing refs, also in

@@ -58,3 +58,14 @@ pub(crate) fn text_pos(out: &egui::FullOutput, needle: &str) -> Option<egui::Pos
         _ => None,
     })
 }
+
+/// Rettangolo del testo `needle` disegnato nel frame (il primo trovato),
+/// per cliccare accanto a un'etichetta (es. la spunta alla sua sinistra).
+pub(crate) fn text_rect(out: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
+    out.shapes.iter().find_map(|cs| match &cs.shape {
+        egui::epaint::Shape::Text(t) if t.galley.job.text == needle => {
+            Some(egui::Rect::from_min_size(t.pos, t.galley.size()))
+        }
+        _ => None,
+    })
+}

@@ -147,6 +147,14 @@ non il tempo di digitazione.
   spunta **«Blocca»**: una modifica qualunque che crea o peggiora una
   violazione viene annullata per intero, con notifica; le violazioni già
   presenti restano avvisi; le modifiche alle regole non si bloccano.
+  (8) finestra delle regole ridisegnata come **elenco + dettaglio** (prima una
+  riga per regola che non stava in larghezza): a sinistra le regole (attiva,
+  nome, regola in una riga, stato), a destra i campi della selezionata, uno
+  per riga; l'aiuto in una sezione richiudibile. (9) nei testi delle regole
+  (tendine, riassunti, «Regole — ABC», avvisi) i nomi dei dev e delle
+  milestone nel loro colore, su due sfondi diversi che seguono il tema
+  (scuri nel tema scuro, chiari nel chiaro); la regola in una riga un po'
+  più grande.
 
 ## A. Robustezza & dati condivisi
 

@@ -60,6 +60,13 @@ pub const NOTE_ORANGE: Color32 = Color32::from_rgb(0xff, 0xa5, 0x00);
 pub const DEADLINE_BG: Color32 = Color32::from_rgb(0x00, 0x80, 0x00); // green
 pub const START_BG: Color32 = Color32::from_rgb(70, 130, 180); // steelblue
 pub const CANARY: Color32 = Color32::from_rgb(0xff, 0xf0, 0x66); // giallo canarino (colonna confine anno)
+/// Sfondi dei nomi di dev e di milestone nei testi delle regole (tendine,
+/// riassunti, avvisi), diversi per i due gruppi: scuri nel tema scuro,
+/// chiari nel tema chiaro (vedi `rule_ref_bg` / `rule_ref_text`).
+pub const RULE_REF_DEV_BG: Color32 = Color32::from_rgb(0x26, 0x34, 0x45); // blu-grigio scuro
+pub const RULE_REF_MS_BG: Color32 = Color32::from_rgb(0x47, 0x37, 0x1f); // bruno scuro
+pub const RULE_REF_DEV_BG_LIGHT: Color32 = Color32::from_rgb(0xdc, 0xe8, 0xf6); // azzurrino
+pub const RULE_REF_MS_BG_LIGHT: Color32 = Color32::from_rgb(0xf7, 0xe8, 0xc8); // giallino
 /// Porpora usato **solo nella GUI** per i worker "ghost", così da distinguerli
 /// dai worker sovra-allocati (che restano rossi). Negli export PDF/SVG i ghost
 /// restano rossi.
@@ -171,6 +178,35 @@ pub fn hex_rgb_string(rgb: u32) -> String {
 #[inline]
 pub fn is_dark() -> bool {
     DARK_THEME.with(|b| b.get())
+}
+
+/// Sfondo del nome di un dev (`dev = true`) o di una milestone nei testi
+/// delle regole, secondo il tema.
+pub fn rule_ref_bg(dev: bool) -> Color32 {
+    g(match (dev, is_dark()) {
+        (true, true) => RULE_REF_DEV_BG,
+        (false, true) => RULE_REF_MS_BG,
+        (true, false) => RULE_REF_DEV_BG_LIGHT,
+        (false, false) => RULE_REF_MS_BG_LIGHT,
+    })
+}
+
+/// Il colore di un dev o di una milestone reso leggibile sul suo sfondo
+/// (`rule_ref_bg`): nel tema scuro i colori troppo scuri si schiariscono,
+/// nel tema chiaro quelli troppo chiari si scuriscono.
+pub fn rule_ref_text(c: Color32) -> Color32 {
+    let [r, gr, b, _] = c.to_array();
+    let lum = 0.299 * r as f32 + 0.587 * gr as f32 + 0.114 * b as f32;
+    let c = if is_dark() && lum < 90.0 {
+        let up = |x: u8| x + ((255 - x) as f32 * 0.55) as u8;
+        Color32::from_rgb(up(r), up(gr), up(b))
+    } else if !is_dark() && lum > 130.0 {
+        let down = |x: u8| (x as f32 * 0.45) as u8;
+        Color32::from_rgb(down(r), down(gr), down(b))
+    } else {
+        c
+    };
+    g(c)
 }
 
 // ── Colori dipendenti dal tema ──────────────────────────────────────────────

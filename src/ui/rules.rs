@@ -1,8 +1,9 @@
 //! Finestra «Regole di automazione» (Aggiungi ▸ Regole di automazione…):
-//! elenco delle regole di `rules.rs`, una per riga, modificabili con elenchi
-//! a tendina — attiva, nome, ambito, milestone, ancora, scostamento in
-//! settimane — con lo stato (in quanti progetti agisce, ciclo, riferimenti
-//! eliminati). Ogni modifica è un'`Action` (`AddRule` / `UpdateRule` /
+//! a sinistra l'elenco delle regole di `rules.rs` (spunta «Attiva», nome,
+//! regola in una riga, stato; filtri sopra), a destra il dettaglio della
+//! regola selezionata (`UiState.rule_selected`), un campo per riga — nome,
+//! ambito e stati, cosa, punti / confronto / «Blocca» di un avviso, ancora,
+//! settimane, stato, Applica ora / Clona / Elimina. Ogni modifica è un'`Action` (`AddRule` / `UpdateRule` /
 //! `DeleteRule`); le regole si riapplicano in `mark_changed`. Attivare una
 //! regola (o cambiarne ambito, stati, cosa, ancora) che toccherebbe dei
 //! progetti passa prima dall'anteprima `rule_activation_window`.
@@ -11,15 +12,9 @@ use super::*;
 use crate::project_utils::project::ProjectStatus;
 use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleId, RuleScope, Target};
 
-/// Larghezze delle colonne (combo).
-pub(crate) const RULE_NAME_W: f32 = 300.0;
-const RULE_SCOPE_W: f32 = 170.0;
-/// Stati di progetto (accanto all'ambito).
+/// Larghezze delle tendine dell'ambito e degli stati (sulla stessa riga).
+const RULE_SCOPE_W: f32 = 190.0;
 const RULE_STATES_W: f32 = 120.0;
-const RULE_TARGET_W: f32 = 220.0;
-const RULE_ANCHOR_W: f32 = 200.0;
-/// Punto controllato da un avviso (accanto a «Avviso»).
-const RULE_POINT_W: f32 = 170.0;
 
 /// Combo con scelte `(valore, etichetta)`: ritorna la nuova scelta se
 /// cambiata. Un valore che non è fra le scelte (riferimento eliminato) si
@@ -31,23 +26,118 @@ fn choice_combo<T: PartialEq + Copy>(
     current: T,
     options: &[(T, String)],
 ) -> Option<T> {
+    combo_with(ui, salt, width, current, options, &|s: &str| s.into())
+}
+
+/// Come `choice_combo`, ma i nomi di dev e milestone nelle voci sono
+/// colorati (`ref_job`).
+fn ref_choice_combo<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    app: &App,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    width: f32,
+    current: T,
+    options: &[(T, String)],
+) -> Option<T> {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    combo_with(ui, salt, width, current, options, &|s: &str| ref_job(app, s, Color32::PLACEHOLDER, font.clone()).into())
+}
+
+fn combo_with<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    width: f32,
+    current: T,
+    options: &[(T, String)],
+    fmt: &dyn Fn(&str) -> egui::WidgetText,
+) -> Option<T> {
     let text = options
         .iter()
         .find(|(v, _)| *v == current)
         .map_or_else(|| "⚠ inesistente".to_string(), |(_, l)| l.clone());
     let mut picked = None;
     egui::ComboBox::from_id_salt(salt)
-        .selected_text(text)
+        .selected_text(fmt(&text))
         .width(width)
         .height(400.0)
         .show_ui(ui, |ui| {
             for (v, label) in options {
-                if ui.selectable_label(*v == current, label).clicked() && *v != current {
+                if ui.selectable_label(*v == current, fmt(label)).clicked() && *v != current {
                     picked = Some(*v);
                 }
             }
         });
     picked
+}
+
+/// Il testo con i nomi di dev e di milestone evidenziati: ogni nome che
+/// segue la parola «dev» o «milestone» (anche fra virgolette, maiuscole
+/// ignorate per la parola) è scritto nel colore del dev (il suo colore di
+/// sfondo) o della milestone (resi leggibili da `rule_ref_text`), su uno
+/// sfondo diverso per i due gruppi (`rule_ref_bg`: scuro o chiaro secondo il
+/// tema). Il resto ha il colore `plain`
+/// (`PLACEHOLDER` = quello del widget). Così tendine, riassunti, avvisi e
+/// diagnosi si colorano con la stessa regola.
+/// Carattere della regola in una riga (sotto il nome, nell'elenco e in
+/// «Regole — ABC»): un po' più grande del piccolo, per leggerla bene.
+pub(crate) fn rule_summary_font(ui: &egui::Ui) -> egui::FontId {
+    let small = egui::TextStyle::Small.resolve(ui.style());
+    egui::FontId::new(small.size + RULE_SUMMARY_FONT_DELTA, small.family)
+}
+
+/// Quanto la regola in una riga è più grande del carattere piccolo.
+pub(crate) const RULE_SUMMARY_FONT_DELTA: f32 = 2.0;
+
+pub(crate) fn ref_job(app: &App, text: &str, plain: Color32, font: egui::FontId) -> egui::text::LayoutJob {
+    use egui::text::{LayoutJob, TextFormat};
+    // Nomi, i più lunghi prima (così «Backend 2» vince su «Backend»).
+    let mut names: Vec<(String, Color32, Color32, bool)> = Vec::new();
+    for (d, n) in app.devs.list() {
+        names.push((n, rule_ref_text(dev_color(app, d)), rule_ref_bg(true), true));
+    }
+    for (_, n, c) in app.milestones.list() {
+        names.push((n, rule_ref_text(from_hex(c)), rule_ref_bg(false), false));
+    }
+    names.retain(|(n, ..)| !n.is_empty());
+    names.sort_by_key(|(n, ..)| std::cmp::Reverse(n.len()));
+    let plain_fmt = TextFormat { font_id: font.clone(), color: plain, ..Default::default() };
+    let mut job = LayoutJob::default();
+    let lower = text.to_lowercase();
+    // `to_lowercase` può cambiare le lunghezze: solo se restano uguali si
+    // cerca (testi delle regole: sì).
+    if lower.len() != text.len() {
+        job.append(text, 0.0, plain_fmt);
+        return job;
+    }
+    let (mut i, mut done) = (0, 0);
+    while i < text.len() {
+        let rest = &lower[i..];
+        let kw = [("dev ", true), ("milestone ", false)].into_iter().find(|(k, _)| rest.starts_with(k));
+        let at_word = i == 0 || !text[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric());
+        if let (Some((k, is_dev)), true) = (kw, at_word) {
+            let mut j = i + k.len();
+            if text[j..].starts_with('"') {
+                j += 1;
+            }
+            let hit = names.iter().find(|(n, _, _, d)| {
+                *d == is_dev
+                    && text[j..].starts_with(n.as_str())
+                    && !text[j + n.len()..].chars().next().is_some_and(|c| c.is_alphanumeric())
+            });
+            if let Some((n, color, bg, _)) = hit {
+                job.append(&text[done..j], 0.0, plain_fmt.clone());
+                job.append(n, 0.0, TextFormat { font_id: font.clone(), color: *color, background: *bg, ..Default::default() });
+                i = j + n.len();
+                done = i;
+                continue;
+            }
+        }
+        i += text[i..].chars().next().map_or(1, |c| c.len_utf8());
+    }
+    if done < text.len() {
+        job.append(&text[done..], 0.0, plain_fmt);
+    }
+    job
 }
 
 /// Tendina a scelta multipla di ancore (punti o ancore di un avviso): una
@@ -56,6 +146,7 @@ fn choice_combo<T: PartialEq + Copy>(
 /// voci scelte separate da virgole (tutte nel suggerimento).
 fn multi_anchor_combo(
     ui: &mut egui::Ui,
+    app: &App,
     salt: impl std::hash::Hash + std::fmt::Debug,
     width: f32,
     selected: &[Anchor],
@@ -65,16 +156,18 @@ fn multi_anchor_combo(
         options.iter().find(|(v, _)| v == a).map_or_else(|| "⚠ inesistente".to_string(), |(_, l)| l.clone())
     };
     let text = selected.iter().map(label).collect::<Vec<_>>().join(", ");
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let job = |s: &str| ref_job(app, s, Color32::PLACEHOLDER, font.clone());
     let mut picked = None;
     let resp = egui::ComboBox::from_id_salt(salt)
-        .selected_text(text.clone())
+        .selected_text(job(&text))
         .width(width)
         .height(400.0)
         .show_ui(ui, |ui| {
             for (v, l) in options {
                 let mut on = selected.contains(v);
                 let last = on && selected.len() == 1;
-                if ui.add_enabled(!last, egui::Checkbox::new(&mut on, l)).changed() {
+                if ui.add_enabled(!last, egui::Checkbox::new(&mut on, job(l))).changed() {
                     // Nell'ordine delle voci; quelle scelte non più in elenco
                     // (riferimenti eliminati) restano in fondo.
                     let mut next: Vec<Anchor> = options
@@ -88,7 +181,7 @@ fn multi_anchor_combo(
             }
         });
     if selected.len() > 1 {
-        resp.response.on_hover_text(text);
+        resp.response.on_hover_text(job(&text));
     }
     picked
 }
@@ -205,7 +298,7 @@ fn target_options(app: &App, current: Target) -> Vec<(Target, String)> {
         (Target::ProjectStart, "Inizio progetto (data)".to_string()),
         (Target::ProjectEnd, "Fine progetto (data)".to_string()),
     ];
-    out.extend(milestone_options(app).into_iter().map(|(m, n)| (Target::Milestone(m), n)));
+    out.extend(milestone_options(app).into_iter().map(|(m, n)| (Target::Milestone(m), format!("Milestone {n}"))));
     for (d, n) in app.devs.list() {
         out.push((Target::AddDev(d), format!("Aggiungi dev {n}")));
     }
@@ -482,13 +575,6 @@ pub(crate) fn delete_or_confirm(app: &App, state: &mut UiState, actions: &mut Ve
     }
 }
 
-/// Spazio sotto l'elenco delle regole: quanto occupa la barra di
-/// scorrimento orizzontale, più un margine.
-pub(crate) fn rules_bottom_pad(ui: &egui::Ui) -> f32 {
-    let sc = &ui.spacing().scroll;
-    sc.bar_width + sc.bar_inner_margin + sc.bar_outer_margin + 6.0
-}
-
 pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
     if !state.show_rules {
         return;
@@ -497,97 +583,25 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
     egui::Window::new("Regole di automazione")
         .collapsible(false)
         .resizable(true)
-        .default_width(1600.0)
+        .default_width(RULES_WINDOW_W)
+        .default_height(620.0)
         .default_pos(egui::pos2(60.0, 80.0))
         .open(&mut open)
         .show(ctx, |ui| {
-            ui.label(
-                egui::RichText::new(
-                    "Ogni regola mette una milestone (o la data di inizio / fine del progetto) N \
-                     settimane prima (-) o dopo (+) un'ancora, nei progetti dell'ambito, e la tiene \
-                     allineata: se l'ancora si sposta, la segue; se l'ancora manca, la milestone \
-                     non c'è (la data invece resta com'è). Quello che una regola governa non si \
-                     modifica a mano. Con più regole sulla stessa \
-                     milestone vince la più specifica (progetto, poi categoria, priorità, tutti). \
-                     «Aggiungi dev B se c'è il dev A» aggiunge B ai progetti in cui c'è A (e non lo \
-                     toglie). «Ore del dev B» sposta in blocco tutte le ore di B perché partano N \
-                     settimane dopo l'ancora, solo con «Applica ora…». «Avviso» non cambia nulla: \
-                     segnala (⚠ accanto alla tripletta, notifica, «Avvisi…») quando il punto scelto \
-                     sta prima / dopo l'ancora ± N. Una regola vale solo per i progetti \
-                     attivi, salvo scegliere anche on-hold / closed accanto all'ambito. Prima di \
-                     attivare una regola (o di cambiarne ambito, stati, cosa o ancora) si vede \
-                     l'elenco di quello che cambierebbe, da confermare.",
-                )
-                .small()
-                .color(text_dim()),
-            );
-            ui.horizontal(|ui| {
-                if ui.button("+ Nuova regola").clicked() {
-                    actions.push(Action::AddRule(new_rule(app)));
-                }
-                ui.separator();
-                if ui
-                    .add_enabled(!app.rules.is_empty(), egui::Button::new("Esporta in testo…"))
-                    .on_hover_text("Salva le regole in un file di testo leggibile (riferimenti per nome).")
-                    .clicked()
-                {
-                    actions.push(Action::ExportRulesText);
-                }
-                if ui
-                    .button("Importa da testo…")
-                    .on_hover_text("Aggiunge le regole di un file di testo (quelle identiche si saltano).")
-                    .clicked()
-                {
-                    actions.push(Action::ImportRulesText);
-                }
-                if ui
-                    .add_enabled(!app.rules.is_empty(), egui::Button::new("Log…"))
-                    .on_hover_text("Salva un file di testo che spiega, regola per regola e progetto per progetto, cosa fa ogni regola e perché.")
-                    .clicked()
-                {
-                    actions.push(Action::ExportRulesLog);
-                }
-                ui.separator();
-                let n = crate::rules::all_warnings(app).len();
-                let label = if n == 0 { "Avvisi…".to_string() } else { format!("⚠ Avvisi ({n})…") };
-                if ui.button(label).on_hover_text("Elenco degli avvisi delle regole in tutti i progetti.").clicked() {
-                    state.show_rule_warnings = true;
-                }
-                ui.label(egui::RichText::new("(nasce spenta: configurala, poi spunta «Attiva»)").small().color(text_dim()));
-            });
+            rules_toolbar(ui, app, state, actions);
+            egui::CollapsingHeader::new("Come funzionano le regole")
+                .id_salt("rules_help")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(RULES_HELP).small().color(text_dim()));
+                });
             ui.separator();
             let all: Vec<(RuleId, Rule)> = app.rules.list().into_iter().map(|(id, r)| (id, r.clone())).collect();
             if all.is_empty() {
-                ui.label(egui::RichText::new("Nessuna regola.").color(text_dim()));
+                ui.label(egui::RichText::new("Nessuna regola: «+ Nuova regola» per crearne una.").color(text_dim()));
                 return;
             }
-            // Filtri: ricerca, tipo, attive / spente.
-            ui.horizontal(|ui| {
-                ui.label("Cerca:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut state.rules_search)
-                        .desired_width(220.0)
-                        .hint_text("nome, milestone, dev…"),
-                );
-                let types: Vec<(RuleTypeFilter, String)> =
-                    RULE_TYPE_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
-                if let Some(t) = choice_combo(ui, "rules_type_filter", 150.0, state.rules_type_filter, &types) {
-                    state.rules_type_filter = t;
-                }
-                let ens: Vec<(RuleEnabledFilter, String)> =
-                    RULE_ENABLED_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
-                if let Some(e) = choice_combo(ui, "rules_enabled_filter", 130.0, state.rules_enabled_filter, &ens) {
-                    state.rules_enabled_filter = e;
-                }
-                let filtering = !state.rules_search.trim().is_empty()
-                    || state.rules_type_filter != RuleTypeFilter::All
-                    || state.rules_enabled_filter != RuleEnabledFilter::All;
-                if filtering && ui.button("✖ Filtri").on_hover_text("Mostra tutte le regole").clicked() {
-                    state.rules_search.clear();
-                    state.rules_type_filter = RuleTypeFilter::All;
-                    state.rules_enabled_filter = RuleEnabledFilter::All;
-                }
-            });
+            rules_filters(ui, state);
             let rules: Vec<(RuleId, Rule)> = all
                 .iter()
                 .filter(|(id, r)| {
@@ -604,157 +618,327 @@ pub(crate) fn rules_window(ctx: &egui::Context, app: &App, state: &mut UiState, 
                 ui.label(egui::RichText::new("Nessuna regola corrisponde ai filtri.").color(text_dim()));
                 return;
             }
-
-            egui::ScrollArea::both()
-                .scroll_source(drag_scroll())
-                .max_height(ui.available_height().max(120.0))
-                .show(ui, |ui| {
-                    egui::Grid::new("rules_grid").striped(true).spacing(egui::vec2(8.0, 6.0)).show(ui, |ui| {
-                        for h in ["Attiva", "Nome", "Progetti", "Cosa", "", "Ancora", "Settimane", "Stato", ""] {
-                            ui.label(egui::RichText::new(h).strong());
-                        }
-                        ui.end_row();
-                        for (id, rule) in rules {
-                            let mut r = rule.clone();
-                            ui.checkbox(&mut r.enabled, "");
-                            // Nome: si conferma uscendo dal campo (Esc annulla).
-                            let buf = state.rule_names.entry(id).or_insert_with(|| rule.name.clone());
-                            // Dimensione esatta: dentro una griglia una
-                            // `TextEdit` non va oltre la larghezza che la
-                            // colonna ha preso al primo frame.
-                            let resp = ui.add_sized(
-                                [RULE_NAME_W, ui.spacing().interact_size.y],
-                                egui::TextEdit::singleline(buf).hint_text(format!("Regola {}", id.0)),
-                            );
-                            if resp.lost_focus() {
-                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                    *buf = rule.name.clone();
-                                } else {
-                                    r.name = buf.trim().to_string();
-                                }
-                            }
-                            // Milestone di un progetto: vale solo lì, quindi
-                            // l'ambito è quel progetto e non si sceglie.
-                            let own = r.target.milestone().and_then(|m| app.milestones.owner(m)).is_some();
-                            ui.horizontal(|ui| {
-                                let scope = ui.add_enabled_ui(!own, |ui| {
-                                    scope_combo(ui, app, ("rule_scope", id), &r.scope)
-                                });
-                                if own {
-                                    scope.response.on_hover_text(
-                                        "Milestone di un solo progetto: la regola vale solo lì.",
-                                    );
-                                }
-                                if let Some(s) = scope.inner {
-                                    r.scope = s;
-                                }
-                                if let Some(i) = states_combo(ui, ("rule_states", id), r.inactive) {
-                                    r.inactive = i;
+            // La regola selezionata (se non c'è o è filtrata via: la prima).
+            if !state.rule_selected.is_some_and(|s| rules.iter().any(|(id, _)| *id == s)) {
+                state.rule_selected = Some(rules[0].0);
+            }
+            let selected = state.rule_selected.unwrap_or(rules[0].0);
+            ui.separator();
+            let h = ui.available_height().max(200.0);
+            ui.horizontal_top(|ui| {
+                // ── Elenco ──
+                ui.allocate_ui_with_layout(
+                    egui::vec2(RULES_LIST_W, h),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("rules_list")
+                            .scroll_source(drag_scroll())
+                            .max_height(h)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                for (id, rule) in &rules {
+                                    rule_list_item(ui, app, state, actions, *id, rule, *id == selected);
                                 }
                             });
-                            // «Cosa»; per un avviso, accanto il punto e il confronto.
-                            ui.horizontal(|ui| {
-                                let targets = target_options(app, r.target);
-                                if let Some(t) = choice_combo(ui, ("rule_target", id), RULE_TARGET_W, r.target, &targets) {
-                                    r.target = t;
-                                }
-                                if let Target::Check(_, cmp) = r.target {
-                                    ui.checkbox(&mut r.check.block, "Blocca").on_hover_text(
-                                        "Impedisce le modifiche che creano o peggiorano una violazione: \
-                                         vengono annullate e una notifica spiega perché.",
-                                    );
-                                    // Uno o più punti (dev, milestone…): si
-                                    // controlla ogni coppia punto × ancora.
-                                    let points = point_options(app);
-                                    let mut pts = r.points();
-                                    if let Some(next) = multi_anchor_combo(ui, ("rule_point", id), RULE_POINT_W, &pts, &points) {
-                                        pts = next;
-                                    }
-                                    let cmps = [(Cmp::NotBefore, "non prima di".to_string()), (Cmp::NotAfter, "non dopo".to_string())];
-                                    let c = choice_combo(ui, ("rule_cmp", id), 110.0, cmp, &cmps).unwrap_or(cmp);
-                                    r.target = Target::Check(pts[0], c);
-                                    r.check.points = pts[1..].to_vec();
-                                }
-                            });
-                            // Fuori dagli avvisi le opzioni d'avviso non servono.
-                            let check = matches!(r.target, Target::Check(..));
-                            if !check {
-                                r.check = Default::default();
+                    },
+                );
+                ui.separator();
+                // ── Dettaglio ──
+                ui.vertical(|ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("rules_detail")
+                        .scroll_source(drag_scroll())
+                        .max_height(h)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if let Some((id, rule)) = rules.iter().find(|(id, _)| *id == selected) {
+                                rule_detail(ui, app, state, actions, *id, rule);
                             }
-                            r.scope = auto_scope(app, r.target, r.scope.clone());
-                            // Ancore adatte al bersaglio: se il bersaglio
-                            // cambia tipo, l'ancora passa alla prima adatta.
-                            let anchors = anchor_options(app, r.target);
-                            if !crate::rules::anchor_fits(r.target, r.anchor)
-                                && let Some((a, _)) = anchors.first()
-                            {
-                                r.anchor = *a;
-                            }
-                            r.check.anchors.retain(|a| crate::rules::anchor_fits(r.target, *a));
-                            let add_dev = r.target.kind() == crate::rules::RuleKind::AddDev;
-                            ui.label(if add_dev { "se" } else if check { "" } else { "=" });
-                            if check {
-                                // Avviso: una o più ancore (dev, milestone…).
-                                if let Some(next) =
-                                    multi_anchor_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, &r.anchors(), &anchors)
-                                {
-                                    r.anchor = next[0];
-                                    r.check.anchors = next[1..].to_vec();
-                                }
-                            } else if let Some(a) = choice_combo(ui, ("rule_anchor", id), RULE_ANCHOR_W, r.anchor, &anchors) {
-                                r.anchor = a;
-                            }
-                            // «Aggiungi dev» non conta settimane.
-                            ui.add_enabled_ui(!add_dev, |ui| {
-                                let plus = if r.offset_weeks > 0 { "+" } else { "" };
-                                ui.add(egui::DragValue::new(&mut r.offset_weeks).range(-520..=520).prefix(plus))
-                                    .on_hover_text("Settimane dopo (+) o prima (-) dell'ancora.");
-                            });
-                            let (text, color, tip) = status_text(app, id, &rule);
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(text).color(color)).on_hover_text(tip);
-                                // Spostamento delle ore: su comando, con anteprima.
-                                if rule.target.kind() == crate::rules::RuleKind::MoveDev {
-                                    let todo = rule.enabled && !crate::rules::pending_moves(app, id).is_empty();
-                                    let btn = ui.add_enabled(todo, egui::Button::new("Applica ora…"));
-                                    if btn
-                                        .on_hover_text("Mostra quali ore si spostano, poi chiede conferma.")
-                                        .clicked()
-                                    {
-                                        state.rule_preview = Some(id);
-                                    }
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .button("Clona")
-                                    .on_hover_text("Aggiunge in fondo una copia della regola (spenta, da modificare e poi attivare).")
-                                    .clicked()
-                                {
-                                    actions.push(Action::AddRule(cloned_rule(app, id, &rule)));
-                                }
-                                if ui
-                                    .button("🗑")
-                                    .on_hover_text("Elimina la regola (se ha collocato delle milestone, chiede se lasciarle o toglierle).")
-                                    .clicked()
-                                {
-                                    delete_or_confirm(app, state, actions, id);
-                                }
-                            });
-                            ui.end_row();
-                            if r != rule {
-                                update_or_confirm(app, state, actions, id, &rule, r);
-                            }
-                        }
-                    });
-                    // Spazio sotto l'ultima regola: la barra di scorrimento
-                    // orizzontale (fluttuante) non copre più l'ultima riga.
-                    ui.add_space(rules_bottom_pad(ui));
+                        });
                 });
+            });
         });
     if !open {
         state.show_rules = false;
         state.rule_names.clear();
+    }
+}
+
+/// Larghezza predefinita della finestra e dell'elenco a sinistra.
+pub(crate) const RULES_WINDOW_W: f32 = 1100.0;
+pub(crate) const RULES_LIST_W: f32 = 380.0;
+/// Larghezza delle tendine del dettaglio.
+const RULE_FIELD_W: f32 = 320.0;
+
+/// Testo d'aiuto (nella sezione richiudibile in cima).
+const RULES_HELP: &str = "Ogni regola mette una milestone (o la data di inizio / fine del progetto) N \
+    settimane prima (-) o dopo (+) un'ancora, nei progetti dell'ambito, e la tiene allineata: se \
+    l'ancora si sposta, la segue; se l'ancora manca, la milestone non c'è (la data invece resta \
+    com'è). Quello che una regola governa non si modifica a mano. Con più regole sulla stessa \
+    milestone vince la più specifica (progetti scelti, poi categoria, priorità, tutti tranne…, \
+    tutti). «Aggiungi dev B se c'è il dev A» aggiunge B ai progetti in cui c'è A (e non lo toglie). \
+    «Ore del dev B» sposta in blocco tutte le ore di B perché partano N settimane dopo l'ancora, \
+    solo con «Applica ora…». «Avviso» non cambia nulla: segnala (⚠ accanto alla tripletta, \
+    notifica, «Avvisi…») quando un punto sta prima / dopo un'ancora ± N; con «Blocca» impedisce \
+    le modifiche che creano o peggiorano una violazione. Una regola vale solo per i progetti \
+    attivi, salvo scegliere anche on-hold / closed. Prima di attivare una regola (o di cambiarne \
+    ambito, stati, cosa o ancora) si vede l'elenco di quello che cambierebbe, da confermare. Una \
+    regola nuova nasce spenta: configurala, poi spunta «Attiva».";
+
+/// Pulsanti in cima: nuova, testo, log, avvisi.
+fn rules_toolbar(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("+ Nuova regola").on_hover_text("Nasce spenta: configurala, poi spunta «Attiva».").clicked() {
+            actions.push(Action::AddRule(new_rule(app)));
+        }
+        ui.separator();
+        if ui
+            .add_enabled(!app.rules.is_empty(), egui::Button::new("Esporta in testo…"))
+            .on_hover_text("Salva le regole in un file di testo leggibile (riferimenti per nome).")
+            .clicked()
+        {
+            actions.push(Action::ExportRulesText);
+        }
+        if ui
+            .button("Importa da testo…")
+            .on_hover_text("Aggiunge le regole di un file di testo (quelle identiche si saltano).")
+            .clicked()
+        {
+            actions.push(Action::ImportRulesText);
+        }
+        if ui
+            .add_enabled(!app.rules.is_empty(), egui::Button::new("Log…"))
+            .on_hover_text("Salva un file di testo che spiega, regola per regola e progetto per progetto, cosa fa ogni regola e perché.")
+            .clicked()
+        {
+            actions.push(Action::ExportRulesLog);
+        }
+        ui.separator();
+        let n = crate::rules::all_warnings(app).len();
+        let label = if n == 0 { "Avvisi…".to_string() } else { format!("⚠ Avvisi ({n})…") };
+        if ui.button(label).on_hover_text("Elenco degli avvisi delle regole in tutti i progetti.").clicked() {
+            state.show_rule_warnings = true;
+        }
+    });
+}
+
+/// Filtri: ricerca, tipo, attive / spente.
+fn rules_filters(ui: &mut egui::Ui, state: &mut UiState) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Cerca:");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.rules_search)
+                .desired_width(200.0)
+                .hint_text("nome, milestone, dev…"),
+        );
+        let types: Vec<(RuleTypeFilter, String)> = RULE_TYPE_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
+        if let Some(t) = choice_combo(ui, "rules_type_filter", 150.0, state.rules_type_filter, &types) {
+            state.rules_type_filter = t;
+        }
+        let ens: Vec<(RuleEnabledFilter, String)> =
+            RULE_ENABLED_CHOICES.iter().map(|(v, l)| (*v, l.to_string())).collect();
+        if let Some(e) = choice_combo(ui, "rules_enabled_filter", 130.0, state.rules_enabled_filter, &ens) {
+            state.rules_enabled_filter = e;
+        }
+        let filtering = !state.rules_search.trim().is_empty()
+            || state.rules_type_filter != RuleTypeFilter::All
+            || state.rules_enabled_filter != RuleEnabledFilter::All;
+        if filtering && ui.button("✖ Filtri").on_hover_text("Mostra tutte le regole").clicked() {
+            state.rules_search.clear();
+            state.rules_type_filter = RuleTypeFilter::All;
+            state.rules_enabled_filter = RuleEnabledFilter::All;
+        }
+    });
+}
+
+/// Una regola nell'elenco: spunta «Attiva», nome, la regola in una riga e lo
+/// stato; un clic sul testo la seleziona (dettaglio a destra).
+fn rule_list_item(
+    ui: &mut egui::Ui,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+    id: RuleId,
+    rule: &Rule,
+    selected: bool,
+) {
+    let fill = if selected { ui.visuals().selection.bg_fill.gamma_multiply(0.35) } else { Color32::TRANSPARENT };
+    let inner = egui::Frame::new().fill(fill).corner_radius(4.0).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
+        ui.set_width(RULES_LIST_W - 24.0);
+        let mut clicked = false;
+        ui.horizontal(|ui| {
+            let mut on = rule.enabled;
+            if ui.checkbox(&mut on, "").on_hover_text("Attiva").changed() {
+                let r = Rule { enabled: on, ..rule.clone() };
+                update_or_confirm(app, state, actions, id, rule, r);
+            }
+            let name = egui::RichText::new(crate::rules::rule_label(app, id)).strong();
+            let name = if rule.enabled { name } else { name.color(text_dim()) };
+            clicked |= ui.add(egui::Label::new(name).truncate().sense(Sense::click())).clicked();
+        });
+        let summary = crate::rules_text::rule_summary(app, rule);
+        clicked |= ui
+            .add(egui::Label::new(ref_job(app, &summary, text_dim(), rule_summary_font(ui))).wrap().sense(Sense::click()))
+            .clicked();
+        let (text, color, tip) = status_text(app, id, rule);
+        clicked |= ui
+            .add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap().sense(Sense::click()))
+            .on_hover_text(tip)
+            .clicked();
+        clicked
+    });
+    if inner.inner {
+        state.rule_selected = Some(id);
+    }
+    ui.add_space(2.0);
+}
+
+/// Dettaglio della regola selezionata: un campo per riga. Le modifiche
+/// passano da `update_or_confirm` (anteprima / milestone orfane).
+fn rule_detail(ui: &mut egui::Ui, app: &App, state: &mut UiState, actions: &mut Vec<Action>, id: RuleId, rule: &Rule) {
+    let mut r = rule.clone();
+    egui::Grid::new(("rule_detail", id)).num_columns(2).spacing(egui::vec2(10.0, 8.0)).show(ui, |ui| {
+        ui.label("Attiva");
+        ui.checkbox(&mut r.enabled, "");
+        ui.end_row();
+
+        // Nome: si conferma uscendo dal campo (Esc annulla).
+        ui.label("Nome");
+        let buf = state.rule_names.entry(id).or_insert_with(|| rule.name.clone());
+        let resp = ui.add(
+            egui::TextEdit::singleline(buf).hint_text(format!("Regola {}", id.0)).desired_width(RULE_FIELD_W),
+        );
+        if resp.lost_focus() {
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                *buf = rule.name.clone();
+            } else {
+                r.name = buf.trim().to_string();
+            }
+        }
+        ui.end_row();
+
+        // Milestone di un progetto: vale solo lì, quindi l'ambito è quel
+        // progetto e non si sceglie.
+        let own = r.target.milestone().and_then(|m| app.milestones.owner(m)).is_some();
+        ui.label("Progetti");
+        ui.horizontal(|ui| {
+            let scope = ui.add_enabled_ui(!own, |ui| scope_combo(ui, app, ("rule_scope", id), &r.scope));
+            if own {
+                scope.response.on_hover_text("Milestone di un solo progetto: la regola vale solo lì.");
+            }
+            if let Some(s) = scope.inner {
+                r.scope = s;
+            }
+            if let Some(i) = states_combo(ui, ("rule_states", id), r.inactive) {
+                r.inactive = i;
+            }
+        });
+        ui.end_row();
+
+        ui.label("Cosa");
+        let targets = target_options(app, r.target);
+        if let Some(t) = ref_choice_combo(ui, app, ("rule_target", id), RULE_FIELD_W, r.target, &targets) {
+            r.target = t;
+        }
+        ui.end_row();
+
+        // Avviso: punti (uno o più), confronto e «Blocca».
+        if let Target::Check(_, cmp) = r.target {
+            ui.label("Controlla");
+            let points = point_options(app);
+            let mut pts = r.points();
+            if let Some(next) = multi_anchor_combo(ui, app, ("rule_point", id), RULE_FIELD_W, &pts, &points) {
+                pts = next;
+            }
+            ui.end_row();
+            ui.label("");
+            let cmps = [(Cmp::NotBefore, "non prima di".to_string()), (Cmp::NotAfter, "non dopo".to_string())];
+            let c = choice_combo(ui, ("rule_cmp", id), 140.0, cmp, &cmps).unwrap_or(cmp);
+            ui.end_row();
+            r.target = Target::Check(pts[0], c);
+            r.check.points = pts[1..].to_vec();
+        }
+        // Fuori dagli avvisi le opzioni d'avviso non servono.
+        let check = matches!(r.target, Target::Check(..));
+        if !check {
+            r.check = Default::default();
+        }
+        r.scope = auto_scope(app, r.target, r.scope.clone());
+        // Ancore adatte al bersaglio: se il bersaglio cambia tipo, l'ancora
+        // passa alla prima adatta.
+        let anchors = anchor_options(app, r.target);
+        if !crate::rules::anchor_fits(r.target, r.anchor)
+            && let Some((a, _)) = anchors.first()
+        {
+            r.anchor = *a;
+        }
+        r.check.anchors.retain(|a| crate::rules::anchor_fits(r.target, *a));
+        let add_dev = r.target.kind() == crate::rules::RuleKind::AddDev;
+        ui.label(if add_dev { "Se" } else { "Ancora" });
+        if check {
+            // Una o più ancore (dev, milestone…): ogni coppia punto × ancora.
+            if let Some(next) = multi_anchor_combo(ui, app, ("rule_anchor", id), RULE_FIELD_W, &r.anchors(), &anchors) {
+                r.anchor = next[0];
+                r.check.anchors = next[1..].to_vec();
+            }
+        } else if let Some(a) = ref_choice_combo(ui, app, ("rule_anchor", id), RULE_FIELD_W, r.anchor, &anchors) {
+            r.anchor = a;
+        }
+        ui.end_row();
+
+        // «Aggiungi dev» non conta settimane.
+        if !add_dev {
+            ui.label("Settimane");
+            let plus = if r.offset_weeks > 0 { "+" } else { "" };
+            ui.add(egui::DragValue::new(&mut r.offset_weeks).range(-520..=520).prefix(plus))
+                .on_hover_text("Settimane dopo (+) o prima (-) dell'ancora.");
+            ui.end_row();
+        }
+
+        if check {
+            ui.label("Blocca");
+            ui.checkbox(&mut r.check.block, "impedisci le modifiche che la violano").on_hover_text(
+                "Una modifica che crea o peggiora una violazione viene annullata e una notifica spiega perché.",
+            );
+            ui.end_row();
+        }
+
+        ui.label("Stato");
+        let (text, color, tip) = status_text(app, id, rule);
+        ui.add(egui::Label::new(egui::RichText::new(text).color(color)).wrap()).on_hover_text(tip);
+        ui.end_row();
+    });
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        // Spostamento delle ore: su comando, con anteprima.
+        if rule.target.kind() == crate::rules::RuleKind::MoveDev {
+            let todo = rule.enabled && !crate::rules::pending_moves(app, id).is_empty();
+            if ui
+                .add_enabled(todo, egui::Button::new("Applica ora…"))
+                .on_hover_text("Mostra quali ore si spostano, poi chiede conferma.")
+                .clicked()
+            {
+                state.rule_preview = Some(id);
+            }
+        }
+        if ui
+            .button("Clona")
+            .on_hover_text("Aggiunge in fondo una copia della regola (spenta, da modificare e poi attivare).")
+            .clicked()
+        {
+            actions.push(Action::AddRule(cloned_rule(app, id, rule)));
+        }
+        if ui
+            .button("🗑 Elimina")
+            .on_hover_text("Elimina la regola (se ha collocato delle milestone, chiede se lasciarle o toglierle).")
+            .clicked()
+        {
+            delete_or_confirm(app, state, actions, id);
+        }
+    });
+    if r != *rule {
+        update_or_confirm(app, state, actions, id, rule, r);
     }
 }
 
@@ -1038,12 +1222,12 @@ pub(crate) fn project_rules_window(ctx: &egui::Context, app: &App, state: &mut U
             let row = |ui: &mut egui::Ui, l: &crate::rules::ProjectRuleLine| {
                 let Some(r) = app.rules.get(l.rule) else { return };
                 ui.label(egui::RichText::new(crate::rules::rule_label(app, l.rule)).strong());
-                ui.label(
-                    egui::RichText::new(crate::rules_text::rule_summary(app, r)).small().color(text_dim()),
-                );
+                let body = egui::TextStyle::Body.resolve(ui.style());
+                let summary = crate::rules_text::rule_summary(app, r);
+                ui.add(egui::Label::new(ref_job(app, &summary, text_dim(), rule_summary_font(ui))).wrap());
                 let warn = l.text.starts_with("AVVISO") || l.text.starts_with("ferma");
                 let color = if warn { warn_amber() } else { text() };
-                ui.label(egui::RichText::new(format!("→ {}", l.text)).color(color));
+                ui.add(egui::Label::new(ref_job(app, &format!("→ {}", l.text), color, body)).wrap());
                 ui.add_space(4.0);
             };
             egui::ScrollArea::vertical()
@@ -1117,7 +1301,8 @@ pub(crate) fn rule_warnings_window(ctx: &egui::Context, app: &App, state: &mut U
                                 state.jump_to_project = Some(*proj);
                             }
                             ui.label(egui::RichText::new(crate::rules::rule_label(app, w.rule)).strong());
-                            ui.label(egui::RichText::new(&w.text).color(warn_amber()));
+                            let body = egui::TextStyle::Body.resolve(ui.style());
+                            ui.label(ref_job(app, &w.text, warn_amber(), body));
                             ui.end_row();
                         }
                     });

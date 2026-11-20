@@ -957,7 +957,24 @@ trova le regole che mettono o usano il Collaudo), il **tipo** (Milestone, Date
 del progetto, Dev, Avvisi) e **attive / spente**; sotto compare «N di M
 regole» e **✖ Filtri** li toglie tutti.
 
-Nella finestra ogni regola è una riga:
+La finestra è divisa in due. **A sinistra l'elenco** delle regole: per
+ognuna la spunta **Attiva**, il nome, la regola in una riga (es. «milestone
+"Collaudo" = fine dev "Backend" +2 sett.») e lo stato; un clic sulla regola la
+**seleziona**. **A destra il dettaglio** della regola selezionata, un campo per
+riga, con in fondo **Clona** ed **Elimina** (e **Applica ora…** per le regole
+«Ore del dev»). Una regola nuova o clonata diventa subito la selezionata. In
+cima, la sezione richiudibile **Come funzionano le regole** riassume il tutto.
+
+Nei testi delle regole — le tendine del dettaglio, la regola in una riga
+dell'elenco, la finestra **Regole — ABC** e **Avvisi delle regole** — i nomi dei
+**dev** e delle **milestone** sono scritti nel loro colore (per un dev il suo
+colore di sfondo) su due sfondi diversi per i due gruppi, che seguono il tema:
+nel tema scuro **blu-grigio** per i dev e **bruno** per le milestone, nel tema
+chiaro **azzurrino** e **giallino**. Un colore che sul suo sfondo si leggerebbe
+poco viene schiarito (tema scuro) o scurito (tema chiaro). La regola in una
+riga sotto il nome è scritta un po' più grande del testo piccolo.
+
+I campi di una regola:
 
 - **Attiva** — la regola agisce solo se spuntata. Una regola nuova (pulsante
   **+ Nuova regola**) nasce **spenta**: prima la si configura, poi la si attiva.
@@ -970,7 +987,7 @@ Nella finestra ogni regola è una riga:
   invece si applicano subito. **Spegnendo** una regola (o restringendone
   l'ambito, cambiandone la milestone…) che aveva collocato delle milestone ora
   senza regola, la stessa finestra (**Spegnere la regola?**) le elenca con la
-  spunta **Toglile dai progetti**, come per l'eliminazione (vedi 🗑);
+  spunta **Toglile dai progetti**, come per l'eliminazione (vedi 🗑 Elimina);
 - **Nome** — libero, per riconoscerla (si conferma uscendo dal campo; Esc
   annulla);
 - **Progetti** — l'ambito: **tutti i progetti**, quelli di una **categoria**, di
@@ -1002,10 +1019,10 @@ Nella finestra ogni regola è una riga:
   quindi la milestone non c'è), «N ad altre regole» (lì vince una regola più
   specifica), «N esclusi per stato» (progetti on-hold / closed che la regola
   non tocca); il suggerimento li spiega;
-- **Clona** — aggiunge in fondo una **copia** della regola (stessi valori, nome
+- **Clona** (in fondo al dettaglio) — aggiunge in fondo una **copia** della regola (stessi valori, nome
   «… (copia)»), **spenta**: la si modifica e poi la si attiva (due regole uguali
   attive si farebbero concorrenza);
-- 🗑 — elimina la regola. Se aveva collocato delle milestone che nessun'altra
+- **🗑 Elimina** (in fondo al dettaglio) — elimina la regola. Se aveva collocato delle milestone che nessun'altra
   regola tiene allineate, prima si apre **Eliminare la regola?** con il loro
   elenco e la spunta **Toglile dai progetti**: spenta (di norma) restano dove
   sono e da quel momento si spostano a mano, accesa vengono tolte. Le date di
@@ -1113,8 +1130,8 @@ Backend. Il controllo vale solo dove **il punto e l'ancora esistono entrambi**
 
 Nello stato della regola: «rispettata» oppure «⚠ N avvisi».
 
-**Più dev e milestone in un avviso** — le tendine del **punto** e
-dell'**ancora** di un avviso hanno una spunta per voce: se ne possono scegliere
+**Più dev e milestone in un avviso** — le tendine **Controlla** (i punti) e
+**Ancora** di un avviso hanno una spunta per voce: se ne possono scegliere
 più d'una, e si controlla **ogni coppia** punto × ancora. Esempio: punto
 «Inizio dev dev1, Inizio dev dev2», **non prima di**, ancora «Fine dev dev3,
 Fine dev dev4, Milestone Milestone1» = né dev1 né dev2 possono partire prima
@@ -1122,7 +1139,7 @@ che dev3 e dev4 siano finiti e prima di Milestone1. Ogni coppia in difetto è un
 avviso a sé (nell'elenco e nel suggerimento si vede quale); le coppie in cui
 manca un elemento (dev senza ore, milestone non collocata) non si controllano.
 
-**Blocca** — accanto ad «Avviso» c'è la spunta **Blocca**: con la regola attiva,
+**Blocca** — nel dettaglio di un avviso c'è la spunta **Blocca**: con la regola attiva,
 una modifica che **crea** una violazione o ne **peggiora** una già presente
 (es. dev1 ancora più in anticipo) viene **annullata per intero** — anche un
 inserimento multiplo o uno «Sposta» di cui solo una parte viola — e una

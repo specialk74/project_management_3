@@ -1300,6 +1300,8 @@ pub struct UiState {
     // ogni regola (finché non si conferma)
     show_rules: bool,
     rule_names: HashMap<crate::rules::RuleId, String>,
+    // regola selezionata nell'elenco della finestra (dettaglio a destra)
+    rule_selected: Option<crate::rules::RuleId>,
     // filtri della finestra delle regole: ricerca (nome e riassunto), tipo,
     // attive / spente (solo sessione)
     rules_search: String,
@@ -3388,7 +3390,8 @@ impl PjmApp {
                 }
             }
             Action::AddRule(rule) => {
-                self.app.rules.add(rule);
+                // La nuova (o la copia) diventa la selezionata.
+                self.ui.rule_selected = Some(self.app.rules.add(rule));
                 self.mark_changed();
             }
             Action::UpdateRule(id, rule) => {

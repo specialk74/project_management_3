@@ -3906,7 +3906,7 @@ fn rules_window_adds_rules_and_shows_their_status() {
         check: Default::default(),
     });
     let texts = drawn_texts(&ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
-    for t in ["Fine dev Backend", "Collaudo", "Tutti i progetti", "in 0 progetti"] {
+    for t in ["Fine dev Backend", "Milestone Collaudo", "Tutti i progetti", "in 0 progetti"] {
         assert!(texts.iter().any(|s| s == t), "manca «{t}»: {texts:?}");
     }
     app.milestones.del(collaudo);
@@ -3948,7 +3948,7 @@ fn project_milestone_rules_get_the_project_as_scope() {
         }
         _ => panic!("attesa una UpdateRule con l'ambito del progetto"),
     }
-    assert!(drawn_texts(&out).iter().any(|t| t == "Demo interna · ABC"));
+    assert!(drawn_texts(&out).iter().any(|t| t == "Milestone Demo interna · ABC"));
     // Una regola nuova sulla milestone del progetto nasce già con quell'ambito.
     let mut only = App::new();
     let q = only.projects.add("y", Some("XYZ"), None);
@@ -3956,33 +3956,46 @@ fn project_milestone_rules_get_the_project_as_scope() {
     assert_eq!(new_rule(&only).scope, RuleScope::Projects(vec![q]));
 }
 
-/// Il nome della regola ha la sua larghezza (`RULE_NAME_W`): la colonna
-/// «Nome» è larga almeno tanto, anche dopo più frame.
+/// La finestra delle regole non esplode in orizzontale: con un avviso a più
+/// punti e ancore (la riga più lunga di prima) tutto quello che disegna sta
+/// in uno schermo da 1536 px (1920 al 125%), dentro la finestra.
 #[test]
-fn rule_name_column_is_wide() {
-    use crate::rules::{Anchor, Rule, RuleScope, Target};
+fn rules_window_fits_a_1536_px_screen() {
+    use crate::rules::{Anchor, CheckOpts, Cmp, Rule, RuleScope, Target};
     let mut app = App::new();
-    app.rules.add(Rule {
-        name: "Nome".into(),
-        enabled: false,
+    let devs: Vec<_> = ["Backend lungo nome", "Frontend lungo nome", "Test lungo nome"].iter().map(|n| app.devs.add(n)).collect();
+    let m = app.milestones.add("Milestone dal nome molto lungo");
+    let id = app.rules.add(Rule {
+        name: "Una regola d'avviso con un nome lungo".into(),
+        enabled: true,
         scope: RuleScope::All,
-        target: Target::ProjectEnd,
-        anchor: Anchor::LastEffort,
-        offset_weeks: 0,
+        target: Target::Check(Anchor::DevStart(devs[2]), Cmp::NotBefore),
+        anchor: Anchor::DevEnd(devs[0]),
+        offset_weeks: 1,
         inactive: Default::default(),
-        check: Default::default(),
+        check: CheckOpts { points: vec![Anchor::DevEnd(devs[2])], anchors: vec![Anchor::DevEnd(devs[1]), Anchor::Milestone(m)], block: true },
     });
-    let mut state = UiState { show_rules: true, ..Default::default() };
+    let mut state = UiState { show_rules: true, rule_selected: Some(id), ..Default::default() };
     let ctx = egui::Context::default();
-    let input = egui::RawInput { screen_rect: Some(screen(1600.0, 800.0)), ..Default::default() };
+    let input = egui::RawInput { screen_rect: Some(screen(1536.0, 864.0)), ..Default::default() };
     let mut out = None;
     for _ in 0..3 {
         out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
     }
     let out = out.unwrap();
-    let x = |t: &str| text_pos(&out, t).unwrap_or_else(|| panic!("manca «{t}»")).x;
-    let width = x("Progetti") - x("Nome");
-    assert!(width >= RULE_NAME_W, "colonna Nome larga {width}");
+    let right = out
+        .shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(t) => Some(t.pos.x + t.galley.size().x),
+            _ => None,
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(right <= 60.0 + RULES_WINDOW_W, "testo fino a x = {right}");
+    let texts = drawn_texts(&out);
+    for t in ["Controlla", "Ancora", "Blocca", "Settimane", "Stato", "Clona"] {
+        assert!(texts.iter().any(|x| x == t), "manca «{t}» nel dettaglio: {texts:?}");
+    }
 }
 
 /// «Applica ora…» di una regola «Ore del dev»: l'anteprima elenca lo
@@ -4390,10 +4403,9 @@ fn activating_a_rule_shows_the_changes_before_applying() {
     frame(&mut state, &mut actions, vec![]);
     let out = frame(&mut state, &mut actions, vec![]);
     assert!(text_pos(&out, "Attivi + closed").is_some(), "{:?}", drawn_texts(&out));
-    // La spunta «Attiva»: sotto la sua intestazione, all'altezza del nome.
-    let name = text_pos(&out, "Collaudo").expect("nome della regola");
-    let head = text_pos(&out, "Attiva").expect("colonna Attiva");
-    let tick = egui::pos2(head.x, name.y);
+    // La spunta «Attiva» dell'elenco: a sinistra del nome della regola.
+    let name = text_rect(&out, "Collaudo").expect("nome della regola");
+    let tick = egui::pos2(name.left() - 14.0, name.center().y);
     for ev in click_events(tick, egui::PointerButton::Primary) {
         frame(&mut state, &mut actions, vec![ev]);
     }
@@ -4900,8 +4912,8 @@ fn blocking_rule_reverts_the_whole_action_that_violates_it() {
     assert!(pjm.app.projects.get_single_dev(p, be).unwrap().get_all(wk(3)).is_none(), "Backend non allungato");
 }
 
-/// Finestra delle regole: un avviso mostra la spunta «Blocca»; spuntarla
-/// manda l'`UpdateRule` con il blocco acceso.
+/// Finestra delle regole: il dettaglio di un avviso mostra la spunta
+/// «Blocca»; spuntarla manda l'`UpdateRule` con il blocco acceso.
 #[test]
 fn rules_window_has_the_block_checkbox_for_warnings() {
     use crate::rules::{Anchor, Cmp, Inactive, Rule, RuleScope, Target};
@@ -4928,10 +4940,8 @@ fn rules_window_has_the_block_checkbox_for_warnings() {
         out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut actions)));
     }
     let out = out.unwrap();
-    let pos = text_pos(&out, "Blocca").expect("spunta Blocca");
+    let pos = text_pos(&out, "impedisci le modifiche che la violano").expect("spunta Blocca");
     assert!(pos.x < 1536.0, "in vista: {pos:?}");
-    // Al centro del testo: sotto l'ultima riga c'è spazio, la barra di
-    // scorrimento orizzontale non la copre.
     for ev in click_events(pos, egui::PointerButton::Primary) {
         let mut i = input.clone();
         i.events = vec![ev];
@@ -4942,4 +4952,155 @@ fn rules_window_has_the_block_checkbox_for_warnings() {
         "{} azioni",
         actions.len()
     );
+}
+
+/// Elenco + dettaglio: di partenza è selezionata la prima regola; un clic su
+/// un'altra nell'elenco la mostra nel dettaglio (il campo Nome ha il suo
+/// nome); una regola aggiunta (nuova o copia) diventa la selezionata.
+#[test]
+fn rules_window_selects_a_rule_from_the_list() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    let rule = |name: &str| Rule {
+        name: name.into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: Target::ProjectEnd,
+        anchor: Anchor::LastEffort,
+        offset_weeks: 0,
+        inactive: Default::default(),
+        check: Default::default(),
+    };
+    let a = app.rules.add(rule("Prima"));
+    let b = app.rules.add(rule("Seconda"));
+    let mut pjm = PjmApp { app, ui: UiState { show_rules: true, ..Default::default() } };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1536.0, 864.0)), ..Default::default() };
+    let frame = |pjm: &mut PjmApp, events: Vec<egui::Event>| {
+        let mut i = input.clone();
+        i.events = events;
+        let mut actions = Vec::new();
+        let out = ctx.run_ui_test(i, |ui| rules_window(ui.ctx(), &pjm.app, &mut pjm.ui, &mut actions));
+        (out, actions)
+    };
+    frame(&mut pjm, vec![]);
+    let (out, _) = frame(&mut pjm, vec![]);
+    assert_eq!(pjm.ui.rule_selected, Some(a));
+    // Il nome compare due volte (elenco e campo del dettaglio) solo per la
+    // selezionata.
+    let count = |out: &egui::FullOutput, t: &str| drawn_texts(out).iter().filter(|x| *x == t).count();
+    assert_eq!((count(&out, "Prima"), count(&out, "Seconda")), (2, 1));
+    let pos = text_pos(&out, "Seconda").expect("Seconda nell'elenco");
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        frame(&mut pjm, vec![ev]);
+    }
+    assert_eq!(pjm.ui.rule_selected, Some(b));
+    let (out, _) = frame(&mut pjm, vec![]);
+    assert_eq!((count(&out, "Prima"), count(&out, "Seconda")), (1, 2));
+    // «Clona» nel dettaglio: la copia diventa la selezionata.
+    let pos = text_pos(&out, "Clona").expect("Clona");
+    let mut sent = Vec::new();
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        sent.extend(frame(&mut pjm, vec![ev]).1);
+    }
+    for a in sent {
+        pjm.apply(a);
+    }
+    let copy = pjm.app.rules.list().last().unwrap().0;
+    assert_eq!(pjm.ui.rule_selected, Some(copy));
+    assert_eq!(crate::rules::rule_label(&pjm.app, copy), "Seconda (copia)");
+}
+
+/// Nei testi delle regole i nomi di dev e milestone (dopo «dev» /
+/// «milestone», anche fra virgolette) hanno il colore del dev (il suo
+/// sfondo) o della milestone su due sfondi scuri diversi; il resto no; il
+/// nome più lungo vince («Backend 2» su «Backend»); «tutti i dev)» non è
+/// un nome.
+#[test]
+fn rule_texts_color_dev_and_milestone_names() {
+    let mut app = App::new();
+    app.devs.add("Backend");
+    app.devs.add("Backend 2");
+    let m = app.milestones.add("Collaudo");
+    let font = egui::FontId::proportional(12.0);
+    let job = ref_job(
+        &app,
+        "milestone \"Collaudo\" = fine dev \"Backend 2\" e Fine dev Backend (tutti i dev)",
+        Color32::GRAY,
+        font,
+    );
+    let parts: Vec<(&str, Color32, Color32)> = job
+        .sections
+        .iter()
+        .map(|s| (&job.text[s.byte_range.start.0..s.byte_range.end.0], s.format.color, s.format.background))
+        .collect();
+    let colored: Vec<&str> = parts.iter().filter(|(_, _, bg)| *bg != Color32::TRANSPARENT).map(|(t, ..)| *t).collect();
+    assert_eq!(colored, ["Collaudo", "Backend 2", "Backend"], "{parts:?}");
+    let get = |name: &str| parts.iter().find(|(t, ..)| *t == name).unwrap();
+    assert_eq!(get("Collaudo").2, rule_ref_bg(false));
+    assert_eq!(get("Backend 2").2, rule_ref_bg(true));
+    assert_ne!(get("Collaudo").2, get("Backend").2, "sfondi diversi per dev e milestone");
+    let ms_color = from_hex(app.milestones.get_color(m).unwrap());
+    assert_eq!(get("Collaudo").1, rule_ref_text(ms_color), "il colore della milestone");
+    assert!(parts.iter().all(|(t, c, bg)| *bg != Color32::TRANSPARENT || *c == Color32::GRAY || t.is_empty()));
+    assert_eq!(job.text, "milestone \"Collaudo\" = fine dev \"Backend 2\" e Fine dev Backend (tutti i dev)");
+}
+
+/// Gli sfondi dei nomi seguono il tema (chiari nel chiaro, scuri nello
+/// scuro) e il colore del nome si adatta: un giallo chiaro si scurisce nel
+/// tema chiaro, un blu scuro si schiarisce nel tema scuro; il contrasto col
+/// suo sfondo resta sufficiente.
+#[test]
+fn rule_name_chips_follow_the_theme() {
+    let lum = |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+    let yellow = Color32::from_rgb(0xff, 0xee, 0x58);
+    let navy = Color32::from_rgb(0x10, 0x20, 0x60);
+    let was = is_dark();
+    for dark in [false, true] {
+        set_dark_theme(dark);
+        for dev in [true, false] {
+            let bg = rule_ref_bg(dev);
+            assert_eq!(lum(bg) > 128.0, !dark, "sfondo {} col tema {}", if dev { "dev" } else { "milestone" }, dark);
+            for c in [yellow, navy] {
+                let t = rule_ref_text(c);
+                assert!((lum(t) - lum(bg)).abs() >= 60.0, "{c:?} → {t:?} su {bg:?} (tema scuro: {dark})");
+            }
+        }
+        assert_ne!(rule_ref_bg(true), rule_ref_bg(false));
+    }
+    set_dark_theme(was);
+}
+
+/// La regola in una riga, sotto il nome nell'elenco, è un po' più grande
+/// del carattere piccolo.
+#[test]
+fn rule_summary_is_a_bit_larger_than_small_text() {
+    use crate::rules::{Anchor, Rule, RuleScope, Target};
+    let mut app = App::new();
+    app.rules.add(Rule {
+        name: "Fine".into(),
+        enabled: false,
+        scope: RuleScope::All,
+        target: Target::ProjectEnd,
+        anchor: Anchor::LastEffort,
+        offset_weeks: 1,
+        inactive: Default::default(),
+        check: Default::default(),
+    });
+    let mut state = UiState { show_rules: true, ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1536.0, 864.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| rules_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let out = out.unwrap();
+    let size = out.shapes.iter().find_map(|cs| match &cs.shape {
+        egui::epaint::Shape::Text(t) if t.galley.job.text == "fine progetto = ultimo effort +1 sett." => {
+            t.galley.job.sections.first().map(|s| s.format.font_id.size)
+        }
+        _ => None,
+    });
+    let small = egui::Style::default().text_styles[&egui::TextStyle::Small].size;
+    assert_eq!(size, Some(small + RULE_SUMMARY_FONT_DELTA));
 }
