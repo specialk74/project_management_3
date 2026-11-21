@@ -271,6 +271,25 @@ pub(crate) enum MoveDialog {
 /// quante settimane, e il sistema li scrive in blocco a partire dalla settimana
 /// cliccata (inclusa) andando in avanti, sovrascrivendo eventuali valori già
 /// presenti per quel worker.
+/// Domanda «sovrascrivere gli effort già inseriti?» di «Aggiungi efforts» /
+/// «Aggiungi automatic effort»: le celle già occupate che verrebbero
+/// toccate (settimana, worker, ore attuali) e le due azioni pronte.
+pub(crate) struct FillOverwrite {
+    pub occupied: Vec<(WeekId, WorkerId, usize)>,
+    /// Con «Sovrascrivi».
+    pub overwrite: Action,
+    /// Con «Mantieni»: le celle occupate restano come sono.
+    pub keep: Action,
+}
+
+/// Conferma di «Cancella effort»: le celle (settimana, worker, ore) che
+/// verranno tolte dal dev.
+pub(crate) struct BulkClear {
+    pub proj: ProjectId,
+    pub dev: DevId,
+    pub cells: Vec<(WeekId, WorkerId, usize)>,
+}
+
 pub(crate) struct BulkFill {
     pub proj: ProjectId,
     pub dev: DevId,
@@ -290,6 +309,9 @@ pub(crate) struct BulkFill {
     /// «Aggiungi automatic effort»: riempie all'indietro (dalla settimana
     /// cliccata verso l'inizio del progetto) invece che in avanti.
     pub backward: bool,
+    /// «Cancella effort» ▸ «Cancella tutto»: tutte le settimane del dev
+    /// (anche prima della settimana cliccata e oltre la fine del progetto).
+    pub all: bool,
 }
 
 impl BulkFill {
@@ -307,6 +329,7 @@ impl BulkFill {
             to_end: false,
             to_milestone: None,
             backward: false,
+            all: false,
         }
     }
 }
@@ -1102,6 +1125,14 @@ pub struct UiState {
     // multiplo, senza settimane: `auto_fill_window`)
     auto_fill: Option<BulkFill>,
     auto_fill_was_open: bool,
+    // «Inserisci» di uno dei due inserimenti su celle già occupate: chiede se
+    // sovrascriverle (`fill_overwrite_window`)
+    fill_overwrite: Option<FillOverwrite>,
+    // «Cancella effort…» (stessa struttura dell'inserimento multiplo, senza
+    // ore: `bulk_clear_window`) e la sua conferma con le celle da cancellare
+    bulk_clear: Option<BulkFill>,
+    bulk_clear_was_open: bool,
+    confirm_bulk_clear: Option<BulkClear>,
     // conferma «Sposta inizio/fine progetto qua» quando si perdono effort/milestone
     bound_move: Option<BoundMove>,
     dev_manage: Option<ProjectId>,
@@ -1584,6 +1615,14 @@ pub(crate) enum Action {
         hours: usize,
         /// All'indietro, verso l'inizio del progetto (o della griglia).
         backward: bool,
+        /// Sovrascrive le celle del worker già occupate su quel dev.
+        overwrite: bool,
+    },
+    /// «Cancella effort…»: toglie queste celle (ore, anche 0, e nota) del dev.
+    BulkClearEffort {
+        proj: ProjectId,
+        dev: DevId,
+        cells: Vec<(WeekId, WorkerId)>,
     },
     BulkFillEffort {
         proj: ProjectId,
@@ -1595,6 +1634,9 @@ pub(crate) enum Action {
         /// Ultima settimana scrivibile (inclusa) oltre a `fill_limit`:
         /// la milestone di «Fino a milestone».
         until: Option<WeekId>,
+        /// Sovrascrive le celle del worker già occupate; altrimenti le salta
+        /// (contano comunque tra le `weeks`).
+        overwrite: bool,
     },
     SetNote {
         proj: ProjectId,
@@ -2425,6 +2467,9 @@ impl eframe::App for PjmApp {
             popup_window(ui.ctx(), app, state, &mut actions);
             bulk_fill_window(ui.ctx(), app, state, &mut actions);
             auto_fill_window(ui.ctx(), app, state, &mut actions);
+            fill_overwrite_window(ui.ctx(), app, state, &mut actions);
+            bulk_clear_window(ui.ctx(), app, state);
+            bulk_clear_confirm_window(ui.ctx(), app, state, &mut actions);
             bound_move_window(ui.ctx(), app, state, &mut actions);
             dev_manage_window(ui.ctx(), app, state, &mut actions);
             pdf_export_window(ui.ctx(), app, state, &mut actions);
@@ -3234,8 +3279,8 @@ impl PjmApp {
                 let (text, note, _) = &slots[row];
                 self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
             }
-            Action::AutoFillEffort { proj, dev, start, workers, hours, backward } => {
-                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours, backward);
+            Action::AutoFillEffort { proj, dev, start, workers, hours, backward, overwrite } => {
+                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours, backward, overwrite);
                 for (w, wid, h) in &plan.cells {
                     self.app.projects.add_effort(proj, dev, *w, *wid, Effort(*h));
                 }
@@ -3250,6 +3295,15 @@ impl PjmApp {
                     ));
                 }
             }
+            Action::BulkClearEffort { proj, dev, cells } => {
+                let mut changed = false;
+                for (w, wid) in cells {
+                    changed |= self.app.projects.remove_worker_effort(proj, dev, w, wid);
+                }
+                if changed {
+                    self.mark_changed();
+                }
+            }
             Action::BulkFillEffort {
                 proj,
                 dev,
@@ -3258,8 +3312,9 @@ impl PjmApp {
                 effort,
                 weeks,
                 until,
+                overwrite,
             } => {
-                if bulk_fill_effort(&mut self.app, proj, dev, start, &workers, effort, weeks, until) {
+                if bulk_fill_effort(&mut self.app, proj, dev, start, &workers, effort, weeks, until, overwrite) {
                     self.mark_changed();
                 }
             }
@@ -5065,6 +5120,9 @@ pub(crate) struct AutoFillPlan {
     pub allocated: usize,
     /// (settimana, worker, ore) in ordine di settimana e di worker.
     pub cells: Vec<(WeekId, WorkerId, usize)>,
+    /// Celle già occupate che `cells` sovrascrive (settimana, worker, ore di
+    /// prima); vuoto senza `overwrite`.
+    pub overwritten: Vec<(WeekId, WorkerId, usize)>,
     /// Ore che non stanno fino alla fine del progetto (o della griglia).
     pub left: usize,
 }
@@ -5096,6 +5154,7 @@ impl AutoFillPlan {
 /// cella su quel dev (non si sovrascrive). Si ferma alla fine del progetto
 /// (o della griglia, `fill_limit`): non va mai oltre (`left` = quello che
 /// non sta).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_fill_plan(
     app: &App,
     proj: ProjectId,
@@ -5104,6 +5163,7 @@ pub(crate) fn auto_fill_plan(
     workers: &[WorkerId],
     hours: usize,
     backward: bool,
+    overwrite: bool,
 ) -> AutoFillPlan {
     let sd = app.projects.get_single_dev(proj, dev);
     let planned = sd.map_or(0, |sd| sd.planned_effort().0);
@@ -5114,9 +5174,7 @@ pub(crate) fn auto_fill_plan(
         plan.left = left;
         return plan;
     }
-    let occupied = |w: WeekId, wid: WorkerId| {
-        sd.and_then(|sd| sd.get_all(w)).is_some_and(|sew| sew.worker_id.contains_key(&wid))
-    };
+    let occupied = |w: WeekId, wid: WorkerId| cell_effort(app, proj, dev, w, wid);
     // In avanti fino alla fine del progetto (o della griglia), all'indietro
     // fino all'inizio: la settimana cliccata è sempre la prima riempita.
     let end = fill_limit(app, proj).0;
@@ -5127,23 +5185,34 @@ pub(crate) fn auto_fill_plan(
             if left == 0 {
                 break;
             }
-            if app.workers.get_week_status(*wid, w.0) == Some(WeekStatus::Ferie) || occupied(w, *wid) {
+            if app.workers.get_week_status(*wid, w.0) == Some(WeekStatus::Ferie) {
                 continue;
             }
-            let busy = app.sovra.get(&(w, *wid)).map_or(0, |e| e.0);
+            // Cella già occupata: si salta, o con `overwrite` le sue ore si
+            // liberano (tornano da distribuire e dalla capacità della settimana).
+            let old = occupied(w, *wid);
+            if old.is_some() && !overwrite {
+                continue;
+            }
+            let old_h = old.unwrap_or(0);
+            let busy = app.sovra.get(&(w, *wid)).map_or(0, |e| e.0).saturating_sub(old_h);
             let free = (app.workers.get_effective_max_hours(*wid, w.0) as usize).saturating_sub(busy);
-            let h = hours.min(left).min(free);
+            let h = hours.min(left + old_h).min(free);
             if h == 0 {
                 continue;
             }
+            left = left + old_h - h;
+            if let Some(o) = old {
+                plan.overwritten.push((w, *wid, o));
+            }
             plan.cells.push((w, *wid, h));
-            left -= h;
         }
         next = if backward { w.0.checked_sub(WEEK_STEP).map(WeekId) } else { Some(WeekId(w.0 + WEEK_STEP)) };
     }
     // Celle in ordine di settimana (all'indietro sono nate al contrario);
     // dentro la settimana resta l'ordine dei worker.
     plan.cells.sort_by_key(|(w, ..)| w.0);
+    plan.overwritten.sort_by_key(|(w, ..)| w.0);
     plan.left = left;
     plan
 }
@@ -5213,10 +5282,95 @@ pub(crate) fn bulk_fill_weeks(
     out
 }
 
+/// Ore che `worker` ha già nella cella di `dev` in `week` (anche 0: conta
+/// l'assegnazione), `None` se la cella non lo ha.
+pub(crate) fn cell_effort(app: &App, proj: ProjectId, dev: DevId, week: WeekId, worker: WorkerId) -> Option<usize> {
+    app.projects
+        .get_single_dev(proj, dev)
+        .and_then(|sd| sd.get_all(week))
+        .and_then(|sew| sew.worker_id.get(&worker).map(|e| e.get_effort().0))
+}
+
+/// Celle che «Cancella effort» toglie: per ognuno dei `workers`, quelle
+/// che ha nel dev (anche a 0) nelle `weeks` settimane di calendario da
+/// `start` (inclusa), senza andare oltre `until` (la milestone) né oltre la
+/// fine del progetto o della griglia (`fill_limit`). Ordinate per
+/// settimana, poi worker.
+pub(crate) fn bulk_clear_cells(
+    app: &App,
+    proj: ProjectId,
+    dev: DevId,
+    start: WeekId,
+    weeks: usize,
+    until: Option<WeekId>,
+    workers: &[WorkerId],
+) -> Vec<(WeekId, WorkerId, usize)> {
+    let limit = fill_limit(app, proj).0;
+    let end = until.map_or(limit, |u| u.min(limit));
+    let mut out: Vec<(WeekId, WorkerId, usize)> = (0..weeks)
+        .map(|i| WeekId(start.0 + i * WEEK_STEP))
+        .take_while(|w| *w <= end)
+        .flat_map(|w| workers.iter().filter_map(move |wid| cell_effort(app, proj, dev, w, *wid).map(|h| (w, *wid, h))))
+        .collect();
+    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out
+}
+
+/// «Cancella tutto»: tutte le celle (anche a 0) dei `workers` nel dev, in
+/// qualunque settimana. Ordinate per settimana, poi worker.
+pub(crate) fn bulk_clear_all_cells(app: &App, proj: ProjectId, dev: DevId, workers: &[WorkerId]) -> Vec<(WeekId, WorkerId, usize)> {
+    let Some(sd) = app.projects.get_single_dev(proj, dev) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(WeekId, WorkerId, usize)> = sd
+        .get_weeks()
+        .into_iter()
+        .flat_map(|w| workers.iter().filter_map(move |wid| cell_effort(app, proj, dev, w, *wid).map(|h| (w, *wid, h))))
+        .collect();
+    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out
+}
+
+/// Worker che hanno almeno una cella nel dev da `start` in avanti (anche
+/// quelli tolti dagli elenchi): quelli che «Cancella effort» propone.
+pub(crate) fn bulk_clear_workers(app: &App, proj: ProjectId, dev: DevId, start: WeekId) -> Vec<WorkerId> {
+    let Some(sd) = app.projects.get_single_dev(proj, dev) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<WorkerId> = sd
+        .get_weeks()
+        .into_iter()
+        .filter(|w| *w >= start)
+        .filter_map(|w| sd.get_all(w))
+        .flat_map(|sew| sew.worker_id.keys().copied().collect::<Vec<_>>())
+        .collect();
+    ids.retain(|w| *w != WORKER_ID_ZERO);
+    ids.sort_by_key(|w| w.0);
+    ids.dedup();
+    ids
+}
+
+/// Celle già occupate (settimana, worker, ore) fra quelle in cui «Aggiungi
+/// efforts» scriverebbe (`plans`: per worker, le sue settimane).
+pub(crate) fn bulk_fill_occupied(
+    app: &App,
+    proj: ProjectId,
+    dev: DevId,
+    plans: &[(WorkerId, Vec<WeekId>)],
+) -> Vec<(WeekId, WorkerId, usize)> {
+    let mut out: Vec<(WeekId, WorkerId, usize)> = plans
+        .iter()
+        .flat_map(|(wid, ws)| ws.iter().filter_map(move |w| cell_effort(app, proj, dev, *w, *wid).map(|h| (*w, *wid, h))))
+        .collect();
+    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out
+}
+
 /// Scrive `effort` per ognuno dei `workers` nelle sue settimane
 /// (`bulk_fill_weeks`: `weeks` settimane da `start`, saltando le Ferie, fino
-/// alla fine del progetto o della griglia). Sovrascrive il valore già presente per quel
-/// worker. Ritorna `true` se ha scritto qualcosa.
+/// alla fine del progetto o della griglia). Con `overwrite` sovrascrive il
+/// valore già presente per quel worker, altrimenti salta quella settimana
+/// (che conta comunque tra le `weeks`). Ritorna `true` se ha scritto qualcosa.
 #[allow(clippy::too_many_arguments)]
 fn bulk_fill_effort(
     app: &mut App,
@@ -5227,10 +5381,14 @@ fn bulk_fill_effort(
     effort: Effort,
     weeks: usize,
     until: Option<WeekId>,
+    overwrite: bool,
 ) -> bool {
     let mut written = false;
     for wid in workers {
         for w in bulk_fill_weeks(app, proj, *wid, start, weeks, until) {
+            if !overwrite && cell_effort(app, proj, dev, w, *wid).is_some() {
+                continue;
+            }
             app.projects.add_effort(proj, dev, w, *wid, effort);
             written = true;
         }

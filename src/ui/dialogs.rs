@@ -83,33 +83,25 @@ pub(crate) fn note_editor_window(
 
 // ── Inserimento multiplo (tasto destro su cella vuota) ──────────────────────
 
-/// Dialog dell'inserimento multiplo: elenco worker con spunta (gli stessi del
-/// filtro, cioè `show_in_find`), ore settimanali e numero di settimane. Con OK
-/// scrive l'effort a tutti i worker selezionati per N settimane consecutive a
-/// partire dalla settimana della cella cliccata (inclusa), **sovrascrivendo**
-/// eventuali valori già presenti. Le settimane oltre la fine del progetto
-/// (o della griglia, `fill_limit`) vengono scartate: il conteggio effettivo è
-/// mostrato nella dialog.
-pub(crate) fn bulk_fill_window(
-    ctx: &egui::Context,
-    app: &App,
-    state: &mut UiState,
-    actions: &mut Vec<Action>,
-) {
-    if state.bulk_fill.is_none() {
-        return;
-    }
-    let just_opened = !state.bulk_fill_was_open;
-    state.bulk_fill_was_open = true;
+/// Intervallo di settimane scelto in «Aggiungi efforts» / «Cancella
+/// effort» (dalla settimana cliccata): numero di settimane, oppure fino a
+/// fine progetto, oppure fino a una milestone.
+pub(crate) struct FillRange {
+    /// Settimane di calendario fino alla fine del progetto (o della griglia).
+    pub available: usize,
+    /// Il progetto ha una data di fine («Fino a fine progetto»).
+    pub has_end: bool,
+    /// Milestone proponibili per «Fino a milestone».
+    pub milestones: Vec<(MilestoneId, WeekId)>,
+    /// Settimana della milestone scelta.
+    pub until: Option<WeekId>,
+    /// Numero di settimane (di calendario), se valido.
+    pub weeks: Option<usize>,
+}
 
-    let bf = state.bulk_fill.as_mut().unwrap();
-    let dev_label = dev_name(app, bf.dev);
-    let start_label = week_label(bf.week);
-
-    let listed = bulk_fill_listed(app, &bf.search);
-
-    // Settimane di calendario fino alla fine del progetto (o della griglia).
-    let limit = fill_limit_label(app, bf.proj);
+/// Calcola il `FillRange` di `bf`, azzerando le scelte non più valide
+/// (fine progetto senza data, milestone non più in elenco).
+pub(crate) fn fill_range(app: &App, bf: &mut BulkFill) -> FillRange {
     let (end, _) = fill_limit(app, bf.proj);
     let available = ((end.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).max(0) as usize;
     // «Fino a fine progetto» solo se il progetto ha una data di fine.
@@ -125,11 +117,9 @@ pub(crate) fn bulk_fill_window(
     }
     let until: Option<WeekId> =
         bf.to_milestone.and_then(|m| milestones.iter().find(|(id, _)| *id == m).map(|(_, w)| *w));
-    // Valori inseriti: effort (ore/settimana) e numero di settimane (con
-    // «Fino a fine progetto» / «Fino a milestone»: tutte quelle fino alla
-    // fine / alla milestone; le Ferie saltate non la spostano,
-    // `bulk_fill_weeks` si ferma comunque lì).
-    let effort = bf.effort_text.trim().parse::<usize>().ok();
+    // Con «Fino a fine progetto» / «Fino a milestone»: tutte le settimane
+    // fino alla fine / alla milestone (le Ferie saltate dall'inserimento non
+    // la spostano, `bulk_fill_weeks` si ferma comunque lì).
     let weeks = if let Some(u) = until {
         Some((u.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).filter(|n| *n > 0).map(|n| n as usize)
     } else if bf.to_end {
@@ -137,6 +127,139 @@ pub(crate) fn bulk_fill_window(
     } else {
         bf.weeks_text.trim().parse::<usize>().ok().filter(|n| *n > 0)
     };
+    FillRange { available, has_end, milestones, until, weeks }
+}
+
+/// Campi dell'intervallo (settimane, «oppure fino al», «Fino a fine
+/// progetto», «Fino a milestone») e i loro errori. `clearing` = finestra
+/// «Cancella effort» (testi e id diversi). Ritorna `true` se la fine è
+/// fissata (fine progetto o milestone).
+fn fill_range_ui(ui: &mut egui::Ui, app: &App, bf: &mut BulkFill, range: &FillRange, clearing: bool, submit: &mut bool) -> bool {
+    let (until, weeks, has_end) = (range.until, range.weeks, range.has_end);
+    let milestones = &range.milestones;
+    let salt = if clearing { "bulk_clear" } else { "bulk_fill" };
+    let skip = if clearing { "" } else { ", saltando le sue ferie" };
+    let fixed_end = bf.to_end || until.is_some();
+    ui.add_enabled_ui(!fixed_end, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Per quante settimane:");
+            let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
+            *submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        });
+        // Oppure la data di fine: collegata al numero di settimane (la
+        // settimana che contiene la data scelta è l'ultima, inclusa).
+        ui.horizontal(|ui| {
+            ui.label("oppure fino al:");
+            let shown = bulk_fill_last_week(bf.week, weeks.unwrap_or(1));
+            let mut date = days_to_jiff(shown);
+            let r = ui.add(
+                egui_extras::DatePickerButton::new(&mut date)
+                    .id_salt(if clearing { "bulk_clear_end" } else { "bulk_fill_end" })
+                    .format("%Y-%m-%d"),
+            );
+            if r.changed()
+                && let Some(d) = jiff_to_days(date)
+            {
+                bf.weeks_text = weeks_until(bf.week, d).to_string();
+            }
+        })
+        .response
+        .on_hover_text(
+            "Ultima settimana (inclusa): il numero di settimane si aggiorna da solo.",
+        );
+    });
+    // Oppure tutte le settimane fino alla fine del progetto.
+    ui.add_enabled(has_end, egui::Checkbox::new(&mut bf.to_end, "Fino a fine progetto"))
+        .on_hover_text(format!(
+            "Ogni worker scelto in tutte le settimane fino alla fine del progetto (inclusa){skip}."
+        ))
+        .on_disabled_hover_text("Il progetto non ha una data di fine.");
+    if bf.to_end {
+        bf.to_milestone = None;
+    }
+    // Oppure fino a una milestone del progetto (inclusa).
+    ui.add_enabled_ui(!milestones.is_empty(), |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Fino a milestone:");
+            let ms_label = |m: MilestoneId, w: WeekId| {
+                format!("{} — {}", app.milestones.get_name(m).unwrap_or("?"), week_label(w.0 as i32))
+            };
+            let selected = match until.zip(bf.to_milestone) {
+                Some((w, m)) => ms_label(m, w),
+                None => "—".to_string(),
+            };
+            let before = bf.to_milestone;
+            egui::ComboBox::from_id_salt((salt, "milestone"))
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut bf.to_milestone, None, "—");
+                    for (m, w) in milestones {
+                        let color = app
+                            .milestones
+                            .get_color(*m)
+                            .map(|c| rule_ref_text(from_hex(c)))
+                            .unwrap_or_else(text);
+                        ui.selectable_value(
+                            &mut bf.to_milestone,
+                            Some(*m),
+                            egui::RichText::new(ms_label(*m, *w)).color(color),
+                        );
+                    }
+                });
+            if bf.to_milestone.is_some() && bf.to_milestone != before {
+                bf.to_end = false;
+            }
+        })
+        .response
+        .on_hover_text(format!(
+            "Ogni worker scelto in tutte le settimane fino a quella della milestone (inclusa){skip}."
+        ))
+        .on_disabled_hover_text("Nessuna milestone del progetto da questa settimana in avanti.");
+    });
+
+    if until.is_none() && bf.to_end && weeks.is_none() {
+        ui.colored_label(Color32::RED, "La settimana di partenza è dopo la fine del progetto.");
+    } else if !fixed_end && weeks.is_none() && !bf.weeks_text.trim().is_empty() {
+        let msg = if bf.weeks_text.trim().parse::<i64>().is_ok_and(|n| n <= 0) {
+            "La data di fine è prima della settimana di inizio."
+        } else {
+            "Settimane non valide (almeno 1)."
+        };
+        ui.colored_label(Color32::RED, msg);
+    }
+    fixed_end
+}
+
+/// Dialog dell'inserimento multiplo: elenco worker con spunta (gli stessi del
+/// filtro, cioè `show_in_find`), ore settimanali e numero di settimane. Con OK
+/// scrive l'effort a tutti i worker selezionati per N settimane consecutive a
+/// partire dalla settimana della cella cliccata (inclusa), **sovrascrivendo**
+/// eventuali valori già presenti. Le settimane oltre la fine del progetto
+/// (o della griglia, `fill_limit`) vengono scartate: il conteggio effettivo è
+/// mostrato nella dialog.
+pub(crate) fn bulk_fill_window(
+    ctx: &egui::Context,
+    app: &App,
+    state: &mut UiState,
+    actions: &mut Vec<Action>,
+) {
+    // Durante la domanda «Sovrascrivere?» la finestra resta in attesa.
+    if state.bulk_fill.is_none() || state.fill_overwrite.is_some() {
+        return;
+    }
+    let just_opened = !state.bulk_fill_was_open;
+    state.bulk_fill_was_open = true;
+
+    let bf = state.bulk_fill.as_mut().unwrap();
+    let dev_label = dev_name(app, bf.dev);
+    let start_label = week_label(bf.week);
+
+    let listed = bulk_fill_listed(app, &bf.search);
+
+    let limit = fill_limit_label(app, bf.proj);
+    let range = fill_range(app, bf);
+    let (available, until, weeks) = (range.available, range.until, range.weeks);
+    let effort = bf.effort_text.trim().parse::<usize>().ok();
     // Settimane in cui si scrive, per worker scelto: saltano le Ferie (la
     // fine scivola avanti) e si fermano alla fine del progetto (o della griglia).
     let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
@@ -178,100 +301,11 @@ pub(crate) fn bulk_fill_window(
                 );
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             });
-            let fixed_end = bf.to_end || until.is_some();
-            ui.add_enabled_ui(!fixed_end, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Per quante settimane:");
-                    let r = ui.add(egui::TextEdit::singleline(&mut bf.weeks_text).desired_width(50.0));
-                    submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                });
-                // Oppure la data di fine: collegata al numero di settimane (la
-                // settimana che contiene la data scelta è l'ultima, inclusa).
-                ui.horizontal(|ui| {
-                    ui.label("oppure fino al:");
-                    let shown = bulk_fill_last_week(bf.week, weeks.unwrap_or(1));
-                    let mut date = days_to_jiff(shown);
-                    let r = ui.add(
-                        egui_extras::DatePickerButton::new(&mut date)
-                            .id_salt("bulk_fill_end")
-                            .format("%Y-%m-%d"),
-                    );
-                    if r.changed()
-                        && let Some(d) = jiff_to_days(date)
-                    {
-                        bf.weeks_text = weeks_until(bf.week, d).to_string();
-                    }
-                })
-                .response
-                .on_hover_text(
-                    "Settimana in cui finisce l'inserimento (inclusa): il numero di \
-                     settimane si aggiorna da solo.",
-                );
-            });
-            // Oppure tutte le settimane fino alla fine del progetto.
-            ui.add_enabled(has_end, egui::Checkbox::new(&mut bf.to_end, "Fino a fine progetto"))
-                .on_hover_text(
-                    "Ogni worker scelto in tutte le settimane fino alla fine del progetto \
-                     (inclusa), saltando le sue ferie.",
-                )
-                .on_disabled_hover_text("Il progetto non ha una data di fine.");
-            if bf.to_end {
-                bf.to_milestone = None;
-            }
-            // Oppure fino a una milestone del progetto (inclusa).
-            ui.add_enabled_ui(!milestones.is_empty(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Fino a milestone:");
-                    let ms_label = |m: MilestoneId, w: WeekId| {
-                        format!("{} — {}", app.milestones.get_name(m).unwrap_or("?"), week_label(w.0 as i32))
-                    };
-                    let selected = match until.zip(bf.to_milestone) {
-                        Some((w, m)) => ms_label(m, w),
-                        None => "—".to_string(),
-                    };
-                    let before = bf.to_milestone;
-                    egui::ComboBox::from_id_salt("bulk_fill_milestone")
-                        .selected_text(selected)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut bf.to_milestone, None, "—");
-                            for (m, w) in &milestones {
-                                let color = app
-                                    .milestones
-                                    .get_color(*m)
-                                    .map(|c| rule_ref_text(from_hex(c)))
-                                    .unwrap_or_else(text);
-                                ui.selectable_value(
-                                    &mut bf.to_milestone,
-                                    Some(*m),
-                                    egui::RichText::new(ms_label(*m, *w)).color(color),
-                                );
-                            }
-                        });
-                    if bf.to_milestone.is_some() && bf.to_milestone != before {
-                        bf.to_end = false;
-                    }
-                })
-                .response
-                .on_hover_text(
-                    "Ogni worker scelto in tutte le settimane fino a quella della milestone \
-                     (inclusa), saltando le sue ferie.",
-                )
-                .on_disabled_hover_text("Nessuna milestone del progetto da questa settimana in avanti.");
-            });
+            let fixed_end = fill_range_ui(ui, app, bf, &range, false, &mut submit);
 
             // Riepilogo / avvisi.
             if effort.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero).");
-            }
-            if until.is_none() && bf.to_end && weeks.is_none() {
-                ui.colored_label(Color32::RED, "La settimana di partenza è dopo la fine del progetto.");
-            } else if !fixed_end && weeks.is_none() && !bf.weeks_text.trim().is_empty() {
-                let msg = if bf.weeks_text.trim().parse::<i64>().is_ok_and(|n| n <= 0) {
-                    "La data di fine è prima della settimana di inizio."
-                } else {
-                    "Settimane non valide (almeno 1)."
-                };
-                ui.colored_label(Color32::RED, msg);
             }
             if let (Some(e), Some(n)) = (effort, weeks) {
                 // Fine: l'ultima settimana scritta (la più lontana, se le
@@ -322,6 +356,12 @@ pub(crate) fn bulk_fill_window(
                 }
             }
 
+            if effort.is_some() {
+                let n = bulk_fill_occupied(app, bf.proj, bf.dev, &plans).len();
+                if n > 0 {
+                    ui.label(egui::RichText::new(occupied_note(n)).color(info_blue()));
+                }
+            }
             let valid = !bf.selected.is_empty()
                 && effort.is_some()
                 && plans.iter().any(|(_, ws)| !ws.is_empty());
@@ -345,20 +385,250 @@ pub(crate) fn bulk_fill_window(
             }
         });
 
+    let mut asked = false;
     if confirm {
-        actions.push(Action::BulkFillEffort {
-            proj: bf.proj,
-            dev: bf.dev,
-            start: WeekId(bf.week as usize),
-            workers: chosen,
+        let (proj, dev, week) = (bf.proj, bf.dev, bf.week);
+        let action = |overwrite| Action::BulkFillEffort {
+            proj,
+            dev,
+            start: WeekId(week as usize),
+            workers: chosen.clone(),
             effort: Effort(effort.unwrap_or(0)),
             weeks: weeks.unwrap_or(0),
             until,
-        });
+            overwrite,
+        };
+        // Celle già occupate: si chiede prima se sovrascriverle.
+        let occupied = bulk_fill_occupied(app, proj, dev, &plans);
+        if occupied.is_empty() {
+            actions.push(action(true));
+        } else {
+            state.fill_overwrite = Some(FillOverwrite { occupied, overwrite: action(true), keep: action(false) });
+            asked = true;
+        }
     }
-    if confirm || cancel || !open {
+    if (confirm && !asked) || cancel || !open {
         state.bulk_fill = None;
         state.bulk_fill_was_open = false;
+    }
+}
+
+/// «Cancella effort…» (fascia milestone): i worker che hanno effort nel dev
+/// da qui in avanti (tutti spuntati all'apertura) e l'intervallo come in
+/// «Aggiungi efforts» (settimane di calendario, senza saltare le ferie).
+/// «Cancella…» apre la conferma con l'elenco delle celle
+/// (`bulk_clear_confirm_window`); finché è aperta questa finestra attende.
+pub(crate) fn bulk_clear_window(ctx: &egui::Context, app: &App, state: &mut UiState) {
+    if state.bulk_clear.is_none() || state.confirm_bulk_clear.is_some() {
+        return;
+    }
+    let just_opened = !state.bulk_clear_was_open;
+    state.bulk_clear_was_open = true;
+    let bf = state.bulk_clear.as_mut().unwrap();
+    let start = WeekId(bf.week as usize);
+    // Con «Cancella tutto» contano tutte le settimane del dev.
+    let with_cells = bulk_clear_workers(app, bf.proj, bf.dev, if bf.all { WeekId(0) } else { start });
+    if just_opened {
+        bf.selected = with_cells.iter().copied().collect();
+    }
+    let q = bf.search.trim().to_lowercase();
+    let listed: Vec<(WorkerId, String)> = with_cells
+        .iter()
+        .map(|w| (*w, app.workers.get_name_by_id(*w).to_string()))
+        .filter(|(_, n)| search_matches(&q, n))
+        .collect();
+    let range = fill_range(app, bf);
+    let chosen: Vec<WorkerId> = with_cells.iter().copied().filter(|w| bf.selected.contains(w)).collect();
+    let cells = if bf.all {
+        bulk_clear_all_cells(app, bf.proj, bf.dev, &chosen)
+    } else {
+        range.weeks.map(|n| bulk_clear_cells(app, bf.proj, bf.dev, start, n, range.until, &chosen)).unwrap_or_default()
+    };
+    let all_before = bf.all;
+
+    let mut open = true;
+    let mut confirm = false;
+    let mut cancel = false;
+    egui::Window::new("Cancella effort")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            let from = if bf.all { "tutte le settimane".to_string() } else { format!("dalla settimana {}", week_label(bf.week)) };
+            ui.label(egui::RichText::new(format!("{} — {from}", dev_name(app, bf.dev))).color(text_dim()));
+            ui.separator();
+            bulk_fill_workers(ui, bf, &listed, just_opened);
+            ui.separator();
+            let mut submit = false;
+            let all = bf.all;
+            ui.add_enabled_ui(!all, |ui| fill_range_ui(ui, app, bf, &range, true, &mut submit));
+            ui.checkbox(&mut bf.all, "Cancella tutto")
+                .on_hover_text(
+                    "Tutti gli effort dei worker scelti in tutte le settimane del dev, anche prima \
+                     della settimana cliccata e oltre la fine del progetto.",
+                );
+            match (cells.first(), cells.last()) {
+                (Some((first, ..)), Some((last, ..))) => {
+                    ui.label(format!(
+                        "{} celle da cancellare ({} → {}).",
+                        cells.len(),
+                        week_label(first.0 as i32),
+                        week_label(last.0 as i32)
+                    ));
+                }
+                _ if range.weeks.is_some() => {
+                    ui.label(egui::RichText::new("Nessun effort da cancellare.").color(text_dim()));
+                }
+                _ => {}
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.add_enabled(!cells.is_empty(), egui::Button::new("Cancella…")).clicked() {
+                    confirm = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+            if submit && !cells.is_empty() {
+                confirm = true;
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                cancel = true;
+            }
+        });
+    // Spuntando «Cancella tutto» si spuntano anche i worker che hanno effort
+    // solo prima della settimana cliccata.
+    if bf.all && !all_before {
+        bf.selected.extend(bulk_clear_workers(app, bf.proj, bf.dev, WeekId(0)));
+    }
+    if confirm {
+        state.confirm_bulk_clear = Some(BulkClear { proj: bf.proj, dev: bf.dev, cells });
+    }
+    if cancel || !open {
+        state.bulk_clear = None;
+        state.bulk_clear_was_open = false;
+    }
+}
+
+/// Conferma di «Cancella effort»: elenca le celle (worker, settimana, ore).
+/// «Sì, cancella» le toglie (`Action::BulkClearEffort`) e chiude anche la
+/// finestra; «Annulla» torna alla finestra.
+pub(crate) fn bulk_clear_confirm_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    let Some(bc) = state.confirm_bulk_clear.as_ref() else {
+        return;
+    };
+    const MAX_LINES: usize = 12;
+    let answer = confirm_window(ctx, "Cancellare gli effort?", "Sì, cancella", |ui| {
+        let n = bc.cells.len();
+        ui.label(if n == 1 {
+            "Verrà cancellata questa cella (ore e nota):".to_string()
+        } else {
+            format!("Verranno cancellate queste {n} celle (ore e note):")
+        });
+        for (w, wid, h) in bc.cells.iter().take(MAX_LINES) {
+            ui.label(
+                egui::RichText::new(format!("{} — {}: {h}h", app.workers.get_name_by_id(*wid), week_label(w.0 as i32)))
+                    .color(text_dim()),
+            );
+        }
+        if n > MAX_LINES {
+            ui.label(egui::RichText::new(format!("… e altre {}", n - MAX_LINES)).color(text_dim()));
+        }
+        ui.separator();
+    });
+    let answer = answer.or_else(|| ctx.input(|i| i.key_pressed(egui::Key::Escape)).then_some(false));
+    let Some(yes) = answer else {
+        return;
+    };
+    let bc = state.confirm_bulk_clear.take().unwrap();
+    if yes {
+        actions.push(Action::BulkClearEffort {
+            proj: bc.proj,
+            dev: bc.dev,
+            cells: bc.cells.iter().map(|(w, wid, _)| (*w, *wid)).collect(),
+        });
+        state.bulk_clear = None;
+        state.bulk_clear_was_open = false;
+    }
+}
+
+/// Riga informativa degli inserimenti: `n` celle già occupate.
+fn occupied_note(n: usize) -> String {
+    if n == 1 {
+        "1 cella ha già un effort: Inserisci chiederà se sovrascriverla.".to_string()
+    } else {
+        format!("{n} celle hanno già un effort: Inserisci chiederà se sovrascriverle.")
+    }
+}
+
+/// «Aggiungi efforts» / «Aggiungi automatic effort» su celle già occupate:
+/// elenca le celle (worker, settimana, ore attuali) e chiede se
+/// sovrascriverle. «Sovrascrivi» e «Mantieni» (le celle occupate restano
+/// come sono) inseriscono e chiudono anche la finestra dell'inserimento;
+/// «Annulla» torna alla finestra.
+pub(crate) fn fill_overwrite_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    let Some(fo) = state.fill_overwrite.as_ref() else {
+        return;
+    };
+    const MAX_LINES: usize = 12;
+    let mut choice: Option<Option<bool>> = None; // Some(Some(sovrascrivi?)) / Some(None) = annulla
+    let mut open = true;
+    egui::Window::new("Sovrascrivere gli effort?")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            let n = fo.occupied.len();
+            ui.label(if n == 1 {
+                "Questa cella ha già un effort:".to_string()
+            } else {
+                format!("Queste {n} celle hanno già un effort:")
+            });
+            for (w, wid, h) in fo.occupied.iter().take(MAX_LINES) {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} — {}: {h}h",
+                        app.workers.get_name_by_id(*wid),
+                        week_label(w.0 as i32)
+                    ))
+                    .color(text_dim()),
+                );
+            }
+            if n > MAX_LINES {
+                ui.label(egui::RichText::new(format!("… e altre {}", n - MAX_LINES)).color(text_dim()));
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Sovrascrivi").on_hover_text("Le celle prendono il nuovo valore.").clicked() {
+                    choice = Some(Some(true));
+                }
+                if ui.button("Mantieni").on_hover_text("Le celle già occupate restano come sono.").clicked() {
+                    choice = Some(Some(false));
+                }
+                if ui.button("Annulla").on_hover_text("Torna alla finestra dell'inserimento.").clicked() {
+                    choice = Some(None);
+                }
+            });
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                choice = Some(None);
+            }
+        });
+    if !open {
+        choice = Some(None);
+    }
+    let Some(choice) = choice else {
+        return;
+    };
+    let fo = state.fill_overwrite.take().unwrap();
+    if let Some(overwrite) = choice {
+        actions.push(if overwrite { fo.overwrite } else { fo.keep });
+        state.bulk_fill = None;
+        state.bulk_fill_was_open = false;
+        state.auto_fill = None;
+        state.auto_fill_was_open = false;
     }
 }
 
@@ -414,7 +684,7 @@ fn bulk_fill_workers(ui: &mut egui::Ui, bf: &mut BulkFill, listed: &[(WorkerId, 
 /// (`auto_fill_plan`). Riepilogo dal vivo: quanto c'è da distribuire, fin
 /// dove arriva, cosa resta fuori a fine griglia.
 pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
-    if state.auto_fill.is_none() {
+    if state.auto_fill.is_none() || state.fill_overwrite.is_some() {
         return;
     }
     let just_opened = !state.auto_fill_was_open;
@@ -428,7 +698,9 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     // l'ultima settimana.
     let chosen: Vec<WorkerId> =
         app.workers.list().into_iter().map(|(id, _)| id).filter(|id| bf.selected.contains(id)).collect();
-    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0), bf.backward);
+    // Il riepilogo mostra il piano che sovrascrive: è quello che verrebbe
+    // chiesto; con «Mantieni» le celle occupate si saltano.
+    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0), bf.backward, true);
     let limit = auto_fill_limit_label(app, bf.proj, bf.backward);
 
     let mut open = true;
@@ -473,7 +745,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 match (plan.cells.first(), plan.cells.last()) {
                     (Some((first, ..)), Some((last, ..))) => {
                         ui.label(format!(
-                            "{placed}h in {} settimane ({} → {}), entro la capacità dei worker, saltando ferie e settimane già occupate.",
+                            "{placed}h in {} settimane ({} → {}), entro la capacità dei worker, saltando le ferie.",
                             plan.weeks(),
                             week_label(first.0 as i32),
                             week_label(last.0 as i32)
@@ -495,6 +767,11 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                     ui.label(
                         egui::RichText::new(format!("{}: {h}h in {n} settimane", app.workers.get_name_by_id(*w)))
                             .color(text_dim()),
+                    );
+                }
+                if !plan.overwritten.is_empty() {
+                    ui.label(
+                        egui::RichText::new(occupied_note(plan.overwritten.len())).color(info_blue()),
                     );
                 }
                 if plan.left > 0 {
@@ -524,17 +801,27 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 cancel = true;
             }
         });
+    let mut asked = false;
     if confirm {
-        actions.push(Action::AutoFillEffort {
-            proj: bf.proj,
-            dev: bf.dev,
-            start: WeekId(bf.week as usize),
-            workers: chosen,
+        let (proj, dev, week, backward) = (bf.proj, bf.dev, bf.week, bf.backward);
+        let action = |overwrite| Action::AutoFillEffort {
+            proj,
+            dev,
+            start: WeekId(week as usize),
+            workers: chosen.clone(),
             hours: hours.unwrap_or(0),
-            backward: bf.backward,
-        });
+            backward,
+            overwrite,
+        };
+        if plan.overwritten.is_empty() {
+            actions.push(action(true));
+        } else {
+            state.fill_overwrite =
+                Some(FillOverwrite { occupied: plan.overwritten.clone(), overwrite: action(true), keep: action(false) });
+            asked = true;
+        }
     }
-    if confirm || cancel || !open {
+    if (confirm && !asked) || cancel || !open {
         state.auto_fill = None;
         state.auto_fill_was_open = false;
     }

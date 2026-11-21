@@ -345,6 +345,13 @@ impl Projects {
             .is_some_and(|p| p.clear_efforts(id_dev))
     }
 
+    /// Toglie la cella di `worker` (ore, anche 0, e nota). `true` se c'era.
+    pub fn remove_worker_effort(&mut self, id_project: ProjectId, id_dev: DevId, week: WeekId, worker: WorkerId) -> bool {
+        self.projects
+            .get_mut(&id_project)
+            .is_some_and(|p| p.remove_worker_effort(id_dev, week, worker))
+    }
+
     pub fn reset_effort(&mut self, id_project: ProjectId, id_dev: DevId, week: WeekId) {
         if let Some(p) = self.projects.get_mut(&id_project) {
             p.reset_effort(id_dev, week);

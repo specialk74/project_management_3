@@ -734,8 +734,13 @@ c'è almeno un worker selezionato e i valori sono validi; **Invio** nei campi
 numerici equivale a Inserisci, **Annulla**/**Esc** chiude senza scrivere.
 
 Note importanti:
-- se un worker selezionato ha **già** un effort in una delle settimane toccate,
-  il valore viene **sovrascritto** (la sua eventuale nota resta);
+- se un worker selezionato ha **già** un effort su quel dev in una delle
+  settimane toccate, la finestra lo segnala e **Inserisci** chiede prima
+  **«Sovrascrivere gli effort?»**, con l'elenco delle celle (worker, settimana,
+  ore attuali): **Sovrascrivi** mette il nuovo valore (la nota della cella
+  resta), **Mantieni** lascia quelle celle come sono — la settimana conta
+  comunque tra le **S**, quindi quel worker avrà una settimana in meno —,
+  **Annulla** torna alla finestra. Senza celle occupate non chiede nulla;
 - le settimane in cui un worker è in **Ferie** (stato della settimana nel
   footer) vengono **saltate**: il suo effort va alla prima settimana libera
   successiva, così ha comunque **S** settimane di effort e la sua fine scivola
@@ -754,7 +759,7 @@ Note importanti:
 La stessa finestra si apre anche dal **tasto destro sulla riga in alto** della
 colonna-dev (la fascia delle milestone) ▸ **Aggiungi efforts…**: riempie il dev
 di quella colonna a partire dalla settimana cliccata, anche quando la cella è già
-occupata (vale la regola della sovrascrittura).
+occupata (vale la domanda sulla sovrascrittura).
 
 ### Inserimento automatico (fino al pianificato)
 Nello stesso menù, subito sotto, **Aggiungi automatic effort…** distribuisce da
@@ -778,13 +783,45 @@ worker, come in Saturazione: in una settimana non prende più del suo massimo
 effettivo (il limite di quella settimana o il suo massimo ore) meno le ore che
 ha già lì su **tutti** i progetti; se ne ha libere meno di quelle indicate prende
 solo quelle, se è pieno la settimana si salta. Per ogni worker si **saltano**
-le settimane in **Ferie** e quelle in cui ha **già** ore su quel dev (non
-vengono sovrascritte). Il riepilogo dice quante ore e in quante settimane (prima
+le settimane in **Ferie**. Se nelle settimane raggiunte un worker ha **già**
+ore su quel dev, la finestra lo segnala e **Inserisci** chiede
+**«Sovrascrivere gli effort?»** (stesso elenco dell'inserimento multiplo):
+con **Sovrascrivi** le ore di quelle celle si **liberano** — tornano da
+distribuire, e nella capacità della settimana non contano più — e la cella
+prende il nuovo valore, così alla fine il totale è proprio il pianificato; con
+**Mantieni** quelle celle restano come sono e le loro settimane si saltano;
+**Annulla** torna alla finestra. Il riepilogo nella finestra mostra il caso
+«Sovrascrivi». Il riepilogo dice quante ore e in quante settimane (prima
 → ultima) e quante ne prende ciascun worker. Come l'inserimento multiplo, **si
 ferma alla fine del progetto** (o della griglia, se non c'è data di fine) e non
 va oltre; all'indietro si ferma allo stesso modo all'**inizio del progetto** (o
 della griglia). In quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
 niente da distribuire e **Inserisci** resta disattivato.
+
+### Cancellare gli effort di più settimane
+Nello stesso menù (tasto destro sulla fascia in alto della colonna-dev), sotto
+gli inserimenti, **Cancella effort…** apre la finestra **Cancella effort**, a
+partire dalla settimana cliccata. È attivo solo se il dev ha degli effort. Si
+sceglie:
+
+- i **worker**: sono elencati quelli che hanno effort nel dev da lì in avanti
+  (anche se tolti dagli elenchi), **già tutti spuntati**; ricerca e Select All
+  come negli inserimenti;
+- le **settimane**, come in «Aggiungi efforts»: **Per quante settimane**,
+  **oppure fino al**, **Fino a fine progetto** o **Fino a milestone**. Qui sono
+  settimane di calendario: le ferie non si saltano. Non si va mai oltre la fine
+  del progetto (o della griglia);
+- oppure **Cancella tutto**: tutti gli effort dei worker spuntati in **tutte**
+  le settimane del dev, anche prima della settimana cliccata e oltre la fine
+  del progetto (le scelte delle settimane si disattivano). Spuntandola si
+  spuntano anche i worker che hanno effort solo prima della settimana cliccata.
+
+Il riepilogo dice quante celle verranno cancellate (prima → ultima settimana).
+**Cancella…** chiede conferma (**«Cancellare gli effort?»**) con l'elenco delle
+celle (worker, settimana, ore): **Sì, cancella** le toglie del tutto — ore,
+anche le assegnazioni a 0, e la nota della cella —, **Annulla** torna alla
+finestra. Effort pianificato, nota del dev e % dichiarata non si toccano. Si
+può annullare con `Cmd/Ctrl+Z`.
 
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,

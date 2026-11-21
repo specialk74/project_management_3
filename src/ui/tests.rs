@@ -181,7 +181,7 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         &[w1, w2],
         Effort(8),
         3,
-        None
+        None, true
     ));
 
     for i in 0..3 {
@@ -211,7 +211,7 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         &[w1],
         Effort(8),
         5,
-        None
+        None, true
     ));
     // Selezione vuota o zero settimane: nessuna scrittura.
     assert!(!bulk_fill_effort(
@@ -222,7 +222,7 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         &[],
         Effort(8),
         3,
-        None
+        None, true
     ));
     assert!(!bulk_fill_effort(
         &mut app,
@@ -232,7 +232,7 @@ fn bulk_fill_writes_all_workers_for_n_weeks() {
         &[w1],
         Effort(8),
         0,
-        None
+        None, true
     ));
 }
 
@@ -257,6 +257,7 @@ fn bulk_fill_window_renders() {
             to_end: false,
             to_milestone: None,
             backward: false,
+            all: false,
         }),
         ..Default::default()
     };
@@ -3855,7 +3856,7 @@ fn rules_apply_on_every_change_and_undo_with_it() {
     pjm.record_undo();
     assert_eq!(at(&pjm), Some(WeekId(base + 14)));
     // Una modifica qualunque (un effort in più) la fa seguire.
-    pjm.apply(Action::BulkFillEffort { proj: p, dev: be, start: WeekId(base + 7), workers: vec![w], effort: Effort(4), weeks: 1, until: None });
+    pjm.apply(Action::BulkFillEffort { proj: p, dev: be, start: WeekId(base + 7), workers: vec![w], effort: Effort(4), weeks: 1, until: None, overwrite: true });
     pjm.record_undo();
     assert_eq!(at(&pjm), Some(WeekId(base + 21)));
     // Annulla: torna l'effort di prima e con lui la milestone.
@@ -4819,7 +4820,7 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
 
     assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 3, None), vec![wk(0), wk(3), wk(4)]);
     assert_eq!(bulk_fill_weeks(&app, proj, bob, start, 3, None), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
-    assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3, None));
+    assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3, None, true));
     let at = |app: &App, w: WeekId, who| {
         app.projects
             .get_single_dev(proj, dev)
@@ -4922,6 +4923,7 @@ fn blocking_rule_reverts_the_whole_action_that_violates_it() {
         effort: Effort(8),
         weeks,
         until: None,
+        overwrite: true,
     };
     let cells = |pjm: &PjmApp| {
         pjm.app.projects.get_single_dev(p, test).map(|sd| sd.get_weeks().len()).unwrap_or(0)
@@ -4941,7 +4943,7 @@ fn blocking_rule_reverts_the_whole_action_that_violates_it() {
     assert!(pjm.ui.changed);
     // Ora allungare il Backend sposterebbe la soglia oltre l'inizio del Test:
     // violazione nuova, bloccata anche se si tocca un altro dev.
-    let more_be = Action::BulkFillEffort { proj: p, dev: be, start: wk(3), workers: vec![w], effort: Effort(8), weeks: 1, until: None };
+    let more_be = Action::BulkFillEffort { proj: p, dev: be, start: wk(3), workers: vec![w], effort: Effort(8), weeks: 1, until: None, overwrite: true };
     pjm.apply_guarded(more_be);
     assert!(pjm.app.projects.get_single_dev(p, be).unwrap().get_all(wk(3)).is_none(), "Backend non allungato");
 }
@@ -5159,7 +5161,7 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     app.projects.add_effort(p, dev, wk(0), alice, Effort(6)); // già occupata
     app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
     app.compute_sovra();
-    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8, false);
+    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8, false, false);
     assert_eq!((plan.planned, plan.allocated, plan.to_place(), plan.left), (40, 6, 34, 0));
     assert_eq!(
         plan.cells,
@@ -5173,7 +5175,7 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     app.projects.add_effort(q, dev, wk(1), bob, Effort(36));
     app.workers.set_week_override(bob, wk(2).0, 0);
     app.compute_sovra();
-    let plan = auto_fill_plan(&app, p, dev, start, &[bob], 8, false);
+    let plan = auto_fill_plan(&app, p, dev, start, &[bob], 8, false, false);
     assert_eq!(
         plan.cells,
         vec![(wk(0), bob, 8), (wk(1), bob, 4), (wk(3), bob, 8), (wk(4), bob, 8), (wk(5), bob, 6)],
@@ -5181,13 +5183,13 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     );
     // Ore che non stanno nella griglia: restano fuori.
     let last = app.end_week;
-    let plan = auto_fill_plan(&app, p, dev, WeekId(last.0 - WEEK_STEP), &[bob], 8, false);
+    let plan = auto_fill_plan(&app, p, dev, WeekId(last.0 - WEEK_STEP), &[bob], 8, false, false);
     assert_eq!((plan.cells.len(), plan.left), (2, 34 - 16));
     // Niente da distribuire, nessun worker o 0 ore: nessuna cella.
     app.projects.add_effort(p, dev, wk(6), bob, Effort(34));
     app.compute_sovra();
-    assert!(auto_fill_plan(&app, p, dev, start, &[alice], 8, false).cells.is_empty());
-    assert!(auto_fill_plan(&app, p, dev, start, &[], 8, false).cells.is_empty());
+    assert!(auto_fill_plan(&app, p, dev, start, &[alice], 8, false, false).cells.is_empty());
+    assert!(auto_fill_plan(&app, p, dev, start, &[], 8, false, false).cells.is_empty());
 }
 
 /// Tasto destro sulla fascia milestone: «Aggiungi automatic effort…» sta
@@ -5285,7 +5287,7 @@ fn fills_stop_at_the_project_end() {
     // Aggiungi efforts per 5 settimane: solo 3 (0, 1, 2).
     assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5, None), vec![wk(0), wk(1), wk(2)]);
     // Automatico: 100h da 8h → solo 3 settimane, 76h restano fuori.
-    let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false);
+    let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false);
     assert_eq!((plan.cells.len(), plan.left), (3, 76));
     assert!(plan.cells.iter().all(|(w, ..)| *w <= wk(2)));
     // La dialog dell'inserimento multiplo lo dice.
@@ -5536,11 +5538,11 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     app.compute_sovra();
     assert_eq!(fill_start(&app, proj), (wk(2), true));
     // Da 6 all'indietro: 6, (5 ferie), 4 e 3 parziale.
-    let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true);
+    let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false);
     assert_eq!(plan.cells, vec![(wk(3), alice, 4), (wk(4), alice, 8), (wk(6), alice, 8)]);
     assert_eq!(plan.left, 0);
     // Da 3: solo 3 e 2 (inizio del progetto), 4h restano fuori.
-    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, true);
+    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, true, false);
     assert_eq!((plan.cells, plan.left), (vec![(wk(2), alice, 8), (wk(3), alice, 8)], 4));
     assert_eq!(auto_fill_limit_label(&app, proj, true), "inizio del progetto");
     assert_eq!(auto_fill_limit_label(&app, proj, false), "fine del progetto");
@@ -5567,7 +5569,7 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     let out = frame(&mut state, &mut actions, None);
     let texts = drawn_texts(&out);
     let summary = format!(
-        "20h in 3 settimane ({} → {}), entro la capacità dei worker, saltando ferie e settimane già occupate.",
+        "20h in 3 settimane ({} → {}), entro la capacità dei worker, saltando le ferie.",
         week_label(wk(3).0 as i32),
         week_label(wk(6).0 as i32)
     );
@@ -5583,4 +5585,303 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     }
     let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
     assert_eq!(sd.get_weeks(), vec![wk(3), wk(4), wk(6)]);
+}
+
+/// Sovrascrivere o no le celle già occupate (stesso worker, stesso dev):
+/// «Aggiungi efforts» senza sovrascrivere salta la settimana, che conta
+/// comunque tra le N; «automatic effort» sovrascrivendo libera le ore di
+/// quella cella (tornano da distribuire), così il totale è il pianificato.
+#[test]
+fn fills_overwrite_or_keep_occupied_cells() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    app.projects.add_dev_effort(proj, dev, Effort(20));
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.add_effort(proj, dev, wk(1), alice, Effort(6));
+    app.compute_sovra();
+    let cell = |app: &App, i| cell_effort(app, proj, dev, wk(i), alice);
+
+    // Automatico: senza sovrascrivere salta la settimana 1.
+    let keep = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false);
+    assert_eq!(keep.cells, vec![(wk(0), alice, 8), (wk(2), alice, 6)]);
+    assert!(keep.overwritten.is_empty());
+    // Sovrascrivendo le 6h si liberano: 20h in tutto, al posto delle 6.
+    let over = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, true);
+    assert_eq!(over.cells, vec![(wk(0), alice, 8), (wk(1), alice, 8), (wk(2), alice, 4)]);
+    assert_eq!(over.overwritten, vec![(wk(1), alice, 6)]);
+    assert_eq!(over.left, 0);
+
+    // Aggiungi efforts per 3 settimane: mantenendo, la 1 resta a 6h.
+    let mut a = app.clone();
+    assert!(bulk_fill_effort(&mut a, proj, dev, start, &[alice], Effort(4), 3, None, false));
+    assert_eq!([cell(&a, 0), cell(&a, 1), cell(&a, 2), cell(&a, 3)], [Some(4), Some(6), Some(4), None]);
+    let mut a = app.clone();
+    assert!(bulk_fill_effort(&mut a, proj, dev, start, &[alice], Effort(4), 3, None, true));
+    assert_eq!([cell(&a, 0), cell(&a, 1), cell(&a, 2)], [Some(4), Some(4), Some(4)]);
+}
+
+/// «Inserisci» su celle già occupate non scrive subito: chiede
+/// «Sovrascrivere gli effort?» con l'elenco. «Annulla» torna alla finestra,
+/// «Mantieni» inserisce lasciando le celle occupate, «Sovrascrivi» le
+/// rimpiazza; senza celle occupate non chiede nulla.
+#[test]
+fn fill_dialogs_ask_before_overwriting() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    app.projects.add_dev_effort(proj, dev, Effort(20));
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.add_effort(proj, dev, wk(1), alice, Effort(6));
+    app.compute_sovra();
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let frame = |app: &App, state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| {
+            bulk_fill_window(ui.ctx(), app, state, actions);
+            auto_fill_window(ui.ctx(), app, state, actions);
+            fill_overwrite_window(ui.ctx(), app, state, actions);
+        })
+    };
+    let click = |app: &App, state: &mut UiState, actions: &mut Vec<Action>, label: &str| {
+        frame(app, state, actions, None);
+        let out = frame(app, state, actions, None);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label}: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(app, state, actions, Some(ev));
+        }
+        out
+    };
+
+    // Aggiungi efforts, 3 settimane da 0: la 1 è occupata.
+    let mut bf = BulkFill { effort_text: "4".into(), weeks_text: "3".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
+    let mut actions = Vec::new();
+    let out = click(&app, &mut state, &mut actions, "Inserisci");
+    assert!(
+        drawn_texts(&out).iter().any(|t| t == "1 cella ha già un effort: Inserisci chiederà se sovrascriverla."),
+        "{:?}",
+        drawn_texts(&out)
+    );
+    assert!(actions.is_empty(), "prima si chiede");
+    assert!(state.fill_overwrite.is_some() && state.bulk_fill.is_some());
+    let out = click(&app, &mut state, &mut actions, "Annulla");
+    let line = format!("Alice — {}: 6h", week_label(wk(1).0 as i32));
+    assert!(drawn_texts(&out).contains(&line), "{:?}", drawn_texts(&out));
+    assert!(state.fill_overwrite.is_none() && state.bulk_fill.is_some(), "Annulla torna alla finestra");
+    click(&app, &mut state, &mut actions, "Inserisci");
+    click(&app, &mut state, &mut actions, "Mantieni");
+    assert!(state.fill_overwrite.is_none() && state.bulk_fill.is_none());
+    assert!(matches!(actions.as_slice(), [Action::BulkFillEffort { overwrite: false, .. }]));
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions.drain(..) {
+        pjm.apply(a);
+    }
+    let cell = |app: &App, i| cell_effort(app, proj, dev, wk(i), alice);
+    assert_eq!([cell(&pjm.app, 0), cell(&pjm.app, 1), cell(&pjm.app, 2)], [Some(4), Some(6), Some(4)]);
+
+    // Automatico da 0: Sovrascrivi.
+    let mut bf = BulkFill { effort_text: "8".into(), ..BulkFill::new(proj, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { auto_fill: Some(bf), ..Default::default() };
+    click(&app, &mut state, &mut actions, "Inserisci");
+    assert!(actions.is_empty());
+    click(&app, &mut state, &mut actions, "Sovrascrivi");
+    assert!(state.auto_fill.is_none());
+    assert!(matches!(actions.as_slice(), [Action::AutoFillEffort { overwrite: true, .. }]));
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions.drain(..) {
+        pjm.apply(a);
+    }
+    assert_eq!([cell(&pjm.app, 0), cell(&pjm.app, 1), cell(&pjm.app, 2)], [Some(8), Some(8), Some(4)]);
+
+    // Nessuna cella occupata (da 2): niente domanda.
+    let mut bf = BulkFill { effort_text: "4".into(), ..BulkFill::new(proj, dev, wk(2).0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
+    click(&app, &mut state, &mut actions, "Inserisci");
+    assert!(state.fill_overwrite.is_none() && state.bulk_fill.is_none());
+    assert_eq!(actions.len(), 1);
+}
+
+/// «Cancella effort»: le celle (anche a 0, con la nota) dei worker scelti
+/// nelle settimane di calendario dell'intervallo, mai oltre la milestone o
+/// la fine del progetto; la settimana senza più worker sparisce.
+#[test]
+fn bulk_clear_removes_the_chosen_cells_only() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.set_project_end_week(proj, Some(wk(4)));
+    for i in 0..6 {
+        app.projects.add_effort(proj, dev, wk(i), alice, Effort(if i == 1 { 0 } else { 4 }));
+    }
+    app.projects.add_effort(proj, dev, wk(2), bob, Effort(8));
+    app.projects.set_note(proj, dev, wk(2), alice, "nota");
+    app.projects.add_effort(proj, dev, wk(0), WORKER_ID_ZERO, Effort(0));
+
+    // Worker proposti: chi ha celle da lì in avanti (non la riga vuota).
+    assert_eq!(bulk_clear_workers(&app, proj, dev, wk(0)), vec![alice, bob]);
+    assert_eq!(bulk_clear_workers(&app, proj, dev, wk(3)), vec![alice]);
+    // 3 settimane da 1: settimane 1 (effort 0), 2, 3.
+    assert_eq!(
+        bulk_clear_cells(&app, proj, dev, wk(1), 3, None, &[alice]),
+        vec![(wk(1), alice, 0), (wk(2), alice, 4), (wk(3), alice, 4)]
+    );
+    // Mai oltre la fine del progetto (la settimana 5 resta) né la milestone.
+    assert_eq!(bulk_clear_cells(&app, proj, dev, wk(3), 10, None, &[alice]).len(), 2);
+    assert_eq!(bulk_clear_cells(&app, proj, dev, wk(0), 10, Some(wk(2)), &[alice, bob]).len(), 4);
+
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    let cells = bulk_clear_cells(&pjm.app, proj, dev, wk(1), 2, None, &[alice, bob]);
+    pjm.apply(Action::BulkClearEffort { proj, dev, cells: cells.iter().map(|(w, x, _)| (*w, *x)).collect() });
+    let c = |pjm: &PjmApp, i, w| cell_effort(&pjm.app, proj, dev, wk(i), w);
+    assert_eq!([c(&pjm, 0, alice), c(&pjm, 1, alice), c(&pjm, 2, alice), c(&pjm, 3, alice)], [Some(4), None, None, Some(4)]);
+    assert_eq!(c(&pjm, 2, bob), None);
+    let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
+    assert!(sd.get_all(wk(1)).is_none() && sd.get_all(wk(2)).is_none(), "settimane vuote tolte");
+    assert!(pjm.ui.changed);
+}
+
+/// Fascia milestone ▸ «Cancella effort…» apre la finestra sulla settimana
+/// cliccata, con i worker che hanno effort già spuntati; «Cancella…» chiede
+/// conferma con l'elenco, «Annulla» torna alla finestra, «Sì, cancella»
+/// cancella.
+#[test]
+fn clear_effort_menu_item_asks_then_clears() {
+    let (mut app, alice, week) = highlight_fixture();
+    let dev = app.devs.list()[0].0;
+    let proj = ProjectId(0);
+    let next = WeekId(week as usize + WEEK_STEP);
+    let after = WeekId(week as usize + 2 * WEEK_STEP);
+    app.projects.add_effort(proj, dev, next, alice, Effort(5));
+    app.projects.add_effort(proj, dev, after, alice, Effort(6));
+    let ctx = egui::Context::default();
+    let mut state = UiState::default();
+    let mut actions = Vec::new();
+    let origin = Cell::new(egui::Pos2::ZERO);
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), ..Default::default() };
+        input.events.extend(ev);
+        ctx.run_ui_test(input, |ui| {
+            origin.set(ui.cursor().min);
+            let layout = body_layout(ui, &app, state, &Filter::default(), &None);
+            grid(ui, &app, state, actions, &Filter::default(), &layout);
+            bulk_clear_window(ui.ctx(), &app, state);
+            bulk_clear_confirm_window(ui.ctx(), &app, state, actions);
+        })
+    };
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, label: &str| {
+        frame(state, actions, None);
+        let out = frame(state, actions, None);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label}: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, Some(ev));
+        }
+        out
+    };
+    frame(&mut state, &mut actions, None);
+    let strip = egui::pos2(origin.get().x + COL_W * 1.5, origin.get().y + 1.0);
+    for ev in click_events(strip, egui::PointerButton::Secondary) {
+        frame(&mut state, &mut actions, Some(ev));
+    }
+    click(&mut state, &mut actions, "Cancella effort…");
+    let bf = state.bulk_clear.as_ref().expect("finestra aperta");
+    assert_eq!((bf.proj, bf.dev, bf.week), (proj, dev, next.0 as i32));
+    state.bulk_clear.as_mut().unwrap().weeks_text = "2".into();
+    frame(&mut state, &mut actions, None);
+    assert!(state.bulk_clear.as_ref().unwrap().selected.contains(&alice), "worker con effort già spuntati");
+    let out = click(&mut state, &mut actions, "Cancella…");
+    let summary = format!("2 celle da cancellare ({} → {}).", week_label(next.0 as i32), week_label(after.0 as i32));
+    assert!(drawn_texts(&out).contains(&summary), "{:?}", drawn_texts(&out));
+    assert!(actions.is_empty() && state.confirm_bulk_clear.is_some(), "prima si chiede");
+    let out = click(&mut state, &mut actions, "Annulla");
+    let line = format!("Alice — {}: 5h", week_label(next.0 as i32));
+    assert!(drawn_texts(&out).contains(&line), "{:?}", drawn_texts(&out));
+    assert!(state.confirm_bulk_clear.is_none() && state.bulk_clear.is_some(), "Annulla torna alla finestra");
+    click(&mut state, &mut actions, "Cancella…");
+    click(&mut state, &mut actions, "Sì, cancella");
+    assert!(state.bulk_clear.is_none() && state.confirm_bulk_clear.is_none());
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    assert_eq!(cell_effort(&pjm.app, proj, dev, next, alice), None);
+    assert_eq!(cell_effort(&pjm.app, proj, dev, after, alice), None);
+}
+
+/// «Cancella effort» ▸ «Cancella tutto»: tutte le settimane del dev, anche
+/// prima della settimana cliccata e oltre la fine del progetto, dei worker
+/// spuntati (spuntandola si aggiungono quelli con effort solo prima).
+#[test]
+fn bulk_clear_all_removes_every_week_of_the_dev() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let dev = app.devs.add("Frontend");
+    let other = app.devs.add("Backend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    app.projects.add_dev(proj, other);
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    app.projects.set_project_end_week(proj, Some(wk(4)));
+    app.projects.add_effort(proj, dev, wk(0), bob, Effort(3)); // solo prima
+    app.projects.add_effort(proj, dev, wk(3), alice, Effort(4));
+    app.projects.add_effort(proj, dev, wk(6), alice, Effort(5)); // oltre la fine
+    app.projects.add_effort(proj, other, wk(3), alice, Effort(7)); // altro dev
+    assert_eq!(bulk_clear_all_cells(&app, proj, dev, &[alice, bob]).len(), 3);
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut state = UiState { bulk_clear: Some(BulkFill::new(proj, dev, wk(2).0 as i32)), ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| {
+            bulk_clear_window(ui.ctx(), &app, state);
+            bulk_clear_confirm_window(ui.ctx(), &app, state, actions);
+        })
+    };
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, label: &str| {
+        frame(state, actions, None);
+        let out = frame(state, actions, None);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label}: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, Some(ev));
+        }
+    };
+    frame(&mut state, &mut actions, None);
+    assert!(!state.bulk_clear.as_ref().unwrap().selected.contains(&bob), "Bob ha effort solo prima");
+    click(&mut state, &mut actions, "Cancella tutto");
+    let bf = state.bulk_clear.as_ref().unwrap();
+    assert!(bf.all && bf.selected.contains(&bob), "spuntando «Cancella tutto» si aggiunge Bob");
+    frame(&mut state, &mut actions, None);
+    let out = frame(&mut state, &mut actions, None);
+    let summary = format!("3 celle da cancellare ({} → {}).", week_label(wk(0).0 as i32), week_label(wk(6).0 as i32));
+    assert!(drawn_texts(&out).contains(&summary), "{:?}", drawn_texts(&out));
+    click(&mut state, &mut actions, "Cancella…");
+    click(&mut state, &mut actions, "Sì, cancella");
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    assert!(!pjm.app.projects.get_single_dev(proj, dev).unwrap().has_cells(), "dev svuotato");
+    assert_eq!(cell_effort(&pjm.app, proj, other, wk(3), alice), Some(7), "l'altro dev resta");
 }

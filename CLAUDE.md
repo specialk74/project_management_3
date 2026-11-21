@@ -1070,7 +1070,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `Action::BulkFillEffort` → `bulk_fill_effort(app, proj, dev, start, workers, effort,
   weeks)` (free fn in `mod.rs`, unit-tested): writes the effort to every selected
   worker for N consecutive weeks starting at the clicked week (**inclusive**, going
-  forward), **overwriting** any existing value for that worker (`add_effort` keeps the
+  forward), **overwriting** (after the «Sovrascrivere?» question, see Automatic effort) any existing value for that worker (`add_effort` keeps the
   note), and stops at `app.end_week` — the dialog shows the effective week count.
   **Vacation weeks are skipped**: the weeks come from `bulk_fill_weeks(app,
   worker, start, n)` (`mod.rs`) = the first `n` weeks from `start` where that
@@ -1122,8 +1122,25 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   (integers only; last week filled in order), never above the week's free
   capacity = `get_effective_max_hours(w, week)` − `App.sovra[(week, w)]`
   (all projects; full ⇒ week skipped; same rule as Saturazione), skipping per worker `Ferie`
-  weeks and weeks where he already has a cell on that dev (no overwrite),
+  weeks and weeks where they already have a cell on that dev unless overwriting (see below),
   until `fill_limit(app, proj)` (`left` = what didn't fit, toasted).
+  **Overwrite question** (both fills, user's choices): «occupied» = that
+  worker already has a cell (effort 0 included) on that dev that week
+  (`cell_effort(app, proj, dev, week, worker) -> Option<usize>`). On
+  «Inserisci», if any of the cells to write is occupied
+  (`bulk_fill_occupied(app, proj, dev, &plans)` / `AutoFillPlan.overwritten`)
+  the window sets `UiState.fill_overwrite: Option<FillOverwrite { occupied,
+  overwrite: Action, keep: Action }>` instead of pushing; both fill windows
+  stop drawing while it is set; `fill_overwrite_window` (`dialogs.rs`)
+  lists them (max 12 lines) → «Sovrascrivi» / «Mantieni» push the action and
+  close the fill window, «Annulla»/Esc only drop the question. Both actions
+  carry `overwrite: bool`: `bulk_fill_effort(…, overwrite)` without it skips
+  the occupied week (it still counts among the N — not like Ferie);
+  `auto_fill_plan(…, backward, overwrite)` with it **frees** the old hours
+  (`left += old`, and `sovra − old` for the capacity) so the total ends at
+  the planned effort; the dialog's summary uses `overwrite = true`. Tests
+  `fills_overwrite_or_keep_occupied_cells`,
+  `fill_dialogs_ask_before_overwriting`.
   **Direction**: radio «In avanti / All'indietro» (`BulkFill.backward` →
   `AutoFillEffort.backward` → last arg of `auto_fill_plan`): backward walks
   from `start` down to `fill_start(app, proj)` (project start if inside the
@@ -1134,6 +1151,29 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   were the user's. Tests
   `auto_fill_plan_spreads_what_is_left_of_the_planned_effort`,
   `auto_fill_menu_item_and_dialog_fill_up_to_the_planned_effort`.
+- **Cancella effort… (range)** (milestone strip menu, below «Aggiungi
+  automatic effort…», enabled when `bulk_clear_workers(app, proj, dev,
+  WeekId(0))` — workers with a cell, effort 0 included, from that week on, no
+  `WORKER_ID_ZERO` — is non-empty): `UiState.bulk_clear: Option<BulkFill>`
+  (same struct) → `bulk_clear_window` (`dialogs.rs`; those workers, all
+  ticked on opening; the range widgets are shared with `bulk_fill_window`
+  via `fill_range(app, bf) -> FillRange` + `fill_range_ui(…, clearing, …)`;
+  calendar weeks, no Ferie skipping) → «Cancella…» sets
+  `UiState.confirm_bulk_clear: Option<BulkClear { proj, dev, cells }>` →
+  `bulk_clear_confirm_window` (`confirm_window`, list max 12; «Annulla»/Esc
+  back to the window) → `Action::BulkClearEffort { cells: Vec<(WeekId,
+  WorkerId)> }` → `Projects::remove_worker_effort` → `SingleDev::remove_worker`
+  (cell incl. note; empty week removed). Cells from `bulk_clear_cells(app,
+  proj, dev, start, weeks, until, workers)` (≤ `fill_limit` and the
+  milestone). User's choices: same window as Aggiungi, effort 0 and notes
+  deleted too. **«Cancella tutto»** checkbox (`BulkFill.all`, user's choice
+  = every week of the dev for the ticked workers): range widgets disabled,
+  workers from `bulk_clear_workers(…, WeekId(0))` (ticking it adds them to
+  the selection), cells from `bulk_clear_all_cells(app, proj, dev, workers)`
+  (no week limit); the menu item is enabled whenever the dev has any cell.
+  Test `bulk_clear_all_removes_every_week_of_the_dev`.
+  Tests `bulk_clear_removes_the_chosen_cells_only`,
+  `clear_effort_menu_item_asks_then_clears`.
 - **Cancella gli effort** (dev-name context menu, below «Elimina riga»): «Cancella
   gli effort…» (that dev) and «Cancella gli effort di tutti i dev…» (whole project)
   set `UiState.confirm_clear_efforts: Option<ClearEfforts { proj, dev: Option<DevId> }>`

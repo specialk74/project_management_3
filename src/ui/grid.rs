@@ -1237,6 +1237,25 @@ fn draw_milestone_strip(
             ui.close();
         }
 
+        // ── Cancella effort → `bulk_clear_window`: solo se il dev ha celle
+        //    (anche prima: c'è «Cancella tutto») ──
+        let any = !bulk_clear_workers(app, proj, dev, WeekId(0)).is_empty();
+        let clear = ui
+            .add_enabled(any, egui::Button::new("Cancella effort…"))
+            .on_hover_text(
+                "Scegli worker e settimane dalla settimana cliccata: gli effort (anche a 0, \
+                 con le note) vengono cancellati dopo una conferma.",
+            )
+            .on_disabled_hover_text("Il dev non ha effort.");
+        if clear.clicked() {
+            if let Some(old) = state.editing.take() {
+                actions.push(commit_editing(app, &old));
+            }
+            state.bulk_clear = Some(BulkFill::new(proj, dev, w));
+            state.bulk_clear_was_open = false;
+            ui.close();
+        }
+
         // ── Sottomenù: Sposta effort ──
         ui.menu_button("Sposta", |ui| {
             // Sposta blocco → blocco contiguo del dev attorno alla settimana.

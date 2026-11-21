@@ -173,6 +173,11 @@ impl Project {
         }
     }
 
+    /// Toglie la cella di `worker` nel dev in `week` (`SingleDev::remove_worker`).
+    pub fn remove_worker_effort(&mut self, id_dev: DevId, week: WeekId, worker: WorkerId) -> bool {
+        self.dev_id.get_mut(&id_dev).is_some_and(|sd| sd.remove_worker(week, worker))
+    }
+
     pub fn reset_effort(&mut self, id_dev: DevId, week: WeekId) {
         if let Some(sd) = self.dev_id.get_mut(&id_dev) {
             sd.reset_effort(week);

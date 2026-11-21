@@ -76,6 +76,19 @@ impl SingleDev {
         self.weeks.remove(&week);
     }
 
+    /// Toglie la cella di `worker` in `week` (ore, anche 0, e nota); se la
+    /// settimana resta senza worker sparisce. Ritorna `true` se c'era.
+    pub fn remove_worker(&mut self, week: WeekId, worker: WorkerId) -> bool {
+        let Some(sew) = self.weeks.get_mut(&week) else {
+            return false;
+        };
+        let had = sew.worker_id.remove(&worker).is_some();
+        if sew.worker_id.is_empty() {
+            self.weeks.remove(&week);
+        }
+        had
+    }
+
     /// `true` se in griglia c'è almeno una cella (anche a effort 0).
     pub fn has_cells(&self) -> bool {
         !self.weeks.is_empty()
