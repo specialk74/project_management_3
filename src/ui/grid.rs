@@ -1504,8 +1504,8 @@ fn draw_cell_editor(
                     ed.typed.clear();
                     ed.buf.clear();
                 }
-                // Conferma e passa a un'altra cella: Tab → destra (Shift ←),
-                // Invio → sotto (Shift ↑), frecce nelle quattro direzioni.
+                // Conferma e passa a un'altra cella: Tab e Invio → destra
+                // (Shift ←), frecce nelle quattro direzioni.
                 egui::Event::Key {
                     key,
                     pressed: true,
@@ -1529,14 +1529,14 @@ fn draw_cell_editor(
                 // sistema non è vuota — vedi egui-winit), e l'incolla non parte.
                 // La nota della cella resta nella clipboard interna.
                 egui::Event::Copy => {
-                    state.copied_text = ed.buf.clone();
+                    state.copied_text = ed.copy_text();
                     state.copied_note = note.to_string();
-                    ui.ctx().copy_text(ed.buf.clone());
+                    ui.ctx().copy_text(ed.copy_text());
                 }
                 egui::Event::Cut => {
-                    state.copied_text = ed.buf.clone();
+                    state.copied_text = ed.copy_text();
                     state.copied_note = note.to_string();
-                    ui.ctx().copy_text(ed.buf.clone());
+                    ui.ctx().copy_text(ed.copy_text());
                     ed.buf.clear();
                     ed.typed.clear();
                 }
@@ -1600,7 +1600,12 @@ fn draw_cell_editor(
     if cancel {
         // scarta
     } else if commit {
-        actions.push(commit_editing(app, &ed));
+        // Non si è scritto nulla: la cella resta com'era (l'effort tolto
+        // all'apertura non va perso passandoci sopra con le frecce o
+        // cliccando altrove).
+        if !ed.untouched() {
+            actions.push(commit_editing(app, &ed));
+        }
         if let Some(target) =
             nav.and_then(|dir| nav_target(app, &state.nav_order, (ed.proj, ed.dev, ed.week, ed.row), dir))
         {
@@ -1630,7 +1635,9 @@ fn nav_key(key: egui::Key, shift: bool) -> Option<NavDir> {
         egui::Key::ArrowUp => Some(NavDir::Up),
         egui::Key::ArrowDown => Some(NavDir::Down),
         egui::Key::Tab => Some(if shift { NavDir::Left } else { NavDir::Right }),
-        egui::Key::Enter => Some(if shift { NavDir::Up } else { NavDir::Down }),
+        // Invio come Tab: la cella a destra (Shift ←); a fine riga del dev
+        // (fine progetto/griglia) `nav_target` è `None` e la cella si chiude.
+        egui::Key::Enter => Some(if shift { NavDir::Left } else { NavDir::Right }),
         _ => None,
     }
 }

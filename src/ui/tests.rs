@@ -983,6 +983,7 @@ fn grid_keeps_drawing_the_cell_being_edited_when_scrolled_away() {
         orig_worker: "Alice".to_string(),
         orig_note: String::new(),
         orig_text: "Alice|4".to_string(),
+        start_text: "Alice|".to_string(),
     });
     let (texts, _) = culled_grid_texts(&mut state, 20);
     assert!(state.editing.is_some(), "l'editor fuori vista non deve chiudersi");
@@ -1056,6 +1057,7 @@ fn grid_hover_records_column_and_worker_to_highlight() {
         orig_worker: String::new(),
         orig_note: String::new(),
         orig_text: String::new(),
+        start_text: String::new(),
     });
     frame(&mut state, Some(egui::pos2(x, 890.0)));
     assert!(state.editing.is_some(), "l'editor deve restare aperto");
@@ -2956,7 +2958,11 @@ fn keyboard_moves_between_cells_and_commits() {
 
     let ctx = egui::Context::default();
     let mut pjm = PjmApp { app, ui: UiState::default() };
-    pjm.ui.editing = Some(Editing::open(p, dev, w, 0, "Alice|4", ""));
+    // Cella vuota in cui si è scritto «Alice|4».
+    let mut ed = Editing::open(p, dev, w, 0, "", "");
+    ed.buf = "Alice|4".to_string();
+    ed.typed = "Alice|4".to_string();
+    pjm.ui.editing = Some(ed);
     let mut frame = eframe::Frame::_new_kittest();
     let mut run = |pjm: &mut PjmApp, events: Vec<egui::Event>| {
         let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), events, ..Default::default() };
@@ -2991,13 +2997,33 @@ fn keyboard_moves_between_cells_and_commits() {
     run(&mut pjm, vec![]);
     assert_eq!(at(&pjm), Some((weeks[3], 0)));
 
-    // Invio → riga sotto; Shift+Invio ↑ torna su
+    // Invio → a destra, come Tab; Shift+Invio ← torna indietro
     run(&mut pjm, vec![key(egui::Key::Enter, false)]);
     run(&mut pjm, vec![]);
-    assert_eq!(at(&pjm), Some((weeks[3], 1)));
+    assert_eq!(at(&pjm), Some((weeks[4], 0)));
     run(&mut pjm, vec![key(egui::Key::Enter, true)]);
     run(&mut pjm, vec![]);
     assert_eq!(at(&pjm), Some((weeks[3], 0)));
+    // Freccia giù → riga sotto
+    run(&mut pjm, vec![key(egui::Key::ArrowDown, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[3], 1)));
+    run(&mut pjm, vec![key(egui::Key::ArrowUp, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), Some((weeks[3], 0)));
+
+    // Ultima settimana del progetto: Invio conferma e chiude la cella, lì.
+    pjm.apply(Action::OpenCellEditor { proj: p, dev, week: weeks[10], row: 0 });
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![egui::Event::Text("Alice|2".into())]);
+    run(&mut pjm, vec![key(egui::Key::Enter, false)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(at(&pjm), None, "a fine riga la cella si chiude");
+    assert_eq!(effort(&pjm, weeks[10], alice), Some(2), "e il valore è confermato");
+    pjm.apply(Action::OpenCellEditor { proj: p, dev, week: weeks[3], row: 0 });
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
 
     // Esc annulla e chiude, senza spostarsi
     run(&mut pjm, vec![key(egui::Key::Escape, false)]);
@@ -3644,8 +3670,8 @@ fn undo_shortcut_works_on_an_untouched_open_cell() {
     assert!(undo_shortcut_applies(Some(&e), true), "cella appena aperta (ha il focus)");
     e.buf = "Alice|45".to_string();
     assert!(!undo_shortcut_applies(Some(&e), true), "ci si è scritto: annulla la digitazione");
-    e.buf = "Alice|4".to_string();
-    assert!(undo_shortcut_applies(Some(&e), true), "tornata com'era");
+    e.buf = "Alice|".to_string();
+    assert!(undo_shortcut_applies(Some(&e), true), "tornata com'era all'apertura (effort tolto)");
     let empty = Editing::open(ProjectId(0), DevId(0), 20000, 1, "", "");
     assert!(undo_shortcut_applies(Some(&empty), true), "cella vuota appena aperta");
     assert!(undo_shortcut_applies(None, false));
@@ -5414,4 +5440,77 @@ fn bulk_fill_until_a_milestone() {
     }
     let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
     assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la milestone");
+}
+
+/// Riaprendo una cella con un worker l'effort viene tolto («Alice|»): Invio
+/// conferma il nuovo valore, Esc chiude lasciando il vecchio, e passarci
+/// sopra con le frecce senza scrivere non la cambia. Cmd/Ctrl+C copia
+/// ancora il valore della cella.
+#[test]
+fn reopening_a_cell_clears_the_effort_until_confirmed() {
+    let mut app = App::new();
+    let weeks = weeks_vec(&app);
+    let w = weeks[2];
+    let p = app.projects.add("P", Some("PPP"), Some(WeekId(weeks[0] as usize)));
+    app.projects.set_project_end_week(p, Some(WeekId(weeks[10] as usize)));
+    let dev = app.devs.add("Frontend");
+    app.projects.add_dev(p, dev);
+    let alice = app.workers.add("Alice");
+    app.projects.add_effort(p, dev, WeekId(w as usize), alice, Effort(4));
+    app.compute_sovra();
+
+    let ctx = egui::Context::default();
+    let mut pjm = PjmApp { app, ui: UiState::default() };
+    let mut frame = eframe::Frame::_new_kittest();
+    let mut run = |pjm: &mut PjmApp, events: Vec<egui::Event>| {
+        let input = egui::RawInput { screen_rect: Some(screen(1600.0, 900.0)), events, ..Default::default() };
+        let _ = ctx.run_ui_test(input, |ui| eframe::App::ui(pjm, ui, &mut frame));
+    };
+    let key = |key| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let effort = |pjm: &PjmApp| {
+        pjm.app.projects.get_single_dev(p, dev).unwrap().get_all(WeekId(w as usize))
+            .and_then(|s| s.worker_id.get(&alice).map(|e| e.get_effort().0))
+    };
+    let open = |pjm: &mut PjmApp| pjm.apply(Action::OpenCellEditor { proj: p, dev, week: w, row: 0 });
+
+    // Aperta: effort tolto.
+    open(&mut pjm);
+    assert_eq!(pjm.ui.editing.as_ref().unwrap().buf, "Alice|");
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+    // Cmd/Ctrl+C senza aver scritto: copia il valore della cella.
+    run(&mut pjm, vec![egui::Event::Copy]);
+    assert_eq!(pjm.ui.copied_text, "Alice|4");
+    // Esc: chiusa, vecchio valore.
+    run(&mut pjm, vec![key(egui::Key::Escape)]);
+    run(&mut pjm, vec![]);
+    assert!(pjm.ui.editing.is_none());
+    assert_eq!(effort(&pjm), Some(4), "Esc lascia il vecchio valore");
+
+    // Freccia senza scrivere: la cella resta com'era, si passa alla vicina.
+    open(&mut pjm);
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![key(egui::Key::ArrowRight)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(effort(&pjm), Some(4), "passarci sopra non azzera");
+    assert_eq!(pjm.ui.editing.as_ref().map(|e| e.week), Some(weeks[3]));
+    run(&mut pjm, vec![key(egui::Key::Escape)]);
+    run(&mut pjm, vec![]);
+
+    // Nuovo valore + Invio: confermato.
+    open(&mut pjm);
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![]);
+    run(&mut pjm, vec![egui::Event::Text("8".into())]);
+    assert_eq!(pjm.ui.editing.as_ref().unwrap().buf, "Alice|8");
+    run(&mut pjm, vec![key(egui::Key::Enter)]);
+    run(&mut pjm, vec![]);
+    assert_eq!(effort(&pjm), Some(8), "Invio conferma il nuovo valore");
 }

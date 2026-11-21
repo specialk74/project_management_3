@@ -1040,8 +1040,17 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   autocomplete (`find_completion`: **only workers with `show_in_find`** — the
   «Elenchi» tick —; a hidden worker typed in full is still accepted on commit;
   test `cell_completion_skips_workers_hidden_from_lists`); `Esc` cancels.
+  **Reopening a filled cell clears the effort**: `Editing::open` turns
+  «Alice|4» into `buf`/`typed`/`start_text` = «Alice|» (`orig_text` keeps
+  «Alice|4»); `untouched()` = `buf == start_text`, and an untouched commit
+  (Enter, nav keys, focus lost) pushes **no** `CommitCell`, so arrowing over
+  cells never zeroes them; Esc discards as before; Copy/Cut use
+  `copy_text()` (= `orig_text` while untouched). Test
+  `reopening_a_cell_clears_the_effort_until_confirmed`.
   **Keyboard navigation** (only while a cell is open): arrows, `Tab`/`Shift+Tab`
-  (→/←) and `Enter`/`Shift+Enter` (↓/↑) commit and open the neighbour cell.
+  (→/←) and `Enter`/`Shift+Enter` (→/← too, like Tab — user's request; at
+  the end of the dev's row `nav_target` is `None` ⇒ commit + close) commit
+  and open the neighbour cell.
   `nav_target(app, &state.nav_order, from, NavDir)` (`grid.rs`, pure, unit-tested)
   skips non-editable weeks (`week_editable`) and, vertically, devs of projects
   where that week isn't editable; up/down cross devs and projects in grid order

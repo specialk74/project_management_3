@@ -73,11 +73,16 @@ pub(crate) struct Editing {
     paste_note: Option<String>, // nota incollata (Ctrl+V) da applicare al commit
     orig_worker: String,        // worker presente nella cella all'apertura (per commit mirato)
     orig_note: String,          // nota presente nella cella all'apertura
-    orig_text: String,          // testo all'apertura: uguale a `buf` = nulla digitato
+    orig_text: String,          // testo della cella all'apertura («Alice|4»)
+    start_text: String,         // testo mostrato all'apertura («Alice|», effort tolto): uguale a `buf` = nulla digitato
 }
 
 impl Editing {
     /// Cella in modifica appena aperta su `text`/`note` (click o tastiera).
+    /// Se la cella ha già un worker, l'effort viene tolto («Alice|4» →
+    /// «Alice|»), pronto per il nuovo valore: Invio lo conferma, Esc chiude
+    /// lasciando il vecchio. Se non si scrive nulla, confermare (Invio,
+    /// navigazione, focus perso) non cambia la cella.
     pub(crate) fn open(
         proj: ProjectId,
         dev: DevId,
@@ -86,25 +91,37 @@ impl Editing {
         text: &str,
         note: &str,
     ) -> Self {
+        let start = match parse_cell(text) {
+            Some((name, _)) if !name.is_empty() => format!("{name}|"),
+            _ => text.to_string(),
+        };
         Self {
             proj,
             dev,
             week,
             row,
-            buf: text.to_string(),
-            typed: text.to_string(),
+            buf: start.clone(),
+            typed: start.clone(),
             just_opened: true,
             had_focus: false,
             paste_note: None,
             orig_worker: cell_worker(text).to_string(),
             orig_note: note.to_string(),
             orig_text: text.to_string(),
+            start_text: start,
         }
     }
 
     /// Nella cella non è stato scritto nulla (è com'era all'apertura).
     pub(crate) fn untouched(&self) -> bool {
-        self.buf == self.orig_text
+        self.buf == self.start_text
+    }
+
+    /// Testo da copiare (Cmd/Ctrl+C/X): quello della cella se non si è
+    /// scritto nulla (l'effort tolto all'apertura c'è ancora), altrimenti
+    /// quello scritto.
+    fn copy_text(&self) -> String {
+        if self.untouched() { self.orig_text.clone() } else { self.buf.clone() }
     }
 }
 
