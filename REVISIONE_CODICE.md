@@ -543,3 +543,11 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   vulnerabilità, gli stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi
   A13). jiff resta 0.2.46 (1.0.1 bloccata da egui_extras 0.37). Build e clippy
   0 warning, 453 test verdi. Da provare a mano: un export PDF (allsorts).
+- **2026-11-21** — `cargo update`: **printpdf 0.12.13 → 0.12.14** (diretta:
+  minimo in `Cargo.toml` portato a 0.12.14), form_urlencoded 1.2.3, url 2.5.9,
+  walkdir 2.5.1, toml_edit/toml_parser, zerocopy 0.8.64. `cargo audit` (531
+  pacchetti): nessuna vulnerabilità, gli stessi 6 avvisi «non più mantenuto»
+  (chrono, vedi A13). Restano indietro jiff 0.2.46 (1.0.2 bloccata da
+  egui_extras 0.37) e rust-fontconfig 5.0.2 (5.1.0 esclusa da azul-core
+  0.0.20, `<5.1`). Build e clippy 0 warning, 457 test verdi. Da provare a
+  mano: un export PDF (printpdf).
