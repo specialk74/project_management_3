@@ -428,7 +428,8 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     // l'ultima settimana.
     let chosen: Vec<WorkerId> =
         app.workers.list().into_iter().map(|(id, _)| id).filter(|id| bf.selected.contains(id)).collect();
-    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0));
+    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0), bf.backward);
+    let limit = auto_fill_limit_label(app, bf.proj, bf.backward);
 
     let mut open = true;
     let mut confirm = false;
@@ -455,6 +456,13 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 let r = ui.add(egui::TextEdit::singleline(&mut bf.effort_text).desired_width(50.0).hint_text("es. 8"));
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             });
+            ui.horizontal(|ui| {
+                ui.label("Direzione:");
+                ui.radio_value(&mut bf.backward, false, "In avanti")
+                    .on_hover_text("Dalla settimana cliccata verso la fine del progetto.");
+                ui.radio_value(&mut bf.backward, true, "All'indietro")
+                    .on_hover_text("Dalla settimana cliccata verso l'inizio del progetto.");
+            });
             if hours.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero, almeno 1).");
             }
@@ -474,7 +482,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                     _ => {
                         ui.colored_label(
                             Color32::RED,
-                            format!("Nessuna settimana libera fino alla {}.", fill_limit_label(app, bf.proj)),
+                            format!("Nessuna settimana libera fino alla {limit}."),
                         );
                     }
                 }
@@ -493,8 +501,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                     ui.colored_label(
                         Color32::RED,
                         format!(
-                            "Arrivati alla {}: restano {}h non inserite.",
-                            fill_limit_label(app, bf.proj),
+                            "Arrivati alla {limit}: restano {}h non inserite.",
                             plan.left
                         ),
                     );
@@ -524,6 +531,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
             start: WeekId(bf.week as usize),
             workers: chosen,
             hours: hours.unwrap_or(0),
+            backward: bf.backward,
         });
     }
     if confirm || cancel || !open {

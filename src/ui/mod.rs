@@ -287,6 +287,9 @@ pub(crate) struct BulkFill {
     /// «Fino a milestone»: al posto del numero di settimane, tutte quelle
     /// fino alla settimana della milestone scelta (inclusa). Esclude `to_end`.
     pub to_milestone: Option<MilestoneId>,
+    /// «Aggiungi automatic effort»: riempie all'indietro (dalla settimana
+    /// cliccata verso l'inizio del progetto) invece che in avanti.
+    pub backward: bool,
 }
 
 impl BulkFill {
@@ -303,6 +306,7 @@ impl BulkFill {
             weeks_text: "1".to_string(),
             to_end: false,
             to_milestone: None,
+            backward: false,
         }
     }
 }
@@ -1578,6 +1582,8 @@ pub(crate) enum Action {
         start: WeekId,
         workers: Vec<WorkerId>,
         hours: usize,
+        /// All'indietro, verso l'inizio del progetto (o della griglia).
+        backward: bool,
     },
     BulkFillEffort {
         proj: ProjectId,
@@ -3228,8 +3234,8 @@ impl PjmApp {
                 let (text, note, _) = &slots[row];
                 self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
             }
-            Action::AutoFillEffort { proj, dev, start, workers, hours } => {
-                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours);
+            Action::AutoFillEffort { proj, dev, start, workers, hours, backward } => {
+                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours, backward);
                 for (w, wid, h) in &plan.cells {
                     self.app.projects.add_effort(proj, dev, *w, *wid, Effort(*h));
                 }
@@ -3238,8 +3244,8 @@ impl PjmApp {
                 }
                 if plan.left > 0 {
                     self.ui.toast_warn(format!(
-                        "Inserimento automatico: {}, restano {}h non inserite.",
-                        fill_limit_label(&self.app, proj),
+                        "Inserimento automatico: arrivati alla {}, restano {}h non inserite.",
+                        auto_fill_limit_label(&self.app, proj, backward),
                         plan.left
                     ));
                 }
@@ -5097,6 +5103,7 @@ pub(crate) fn auto_fill_plan(
     start: WeekId,
     workers: &[WorkerId],
     hours: usize,
+    backward: bool,
 ) -> AutoFillPlan {
     let sd = app.projects.get_single_dev(proj, dev);
     let planned = sd.map_or(0, |sd| sd.planned_effort().0);
@@ -5110,9 +5117,12 @@ pub(crate) fn auto_fill_plan(
     let occupied = |w: WeekId, wid: WorkerId| {
         sd.and_then(|sd| sd.get_all(w)).is_some_and(|sew| sew.worker_id.contains_key(&wid))
     };
+    // In avanti fino alla fine del progetto (o della griglia), all'indietro
+    // fino all'inizio: la settimana cliccata è sempre la prima riempita.
     let end = fill_limit(app, proj).0;
-    let mut w = start;
-    while left > 0 && w <= end {
+    let begin = fill_start(app, proj).0;
+    let mut next = Some(start);
+    while let Some(w) = next.filter(|c| left > 0 && if backward { *c >= begin } else { *c <= end }) {
         for wid in workers {
             if left == 0 {
                 break;
@@ -5129,10 +5139,33 @@ pub(crate) fn auto_fill_plan(
             plan.cells.push((w, *wid, h));
             left -= h;
         }
-        w = WeekId(w.0 + WEEK_STEP);
+        next = if backward { w.0.checked_sub(WEEK_STEP).map(WeekId) } else { Some(WeekId(w.0 + WEEK_STEP)) };
     }
+    // Celle in ordine di settimana (all'indietro sono nate al contrario);
+    // dentro la settimana resta l'ordine dei worker.
+    plan.cells.sort_by_key(|(w, ..)| w.0);
     plan.left = left;
     plan
+}
+
+/// Prima settimana in cui «Aggiungi automatic effort» all'indietro può
+/// scrivere: l'**inizio del progetto** se c'è e cade dopo l'inizio della
+/// griglia, altrimenti l'inizio della griglia (`bool` = è l'inizio del progetto).
+pub(crate) fn fill_start(app: &App, proj: ProjectId) -> (WeekId, bool) {
+    match app.projects.get_project_start_week(proj) {
+        Some(s) if s >= app.start_week => (s, true),
+        _ => (app.start_week, false),
+    }
+}
+
+/// Dove si ferma «Aggiungi automatic effort»: fine (in avanti) o inizio
+/// (all'indietro) del progetto o della griglia.
+pub(crate) fn auto_fill_limit_label(app: &App, proj: ProjectId, backward: bool) -> &'static str {
+    match (backward, fill_start(app, proj).1) {
+        (false, _) => fill_limit_label(app, proj),
+        (true, true) => "inizio del progetto",
+        (true, false) => "inizio della griglia",
+    }
 }
 
 /// Ultima settimana in cui gli inserimenti di più settimane («Aggiungi

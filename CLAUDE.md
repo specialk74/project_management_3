@@ -1123,7 +1123,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   capacity = `get_effective_max_hours(w, week)` − `App.sovra[(week, w)]`
   (all projects; full ⇒ week skipped; same rule as Saturazione), skipping per worker `Ferie`
   weeks and weeks where he already has a cell on that dev (no overwrite),
-  until `fill_limit(app, proj)` (`left` = what didn't fit, toasted). All four choices
+  until `fill_limit(app, proj)` (`left` = what didn't fit, toasted).
+  **Direction**: radio «In avanti / All'indietro» (`BulkFill.backward` →
+  `AutoFillEffort.backward` → last arg of `auto_fill_plan`): backward walks
+  from `start` down to `fill_start(app, proj)` (project start if inside the
+  grid, else `start_week`), so the partial week is the earliest; `cells` are
+  sorted by week at the end either way; messages via
+  `auto_fill_limit_label(app, proj, backward)`. Test
+  `auto_fill_can_go_backward_to_the_project_start`. All four choices
   were the user's. Tests
   `auto_fill_plan_spreads_what_is_left_of_the_planned_effort`,
   `auto_fill_menu_item_and_dialog_fill_up_to_the_planned_effort`.

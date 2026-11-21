@@ -763,12 +763,15 @@ dev ha un pianificato. La finestra **Inserimento automatico** chiede soltanto:
 
 - i **worker** (con ricerca e Select All, come l'inserimento multiplo);
 - le **ore a settimana**: il **massimo** che **ciascun** worker prende in una
-  settimana (numero intero).
+  settimana (numero intero);
+- la **direzione**: **In avanti** (verso la fine del progetto, la scelta
+  iniziale) o **All'indietro** (verso l'inizio del progetto).
 
 In cima mostra quanto c'è da distribuire: *pianificato − ore già inserite* in
 griglia per quel dev (tutte le settimane, tutti i worker). Poi, dalla settimana
-cliccata in avanti, ogni settimana ogni worker scelto prende le ore indicate,
-finché non sono esaurite; nell'**ultima** settimana i worker si riempiono **in
+cliccata (sempre la prima riempita) nella direzione scelta, ogni settimana ogni worker scelto prende le ore indicate,
+finché non sono esaurite; nell'**ultima** settimana raggiunta (la più lontana da quella cliccata:
+all'indietro è la più vecchia) i worker si riempiono **in
 ordine** (nell'ordine dell'elenco): il primo fino al massimo, il successivo il
 resto — sempre **numeri interi**, mai decimali. Si rispetta la **capacità** del
 worker, come in Saturazione: in una settimana non prende più del suo massimo
@@ -779,7 +782,8 @@ le settimane in **Ferie** e quelle in cui ha **già** ore su quel dev (non
 vengono sovrascritte). Il riepilogo dice quante ore e in quante settimane (prima
 → ultima) e quante ne prende ciascun worker. Come l'inserimento multiplo, **si
 ferma alla fine del progetto** (o della griglia, se non c'è data di fine) e non
-va oltre: in quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
+va oltre; all'indietro si ferma allo stesso modo all'**inizio del progetto** (o
+della griglia). In quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
 niente da distribuire e **Inserisci** resta disattivato.
 
 ### Copia / Taglia / Incolla
