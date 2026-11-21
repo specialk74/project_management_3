@@ -26,6 +26,9 @@ pub const START_STOP: Color32 = Color32::from_rgb(0xff, 0xff, 0x00); // yellow
 /// Bordo della settimana corrente: verde acceso, fisso. Una velatura colorata
 /// si confondeva con le colonne delle milestone, un bordo no. I chiamanti lo
 /// passano per `g(...)` (in B/N diventa grigio) con `this_week_border()`.
+/// Sfondo del residuo del dev (pianificato − ore in griglia) quando è
+/// esattamente 0; ogni altro valore è su `Color32::RED`. Testo bianco.
+pub const REMAINS_OK_GREEN: Color32 = Color32::from_rgb(0x1B, 0x8A, 0x3C);
 pub const THIS_WEEK_GREEN: Color32 = Color32::from_rgb(0x00, 0xE6, 0x76);
 /// Spessore (px) del bordo della settimana corrente.
 pub const THIS_WEEK_BORDER_W: f32 = 5.0;

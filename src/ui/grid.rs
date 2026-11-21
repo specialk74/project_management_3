@@ -1392,6 +1392,12 @@ fn draw_compact_bar(
     .on_hover_text(format!("{}  ·  {}h", date, week_total));
 }
 
+/// Sfondo del residuo del dev nella colonna sinistra (pianificato − ore in
+/// griglia): verde se è 0, rosso altrimenti.
+pub(crate) fn remains_bg(remains: i32) -> Color32 {
+    g(if remains == 0 { REMAINS_OK_GREEN } else { Color32::RED })
+}
+
 /// Riga cumulativa (sola lettura) in cima al blocco del dev: `svolto | residuo`,
 /// col colore che vira dal verde al rosso avvicinandosi al pianificato.
 #[allow(clippy::too_many_arguments)]
@@ -2718,17 +2724,12 @@ pub(crate) fn draw_left_devs(
                 egui::pos2(eff_x, inner_y + ROW_H),
                 Vec2::new(DEV_EFFORT_W, ROW_H),
             );
-            let rem_red = (remains == planned as i32 && planned != 0) || remains < 0;
-            if rem_red {
-                ui.painter().rect_filled(rem_rect, 0.0, g(Color32::RED));
-            }
-            // su sfondo rosso il testo è sempre bianco (a prescindere dal tema
-            // di sistema), altrimenti segue il colore del dev.
-            let rem_color = if rem_red {
-                Color32::WHITE
-            } else {
-                dev_text_color(app, *dev)
-            };
+            // Verde solo se il residuo è esattamente 0 (tutto il pianificato è
+            // in griglia), rosso per ogni altro valore (manca o sfora).
+            ui.painter().rect_filled(rem_rect, 0.0, remains_bg(remains));
+            // su sfondo colorato il testo è sempre bianco (a prescindere dal
+            // tema di sistema).
+            let rem_color = Color32::WHITE;
             ui.painter().text(
                 rem_rect.center(),
                 Align2::CENTER_CENTER,

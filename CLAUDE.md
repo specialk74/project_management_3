@@ -1184,6 +1184,10 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   change; the items are disabled when there are no cells (`SingleDev::has_cells`).
   Tests `clear_efforts_empties_one_dev_or_all_devs_keeping_planned`,
   `clear_efforts_window_asks_then_confirms`.
+- **Dev remains** (left column, under the planned effort: planned − all
+  grid hours): background `remains_bg(remains)` (`grid.rs`) = `REMAINS_OK_GREEN`
+  only when exactly 0, `Color32::RED` for every other value; text always
+  white. Test `dev_remains_is_green_only_at_zero`.
 - **Notes** (yellow triangle indicator): right-click a non-empty cell → effort note;
   right-click a dev name → **Nota Dev…**; right-click a footer worker cell → **Note**.
 - **Project progress %** — two figures, both planned-effort-weighted and both `None`

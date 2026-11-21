@@ -609,9 +609,10 @@ Per ogni dev del progetto:
     in futuro si potrà tracciare l'**andamento nel tempo** della percentuale. Il campo
     mostra sempre il valore corrente (l'ultima voce).
 - **Effort pianificato** (editabile): le ore previste per quel dev.
-- **Residuo**: pianificato − totale allocato. Se il residuo è negativo (o pari al
-  pianificato con pianificato ≠ 0) lo sfondo diventa rosso e il numero è sempre
-  bianco.
+- **Residuo**: pianificato − totale allocato. Lo sfondo è **verde** solo se il
+  residuo è esattamente **0** (tutto il pianificato è in griglia); per ogni altro
+  valore — ore ancora da inserire o sforamento (negativo) — è **rosso**. Il
+  numero è sempre bianco.
 
 ### Menù del dev (tasto destro sul nome del dev)
 - **Aggiungi riga** — aggiunge una riga worker per quel dev (anche con doppio
@@ -2391,7 +2392,8 @@ l'errore e resta aperto, così le modifiche non vanno perse.
 - **Testo grigio** in cella: worker nascosto nel footer.
 - **Riquadro in basso a destra**: notifica (✔ riuscito, ℹ informazione,
   ⚠ avviso, ⛔ errore — vedi §17).
-- **Sfondo rosso** su residuo/valore: sotto zero o oltre il massimo.
+- **Residuo del dev**: verde se è 0, rosso per ogni altro valore.
+- **Sfondo rosso** su un valore: sotto zero o oltre il massimo.
 - **Riga cumulativa** dal verde al rosso: avanzamento verso il pianificato.
 
 ---

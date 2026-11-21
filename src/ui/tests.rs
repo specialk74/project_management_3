@@ -5885,3 +5885,14 @@ fn bulk_clear_all_removes_every_week_of_the_dev() {
     assert!(!pjm.app.projects.get_single_dev(proj, dev).unwrap().has_cells(), "dev svuotato");
     assert_eq!(cell_effort(&pjm.app, proj, other, wk(3), alice), Some(7), "l'altro dev resta");
 }
+
+/// Residuo del dev nella colonna sinistra (pianificato − ore in griglia):
+/// verde solo se è 0, rosso per ogni altro valore (mancano ore o sforano).
+#[test]
+fn dev_remains_is_green_only_at_zero() {
+    set_bw_mode(false);
+    assert_eq!(remains_bg(0), REMAINS_OK_GREEN);
+    for r in [1, 40, -1, -8] {
+        assert_eq!(remains_bg(r), Color32::RED, "residuo {r}");
+    }
+}
