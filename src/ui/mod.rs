@@ -312,6 +312,9 @@ pub(crate) struct BulkFill {
     /// «Cancella effort» ▸ «Cancella tutto»: tutte le settimane del dev
     /// (anche prima della settimana cliccata e oltre la fine del progetto).
     pub all: bool,
+    /// «Aggiungi automatic effort» ▸ «Adattivo»: nessun tetto di ore a
+    /// settimana, ogni worker riceve tutta la sua capacità libera.
+    pub adaptive: bool,
 }
 
 impl BulkFill {
@@ -330,6 +333,7 @@ impl BulkFill {
             to_milestone: None,
             backward: false,
             all: false,
+            adaptive: false,
         }
     }
 }
@@ -1612,6 +1616,8 @@ pub(crate) enum Action {
         dev: DevId,
         start: WeekId,
         workers: Vec<WorkerId>,
+        /// Tetto di ore a settimana per worker; `AUTO_FILL_ADAPTIVE` = nessun
+        /// tetto (modalità adattiva: tutta la capacità libera).
         hours: usize,
         /// All'indietro, verso l'inizio del progetto (o della griglia).
         backward: bool,
@@ -5141,6 +5147,10 @@ impl AutoFillPlan {
     }
 }
 
+/// «Ore a settimana» della modalità adattiva di «Aggiungi automatic effort»:
+/// nessun tetto, conta solo la capacità libera del worker.
+pub(crate) const AUTO_FILL_ADAPTIVE: usize = usize::MAX;
+
 /// «Aggiungi automatic effort»: distribuisce le ore che mancano al
 /// pianificato del dev (pianificato − ore già in griglia) dalla settimana
 /// `start` in avanti. Ogni settimana ogni worker (nell'ordine dato) prende
@@ -5153,7 +5163,8 @@ impl AutoFillPlan {
 /// si saltano anche le settimane in **Ferie** e quelle in cui ha già una
 /// cella su quel dev (non si sovrascrive). Si ferma alla fine del progetto
 /// (o della griglia, `fill_limit`): non va mai oltre (`left` = quello che
-/// non sta).
+/// non sta). Con `hours` = `AUTO_FILL_ADAPTIVE` (modalità adattiva) non c'è
+/// tetto: ogni worker riceve tutta la capacità libera della settimana.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_fill_plan(
     app: &App,

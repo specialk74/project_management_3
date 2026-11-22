@@ -693,7 +693,12 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     let dev_label = dev_name(app, bf.dev);
     let start_label = week_label(bf.week);
     let listed = bulk_fill_listed(app, &bf.search);
-    let hours = bf.effort_text.trim().parse::<usize>().ok().filter(|h| *h > 0);
+    // Adattivo: nessun tetto, ogni worker prende tutta la sua capacità libera.
+    let hours = if bf.adaptive {
+        Some(AUTO_FILL_ADAPTIVE)
+    } else {
+        bf.effort_text.trim().parse::<usize>().ok().filter(|h| *h > 0)
+    };
     // Worker scelti nell'ordine dell'elenco: è l'ordine in cui si riempie
     // l'ultima settimana.
     let chosen: Vec<WorkerId> =
@@ -724,9 +729,16 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
             ui.separator();
             let mut submit = false;
             ui.horizontal(|ui| {
-                ui.label("Ore a settimana (massimo):");
-                let r = ui.add(egui::TextEdit::singleline(&mut bf.effort_text).desired_width(50.0).hint_text("es. 8"));
-                submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                ui.add_enabled_ui(!bf.adaptive, |ui| {
+                    ui.label("Ore a settimana (massimo):");
+                    let r =
+                        ui.add(egui::TextEdit::singleline(&mut bf.effort_text).desired_width(50.0).hint_text("es. 8"));
+                    submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                });
+                ui.checkbox(&mut bf.adaptive, "Adattivo").on_hover_text(
+                    "Ogni settimana ogni worker riceve tutta la sua capacità libera: ore massime della \
+                     settimana meno quelle che ha già sugli altri progetti.",
+                );
             });
             ui.horizontal(|ui| {
                 ui.label("Direzione:");
@@ -735,7 +747,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 ui.radio_value(&mut bf.backward, true, "All'indietro")
                     .on_hover_text("Dalla settimana cliccata verso l'inizio del progetto.");
             });
-            if hours.is_none() && !bf.effort_text.trim().is_empty() {
+            if !bf.adaptive && hours.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero, almeno 1).");
             }
             if plan.to_place() == 0 {

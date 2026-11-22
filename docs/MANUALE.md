@@ -769,7 +769,10 @@ dev ha un pianificato. La finestra **Inserimento automatico** chiede soltanto:
 
 - i **worker** (con ricerca e Select All, come l'inserimento multiplo);
 - le **ore a settimana**: il **massimo** che **ciascun** worker prende in una
-  settimana (numero intero);
+  settimana (numero intero); oppure la spunta **Adattivo**, che disattiva il
+  campo: nessun tetto, ogni settimana **ciascun** worker riceve **tutta la sua
+  capacità libera** (le sue ore massime di quella settimana meno quelle che ha
+  già sugli altri progetti), nell'ordine dell'elenco, finché c'è da distribuire;
 - la **direzione**: **In avanti** (verso la fine del progetto, la scelta
   iniziale) o **All'indietro** (verso l'inizio del progetto).
 

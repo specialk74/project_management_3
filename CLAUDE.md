@@ -1147,7 +1147,12 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   grid, else `start_week`), so the partial week is the earliest; `cells` are
   sorted by week at the end either way; messages via
   `auto_fill_limit_label(app, proj, backward)`. Test
-  `auto_fill_can_go_backward_to_the_project_start`. All four choices
+  `auto_fill_can_go_backward_to_the_project_start`. **Adaptive**: checkbox
+  «Adattivo» (`BulkFill.adaptive`, user's choices: free capacity, checkbox,
+  every worker to the max in list order) disables the hours field and sends
+  `hours = AUTO_FILL_ADAPTIVE` (`usize::MAX`, no cap): each worker takes all
+  its free capacity of the week. Test
+  `adaptive_auto_fill_fills_each_week_up_to_the_free_capacity`. All four choices
   were the user's. Tests
   `auto_fill_plan_spreads_what_is_left_of_the_planned_effort`,
   `auto_fill_menu_item_and_dialog_fill_up_to_the_planned_effort`.

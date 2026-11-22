@@ -258,6 +258,7 @@ fn bulk_fill_window_renders() {
             to_milestone: None,
             backward: false,
             all: false,
+            adaptive: false,
         }),
         ..Default::default()
     };
@@ -5895,4 +5896,68 @@ fn dev_remains_is_green_only_at_zero() {
     for r in [1, 40, -1, -8] {
         assert_eq!(remains_bg(r), Color32::RED, "residuo {r}");
     }
+}
+
+/// «Aggiungi automatic effort» ▸ «Adattivo»: nessun tetto di ore, ogni
+/// settimana ogni worker (nell'ordine) prende tutta la sua capacità libera
+/// (massimo effettivo − ore sugli altri progetti), fino al pianificato. Nella
+/// finestra la spunta disattiva il campo ore e «Inserisci» manda il piano
+/// adattivo anche col campo vuoto.
+#[test]
+fn adaptive_auto_fill_fills_each_week_up_to_the_free_capacity() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let dev = app.devs.add("Frontend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, dev);
+    app.projects.add_dev_effort(p, dev, Effort(150));
+    let start = app.start_week;
+    let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    // Bob ha 30h su un altro progetto nella prima settimana; Alice un limite di
+    // 20h nella seconda.
+    let q = app.projects.add("y", Some("XYZ"), None);
+    app.projects.add_dev(q, dev);
+    app.projects.add_effort(q, dev, wk(0), bob, Effort(30));
+    app.workers.set_week_override(alice, wk(1).0, 20);
+    app.compute_sovra();
+    let max = app.workers.get_effective_max_hours(alice, wk(0).0) as usize;
+    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], AUTO_FILL_ADAPTIVE, false, false);
+    let mut expected = vec![(wk(0), alice, max), (wk(0), bob, max - 30), (wk(1), alice, 20), (wk(1), bob, max)];
+    let mut left = 150 - expected.iter().map(|c| c.2).sum::<usize>();
+    let mut i = 2;
+    while left > 0 {
+        for w in [alice, bob] {
+            let h = max.min(left);
+            if h > 0 {
+                expected.push((wk(i), w, h));
+                left -= h;
+            }
+        }
+        i += 1;
+    }
+    assert_eq!(plan.cells, expected);
+    assert_eq!(plan.left, 0);
+
+    // Finestra: con «Adattivo» il campo ore vuoto non blocca «Inserisci».
+    let mut bf = BulkFill { adaptive: true, ..BulkFill::new(p, dev, start.0 as i32) };
+    bf.selected.insert(alice);
+    let mut state = UiState { auto_fill: Some(bf), ..Default::default() };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
+    let mut out = None;
+    for _ in 0..2 {
+        out = Some(ctx.run_ui_test(input.clone(), |ui| auto_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new())));
+    }
+    let pos = text_pos(&out.unwrap(), "Inserisci").expect("pulsante Inserisci");
+    let mut actions = Vec::new();
+    for ev in click_events(pos, egui::PointerButton::Primary) {
+        let mut i = input.clone();
+        i.events.push(ev);
+        ctx.run_ui_test(i, |ui| auto_fill_window(ui.ctx(), &app, &mut state, &mut actions));
+    }
+    assert!(
+        actions.iter().any(|a| matches!(a, Action::AutoFillEffort { hours: AUTO_FILL_ADAPTIVE, .. })),
+        "Inserisci manda il piano adattivo"
+    );
 }
