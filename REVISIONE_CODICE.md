@@ -622,3 +622,10 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   in meno in `src/`, comportamento invariato (le combo a spunte ora scartano
   sempre gli id spariti). Tolti 6 test che provavano solo le funzioni
   eliminate: 458 test verdi, build e clippy 0 warning. E5 resta proposta.
+- **2026-11-22** — `cargo update`: allsorts-azul 0.17.3 → 0.17.4 (usata da
+  printpdf), hashbrown 0.17.1 → 0.17.2; nessuna dipendenza diretta cambiata,
+  quindi `Cargo.toml` invariato. `cargo audit` (531 pacchetti): nessuna
+  vulnerabilità, gli stessi 6 avvisi «non più mantenuto» (chrono compreso, vedi
+  A13). Restano indietro jiff 0.2.46 (1.0.2 bloccata da egui_extras 0.37) e
+  rust-fontconfig 5.0.2 (5.1.0 esclusa da azul-core). Build e clippy 0
+  warning, 459 test verdi. Da provare a mano: un export PDF (allsorts).
