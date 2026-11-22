@@ -1103,7 +1103,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   skipped weeks («Alice: in ferie il … (saltate) → fino al …») and a red one
   if the grid end cuts it; `BulkFillEffort.weeks` is the requested `n`. Tests
   `bulk_fill_skips_vacation_weeks_to_the_next_free_one`,
-  `bulk_fill_window_reports_skipped_vacation_weeks`. Only
+  `bulk_fill_window_reports_skipped_vacation_weeks`. The per-worker lines
+  (here and in the auto fill's «Name: Nh in N settimane») sit in
+  `fill_notes_scroll` (vertical `ScrollArea`, `drag_scroll()`, max
+  `FILL_NOTES_MAX_H` 140 px) so Inserisci/Annulla never leave the screen;
+  test `fill_windows_keep_the_buttons_on_screen_with_many_workers`. Only
   on non-merged columns (merged/zoom cells `continue` before the slot loop).
   «oppure fino al:» is a `DatePickerButton` **linked** to «Per quante settimane»
   (no extra state: the date shown is `bulk_fill_last_week(start, n)`, a picked

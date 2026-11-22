@@ -5962,3 +5962,53 @@ fn adaptive_auto_fill_fills_each_week_up_to_the_free_capacity() {
         "Inserisci manda il piano adattivo"
     );
 }
+
+/// Con molti worker scelti, l'elenco per worker sotto il riepilogo delle
+/// finestre di inserimento scorre (alto al massimo `FILL_NOTES_MAX_H`):
+/// «Inserisci» e «Annulla» restano dentro lo schermo.
+#[test]
+fn fill_windows_keep_the_buttons_on_screen_with_many_workers() {
+    let mut app = App::new();
+    let dev = app.devs.add("Frontend");
+    let p = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(p, dev);
+    app.projects.add_dev_effort(p, dev, Effort(4000));
+    let start = app.start_week;
+    let mut workers = Vec::new();
+    for i in 0..40 {
+        let w = app.workers.add(&format!("Worker {i:02}"));
+        // Ferie nella seconda settimana: una riga blu per ognuno.
+        app.workers.set_week_status(w, start.0 + WEEK_STEP, Some(WeekStatus::Ferie));
+        workers.push(w);
+    }
+    app.compute_sovra();
+    let (w, h) = (1000.0, 760.0);
+    let input = egui::RawInput { screen_rect: Some(screen(w, h)), ..Default::default() };
+    for auto in [false, true] {
+        let mut bf = BulkFill { effort_text: "8".into(), weeks_text: "3".into(), ..BulkFill::new(p, dev, start.0 as i32) };
+        bf.selected.extend(workers.iter().copied());
+        bf.opened = true;
+        let mut state = if auto {
+            UiState { auto_fill: Some(bf), ..Default::default() }
+        } else {
+            UiState { bulk_fill: Some(bf), ..Default::default() }
+        };
+        let ctx = egui::Context::default();
+        let mut out = None;
+        // La finestra si misura in qualche frame (è ancorata al centro).
+        for _ in 0..8 {
+            out = Some(ctx.run_ui_test(input.clone(), |ui| {
+                if auto {
+                    auto_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new());
+                } else {
+                    bulk_fill_window(ui.ctx(), &app, &mut state, &mut Vec::new());
+                }
+            }));
+        }
+        let out = out.unwrap();
+        for label in ["Inserisci", "Annulla"] {
+            let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label} (auto: {auto})"));
+            assert!(pos.y > 0.0 && pos.y < h, "{label} fuori dallo schermo (y = {}, auto: {auto})", pos.y);
+        }
+    }
+}

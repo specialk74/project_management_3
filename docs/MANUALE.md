@@ -748,7 +748,9 @@ Note importanti:
   più avanti — anche oltre la data scelta con «fino al». Ogni worker segue le
   sue ferie; la **Malattia** non si salta. La finestra lo dice per ogni worker
   («Alice: in ferie il … (saltate) → fino al …») e il riepilogo mostra
-  l'ultima settimana effettivamente riempita;
+  l'ultima settimana effettivamente riempita. Con molti worker queste righe
+  stanno in un elenco che **scorre** (anche nell'inserimento automatico), così
+  **Inserisci** e **Annulla** restano sempre visibili;
 - l'inserimento **non va mai oltre la fine del progetto** (la settimana della
   data di fine è l'ultima, inclusa; se il progetto non ha data di fine, vale la
   fine della griglia): le settimane oltre vengono scartate e la finestra

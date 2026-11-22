@@ -322,36 +322,38 @@ pub(crate) fn bulk_fill_window(
                     week_label(last)
                 ));
                 // Per worker: ferie saltate e settimane mancanti a fine griglia.
-                for (w, ws) in &plans {
-                    let name = app.workers.get_name_by_id(*w);
-                    let end = ws.last().map(|x| x.0).unwrap_or(bf.week as usize);
-                    let skipped: Vec<String> = (0..)
-                        .map(|i| bf.week as usize + i * WEEK_STEP)
-                        .take_while(|d| *d <= end)
-                        .filter(|d| app.workers.get_week_status(*w, *d) == Some(WeekStatus::Ferie))
-                        .map(|d| week_label(d as i32))
-                        .collect();
-                    if !skipped.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{name}: in ferie il {} (saltate) → fino al {}",
-                                skipped.join(", "),
-                                week_label(end as i32)
-                            ))
-                            .color(info_blue()),
-                        );
+                fill_notes_scroll(ui, "bulk_fill_notes", |ui| {
+                    for (w, ws) in &plans {
+                        let name = app.workers.get_name_by_id(*w);
+                        let end = ws.last().map(|x| x.0).unwrap_or(bf.week as usize);
+                        let skipped: Vec<String> = (0..)
+                            .map(|i| bf.week as usize + i * WEEK_STEP)
+                            .take_while(|d| *d <= end)
+                            .filter(|d| app.workers.get_week_status(*w, *d) == Some(WeekStatus::Ferie))
+                            .map(|d| week_label(d as i32))
+                            .collect();
+                        if !skipped.is_empty() {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{name}: in ferie il {} (saltate) → fino al {}",
+                                    skipped.join(", "),
+                                    week_label(end as i32)
+                                ))
+                                .color(info_blue()),
+                            );
+                        }
+                        // Con «Fino a fine progetto/milestone» è la fine voluta: nessun avviso.
+                        if ws.len() < n && !fixed_end {
+                            ui.colored_label(
+                                Color32::RED,
+                                format!(
+                                    "{name}: solo {} settimane disponibili fino alla {limit}.",
+                                    ws.len()
+                                ),
+                            );
+                        }
                     }
-                    // Con «Fino a fine progetto/milestone» è la fine voluta: nessun avviso.
-                    if ws.len() < n && !fixed_end {
-                        ui.colored_label(
-                            Color32::RED,
-                            format!(
-                                "{name}: solo {} settimane disponibili fino alla {limit}.",
-                                ws.len()
-                            ),
-                        );
-                    }
-                }
+                });
             }
 
             if effort.is_some() {
@@ -761,17 +763,19 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                         );
                     }
                 }
-                for w in &chosen {
-                    let (n, h) = plan
-                        .cells
-                        .iter()
-                        .filter(|(_, x, _)| x == w)
-                        .fold((0, 0), |(n, t), (_, _, h)| (n + 1, t + h));
-                    ui.label(
-                        egui::RichText::new(format!("{}: {h}h in {n} settimane", app.workers.get_name_by_id(*w)))
-                            .color(text_dim()),
-                    );
-                }
+                fill_notes_scroll(ui, "auto_fill_notes", |ui| {
+                    for w in &chosen {
+                        let (n, h) = plan
+                            .cells
+                            .iter()
+                            .filter(|(_, x, _)| x == w)
+                            .fold((0, 0), |(n, t), (_, _, h)| (n + 1, t + h));
+                        ui.label(
+                            egui::RichText::new(format!("{}: {h}h in {n} settimane", app.workers.get_name_by_id(*w)))
+                                .color(text_dim()),
+                        );
+                    }
+                });
                 if !plan.overwritten.is_empty() {
                     ui.label(
                         egui::RichText::new(occupied_note(plan.overwritten.len())).color(info_blue()),
@@ -827,6 +831,22 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     if (confirm && !asked) || cancel || !open {
         state.auto_fill = None;
     }
+}
+
+/// Altezza massima dell'elenco per worker sotto il riepilogo delle finestre
+/// di inserimento: oltre si scorre, così «Inserisci» / «Annulla» restano
+/// sempre dentro lo schermo anche con molti worker scelti.
+pub(crate) const FILL_NOTES_MAX_H: f32 = 140.0;
+
+/// Elenco per worker (ferie saltate, settimane mancanti, ore per worker) delle
+/// finestre «Inserimento multiplo» e «Inserimento automatico», in uno scroll
+/// verticale alto al massimo `FILL_NOTES_MAX_H`.
+fn fill_notes_scroll(ui: &mut egui::Ui, salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::vertical()
+        .id_salt(salt)
+        .scroll_source(drag_scroll())
+        .max_height(FILL_NOTES_MAX_H)
+        .show(ui, add);
 }
 
 /// Lunedì dell'ultima settimana di un inserimento di `weeks` settimane che
