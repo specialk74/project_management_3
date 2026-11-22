@@ -97,9 +97,10 @@ pub(crate) fn toggle_in_all<T: Ord + Clone>(
     }
 }
 
-/// Come `can_untick`, contando solo le voci elencate (`visible`): quelle
+/// Si può togliere la spunta a `item`: non è l'ultima rimasta fra le voci
+/// elencate (`visible`; vale anche con una sola voce in tutto). Quelle
 /// nascoste non si vedono, quindi non valgono come «ultima spunta rimasta».
-pub(crate) fn can_untick_visible<T: Ord>(set: &std::collections::BTreeSet<T>, visible: &[T], item: &T) -> bool {
+pub(crate) fn can_untick<T: Ord>(set: &std::collections::BTreeSet<T>, visible: &[T], item: &T) -> bool {
     let ticked = visible.iter().filter(|x| ticked_in_all(set, x)).count();
     !(ticked <= 1 && ticked_in_all(set, item))
 }
@@ -109,121 +110,138 @@ pub(crate) fn ticked_in_all<T: Ord>(set: &std::collections::BTreeSet<T>, item: &
     set.is_empty() || set.contains(item)
 }
 
-/// Si può togliere la spunta a `item`: non è l'ultima rimasta (vale anche con
-/// una sola voce in tutto).
-pub(crate) fn can_untick<T: Ord>(set: &std::collections::BTreeSet<T>, all_len: usize, item: &T) -> bool {
-    let ticked = if set.is_empty() { all_len } else { set.len() };
-    !(ticked <= 1 && ticked_in_all(set, item))
+/// Una voce di `TickCombo`: `colors` = (sfondo, testo) dell'etichetta;
+/// `hidden` = non elencata, ma compresa nel «tutti» (conta come spuntata).
+pub(crate) struct TickItem<T> {
+    pub id: T,
+    pub name: String,
+    pub colors: Option<(Color32, Color32)>,
+    pub hidden: bool,
+}
+
+impl<T> TickItem<T> {
+    pub(crate) fn plain(id: T, name: impl Into<String>) -> Self {
+        Self { id, name: name.into(), colors: None, hidden: false }
+    }
+}
+
+/// Combo di filtro a spunte condivisa da Matrice, Torte ed Effort per worker
+/// (categorie, stati, priorità, dev, worker). Set **vuoto = tutti**, mostrati
+/// tutti spuntati: si tolgono uno a uno (`toggle_in_all`), l'ultimo elencato
+/// non si toglie, un set con tutte le voci torna vuoto e le voci che non
+/// esistono più si scartano. Testo «`title`: `all_word`» o «`title`: a, b».
+pub(crate) struct TickCombo<'a> {
+    pub salt: &'a str,
+    pub title: &'a str,
+    /// «tutti» / «tutte» (il pulsante usa la maiuscola).
+    pub all_word: &'a str,
+    pub width: f32,
+    pub height: Option<f32>,
+    pub hover: &'a str,
+}
+
+impl TickCombo<'_> {
+    pub(crate) fn show<T: Ord + Clone>(
+        &self,
+        ui: &mut egui::Ui,
+        items: &[TickItem<T>],
+        set: &mut std::collections::BTreeSet<T>,
+    ) {
+        let ids: Vec<T> = items.iter().map(|i| i.id.clone()).collect();
+        set.retain(|x| ids.contains(x));
+        if ids.iter().all(|x| set.contains(x)) {
+            set.clear();
+        }
+        let text = if set.is_empty() {
+            format!("{}: {}", self.title, self.all_word)
+        } else {
+            let names: Vec<&str> =
+                items.iter().filter(|i| set.contains(&i.id)).map(|i| i.name.as_str()).collect();
+            format!("{}: {}", self.title, names.join(", "))
+        };
+        let mut combo = egui::ComboBox::from_id_salt(self.salt).selected_text(text).width(self.width);
+        if let Some(h) = self.height {
+            combo = combo.height(h);
+        }
+        combo
+            .show_ui(ui, |ui| {
+                let visible: Vec<T> = items.iter().filter(|i| !i.hidden).map(|i| i.id.clone()).collect();
+                for item in items.iter().filter(|i| !i.hidden) {
+                    let mut label = egui::RichText::new(&item.name);
+                    if let Some((bg, fg)) = item.colors {
+                        label = label.background_color(bg).color(fg);
+                    }
+                    let mut on = ticked_in_all(set, &item.id);
+                    let enabled = can_untick(set, &visible, &item.id);
+                    if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
+                        toggle_in_all(set, &ids, &item.id, on);
+                    }
+                }
+                if !set.is_empty() {
+                    ui.separator();
+                    let mut button = self.all_word.to_string();
+                    if let Some(f) = button.get_mut(0..1) {
+                        f.make_ascii_uppercase();
+                    }
+                    if ui.button(button).clicked() {
+                        set.clear();
+                    }
+                }
+            })
+            .response
+            .on_hover_text(self.hover);
+    }
 }
 
 /// Combo delle categorie (prima «Senza categoria», poi le categorie per id):
 /// con almeno una scelta la matrice mostra solo i progetti di quelle categorie.
-/// `salt` distingue le combo di finestre diverse (matrice, torte).
-/// Con «tutte» (set vuoto) le voci appaiono tutte spuntate e si tolgono una a
-/// una (`toggle_in_all`); l'ultima rimasta non si toglie.
+/// `salt` distingue le combo di finestre diverse (matrice, torte). Le
+/// categorie nascoste non si elencano.
 pub(crate) fn categories_combo(
     ui: &mut egui::Ui,
     app: &App,
     salt: &str,
     cats: &mut std::collections::BTreeSet<Option<CategoryId>>,
 ) {
-    let all: Vec<(Option<CategoryId>, String)> = std::iter::once((None, category_name(app, None)))
-        .chain(
-            app.categories
-                .list()
-                .into_iter()
-                .map(|(id, n)| (Some(id), n)),
-        )
-        .collect();
-    let text = if cats.is_empty() {
-        "Categorie: tutte".to_string()
-    } else {
-        let names: Vec<&str> = all
-            .iter()
-            .filter(|(c, _)| cats.contains(c))
-            .map(|(_, n)| n.as_str())
-            .collect();
-        format!("Categorie: {}", names.join(", "))
-    };
-    egui::ComboBox::from_id_salt(salt)
-        .selected_text(text)
-        .width(MX_YEARS_W)
-        .show_ui(ui, |ui| {
-            let ids: Vec<Option<CategoryId>> = all.iter().map(|(c, _)| *c).collect();
-            // Le categorie nascoste non si elencano: restano comprese nel
-            // «tutte» e contano come spuntate togliendo le altre.
-            let hidden = |c: &Option<CategoryId>| c.is_some_and(|c| app.categories.is_hidden(c));
-            let visible: Vec<Option<CategoryId>> = ids.iter().copied().filter(|c| !hidden(c)).collect();
-            for (c, name) in &all {
-                if hidden(c) {
-                    continue;
-                }
-                let label = egui::RichText::new(name)
-                    .background_color(category_fill(*c, false))
-                    .color(Color32::BLACK);
-                let mut on = ticked_in_all(cats, c);
-                let enabled = can_untick_visible(cats, &visible, c);
-                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
-                    toggle_in_all(cats, &ids, c, on);
-                }
-            }
-            if !cats.is_empty() {
-                ui.separator();
-                if ui.button("Tutte").clicked() {
-                    cats.clear();
-                }
-            }
+    let items: Vec<TickItem<Option<CategoryId>>> = all_category_items(app)
+        .into_iter()
+        .map(|(c, name)| TickItem {
+            id: c,
+            name,
+            colors: Some((category_fill(c, false), Color32::BLACK)),
+            hidden: c.is_some_and(|c| app.categories.is_hidden(c)),
         })
-        .response
-        .on_hover_text("Togli la spunta alle categorie da escludere.");
+        .collect();
+    TickCombo {
+        salt,
+        title: "Categorie",
+        all_word: "tutte",
+        width: MX_YEARS_W,
+        height: None,
+        hover: "Togli la spunta alle categorie da escludere.",
+    }
+    .show(ui, &items, cats);
 }
 
 /// Combo degli stati dei progetti (Attivi / On-Hold / Closed): la matrice
 /// mostra solo i progetti negli stati spuntati, e il riepilogo conta solo
-/// quelli; vuoto = tutti, mostrati tutti spuntati (`toggle_in_all`).
+/// quelli; vuoto = tutti.
 pub(crate) fn statuses_combo(
     ui: &mut egui::Ui,
     salt: &str,
     statuses: &mut std::collections::BTreeSet<ProjectStatus>,
 ) {
-    let text = if statuses.is_empty() || statuses.len() == ProjectStatus::ALL.len() {
-        "Stato: tutti".to_string()
-    } else {
-        let names: Vec<&str> = ProjectStatus::ALL
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| statuses.contains(s))
-            .map(|(i, _)| STATUS_LABELS[i])
-            .collect();
-        format!("Stato: {}", names.join(", "))
-    };
-    egui::ComboBox::from_id_salt(salt)
-        .selected_text(text)
-        .width(MX_STATUS_W)
-        .show_ui(ui, |ui| {
-            // Come le categorie: «tutti» = tutti spuntati, si tolgono uno a
-            // uno, l'ultimo rimasto non si toglie.
-            for (i, s) in ProjectStatus::ALL.iter().enumerate() {
-                let mut on = ticked_in_all(statuses, s);
-                let enabled = can_untick(statuses, ProjectStatus::ALL.len(), s);
-                let check = egui::Checkbox::new(&mut on, STATUS_LABELS[i]);
-                if ui.add_enabled(enabled, check).changed() {
-                    toggle_in_all(statuses, &ProjectStatus::ALL, s, on);
-                }
-            }
-            // Un set pieno (stato vecchio) vale «tutti».
-            if statuses.len() == ProjectStatus::ALL.len() {
-                statuses.clear();
-            }
-            if !statuses.is_empty() {
-                ui.separator();
-                if ui.button("Tutti").clicked() {
-                    statuses.clear();
-                }
-            }
-        })
-        .response
-        .on_hover_text("Togli la spunta agli stati da escludere.");
+    let items: Vec<TickItem<ProjectStatus>> =
+        ProjectStatus::ALL.iter().zip(STATUS_LABELS).map(|(s, l)| TickItem::plain(*s, l)).collect();
+    TickCombo {
+        salt,
+        title: "Stato",
+        all_word: "tutti",
+        width: MX_STATUS_W,
+        height: None,
+        hover: "Togli la spunta agli stati da escludere.",
+    }
+    .show(ui, &items, statuses);
 }
 
 /// Estremo dell'intervallo: «Oggi» oppure una data scelta col calendario.
@@ -1052,6 +1070,25 @@ fn closed_tag(status: ProjectStatus) -> &'static str {
     }
 }
 
+/// Dati della matrice come li mostra la finestra: worker scelti, filtri
+/// Categorie / Stato / Priorità e ordine per worker. Unica fonte per la
+/// finestra e per i suoi export (PDF, CSV).
+pub(crate) fn matrix_view_data(app: &App, state: &UiState, from: i32, to: i32) -> MatrixData {
+    let mut m = crate::worker_matrix::build_filtered(
+        app,
+        &state.matrix_workers,
+        from,
+        to,
+        &state.matrix_categories,
+        &state.matrix_statuses,
+        &state.matrix_priorities,
+    );
+    if let Some(w) = state.matrix_sort {
+        crate::worker_matrix::sort_by_worker(&mut m, w);
+    }
+    m
+}
+
 /// Finestra della matrice progetti × worker: in alto l'intervallo (a sinistra
 /// l'inizio, a destra la fine, ognuno «Oggi» o una data), poi la matrice.
 pub(crate) fn matrix_window(
@@ -1067,18 +1104,7 @@ pub(crate) fn matrix_window(
     let from = state.matrix_from.unwrap_or(today);
     let to = state.matrix_to.unwrap_or(today);
     let valid = from <= to;
-    let mut m = crate::worker_matrix::build_filtered(
-        app,
-        &state.matrix_workers,
-        from,
-        to,
-        &state.matrix_categories,
-        &state.matrix_statuses,
-        &state.matrix_priorities,
-    );
-    if let Some(w) = state.matrix_sort {
-        crate::worker_matrix::sort_by_worker(&mut m, w);
-    }
+    let m = matrix_view_data(app, state, from, to);
 
     let open = os_window(ctx, "matrix_window", "Matrice progetti × worker", egui::vec2(900.0, 560.0), |ui| {
             // La scelta dei worker («Worker…») si apre dentro questa finestra.
@@ -1202,14 +1228,14 @@ mod tests {
         assert!(!ticked_in_all(&set, &2));
         toggle_in_all(&mut set, &all, &1, false);
         assert_eq!(set, [3].into());
-        assert!(!can_untick(&set, all.len(), &3), "l'ultima resta");
-        assert!(can_untick(&set, all.len(), &1), "si può rispuntare");
+        assert!(!can_untick(&set, &all, &3), "l'ultima resta");
+        assert!(can_untick(&set, &all, &1), "si può rispuntare");
         toggle_in_all(&mut set, &all, &3, false);
         assert_eq!(set, [3].into(), "mai vuoto per sbaglio");
         toggle_in_all(&mut set, &all, &1, true);
         toggle_in_all(&mut set, &all, &2, true);
         assert!(set.is_empty(), "tutte rispuntate = «tutti»");
-        assert!(!can_untick(&BTreeSet::new(), 1, &7), "una sola voce in tutto");
+        assert!(!can_untick(&BTreeSet::new(), &[7], &7), "una sola voce in tutto");
     }
 
     /// Anni scelti → Da = 1/1 del più vecchio, A = 31/12 del più recente (anche

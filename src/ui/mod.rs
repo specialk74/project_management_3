@@ -315,6 +315,9 @@ pub(crate) struct BulkFill {
     /// «Aggiungi automatic effort» ▸ «Adattivo»: nessun tetto di ore a
     /// settimana, ogni worker riceve tutta la sua capacità libera.
     pub adaptive: bool,
+    /// La finestra è già stata disegnata (al primo frame si spuntano i worker
+    /// e si dà il focus): nasce `false` e sparisce con la finestra.
+    pub opened: bool,
 }
 
 impl BulkFill {
@@ -334,6 +337,7 @@ impl BulkFill {
             backward: false,
             all: false,
             adaptive: false,
+            opened: false,
         }
     }
 }
@@ -1124,18 +1128,15 @@ pub struct UiState {
     popup: Option<Popup>,
     // inserimento multiplo (tasto destro su cella vuota): worker + ore + settimane
     bulk_fill: Option<BulkFill>,
-    bulk_fill_was_open: bool,
     // «Aggiungi automatic effort…» (stessa struttura dell'inserimento
     // multiplo, senza settimane: `auto_fill_window`)
     auto_fill: Option<BulkFill>,
-    auto_fill_was_open: bool,
     // «Inserisci» di uno dei due inserimenti su celle già occupate: chiede se
     // sovrascriverle (`fill_overwrite_window`)
     fill_overwrite: Option<FillOverwrite>,
     // «Cancella effort…» (stessa struttura dell'inserimento multiplo, senza
     // ore: `bulk_clear_window`) e la sua conferma con le celle da cancellare
     bulk_clear: Option<BulkFill>,
-    bulk_clear_was_open: bool,
     confirm_bulk_clear: Option<BulkClear>,
     // conferma «Sposta inizio/fine progetto qua» quando si perdono effort/milestone
     bound_move: Option<BoundMove>,
@@ -3796,19 +3797,8 @@ impl PjmApp {
                 }
             }
             Action::ExportWorkerMatrix { from, to, years } => {
-                let mut m = crate::worker_matrix::build_filtered(
-                    &self.app,
-                    &self.ui.matrix_workers,
-                    from,
-                    to,
-                    &self.ui.matrix_categories,
-                    &self.ui.matrix_statuses,
-                    &self.ui.matrix_priorities,
-                );
-                // Stesso ordine della finestra.
-                if let Some(w) = self.ui.matrix_sort {
-                    crate::worker_matrix::sort_by_worker(&mut m, w);
-                }
+                // Stessi filtri e stesso ordine della finestra.
+                let m = matrix_view_data(&self.app, &self.ui, from, to);
                 let categories: Vec<Option<CategoryId>> =
                     self.ui.matrix_categories.iter().copied().collect();
                 match crate::pdf_export::build_matrix_pdf(
@@ -3847,17 +3837,7 @@ impl PjmApp {
                 years,
                 svg,
             } => {
-                let pies = crate::worker_pies::build_filtered(
-                    &self.app,
-                    &self.ui.pies_workers,
-                    from,
-                    to,
-                    &self.ui.pies_categories,
-                    &self.ui.pies_devs,
-                    &self.ui.pies_priorities,
-                    &self.ui.pies_statuses,
-                    current_monday_days(),
-                );
+                let pies = pies_view_data(&self.app, &self.ui, from, to);
                 let devs: Vec<DevId> = self.ui.pies_devs.iter().copied().collect();
                 let priorities: Vec<Option<PriorityId>> =
                     self.ui.pies_priorities.iter().copied().collect();
@@ -3912,33 +3892,12 @@ impl PjmApp {
                 }
             }
             Action::ExportWorkerMatrixCsv { from, to } => {
-                let mut m = crate::worker_matrix::build_filtered(
-                    &self.app,
-                    &self.ui.matrix_workers,
-                    from,
-                    to,
-                    &self.ui.matrix_categories,
-                    &self.ui.matrix_statuses,
-                    &self.ui.matrix_priorities,
-                );
-                if let Some(w) = self.ui.matrix_sort {
-                    crate::worker_matrix::sort_by_worker(&mut m, w);
-                }
+                let m = matrix_view_data(&self.app, &self.ui, from, to);
                 let (csv, n) = crate::view_csv::matrix_csv(&self.app, &m);
                 self.save_view_csv("matrice", csv, n);
             }
             Action::ExportWorkerPiesCsv { from, to } => {
-                let pies = crate::worker_pies::build_filtered(
-                    &self.app,
-                    &self.ui.pies_workers,
-                    from,
-                    to,
-                    &self.ui.pies_categories,
-                    &self.ui.pies_devs,
-                    &self.ui.pies_priorities,
-                    &self.ui.pies_statuses,
-                    current_monday_days(),
-                );
+                let pies = pies_view_data(&self.app, &self.ui, from, to);
                 // Due file: le ore (worker × dev × progetto) e, a parte, la
                 // capacità e le ore libere (una riga per worker).
                 let (csv, n) = crate::view_csv::pies_csv(&self.app, &pies);
@@ -4693,30 +4652,6 @@ pub(crate) fn worker_heading<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::U
         .inner;
     ui.add_space(4.0);
     r
-}
-
-/// Stesso colore a meno dell'alfa (RGB non premoltiplicato): una finestra
-/// appena aperta sfuma, e nei primi frame i colori hanno alfa basso.
-#[cfg(test)]
-pub(crate) fn same_rgb(a: Color32, b: Color32) -> bool {
-    a.to_srgba_unmultiplied()[..3] == b.to_srgba_unmultiplied()[..3]
-}
-
-/// Rettangoli della linea fra due worker (`worker_divider`) in un frame
-/// disegnato: per i test delle due finestre.
-#[cfg(test)]
-pub(crate) fn worker_divider_rects(out: &egui::FullOutput) -> Vec<Rect> {
-    out.shapes
-        .iter()
-        .filter_map(|cs| match &cs.shape {
-            egui::epaint::Shape::Rect(r)
-                if same_rgb(r.fill, text_dim()) && (r.rect.height() - 3.0).abs() < 0.1 =>
-            {
-                Some(r.rect)
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 /// Checkbox "Select All" condivisa dai dialog con un elenco selezionabile.

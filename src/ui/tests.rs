@@ -259,6 +259,7 @@ fn bulk_fill_window_renders() {
             backward: false,
             all: false,
             adaptive: false,
+            opened: false,
         }),
         ..Default::default()
     };

@@ -69,3 +69,25 @@ pub(crate) fn text_rect(out: &egui::FullOutput, needle: &str) -> Option<egui::Re
         _ => None,
     })
 }
+
+/// Stesso colore a meno dell'alfa (RGB non premoltiplicato): una finestra
+/// appena aperta sfuma, e nei primi frame i colori hanno alfa basso.
+pub(crate) fn same_rgb(a: Color32, b: Color32) -> bool {
+    a.to_srgba_unmultiplied()[..3] == b.to_srgba_unmultiplied()[..3]
+}
+
+/// Rettangoli della linea fra due worker (`worker_divider`) in un frame
+/// disegnato: per i test delle due finestre.
+pub(crate) fn worker_divider_rects(out: &egui::FullOutput) -> Vec<Rect> {
+    out.shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Rect(r)
+                if same_rgb(r.fill, text_dim()) && (r.rect.height() - 3.0).abs() < 0.1 =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        })
+        .collect()
+}

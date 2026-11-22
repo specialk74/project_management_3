@@ -389,7 +389,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     (skip if empty) skipped in the project category popup (unless current),
     Filtri ▸ Categorie, `categories_combo`, the footer selector (unless
     selected). In the combos hidden items stay in the «all» set and the last
-    tick is counted among the visible ones (`can_untick_visible`).
+    tick is counted among the visible ones (`can_untick(set, visible, item)`).
     **Delete only if unused**: `App::delete_worker` (no cells; also drops its
     `sovra` keys) / `delete_dev` (in no project) / `delete_category` (no
     project), then `forget_worker/dev/category` clean the session state
@@ -646,7 +646,9 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   stable sort by (category group, worker absent, hours desc), sets
   `MatrixData.sorted_by` (index), which draws «▼ » before the name
   (`mx_head_name`) and adds `Sorted by hours of …` to the PDF subtitle; the
-  export handler applies the same sort. `draw_matrix` is a `#[cfg(test)]`
+  export handlers (PDF, CSV) get the same data from `matrix_view_data(app,
+  state, from, to)` (filters + sort; the pies have `pies_view_data`), the
+  single source shared with the windows. `draw_matrix` is a `#[cfg(test)]`
   wrapper (the test helper wants a closure returning `()`). Tests
   `sort_by_worker_orders_rows_within_each_category`,
   `clicking_a_worker_name_asks_to_sort_by_his_hours`.
@@ -693,11 +695,16 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `range_end_picker`/`years_range` are shared too. `worker_pies::build(app,
   &workers, from, to, &cats, &devs, now) -> Vec<WorkerPie>` (`devs` = dev filter from
   `devs_combo` in `pies.rs` → `UiState.pies_devs`, session only, empty = all;
-  these combos show «all» as **every item ticked** — `categories_combo`
-  (matrix and pies), the matrix's `statuses_combo` and `devs_combo` use `ticked_in_all` /
-  `toggle_in_all` / `can_untick` (`matrix.rs`; unticking from «all» keeps the
-  others, re-ticking the last returns to empty, the last ticked one is disabled;
-  test `toggling_from_all_keeps_the_others_ticked`),
+  these combos show «all» as **every item ticked** — `categories_combo`,
+  `statuses_combo`, `priorities_combo`, `devs_combo` and Effort per worker's
+  `workers_combo` are thin wrappers over **one** generic `TickCombo { salt,
+  title, all_word, width, height, hover }.show(ui, &[TickItem<T> { id, name,
+  colors, hidden }], &mut set)` (`matrix.rs`; it also drops ids no longer
+  listed and turns a full set into empty), built on `ticked_in_all` /
+  `toggle_in_all` / `can_untick(set, visible, item)` (unticking from «all»
+  keeps the others, re-ticking the last returns to empty, the last ticked
+  visible one is disabled; test `toggling_from_all_keeps_the_others_ticked`);
+  `categories_combo` takes its list from `filters::all_category_items`),
   AND with the categories, both pies (and the free hours); exports pass the devs and `pies_subtitle` prints
   `Dev(s): …`. `cats` empty = all, else only
   projects of those categories — totals and % follow): **hours** (effort 0 ignored) of all
@@ -826,7 +833,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `worker_divider` between workers, both in `mod.rs` — tests
   `workers_are_separated_by_a_thick_line_and_a_heading_band`,
   `pies_of_two_workers_are_separated_by_a_thick_line`, helper
-  `worker_divider_rects`/`same_rgb`), **painted
+  `worker_divider_rects`/`same_rgb` in `test_util.rs`), **painted
   at coordinates** by `draw_worker_table` (an `egui::Grid` can't span columns). Header
   = three rows: year and month **grouped** over their weeks (`worker_effort::spans`
   with `year_of` / `month_of`; a week belongs to its Monday's month; GUI months
@@ -1102,7 +1109,8 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   (no extra state: the date shown is `bulk_fill_last_week(start, n)`, a picked
   date rewrites `weeks_text` with `weeks_until(start, day)` — inclusive, ≤ 0 ⇒
   «data di fine prima…» and Inserisci disabled). The same dialog
-  (`BulkFill::new(proj, dev, week)`) also opens from the milestone strip's
+  (`BulkFill::new(proj, dev, week)`; its `opened` flag = first frame drawn,
+  replaces the old `UiState.*_was_open` fields) also opens from the milestone strip's
   context menu ▸ **Aggiungi efforts…** (top level, next to «Sposta»; not in the
   outside-the-period menu), on the clicked week, even when cells are occupied.
   Tests `bulk_fill_end_date_counts_weeks_inclusively`,
@@ -1327,8 +1335,7 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   free fn `toggle_category` (ordered, deduped, never empty), shared with the
   toolbar path and unit-tested. The scope is
   fixed at creation — there is no global⇄project switch. `App::validate` reports
-  a placement whose milestone belongs to another project, and
-  `Milestones::purge_project` exists for dropping a project's own milestones.
+  a placement whose milestone belongs to another project.
   **Menu gotcha**: that submenu is built with `SubMenuButton` +
   `MenuConfig::close_behavior(CloseOnClickOutside)` — a context menu defaults to
   `CloseOnClick`, which closes the whole menu the moment you click **into the

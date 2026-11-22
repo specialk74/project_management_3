@@ -247,10 +247,8 @@ pub(crate) fn bulk_fill_window(
     if state.bulk_fill.is_none() || state.fill_overwrite.is_some() {
         return;
     }
-    let just_opened = !state.bulk_fill_was_open;
-    state.bulk_fill_was_open = true;
-
     let bf = state.bulk_fill.as_mut().unwrap();
+    let just_opened = !std::mem::replace(&mut bf.opened, true);
     let dev_label = dev_name(app, bf.dev);
     let start_label = week_label(bf.week);
 
@@ -409,7 +407,6 @@ pub(crate) fn bulk_fill_window(
     }
     if (confirm && !asked) || cancel || !open {
         state.bulk_fill = None;
-        state.bulk_fill_was_open = false;
     }
 }
 
@@ -422,9 +419,8 @@ pub(crate) fn bulk_clear_window(ctx: &egui::Context, app: &App, state: &mut UiSt
     if state.bulk_clear.is_none() || state.confirm_bulk_clear.is_some() {
         return;
     }
-    let just_opened = !state.bulk_clear_was_open;
-    state.bulk_clear_was_open = true;
     let bf = state.bulk_clear.as_mut().unwrap();
+    let just_opened = !std::mem::replace(&mut bf.opened, true);
     let start = WeekId(bf.week as usize);
     // Con «Cancella tutto» contano tutte le settimane del dev.
     let with_cells = bulk_clear_workers(app, bf.proj, bf.dev, if bf.all { WeekId(0) } else { start });
@@ -508,7 +504,6 @@ pub(crate) fn bulk_clear_window(ctx: &egui::Context, app: &App, state: &mut UiSt
     }
     if cancel || !open {
         state.bulk_clear = None;
-        state.bulk_clear_was_open = false;
     }
 }
 
@@ -550,7 +545,6 @@ pub(crate) fn bulk_clear_confirm_window(ctx: &egui::Context, app: &App, state: &
             cells: bc.cells.iter().map(|(w, wid, _)| (*w, *wid)).collect(),
         });
         state.bulk_clear = None;
-        state.bulk_clear_was_open = false;
     }
 }
 
@@ -626,9 +620,7 @@ pub(crate) fn fill_overwrite_window(ctx: &egui::Context, app: &App, state: &mut 
     if let Some(overwrite) = choice {
         actions.push(if overwrite { fo.overwrite } else { fo.keep });
         state.bulk_fill = None;
-        state.bulk_fill_was_open = false;
         state.auto_fill = None;
-        state.auto_fill_was_open = false;
     }
 }
 
@@ -687,9 +679,8 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     if state.auto_fill.is_none() || state.fill_overwrite.is_some() {
         return;
     }
-    let just_opened = !state.auto_fill_was_open;
-    state.auto_fill_was_open = true;
     let bf = state.auto_fill.as_mut().unwrap();
+    let just_opened = !std::mem::replace(&mut bf.opened, true);
     let dev_label = dev_name(app, bf.dev);
     let start_label = week_label(bf.week);
     let listed = bulk_fill_listed(app, &bf.search);
@@ -835,7 +826,6 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
     }
     if (confirm && !asked) || cancel || !open {
         state.auto_fill = None;
-        state.auto_fill_was_open = false;
     }
 }
 

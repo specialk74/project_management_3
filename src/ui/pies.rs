@@ -64,48 +64,24 @@ pub(crate) fn devs_combo(
     salt: &str,
     devs: &mut std::collections::BTreeSet<DevId>,
 ) {
-    let all = app.devs.list();
-    let text = if devs.is_empty() {
-        "Dev: tutti".to_string()
-    } else {
-        let names: Vec<&str> = all
-            .iter()
-            .filter(|(d, _)| devs.contains(d))
-            .map(|(_, n)| n.as_str())
-            .collect();
-        format!("Dev: {}", names.join(", "))
-    };
-    egui::ComboBox::from_id_salt(salt)
-        .selected_text(text)
-        .width(DEVS_COMBO_W)
-        .show_ui(ui, |ui| {
-            let ids: Vec<DevId> = all.iter().map(|(d, _)| *d).collect();
-            // I dev nascosti non si elencano: restano compresi nel «tutti» e
-            // contano come spuntati togliendo gli altri.
-            let visible: Vec<DevId> = ids.iter().copied().filter(|d| !app.devs.is_hidden(*d)).collect();
-            for (d, name) in &all {
-                if app.devs.is_hidden(*d) {
-                    continue;
-                }
-                let mut on = ticked_in_all(devs, d);
-                let fill = dev_color(app, *d);
-                let label = egui::RichText::new(name)
-                    .background_color(fill)
-                    .color(contrast_text(fill));
-                let enabled = can_untick_visible(devs, &visible, d);
-                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, label)).changed() {
-                    toggle_in_all(devs, &ids, d, on);
-                }
-            }
-            if !devs.is_empty() {
-                ui.separator();
-                if ui.button("Tutti").clicked() {
-                    devs.clear();
-                }
-            }
+    let items: Vec<TickItem<DevId>> = app
+        .devs
+        .list()
+        .into_iter()
+        .map(|(d, name)| {
+            let fill = dev_color(app, d);
+            TickItem { id: d, name, colors: Some((fill, contrast_text(fill))), hidden: app.devs.is_hidden(d) }
         })
-        .response
-        .on_hover_text("Togli la spunta ai dev da escludere.");
+        .collect();
+    TickCombo {
+        salt,
+        title: "Dev",
+        all_word: "tutti",
+        width: DEVS_COMBO_W,
+        height: None,
+        hover: "Togli la spunta ai dev da escludere.",
+    }
+    .show(ui, &items, devs);
 }
 
 /// Nome di una priorità per le combo e le tabelle (`None` = «Senza priorità»).
@@ -130,47 +106,24 @@ pub(crate) fn priorities_combo(
     salt: &str,
     pris: &mut std::collections::BTreeSet<Option<PriorityId>>,
 ) {
-    let all: Vec<(Option<PriorityId>, String)> = std::iter::once((None, priority_name(app, None)))
-        .chain(app.priorities.list().into_iter().map(|(id, n)| (Some(id), n)))
-        .collect();
-    let text = if pris.is_empty() {
-        "Priorità: tutte".to_string()
-    } else {
-        let names: Vec<&str> = all
-            .iter()
-            .filter(|(p, _)| pris.contains(p))
-            .map(|(_, n)| n.as_str())
-            .collect();
-        format!("Priorità: {}", names.join(", "))
-    };
-    egui::ComboBox::from_id_salt(salt)
-        .selected_text(text)
-        .width(PRI_COMBO_W)
-        .show_ui(ui, |ui| {
-            let ids: Vec<Option<PriorityId>> = all.iter().map(|(p, _)| *p).collect();
-            // Le priorità nascoste non si elencano: restano comprese nel
-            // «tutte» e contano come spuntate togliendo le altre.
-            let hidden = |p: &Option<PriorityId>| p.is_some_and(|p| app.priorities.is_hidden(p));
-            let visible: Vec<Option<PriorityId>> = ids.iter().copied().filter(|p| !hidden(p)).collect();
-            for (p, name) in &all {
-                if hidden(p) {
-                    continue;
-                }
-                let mut on = ticked_in_all(pris, p);
-                let enabled = can_untick_visible(pris, &visible, p);
-                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, name)).changed() {
-                    toggle_in_all(pris, &ids, p, on);
-                }
-            }
-            if !pris.is_empty() {
-                ui.separator();
-                if ui.button("Tutte").clicked() {
-                    pris.clear();
-                }
-            }
+    let items: Vec<TickItem<Option<PriorityId>>> = std::iter::once(None)
+        .chain(app.priorities.list().into_iter().map(|(id, _)| Some(id)))
+        .map(|p| TickItem {
+            id: p,
+            name: priority_name(app, p),
+            colors: None,
+            hidden: p.is_some_and(|p| app.priorities.is_hidden(p)),
         })
-        .response
-        .on_hover_text("Togli la spunta alle priorità da escludere.");
+        .collect();
+    TickCombo {
+        salt,
+        title: "Priorità",
+        all_word: "tutte",
+        width: PRI_COMBO_W,
+        height: None,
+        hover: "Togli la spunta alle priorità da escludere.",
+    }
+    .show(ui, &items, pris);
 }
 
 /// Riempie la fetta fra i raggi `r0` e `r1` con una mesh di triangoli (la
@@ -889,6 +842,23 @@ fn pie_pair(
     }
 }
 
+/// Torte come le mostra la finestra: worker scelti e filtri Categorie / Dev /
+/// Priorità / Stato, fatte e pianificate divise alla settimana corrente.
+/// Unica fonte per la finestra e per i suoi export (PDF, SVG, CSV).
+pub(crate) fn pies_view_data(app: &App, state: &UiState, from: i32, to: i32) -> Vec<WorkerPie> {
+    crate::worker_pies::build_filtered(
+        app,
+        &state.pies_workers,
+        from,
+        to,
+        &state.pies_categories,
+        &state.pies_devs,
+        &state.pies_priorities,
+        &state.pies_statuses,
+        current_monday_days(),
+    )
+}
+
 pub(crate) fn pies_window(
     ctx: &egui::Context,
     app: &App,
@@ -903,17 +873,7 @@ pub(crate) fn pies_window(
     let to = state.pies_to.unwrap_or(today);
     let valid = from <= to;
     let now = current_monday_days();
-    let pies = crate::worker_pies::build_filtered(
-        app,
-        &state.pies_workers,
-        from,
-        to,
-        &state.pies_categories,
-        &state.pies_devs,
-        &state.pies_priorities,
-        &state.pies_statuses,
-        now,
-    );
+    let pies = pies_view_data(app, state, from, to);
     let split = crate::worker_pies::split_shown(to, now);
     let with_hours = pies.iter().filter(|p| p.total > 0).count();
 

@@ -265,12 +265,6 @@ impl Milestone {
         scope.accepts(&self.effective_categories())
     }
 
-    /// Milestone di sistema (usabile in tutti i progetti)?
-    #[cfg(test)]
-    pub fn is_global(&self) -> bool {
-        self.owner.is_none()
-    }
-
     /// È disponibile per questo progetto? Le globali sempre, le personalizzate
     /// solo nel progetto che le possiede.
     pub fn available_for(&self, proj: ProjectId) -> bool {
@@ -479,22 +473,6 @@ impl Milestones {
             .collect();
         items.sort_by_key(|(id, _, _)| *id);
         items
-    }
-
-    /// Elimina tutte le milestone personalizzate di un progetto (da chiamare se
-    /// il progetto sparisce, per non lasciare milestone orfane).
-    #[cfg(test)]
-    pub fn purge_project(&mut self, proj: ProjectId) -> Vec<MilestoneId> {
-        let doomed: Vec<MilestoneId> = self
-            .milestones
-            .iter()
-            .filter(|(_, m)| m.owner == Some(proj))
-            .map(|(&id, _)| id)
-            .collect();
-        for id in &doomed {
-            self.milestones.remove(id);
-        }
-        doomed
     }
 
     pub fn set_color(&mut self, id: MilestoneId, color: u32) {
@@ -759,21 +737,9 @@ mod tests {
     }
 
     #[test]
-    fn purge_project_removes_only_its_own_milestones() {
-        let p1 = ProjectId(1);
-        let mut ms = Milestones::new();
-        let globale = ms.add("Globale");
-        let solo_p1 = ms.add_owned("Solo P1", MilestoneKind::Goal, Vec::new(), Some(p1));
-
-        assert_eq!(ms.purge_project(p1), vec![solo_p1]);
-        assert!(ms.get(solo_p1).is_none());
-        assert!(ms.get(globale).is_some());
-    }
-
-    #[test]
     fn old_files_without_owner_load_as_global() {
         let m: Milestone = ron::from_str(r#"(name: "Vecchia", color: 123)"#).unwrap();
-        assert!(m.is_global());
+        assert!(m.owner.is_none(), "globale");
         assert!(m.available_for(ProjectId(7)));
     }
 

@@ -1214,7 +1214,6 @@ fn draw_milestone_strip(
                 actions.push(commit_editing(app, &old));
             }
             state.bulk_fill = Some(BulkFill::new(proj, dev, w));
-            state.bulk_fill_was_open = false;
             ui.close();
         }
 
@@ -1233,7 +1232,6 @@ fn draw_milestone_strip(
                 actions.push(commit_editing(app, &old));
             }
             state.auto_fill = Some(BulkFill::new(proj, dev, w));
-            state.auto_fill_was_open = false;
             ui.close();
         }
 
@@ -1252,7 +1250,6 @@ fn draw_milestone_strip(
                 actions.push(commit_editing(app, &old));
             }
             state.bulk_clear = Some(BulkFill::new(proj, dev, w));
-            state.bulk_clear_was_open = false;
             ui.close();
         }
 
@@ -1831,7 +1828,6 @@ fn draw_cell_static(
                 actions.push(commit_editing(app, &old));
             }
             state.bulk_fill = Some(BulkFill::new(cx.proj, cx.dev, cx.week));
-            state.bulk_fill_was_open = false;
         } else {
             let wname = cell_worker(text).to_string();
             state.note_editor = Some(NoteEditing {

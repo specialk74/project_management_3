@@ -17,10 +17,10 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 
 | Misura | Inizio (2026-10-24) | Ora |
 |---|---|---|
-| Righe Rust | ~28.000 | ~39.000 |
+| Righe Rust | ~28.000 | ~48.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 424 verdi |
+| Test | 275 verdi | 458 verdi |
 
 ## Ordine consigliato
 
@@ -33,6 +33,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 6. ~~**B1, B9, E1–E3** — riordino~~ ✅ fatto
 7. ~~**B10** — a parte: la modifica più invasiva~~ ✅ fatto
 8. **A13** — migrazione da chrono a jiff: aperta, da valutare
+9. ~~**A14, B11–B13**~~ ✅ fatto · **E5** — proposta, da approvare
 
 ---
 
@@ -235,6 +236,20 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   - *Stima*: ~150–200 righe cambiate; lavoro di qualche ora, quasi tutto
     meccanico, con i test (386) come rete.
 
+- [x] **A14. Funzioni presenti solo per i test** (proposta del 2026-11-22, da
+  approvare). Il compilatore non le segnala perché sono `#[cfg(test)]`, ma il
+  programma non le usa mai: esistono solo per il loro stesso test.
+  `Milestones::purge_project` (nessuna cancellazione di progetti la chiama),
+  `Milestone::is_global`, `Worker::set_name` / `set_bg_color` / `set_font_color`
+  (i nomi passano da `Workers::rename`; i colori del worker non si cambiano da
+  nessuna parte). Proposta: toglierle insieme ai loro test. Gli helper solo di
+  test che stanno nel codice vero (`same_rgb`, `worker_divider_rects` in
+  `ui/mod.rs`) andrebbero in `ui/test_util.rs`. _Impatto: Basso · Rischio: nullo._
+  _(fatto il 2026-11-22: tolte `purge_project`, `is_global` (il test dei
+  file vecchi controlla `owner.is_none()`), `Worker::set_name` /
+  `set_bg_color` / `set_font_color` e i 6 test che provavano solo quelle;
+  `same_rgb` e `worker_divider_rects` spostate in `ui/test_util.rs`)_
+
 ## B. Codice duplicato
 
 - [x] **B1. Export PDF ripetuto** — `build_pdf` e `build_pdf_selected` quasi
@@ -335,6 +350,43 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   I test passano le opzioni esplicitamente invece di impostare e ripristinare
   globali; `scoped_exports_builds_one_item_per_scope` verifica anche che le
   opzioni di base arrivino a ogni ambito. Comportamento invariato: 286 test verdi)_
+
+- [x] **B11. Cinque combo «filtro a spunte» quasi uguali** (proposta del
+  2026-11-22, da approvare): `categories_combo` e `statuses_combo` (matrice),
+  `devs_combo` e `priorities_combo` (torte), `workers_combo` (Effort per worker)
+  ripetono ~45 righe ciascuna: testo «X: tutti / a, b», spunte con
+  `ticked_in_all` / `can_untick(_visible)` / `toggle_in_all`, voci nascoste,
+  pulsante «Tutti/Tutte», tooltip. Proposta: una sola `tick_combo<T>(ui, salt,
+  titolo, larghezza, voci: &[(T, etichetta, nascosta)], set)`; le cinque
+  diventano chiamate di poche righe (~220 → ~90). `categories_combo` userebbe
+  anche `all_category_items` di `filters.rs` invece di ricostruire la lista.
+  _Impatto: Medio · Rischio: Basso (ci sono test per ogni combo)._
+  _(fatto il 2026-11-22: `TickCombo { salt, title, all_word, width, height,
+  hover }.show(ui, &[TickItem<T>], set)` in `ui/matrix.rs`; le cinque combo
+  sono wrapper di ~15–20 righe. La combo ora scarta da sola gli id non più
+  elencati e riporta a vuoto un set con tutte le voci (prima solo stati e
+  worker). `can_untick` e `can_untick_visible` unite in `can_untick(set,
+  visibili, voce)`; `categories_combo` usa `all_category_items`)_
+- [x] **B12. Dati di Matrice e Torte ricostruiti in 3 punti ciascuno**
+  (proposta del 2026-11-22, da approvare): la chiamata a
+  `worker_matrix::build_filtered` (7 argomenti presi da `UiState`, più l'ordine
+  per worker) è ripetuta in `matrix_window`, `ExportWorkerMatrix` ed
+  `ExportWorkerMatrixCsv`, e quella a `worker_pies::build_filtered` (9
+  argomenti) in `pies_window`, `ExportWorkerPies` ed `ExportWorkerPiesCsv`.
+  Proposta: `matrix_view_data(app, state, from, to)` e `pies_view_data(…)`,
+  come esiste già `worker_effort_data` per Effort per worker. Così finestra ed
+  export non possono divergere (se si aggiunge un filtro, oggi va messo in tre
+  posti). _Impatto: Basso · Rischio: Basso._
+  _(fatto il 2026-11-22: `matrix_view_data` (filtri + ordine) in
+  `ui/matrix.rs` e `pies_view_data` in `ui/pies.rs`, usate da finestre,
+  PDF/SVG e CSV)_
+- [x] **B13. Flag `*_was_open` delle tre finestre di riempimento**
+  (`bulk_fill_was_open`, `auto_fill_was_open`, `bulk_clear_was_open` in
+  `UiState`, messi a mano a ogni apertura e chiusura). Le tre finestre usano già
+  `BulkFill`: il flag starebbe meglio dentro `BulkFill` (`opened: bool`) e si
+  azzererebbe da solo con la finestra. _Impatto: Basso · Rischio: Basso._
+  _(fatto il 2026-11-22: `BulkFill.opened`, i tre campi di `UiState` e i
+  14 punti che li impostavano sono spariti)_
 
 ## C. Prestazioni (lavoro ripetuto a ogni frame)
 
@@ -457,6 +509,15 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   cancellazione definitiva. Restano `workers.ron` e i backup automatici
   `.bak1–5`)_
 
+- [ ] **E5. Funzioni molto lunghe** (proposta del 2026-11-22, facoltativa):
+  `PjmApp::apply` ha ~1.050 righe (un unico `match` su tutte le `Action`);
+  seguono `compare_view_stage` (~640), `page_shapes` (~590),
+  `draw_matrix_sorted` (~510), `toolbar` (~410), `matrix_pages` (~410),
+  `filters_window` (~400). Proposta minima: dividere `apply` per area
+  (`apply_fill`, `apply_export`, `apply_rules`, …), con il `match` principale
+  che smista. Solo spostamento di codice, nessun cambio di comportamento, ma
+  diff grande. _Impatto: Medio (leggibilità) · Rischio: Basso._
+
 ## Fatti in precedenza (da `MIGLIORAMENTI.md`)
 
 Voci di qualità del codice nate nella roadmap prima di questo report, spostate qui
@@ -551,3 +612,13 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   egui_extras 0.37) e rust-fontconfig 5.0.2 (5.1.0 esclusa da azul-core
   0.0.20, `<5.1`). Build e clippy 0 warning, 457 test verdi. Da provare a
   mano: un export PDF (printpdf).
+- **2026-11-22** — Nuova revisione (richiesta: semplificare, cercare codice
+  morto): proposte **A14** (funzioni solo per i test), **B11** (cinque combo a
+  spunte uguali), **B12** (dati di Matrice/Torte costruiti in 3 punti),
+  **B13** (flag `*_was_open`), **E5** (funzioni molto lunghe). Nessuna
+  dipendenza inutilizzata, 0 warning di codice morto dal compilatore. Niente
+  applicato: in attesa di approvazione.
+- **2026-11-22** — Fatte **A14, B11, B12, B13** (approvate): circa 270 righe
+  in meno in `src/`, comportamento invariato (le combo a spunte ora scartano
+  sempre gli id spariti). Tolti 6 test che provavano solo le funzioni
+  eliminate: 458 test verdi, build e clippy 0 warning. E5 resta proposta.

@@ -558,7 +558,7 @@ const NO_CATEGORY: &str = "Senza categoria";
 
 /// Voci selezionabili del filtro categorie, a prescindere dalla ricerca:
 /// «Senza categoria» in testa, poi le categorie definite (per id).
-fn all_category_items(app: &App) -> Vec<(Option<CategoryId>, String)> {
+pub(crate) fn all_category_items(app: &App) -> Vec<(Option<CategoryId>, String)> {
     std::iter::once((None, NO_CATEGORY.to_string()))
         .chain(
             app.categories

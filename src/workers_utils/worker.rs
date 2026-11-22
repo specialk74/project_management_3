@@ -169,20 +169,6 @@ impl Worker {
             self.week_overrides.insert(week, hours);
         }
     }
-
-    #[cfg(test)]
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-
-    #[cfg(test)]
-    pub fn set_bg_color(&mut self, color: Option<usize>) {
-        self.bg_color = color;
-    }
-    #[cfg(test)]
-    pub fn set_font_color(&mut self, color: Option<usize>) {
-        self.font_color = color;
-    }
 }
 
 #[cfg(test)]
@@ -219,43 +205,6 @@ mod tests {
     fn worker_new_empty_name() {
         let w = Worker::new("");
         assert_eq!(w.name, "");
-    }
-
-    #[test]
-    fn set_name_updates_name() {
-        let mut w = Worker::new("Alice");
-        w.set_name("Bob".to_string());
-        assert_eq!(w.name, "Bob");
-    }
-
-    #[test]
-    fn set_bg_color_some() {
-        let mut w = Worker::new("Alice");
-        w.set_bg_color(Some(0xFF0000));
-        assert_eq!(w.bg_color, Some(0xFF0000));
-    }
-
-    #[test]
-    fn set_bg_color_none() {
-        let mut w = Worker::new("Alice");
-        w.set_bg_color(Some(42));
-        w.set_bg_color(None);
-        assert!(w.bg_color.is_none());
-    }
-
-    #[test]
-    fn set_font_color_some() {
-        let mut w = Worker::new("Alice");
-        w.set_font_color(Some(0x00FF00));
-        assert_eq!(w.font_color, Some(0x00FF00));
-    }
-
-    #[test]
-    fn set_font_color_none() {
-        let mut w = Worker::new("Alice");
-        w.set_font_color(Some(99));
-        w.set_font_color(None);
-        assert!(w.font_color.is_none());
     }
 
     #[test]

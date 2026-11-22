@@ -68,44 +68,18 @@ const WE_WORKERS_COMBO_W: f32 = 160.0;
 /// Combo «Worker» (worker con «Elenchi»): come le altre combo, «tutti» =
 /// tutti spuntati, si tolgono uno a uno, l'ultimo rimasto non si toglie.
 fn workers_combo(ui: &mut egui::Ui, app: &App, set: &mut std::collections::BTreeSet<WorkerId>) {
-    let all = matrix_candidates(app);
-    let ids: Vec<WorkerId> = all.iter().map(|(w, _)| *w).collect();
-    // Un worker scelto e poi tolto da «Elenchi» non conta più.
-    set.retain(|w| ids.contains(w));
-    let text = if set.is_empty() {
-        "Worker: tutti".to_string()
-    } else {
-        let names: Vec<&str> = all
-            .iter()
-            .filter(|(w, _)| set.contains(w))
-            .map(|(_, n)| n.as_str())
-            .collect();
-        format!("Worker: {}", names.join(", "))
-    };
-    egui::ComboBox::from_id_salt("worker_effort_workers")
-        .selected_text(text)
-        .width(WE_WORKERS_COMBO_W)
-        .height(400.0)
-        .show_ui(ui, |ui| {
-            for (w, name) in &all {
-                let mut on = ticked_in_all(set, w);
-                let enabled = can_untick(set, ids.len(), w);
-                if ui.add_enabled(enabled, egui::Checkbox::new(&mut on, name)).changed() {
-                    toggle_in_all(set, &ids, w, on);
-                }
-            }
-            if set.len() == ids.len() {
-                set.clear();
-            }
-            if !set.is_empty() {
-                ui.separator();
-                if ui.button("Tutti").clicked() {
-                    set.clear();
-                }
-            }
-        })
-        .response
-        .on_hover_text("Togli la spunta ai worker da nascondere (anche negli export).");
+    // Solo i worker di «Elenchi»: uno scelto e poi tolto da lì non conta più.
+    let items: Vec<TickItem<WorkerId>> =
+        matrix_candidates(app).into_iter().map(|(w, name)| TickItem::plain(w, name)).collect();
+    TickCombo {
+        salt: "worker_effort_workers",
+        title: "Worker",
+        all_word: "tutti",
+        width: WE_WORKERS_COMBO_W,
+        height: Some(400.0),
+        hover: "Togli la spunta ai worker da nascondere (anche negli export).",
+    }
+    .show(ui, &items, set);
 }
 
 /// Periodo di default: dalla settimana corrente a un anno da oggi (stesso
