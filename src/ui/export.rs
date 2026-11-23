@@ -960,7 +960,7 @@ fn project_worker_notes(app: &App, proj: ProjectId) -> HashMap<WeekId, Vec<Worke
                     })
                 })
                 .collect();
-            here.sort_by(|a, b| a.worker.cmp(&b.worker));
+            here.sort_by(|a, b| crate::workers_utils::workers::name_order(&a.worker, &b.worker));
             if !here.is_empty() {
                 out.entry(week).or_default().append(&mut here);
             }

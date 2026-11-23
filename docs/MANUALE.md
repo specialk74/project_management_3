@@ -183,6 +183,9 @@ Termini chiave:
 
 - **Worker**: una persona. Ha un limite di ore settimanali (default **40**), che
   può essere sovrascritto globalmente o per singola settimana.
+  Ovunque compaiano più worker (elenchi delle finestre, footer, colonne di
+  matrice e torte, righe di una cella, export) sono in **ordine alfabetico**,
+  senza distinguere maiuscole e minuscole.
 - **Dev**: un ruolo/disciplina all'interno di un progetto. Ha un colore proprio
   (sfondo + testo) memorizzato nel file.
 - **Priorità**: un'informazione del progetto allo stesso livello della categoria,
@@ -718,13 +721,15 @@ modo rapido per riempire un blocco di effort senza scrivere cella per cella:
   di partenza viene segnalata e **Inserisci** resta disattivato.
 - **Fino a fine progetto**: spuntata, al posto del numero di settimane l'effort
   va a ogni worker scelto in **tutte** le settimane dalla cella cliccata fino
-  alla **fine del progetto** (inclusa), saltando le sue ferie; i due campi
+  alla **fine del progetto** (inclusa), saltando le settimane senza ore
+  libere (vedi sotto); i due campi
   sopra si disattivano (la data mostra la fine del progetto). Disattivata se il
   progetto non ha una data di fine.
 - **Fino a milestone**: scegli una delle milestone del progetto che cadono
   dalla settimana cliccata in avanti (fino alla fine del progetto), ordinate
   per data; l'effort va a ogni worker scelto in tutte le settimane fino a
-  quella della milestone (**inclusa**), saltando le sue ferie, e non va mai
+  quella della milestone (**inclusa**), saltando le settimane senza ore
+  libere, e non va mai
   oltre la milestone. Come per «Fino a fine progetto» i campi sopra si
   disattivano; le due scelte si escludono a vicenda («—» la toglie). Inattiva
   se non ci sono milestone dopo la settimana cliccata.
@@ -742,12 +747,18 @@ Note importanti:
   resta), **Mantieni** lascia quelle celle come sono — la settimana conta
   comunque tra le **S**, quindi quel worker avrà una settimana in meno —,
   **Annulla** torna alla finestra. Senza celle occupate non chiede nulla;
-- le settimane in cui un worker è in **Ferie** (stato della settimana nel
-  footer) vengono **saltate**: il suo effort va alla prima settimana libera
-  successiva, così ha comunque **S** settimane di effort e la sua fine scivola
-  più avanti — anche oltre la data scelta con «fino al». Ogni worker segue le
-  sue ferie; la **Malattia** non si salta. La finestra lo dice per ogni worker
-  («Alice: in ferie il … (saltate) → fino al …») e il riepilogo mostra
+- conta la **capacità** del worker, non l'etichetta **Ferie** o **Malattia**:
+  una settimana in cui il worker **non ha nessuna ora libera** (le sue ore
+  massime di quella settimana meno quelle che ha già su **tutti** i progetti;
+  la sua cella su questo dev non conta, perché viene riscritta) viene
+  **saltata**: il suo effort va alla prima settimana successiva con ore libere,
+  così ha comunque **S** settimane di effort e la sua fine scivola più avanti —
+  anche oltre la data scelta con «fino al». Se invece ha **almeno un'ora**
+  libera, riceve comunque le ore richieste per intero, anche se sono di più.
+  Una settimana di ferie con il massimo pieno quindi si riempie; per lasciarla
+  vuota, portane il massimo a 0. Ogni worker segue la sua capacità. La finestra
+  lo dice per ogni worker («Alice: nessuna ora libera il … (saltate) → fino
+  al …») e il riepilogo mostra
   l'ultima settimana effettivamente riempita. Con molti worker queste righe
   stanno in un elenco che **scorre** (anche nell'inserimento automatico), così
   **Inserisci** e **Annulla** restano sempre visibili;
@@ -789,8 +800,10 @@ resto — sempre **numeri interi**, mai decimali. Si rispetta la **capacità** d
 worker, come in Saturazione: in una settimana non prende più del suo massimo
 effettivo (il limite di quella settimana o il suo massimo ore) meno le ore che
 ha già lì su **tutti** i progetti; se ne ha libere meno di quelle indicate prende
-solo quelle, se è pieno la settimana si salta. Per ogni worker si **saltano**
-le settimane in **Ferie**. Se nelle settimane raggiunte un worker ha **già**
+solo quelle, se è pieno la settimana si salta. Le settimane in **Ferie**
+**non** si saltano: conta solo il massimo di ore della settimana, non
+l'etichetta (per lasciarla vuota, portane il massimo a 0: la settimana è
+piena). Se nelle settimane raggiunte un worker ha **già**
 ore su quel dev, la finestra lo segnala e **Inserisci** chiede
 **«Sovrascrivere gli effort?»** (stesso elenco dell'inserimento multiplo):
 con **Sovrascrivi** le ore di quelle celle si **liberano** — tornano da

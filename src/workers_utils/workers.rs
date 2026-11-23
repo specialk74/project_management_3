@@ -1,6 +1,13 @@
 use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WeekStatus, Worker, WorkerId};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashMap;
+
+/// Ordine **alfabetico** dei nomi dei worker, unico per tutta l'app: senza
+/// distinguere maiuscole/minuscole, a parità il nome esatto (ordine stabile).
+pub fn name_order(a: &str, b: &str) -> Ordering {
+    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+}
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Workers {
@@ -178,8 +185,19 @@ impl Workers {
             .filter(|(w_id, _)| w_id != &&WORKER_ID_ZERO)
             .map(|(&id, w)| (id, w.name.clone()))
             .collect();
-        items.sort_by_key(|(_, n)| n.clone());
+        items.sort_by(|(a_id, a), (b_id, b)| name_order(a, b).then(a_id.0.cmp(&b_id.0)));
         items
+    }
+
+    /// Ordina degli id di worker in ordine alfabetico del nome (`name_order`).
+    pub fn sort_by_name(&self, ids: &mut [WorkerId]) {
+        ids.sort_by(|a, b| name_order(self.get_name_by_id(*a), self.get_name_by_id(*b)).then(a.0.cmp(&b.0)));
+    }
+
+    /// Ordine alfabetico fra due worker (per gli ordinamenti composti, es.
+    /// settimana poi worker).
+    pub fn cmp_by_name(&self, a: WorkerId, b: WorkerId) -> Ordering {
+        name_order(self.get_name_by_id(a), self.get_name_by_id(b)).then(a.0.cmp(&b.0))
     }
 }
 
@@ -309,6 +327,19 @@ mod tests {
         let list = ws.list();
         let names: Vec<&str> = list.iter().map(|(_, n)| n.as_str()).collect();
         assert_eq!(names, vec!["Alice", "Bob", "Charlie"]);
+    }
+
+    #[test]
+    fn alphabetical_order_ignores_case() {
+        let mut ws = Workers::new();
+        let zed = ws.add("Zed");
+        let anna = ws.add("anna");
+        let bob = ws.add("Bob");
+        let names: Vec<String> = ws.list().into_iter().map(|(_, n)| n).collect();
+        assert_eq!(names, vec!["anna", "Bob", "Zed"]);
+        let mut ids = vec![zed, bob, anna];
+        ws.sort_by_name(&mut ids);
+        assert_eq!(ids, vec![anna, bob, zed]);
     }
 
     #[test]

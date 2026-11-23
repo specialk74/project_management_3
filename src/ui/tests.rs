@@ -4801,27 +4801,42 @@ fn rules_window_filters_by_search_type_and_enabled() {
     assert!(texts.iter().any(|t| t == "Terzo") && !texts.iter().any(|t| t == "Primo" || t == "Secondo"), "{texts:?}");
 }
 
-/// «Aggiungi efforts»: la settimana in cui il worker è in **Ferie** si salta
-/// e l'effort va alla successiva, così le settimane di effort restano N (la
-/// fine scivola avanti); la Malattia non si salta; la settimana spostata si
-/// sovrascrive; ogni worker segue le sue ferie; ci si ferma a fine griglia.
+/// «Aggiungi efforts»: conta la **capacità**, non l'etichetta Ferie. La
+/// settimana in cui il worker non ha nessuna ora libera (massimo della
+/// settimana meno le ore su tutti i progetti) si salta e l'effort va alla
+/// successiva, così le settimane di effort restano N (la fine scivola
+/// avanti); con almeno un'ora libera l'effort chiesto si scrive per intero;
+/// la sua cella su quel dev non conta (si riscrive); la settimana spostata
+/// si sovrascrive; ogni worker segue la sua capacità; ci si ferma a fine griglia.
 #[test]
-fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
+fn bulk_fill_skips_weeks_without_free_hours() {
     let mut app = App::new();
     let alice = app.workers.add("Alice");
     let bob = app.workers.add("Bob");
     let dev = app.devs.add("Frontend");
     let proj = app.projects.add("Progetto", Some("ABC"), None);
+    let other = app.projects.add("Altro", Some("XYZ"), None);
     let start = app.start_week;
     let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    // Alice: ferie con massimo 0 nella 1 (saltata), ferie col massimo pieno
+    // nella 2 (si scrive), un limite di 2h nella 3 tutto preso dalla sua
+    // cella su questo dev (si riscrive).
     app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_override(alice, wk(1).0, 0);
     app.workers.set_week_status(alice, wk(2).0, Some(WeekStatus::Ferie));
-    app.workers.set_week_status(bob, wk(1).0, Some(WeekStatus::Malattia));
-    // Valore già presente nella settimana dove scivola Alice: si sovrascrive.
-    app.projects.add_effort(proj, dev, wk(4), alice, Effort(2));
+    app.workers.set_week_override(alice, wk(3).0, 2);
+    app.projects.add_effort(proj, dev, wk(3), alice, Effort(2));
+    // Bob: pieno su un altro progetto nella 1 (saltata), 4h libere nella 2
+    // (si scrivono comunque le 8h chieste).
+    let max = app.workers.get_effective_max_hours(bob, wk(1).0) as usize;
+    app.projects.add_effort(other, dev, wk(1), bob, Effort(max));
+    app.projects.add_effort(other, dev, wk(2), bob, Effort(max - 4));
+    app.compute_sovra();
 
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 3, None), vec![wk(0), wk(3), wk(4)]);
-    assert_eq!(bulk_fill_weeks(&app, proj, bob, start, 3, None), vec![wk(0), wk(1), wk(2)], "malattia: non si salta");
+    assert_eq!(week_free_hours(&app, proj, dev, alice, wk(2)), max, "l'etichetta ferie non conta");
+    assert_eq!(week_free_hours(&app, proj, dev, alice, wk(3)), 2, "la sua cella si riscrive");
+    assert_eq!(bulk_fill_weeks(&app, proj, dev, alice, start, 3, None), vec![wk(0), wk(2), wk(3)]);
+    assert_eq!(bulk_fill_weeks(&app, proj, dev, bob, start, 3, None), vec![wk(0), wk(2), wk(3)]);
     assert!(bulk_fill_effort(&mut app, proj, dev, start, &[alice, bob], Effort(8), 3, None, true));
     let at = |app: &App, w: WeekId, who| {
         app.projects
@@ -4829,29 +4844,29 @@ fn bulk_fill_skips_vacation_weeks_to_the_next_free_one() {
             .and_then(|sd| sd.get_all(w))
             .and_then(|sew| sew.worker_id.get(&who).map(|e| e.get_effort().0))
     };
-    for (i, want) in [Some(8), None, None, Some(8), Some(8)].into_iter().enumerate() {
-        assert_eq!(at(&app, wk(i), alice), want, "Alice, settimana {i}");
+    for who in [alice, bob] {
+        for (i, want) in [Some(8), None, Some(8), Some(8), None].into_iter().enumerate() {
+            assert_eq!(at(&app, wk(i), who), want, "{who:?}, settimana {i}");
+        }
     }
-    for (i, want) in [Some(8), Some(8), Some(8), None].into_iter().enumerate() {
-        assert_eq!(at(&app, wk(i), bob), want, "Bob, settimana {i}");
-    }
-    // A fine griglia: le ferie nell'ultima settimana accorciano.
+    // A fine griglia: una settimana senza ore libere nell'ultima accorcia.
     let last = app.end_week;
     let prev = WeekId(last.0 - WEEK_STEP);
-    app.workers.set_week_status(alice, last.0, Some(WeekStatus::Ferie));
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, prev, 2, None), vec![prev]);
+    app.workers.set_week_override(alice, last.0, 0);
+    assert_eq!(bulk_fill_weeks(&app, proj, dev, alice, prev, 2, None), vec![prev]);
 }
 
-/// La dialog dice, per worker, quali settimane di ferie salta e fin dove
-/// arriva; «Inserisci» manda il numero di settimane chiesto.
+/// La dialog dice, per worker, quali settimane senza ore libere salta e fin
+/// dove arriva; «Inserisci» manda il numero di settimane chiesto.
 #[test]
-fn bulk_fill_window_reports_skipped_vacation_weeks() {
+fn bulk_fill_window_reports_skipped_full_weeks() {
     let mut app = App::new();
     let alice = app.workers.add("Alice");
     let dev = app.devs.add("Frontend");
     let proj = app.projects.add("Progetto", Some("ABC"), None);
     let start = app.start_week.0;
     app.workers.set_week_status(alice, start + WEEK_STEP, Some(WeekStatus::Ferie));
+    app.workers.set_week_override(alice, start + WEEK_STEP, 0);
     let mut bf = BulkFill { weeks_text: "3".into(), effort_text: "8".into(), ..BulkFill::new(proj, dev, start as i32) };
     bf.selected.insert(alice);
     let mut state = UiState { bulk_fill: Some(bf), ..Default::default() };
@@ -4864,7 +4879,7 @@ fn bulk_fill_window_reports_skipped_vacation_weeks() {
     let out = out.unwrap();
     let texts = drawn_texts(&out);
     let skipped = format!(
-        "Alice: in ferie il {} (saltate) → fino al {}",
+        "Alice: nessuna ora libera il {} (saltate) → fino al {}",
         week_label((start + WEEK_STEP) as i32),
         week_label((start + 3 * WEEK_STEP) as i32)
     );
@@ -5147,8 +5162,9 @@ fn rule_summary_is_a_bit_larger_than_small_text() {
 /// già inserite; ogni worker al massimo le ore indicate, solo interi;
 /// l'ultima settimana in ordine (il primo fino al massimo, poi il resto);
 /// mai oltre la capacità della settimana (massimo effettivo meno le ore su
-/// tutti i progetti); saltate per ogni worker le Ferie e le settimane in cui
-/// ha già ore sul dev; ci si ferma a fine griglia.
+/// tutti i progetti); le Ferie **non** si saltano (conta solo il massimo
+/// della settimana); saltate per ogni worker le settimane in cui ha già ore
+/// sul dev; ci si ferma a fine griglia.
 #[test]
 fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     let mut app = App::new();
@@ -5165,11 +5181,12 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     app.compute_sovra();
     let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8, false, false, WeekId(0));
     assert_eq!((plan.planned, plan.allocated, plan.to_place(), plan.left), (40, 6, 34, 0));
+    // Alice in ferie nella settimana 1, ma con il massimo pieno: prende le ore.
     assert_eq!(
         plan.cells,
-        vec![(wk(0), bob, 8), (wk(1), bob, 8), (wk(2), alice, 8), (wk(2), bob, 8), (wk(3), alice, 2)]
+        vec![(wk(0), bob, 8), (wk(1), alice, 8), (wk(1), bob, 8), (wk(2), alice, 8), (wk(2), bob, 2)]
     );
-    assert_eq!(plan.weeks(), 4);
+    assert_eq!(plan.weeks(), 3);
     // Capacità: Bob ha già 36h su un altro progetto nella settimana 1 (resta
     // 4h) e un limite di 0h nella 2 (piena: saltata).
     let q = app.projects.add("y", Some("XYZ"), None);
@@ -5287,7 +5304,7 @@ fn fills_stop_at_the_project_end() {
     app.projects.set_project_end_week(proj, Some(wk(2)));
     assert_eq!(fill_limit(&app, proj), (wk(2), true));
     // Aggiungi efforts per 5 settimane: solo 3 (0, 1, 2).
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5, None), vec![wk(0), wk(1), wk(2)]);
+    assert_eq!(bulk_fill_weeks(&app, proj, dev, alice, start, 5, None), vec![wk(0), wk(1), wk(2)]);
     // Automatico: 100h da 8h → solo 3 settimane, 76h restano fuori.
     let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false, WeekId(0));
     assert_eq!((plan.cells.len(), plan.left), (3, 76));
@@ -5318,7 +5335,7 @@ fn fills_stop_at_the_project_end() {
 
 /// «Aggiungi efforts» ▸ «Fino a fine progetto»: spuntata, l'effort va a ogni
 /// worker scelto in tutte le settimane fino alla fine del progetto (inclusa),
-/// saltando le sue ferie e senza l'avviso «solo N settimane»; senza data di
+/// saltando le settimane senza ore libere e senza l'avviso «solo N settimane»; senza data di
 /// fine la spunta è disattivata.
 #[test]
 fn bulk_fill_until_the_project_end() {
@@ -5329,7 +5346,9 @@ fn bulk_fill_until_the_project_end() {
     app.projects.add_dev(proj, dev);
     let start = app.start_week;
     let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
+    // Ferie con massimo 0: settimana senza ore libere, saltata.
     app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_override(alice, wk(1).0, 0);
     let ctx = egui::Context::default();
     let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
     let open = || {
@@ -5361,6 +5380,7 @@ fn bulk_fill_until_the_project_end() {
     tick(&app, &mut state);
     assert!(state.bulk_fill.as_ref().unwrap().to_end);
     let mut actions = Vec::new();
+    frames(&app, &mut state, &mut actions, None);
     let out = frames(&app, &mut state, &mut actions, None);
     let texts = drawn_texts(&out);
     let summary = format!("1 worker × 8 h × 4 settimane ({} → {})", week_label(wk(0).0 as i32), week_label(wk(3).0 as i32));
@@ -5375,7 +5395,7 @@ fn bulk_fill_until_the_project_end() {
         pjm.apply(a);
     }
     let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
-    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la fine");
+    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "settimana piena saltata, niente oltre la fine");
 }
 
 #[test]
@@ -5388,7 +5408,9 @@ fn bulk_fill_until_a_milestone() {
     let start = app.start_week;
     let wk = |i: usize| WeekId(start.0 + i * WEEK_STEP);
     app.projects.set_project_end_week(proj, Some(wk(6)));
+    // Ferie con massimo 0: settimana senza ore libere, saltata.
     app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_override(alice, wk(1).0, 0);
     let collaudo = app.milestones.add("Collaudo");
     let kickoff = app.milestones.add("Kickoff");
     let oltre = app.milestones.add("Oltre");
@@ -5398,8 +5420,8 @@ fn bulk_fill_until_a_milestone() {
     // Solo da qui in avanti e non oltre la fine del progetto, per data.
     assert_eq!(bulk_fill_milestones(&app, proj, wk(0)), vec![(kickoff, wk(1)), (collaudo, wk(3))]);
     assert_eq!(bulk_fill_milestones(&app, proj, wk(2)), vec![(collaudo, wk(3))]);
-    // La milestone ferma l'inserimento anche quando le ferie lo allungherebbero.
-    assert_eq!(bulk_fill_weeks(&app, proj, alice, wk(0), 4, Some(wk(3))), vec![wk(0), wk(2), wk(3)]);
+    // La milestone ferma l'inserimento anche quando le settimane piene lo allungherebbero.
+    assert_eq!(bulk_fill_weeks(&app, proj, dev, alice, wk(0), 4, Some(wk(3))), vec![wk(0), wk(2), wk(3)]);
 
     let ctx = egui::Context::default();
     let input = egui::RawInput { screen_rect: Some(screen(1000.0, 800.0)), ..Default::default() };
@@ -5426,6 +5448,7 @@ fn bulk_fill_until_a_milestone() {
         frame(&mut state, &mut actions, Some(ev));
     }
     assert_eq!(state.bulk_fill.as_ref().unwrap().to_milestone, Some(collaudo));
+    frame(&mut state, &mut actions, None);
     let out = frame(&mut state, &mut actions, None);
     let texts = drawn_texts(&out);
     let summary = format!("1 worker × 8 h × 4 settimane ({} → {})", week_label(wk(0).0 as i32), week_label(wk(3).0 as i32));
@@ -5444,7 +5467,7 @@ fn bulk_fill_until_a_milestone() {
         pjm.apply(a);
     }
     let sd = pjm.app.projects.get_single_dev(proj, dev).unwrap();
-    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "ferie saltate, niente oltre la milestone");
+    assert_eq!(sd.get_weeks(), vec![wk(0), wk(2), wk(3)], "settimana piena saltata, niente oltre la milestone");
 }
 
 /// Riaprendo una cella con un worker l'effort viene tolto («Alice|»): Invio
@@ -5521,7 +5544,8 @@ fn reopening_a_cell_clears_the_effort_until_confirmed() {
 }
 
 /// «Aggiungi automatic effort» ▸ «All'indietro»: dalla settimana cliccata
-/// verso l'inizio del progetto (inclusa), saltando ferie e celle occupate;
+/// verso l'inizio del progetto (inclusa), saltando le settimane piene (qui
+/// ferie con massimo 0) e celle occupate;
 /// l'ultima settimana parziale è la più lontana, le celle restano in ordine
 /// di settimana e ciò che non sta prima dell'inizio resta fuori. La dialog
 /// ha la scelta e la manda nell'azione.
@@ -5536,10 +5560,12 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     app.projects.set_project_end_week(proj, Some(wk(20)));
     app.projects.add_dev(proj, dev);
     app.projects.add_dev_effort(proj, dev, Effort(20));
+    // Ferie con massimo 0: la settimana è piena (conta il massimo, non l'etichetta).
     app.workers.set_week_status(alice, wk(5).0, Some(WeekStatus::Ferie));
+    app.workers.set_week_override(alice, wk(5).0, 0);
     app.compute_sovra();
     assert_eq!(fill_start(&app, proj, WeekId(0)), (wk(2), FillFrom::Project));
-    // Da 6 all'indietro: 6, (5 ferie), 4 e 3 parziale.
+    // Da 6 all'indietro: 6, (5 piena), 4 e 3 parziale.
     let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false, WeekId(0));
     assert_eq!(plan.cells, vec![(wk(3), alice, 4), (wk(4), alice, 8), (wk(6), alice, 8)]);
     assert_eq!(plan.left, 0);
@@ -5549,7 +5575,7 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     assert_eq!(auto_fill_limit_label(&app, proj, true, WeekId(0)), "inizio del progetto");
     assert_eq!(auto_fill_limit_label(&app, proj, false, WeekId(0)), "fine del progetto");
     // Mai prima della settimana corrente: con «oggi» = 4, da 6 si riempiono
-    // solo 6 e 4 (5 ferie), il resto resta fuori.
+    // solo 6 e 4 (5 piena), il resto resta fuori.
     assert_eq!(fill_start(&app, proj, wk(4)), (wk(4), FillFrom::Today));
     assert_eq!(auto_fill_limit_label(&app, proj, true, wk(4)), "settimana corrente");
     let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false, wk(4));
@@ -5583,7 +5609,7 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     let out = frame(&mut state, &mut actions, None);
     let texts = drawn_texts(&out);
     let summary = format!(
-        "20h in 3 settimane ({} → {}), entro la capacità dei worker, saltando le ferie.",
+        "20h in 3 settimane ({} → {}), entro la capacità dei worker.",
         week_label(wk(3).0 as i32),
         week_label(wk(6).0 as i32)
     );
@@ -5731,6 +5757,31 @@ fn fill_dialogs_ask_before_overwriting() {
 /// «Cancella effort»: le celle (anche a 0, con la nota) dei worker scelti
 /// nelle settimane di calendario dell'intervallo, mai oltre la milestone o
 /// la fine del progetto; la settimana senza più worker sparisce.
+/// I worker sono sempre in ordine alfabetico (senza badare alle maiuscole),
+/// non in ordine di creazione: elenco di «Cancella effort», celle da
+/// cancellare/sovrascrivere della stessa settimana, righe della cella.
+#[test]
+fn workers_are_listed_alphabetically_not_by_creation() {
+    let mut app = App::new();
+    let zed = app.workers.add("Zed");
+    let bob = app.workers.add("Bob");
+    let anna = app.workers.add("anna");
+    let dev = app.devs.add("Frontend");
+    let proj = app.projects.add("x", Some("ABC"), None);
+    app.projects.add_dev(proj, dev);
+    let w = app.start_week;
+    for wid in [zed, bob, anna] {
+        app.projects.add_effort(proj, dev, w, wid, Effort(4));
+    }
+    assert_eq!(bulk_clear_workers(&app, proj, dev, w), vec![anna, bob, zed]);
+    let cells: Vec<WorkerId> =
+        bulk_clear_cells(&app, proj, dev, w, 1, None, &[zed, bob, anna]).into_iter().map(|(_, x, _)| x).collect();
+    assert_eq!(cells, vec![anna, bob, zed]);
+    let slots: Vec<Option<WorkerId>> =
+        gather_slots(&app, proj, dev, w.0 as i32, 3, &None).into_iter().map(|(.., id)| id).collect();
+    assert_eq!(slots, vec![Some(anna), Some(bob), Some(zed)]);
+}
+
 #[test]
 fn bulk_clear_removes_the_chosen_cells_only() {
     let mut app = App::new();
@@ -5951,6 +6002,18 @@ fn adaptive_auto_fill_fills_each_week_up_to_the_free_capacity() {
     }
     assert_eq!(plan.cells, expected);
     assert_eq!(plan.left, 0);
+
+    // Ferie: conta solo il massimo della settimana, non l'etichetta, sia in
+    // adattivo sia con un tetto di ore.
+    let mut ferie = app.clone();
+    ferie.workers.set_week_status(alice, wk(0).0, Some(WeekStatus::Ferie));
+    let plan = auto_fill_plan(&ferie, p, dev, start, &[alice], AUTO_FILL_ADAPTIVE, false, false, WeekId(0));
+    assert_eq!(plan.cells.first(), Some(&(wk(0), alice, max)), "ferie con capacità: si riempie");
+    let plan = auto_fill_plan(&ferie, p, dev, start, &[alice], 8, false, false, WeekId(0));
+    assert_eq!(plan.cells.first(), Some(&(wk(0), alice, 8)), "anche con il tetto le ferie si riempiono");
+    ferie.workers.set_week_override(alice, wk(0).0, 0);
+    let plan = auto_fill_plan(&ferie, p, dev, start, &[alice], AUTO_FILL_ADAPTIVE, false, false, WeekId(0));
+    assert_eq!(plan.cells.first(), Some(&(wk(1), alice, 20)), "ferie con massimo 0: piena");
 
     // Finestra: con «Adattivo» il campo ore vuoto non blocca «Inserisci».
     let mut bf = BulkFill { adaptive: true, ..BulkFill::new(p, dev, start.0 as i32) };

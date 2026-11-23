@@ -217,6 +217,8 @@ fn dev_workers(
     }
     ids.sort_by_key(|w| w.0);
     ids.dedup();
+    // Worker in ordine alfabetico (i nomi della versione corrente).
+    off.workers.sort_by_name(&mut ids);
     ids
 }
 

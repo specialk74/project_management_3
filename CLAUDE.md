@@ -1035,6 +1035,15 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   after starting ticked) = drop Ferie and restore the global max, then limit;
   `None` = limit only. Tests `bulk_week_holiday_keeps_the_typed_hours_and_spares_sick_workers`,
   `bulk_week_popup_has_the_holiday_checkbox_and_sends_the_choice`.
+- **Workers are always alphabetical** (user's rule): one order,
+  `workers_utils::workers::name_order(a, b)` (case-insensitive, then exact
+  name); `Workers::list()` uses it, and so do `Workers::sort_by_name(&mut
+  ids)` / `cmp_by_name(a, b)` for id lists (e.g. «week, then worker» sorts in
+  `bulk_clear_*`/`bulk_fill_occupied`, `bulk_clear_workers`, the bulk-fill
+  `chosen`, compare's `dev_workers`) and `name_order` for name lists
+  (`gather_slots`, minuta worker notes, effort CSV). **Never sort workers by
+  `WorkerId`** or by plain `String` order. Test
+  `workers_are_listed_alphabetically_not_by_creation`.
 - **Grid cell data**: `gather_slots` returns `(text "Worker|ore", note,
   Option<WorkerId>)`; `draw_cell_static` receives the id, so never look a worker up
   by name again in the cell path. Parse a typed `"Worker|ore"` only with
@@ -1079,31 +1088,38 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   worker for N consecutive weeks starting at the clicked week (**inclusive**, going
   forward), **overwriting** (after the «Sovrascrivere?» question, see Automatic effort) any existing value for that worker (`add_effort` keeps the
   note), and stops at `app.end_week` — the dialog shows the effective week count.
-  **Vacation weeks are skipped**: the weeks come from `bulk_fill_weeks(app,
-  worker, start, n)` (`mod.rs`) = the first `n` weeks from `start` where that
-  worker is **not** in `WeekStatus::Ferie` (Malattia is not skipped), up to
+  **Weeks with no free hours are skipped** (user's rule: capacity counts,
+  not the Ferie/Malattia label): the weeks come from `bulk_fill_weeks(app,
+  proj, dev, worker, start, n, until)` (`mod.rs`) = the first `n` weeks from
+  `start` where `week_free_hours(app, proj, dev, worker, week)` > 0 (=
+  effective max − `sovra` + the worker's own cell on that dev, which gets
+  rewritten); with ≥ 1 free hour the requested effort is written **in full**
+  even above the free hours (user's choice «Scrivi comunque»); up to
   `fill_limit(app, proj)` = the **project end week** (inclusive) when set and
   inside the grid, else `end_week` (`(WeekId, is_project_end)`;
   `fill_limit_label` = «fine del progetto» / «fine della griglia» for the
   messages; both fills never go past it — test
   `fills_stop_at_the_project_end`; `bulk_fill_weeks` takes `proj`). «Fino a fine progetto» checkbox (`BulkFill.to_end`, enabled only
   when the project has an end date): `weeks` = calendar weeks from the start
-  to `fill_limit` (the vacation skipping can't push past the end anyway),
+  to `fill_limit` (the skipping can't push past the end anyway),
   weeks field + date picker disabled, no red «solo N settimane» line; test
   `bulk_fill_until_the_project_end`. «Fino a milestone» combo (`BulkFill.to_milestone`,
   exclusive with `to_end`): choices = `bulk_fill_milestones(app, proj,
   start)` (placed in the project from the start week to `fill_limit`, by
   week); `weeks` = calendar weeks to the milestone, and
   `BulkFillEffort.until: Option<WeekId>` → `bulk_fill_weeks(…, until)` stops
-  there (inclusive) even when vacations would push further; test
+  there (inclusive) even when full weeks would push further; test
   `bulk_fill_until_a_milestone` — so each worker still gets `n` weeks and the end slides later,
   even past the «fino al» date (user's choice); the shifted week is
   overwritten like any other. The dialog computes the same plans per selected
   worker: summary end = farthest last week, a blue line per worker with
-  skipped weeks («Alice: in ferie il … (saltate) → fino al …») and a red one
+  skipped weeks («Alice: nessuna ora libera il … (saltate) → fino al …»,
+  = the weeks up to the last one not in the plan) and a red one
   if the grid end cuts it; `BulkFillEffort.weeks` is the requested `n`. Tests
-  `bulk_fill_skips_vacation_weeks_to_the_next_free_one`,
-  `bulk_fill_window_reports_skipped_vacation_weeks`. The per-worker lines
+  `bulk_fill_skips_weeks_without_free_hours`,
+  `bulk_fill_window_reports_skipped_full_weeks` (UI tests click «Inserisci»
+  after one extra settle frame: a longer blue line resizes the window).
+  `bulk_clear_window` and the auto fill don't use `bulk_fill_weeks`. The per-worker lines
   (here and in the auto fill's «Name: Nh in N settimane») sit in
   `fill_notes_scroll` (vertical `ScrollArea`, `drag_scroll()`, max
   `FILL_NOTES_MAX_H` 140 px) so Inserisci/Annulla never leave the screen;
@@ -1133,8 +1149,11 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   from `start`, each week each worker (list order) gets `min(hours, left)`
   (integers only; last week filled in order), never above the week's free
   capacity = `get_effective_max_hours(w, week)` − `App.sovra[(week, w)]`
-  (all projects; full ⇒ week skipped; same rule as Saturazione), skipping per worker `Ferie`
-  weeks and weeks where they already have a cell on that dev unless overwriting (see below),
+  (all projects; full ⇒ week skipped; same rule as Saturazione). **`Ferie`
+  weeks are not skipped** (user's rule: the week's effective max counts,
+  not the label; a 0 limit makes the week full), like «Aggiungi efforts».
+  Skipped per worker: weeks where they
+  already have a cell on that dev unless overwriting (see below),
   until `fill_limit(app, proj)` (`left` = what didn't fit, toasted).
   **Overwrite question** (both fills, user's choices): «occupied» = that
   worker already has a cell (effort 0 included) on that dev that week

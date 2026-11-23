@@ -4572,7 +4572,11 @@ fn gather_slots(
                     )
                 })
                 .collect();
-            v.sort_by(|a, b| a.0.cmp(&b.0));
+            // Worker in ordine alfabetico (il testo è «Nome|ore»).
+            v.sort_by(|a, b| match (a.2, b.2) {
+                (Some(x), Some(y)) => app.workers.cmp_by_name(x, y),
+                _ => a.0.cmp(&b.0),
+            });
             v
         })
         .unwrap_or_default();
@@ -5095,14 +5099,17 @@ pub(crate) const AUTO_FILL_ADAPTIVE: usize = usize::MAX;
 /// resto. Si tiene conto della **capacità** del worker (come Saturazione e
 /// Torte): nella settimana non prende più del suo massimo effettivo (limite
 /// della settimana o massimo del worker) meno le ore che ha già su tutti i
-/// progetti (`App.sovra`); se è pieno, la settimana si salta. Per ogni worker
-/// si saltano anche le settimane in **Ferie** e quelle in cui ha già una
-/// cella su quel dev (non si sovrascrive). Si ferma alla fine del progetto
+/// progetti (`App.sovra`); se è pieno, la settimana si salta. Le settimane
+/// in **Ferie** non si saltano: vale solo il massimo effettivo della
+/// settimana (un limite a 0 la rende piena), non l'etichetta. Per ogni worker
+/// si saltano le settimane in cui ha già una cella su quel dev (senza
+/// `overwrite`). Si ferma alla fine del progetto
 /// (o della griglia, `fill_limit`): non va mai oltre (`left` = quello che
 /// non sta). All'indietro (`backward`) si ferma all'inizio del progetto (o
 /// della griglia) e **mai prima della settimana corrente** `today`
 /// (`fill_start`): nel passato non si scrive. Con `hours` =
-/// `AUTO_FILL_ADAPTIVE` (modalità adattiva) non c'è tetto: ogni worker riceve tutta la capacità libera della settimana.
+/// `AUTO_FILL_ADAPTIVE` (modalità adattiva) non c'è tetto: ogni worker
+/// riceve tutta la capacità libera della settimana.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_fill_plan(
     app: &App,
@@ -5135,9 +5142,6 @@ pub(crate) fn auto_fill_plan(
         for wid in workers {
             if left == 0 {
                 break;
-            }
-            if app.workers.get_week_status(*wid, w.0) == Some(WeekStatus::Ferie) {
-                continue;
             }
             // Cella già occupata: si salta, o con `overwrite` le sue ore si
             // liberano (tornano da distribuire e dalla capacità della settimana).
@@ -5221,17 +5225,30 @@ pub(crate) fn fill_limit_label(app: &App, proj: ProjectId) -> &'static str {
     if fill_limit(app, proj).1 { "fine del progetto" } else { "fine della griglia" }
 }
 
+/// Ore libere di `worker` in `week` per il `dev` del progetto: massimo
+/// effettivo della settimana (limite della settimana o massimo del worker)
+/// meno le ore che ha su tutti i progetti (`App.sovra`), senza contare la
+/// sua cella su quel dev (la si riscrive). L'etichetta Ferie non conta.
+pub(crate) fn week_free_hours(app: &App, proj: ProjectId, dev: DevId, worker: WorkerId, week: WeekId) -> usize {
+    let own = cell_effort(app, proj, dev, week, worker).unwrap_or(0);
+    let busy = app.sovra.get(&(week, worker)).map_or(0, |e| e.0).saturating_sub(own);
+    (app.workers.get_effective_max_hours(worker, week.0) as usize).saturating_sub(busy)
+}
+
 /// Le settimane in cui «Aggiungi efforts» scrive per `worker`: le prime
 /// `weeks` a partire da `start` (inclusa), andando in avanti, **saltando
-/// quelle in cui il worker è in Ferie** (la Malattia no): così il worker ha
-/// sempre `weeks` settimane di effort e, con delle ferie in mezzo, la fine
-/// scivola più avanti (anche oltre la data «fino al» della dialog). Si ferma
-/// alla fine del progetto (o della griglia, `fill_limit`), quindi può essere
-/// più corta: non va mai oltre. `until` (la milestone di «Fino a milestone»)
-/// anticipa il limite.
+/// quelle in cui il worker non ha nessuna ora libera** (`week_free_hours`
+/// = 0: conta il massimo della settimana, non l'etichetta Ferie o
+/// Malattia); con almeno un'ora libera si scrive comunque l'effort chiesto
+/// (scelta dell'utente). Così il worker ha sempre `weeks` settimane di
+/// effort e, con settimane piene in mezzo, la fine scivola più avanti (anche
+/// oltre la data «fino al» della dialog). Si ferma alla fine del progetto (o
+/// della griglia, `fill_limit`), quindi può essere più corta: non va mai
+/// oltre. `until` (la milestone di «Fino a milestone») anticipa il limite.
 pub(crate) fn bulk_fill_weeks(
     app: &App,
     proj: ProjectId,
+    dev: DevId,
     worker: WorkerId,
     start: WeekId,
     weeks: usize,
@@ -5241,7 +5258,7 @@ pub(crate) fn bulk_fill_weeks(
     let mut out = Vec::with_capacity(weeks);
     let mut w = start;
     while out.len() < weeks && w <= end {
-        if app.workers.get_week_status(worker, w.0) != Some(WeekStatus::Ferie) {
+        if week_free_hours(app, proj, dev, worker, w) > 0 {
             out.push(w);
         }
         w = WeekId(w.0 + WEEK_STEP);
@@ -5279,7 +5296,7 @@ pub(crate) fn bulk_clear_cells(
         .take_while(|w| *w <= end)
         .flat_map(|w| workers.iter().filter_map(move |wid| cell_effort(app, proj, dev, w, *wid).map(|h| (w, *wid, h))))
         .collect();
-    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out.sort_by(|(wa, a, _), (wb, b, _)| wa.0.cmp(&wb.0).then_with(|| app.workers.cmp_by_name(*a, *b)));
     out
 }
 
@@ -5294,7 +5311,7 @@ pub(crate) fn bulk_clear_all_cells(app: &App, proj: ProjectId, dev: DevId, worke
         .into_iter()
         .flat_map(|w| workers.iter().filter_map(move |wid| cell_effort(app, proj, dev, w, *wid).map(|h| (w, *wid, h))))
         .collect();
-    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out.sort_by(|(wa, a, _), (wb, b, _)| wa.0.cmp(&wb.0).then_with(|| app.workers.cmp_by_name(*a, *b)));
     out
 }
 
@@ -5314,6 +5331,7 @@ pub(crate) fn bulk_clear_workers(app: &App, proj: ProjectId, dev: DevId, start: 
     ids.retain(|w| *w != WORKER_ID_ZERO);
     ids.sort_by_key(|w| w.0);
     ids.dedup();
+    app.workers.sort_by_name(&mut ids);
     ids
 }
 
@@ -5329,7 +5347,7 @@ pub(crate) fn bulk_fill_occupied(
         .iter()
         .flat_map(|(wid, ws)| ws.iter().filter_map(move |w| cell_effort(app, proj, dev, *w, *wid).map(|h| (*w, *wid, h))))
         .collect();
-    out.sort_by_key(|(w, wid, _)| (w.0, wid.0));
+    out.sort_by(|(wa, a, _), (wb, b, _)| wa.0.cmp(&wb.0).then_with(|| app.workers.cmp_by_name(*a, *b)));
     out
 }
 
@@ -5352,7 +5370,7 @@ fn bulk_fill_effort(
 ) -> bool {
     let mut written = false;
     for wid in workers {
-        for w in bulk_fill_weeks(app, proj, *wid, start, weeks, until) {
+        for w in bulk_fill_weeks(app, proj, dev, *wid, start, weeks, until) {
             if !overwrite && cell_effort(app, proj, dev, w, *wid).is_some() {
                 continue;
             }

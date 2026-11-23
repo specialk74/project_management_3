@@ -91,7 +91,7 @@ pub fn effort_rows(app: &App, projects: &[ProjectId], opts: CsvOptions) -> Vec<[
                     })
                     .filter(|(_, h, _)| opts.zero || *h > 0)
                     .collect();
-                cells.sort_by(|a, b| a.0.cmp(&b.0));
+                cells.sort_by(|a, b| crate::workers_utils::workers::name_order(&a.0, &b.0));
                 for (worker, hours, note) in cells {
                     out.push([
                         trip.clone(),

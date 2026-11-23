@@ -118,8 +118,8 @@ pub(crate) fn fill_range(app: &App, bf: &mut BulkFill) -> FillRange {
     let until: Option<WeekId> =
         bf.to_milestone.and_then(|m| milestones.iter().find(|(id, _)| *id == m).map(|(_, w)| *w));
     // Con «Fino a fine progetto» / «Fino a milestone»: tutte le settimane
-    // fino alla fine / alla milestone (le Ferie saltate dall'inserimento non
-    // la spostano, `bulk_fill_weeks` si ferma comunque lì).
+    // fino alla fine / alla milestone (le settimane piene saltate
+    // dall'inserimento non la spostano, `bulk_fill_weeks` si ferma comunque lì).
     let weeks = if let Some(u) = until {
         Some((u.0 as i64 - bf.week as i64) / WEEK_STEP as i64 + 1).filter(|n| *n > 0).map(|n| n as usize)
     } else if bf.to_end {
@@ -258,12 +258,12 @@ pub(crate) fn bulk_fill_window(
     let range = fill_range(app, bf);
     let (available, until, weeks) = (range.available, range.until, range.weeks);
     let effort = bf.effort_text.trim().parse::<usize>().ok();
-    // Settimane in cui si scrive, per worker scelto: saltano le Ferie (la
-    // fine scivola avanti) e si fermano alla fine del progetto (o della griglia).
+    // Settimane in cui si scrive, per worker scelto: saltano quelle senza ore
+    // libere (la fine scivola avanti) e si fermano alla fine del progetto (o della griglia).
     let mut chosen: Vec<WorkerId> = bf.selected.iter().copied().collect();
-    chosen.sort_by_key(|w| w.0);
+    app.workers.sort_by_name(&mut chosen);
     let plans: Vec<(WorkerId, Vec<WeekId>)> = weeks
-        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, *w, WeekId(bf.week as usize), n, until))).collect())
+        .map(|n| chosen.iter().map(|w| (*w, bulk_fill_weeks(app, bf.proj, bf.dev, *w, WeekId(bf.week as usize), n, until))).collect())
         .unwrap_or_default();
     let effective = weeks.map(|n| n.min(available)).unwrap_or(0);
 
@@ -307,7 +307,7 @@ pub(crate) fn bulk_fill_window(
             }
             if let (Some(e), Some(n)) = (effort, weeks) {
                 // Fine: l'ultima settimana scritta (la più lontana, se le
-                // ferie allungano qualcuno).
+                // settimane piene allungano qualcuno).
                 let last = plans
                     .iter()
                     .filter_map(|(_, ws)| ws.last().map(|w| w.0 as i32))
@@ -321,7 +321,7 @@ pub(crate) fn bulk_fill_window(
                     start_label,
                     week_label(last)
                 ));
-                // Per worker: ferie saltate e settimane mancanti a fine griglia.
+                // Per worker: settimane piene saltate e settimane mancanti a fine griglia.
                 fill_notes_scroll(ui, "bulk_fill_notes", |ui| {
                     for (w, ws) in &plans {
                         let name = app.workers.get_name_by_id(*w);
@@ -329,13 +329,13 @@ pub(crate) fn bulk_fill_window(
                         let skipped: Vec<String> = (0..)
                             .map(|i| bf.week as usize + i * WEEK_STEP)
                             .take_while(|d| *d <= end)
-                            .filter(|d| app.workers.get_week_status(*w, *d) == Some(WeekStatus::Ferie))
+                            .filter(|d| !ws.contains(&WeekId(*d)))
                             .map(|d| week_label(d as i32))
                             .collect();
                         if !skipped.is_empty() {
                             ui.label(
                                 egui::RichText::new(format!(
-                                    "{name}: in ferie il {} (saltate) → fino al {}",
+                                    "{name}: nessuna ora libera il {} (saltate) → fino al {}",
                                     skipped.join(", "),
                                     week_label(end as i32)
                                 ))
@@ -763,7 +763,7 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 match (plan.cells.first(), plan.cells.last()) {
                     (Some((first, ..)), Some((last, ..))) => {
                         ui.label(format!(
-                            "{placed}h in {} settimane ({} → {}), entro la capacità dei worker, saltando le ferie.",
+                            "{placed}h in {} settimane ({} → {}), entro la capacità dei worker.",
                             plan.weeks(),
                             week_label(first.0 as i32),
                             week_label(last.0 as i32)
