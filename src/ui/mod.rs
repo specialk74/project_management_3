@@ -3287,7 +3287,8 @@ impl PjmApp {
                 self.ui.editing = Some(Editing::open(proj, dev, week, row, text, note));
             }
             Action::AutoFillEffort { proj, dev, start, workers, hours, backward, overwrite } => {
-                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours, backward, overwrite);
+                let today = current_week_id();
+                let plan = auto_fill_plan(&self.app, proj, dev, start, &workers, hours, backward, overwrite, today);
                 for (w, wid, h) in &plan.cells {
                     self.app.projects.add_effort(proj, dev, *w, *wid, Effort(*h));
                 }
@@ -3297,7 +3298,7 @@ impl PjmApp {
                 if plan.left > 0 {
                     self.ui.toast_warn(format!(
                         "Inserimento automatico: arrivati alla {}, restano {}h non inserite.",
-                        auto_fill_limit_label(&self.app, proj, backward),
+                        auto_fill_limit_label(&self.app, proj, backward, today),
                         plan.left
                     ));
                 }
@@ -5098,8 +5099,10 @@ pub(crate) const AUTO_FILL_ADAPTIVE: usize = usize::MAX;
 /// si saltano anche le settimane in **Ferie** e quelle in cui ha già una
 /// cella su quel dev (non si sovrascrive). Si ferma alla fine del progetto
 /// (o della griglia, `fill_limit`): non va mai oltre (`left` = quello che
-/// non sta). Con `hours` = `AUTO_FILL_ADAPTIVE` (modalità adattiva) non c'è
-/// tetto: ogni worker riceve tutta la capacità libera della settimana.
+/// non sta). All'indietro (`backward`) si ferma all'inizio del progetto (o
+/// della griglia) e **mai prima della settimana corrente** `today`
+/// (`fill_start`): nel passato non si scrive. Con `hours` =
+/// `AUTO_FILL_ADAPTIVE` (modalità adattiva) non c'è tetto: ogni worker riceve tutta la capacità libera della settimana.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn auto_fill_plan(
     app: &App,
@@ -5110,6 +5113,7 @@ pub(crate) fn auto_fill_plan(
     hours: usize,
     backward: bool,
     overwrite: bool,
+    today: WeekId,
 ) -> AutoFillPlan {
     let sd = app.projects.get_single_dev(proj, dev);
     let planned = sd.map_or(0, |sd| sd.planned_effort().0);
@@ -5122,9 +5126,10 @@ pub(crate) fn auto_fill_plan(
     }
     let occupied = |w: WeekId, wid: WorkerId| cell_effort(app, proj, dev, w, wid);
     // In avanti fino alla fine del progetto (o della griglia), all'indietro
-    // fino all'inizio: la settimana cliccata è sempre la prima riempita.
+    // fino all'inizio ma mai prima della settimana corrente (`today`): la
+    // settimana cliccata è sempre la prima riempita.
     let end = fill_limit(app, proj).0;
-    let begin = fill_start(app, proj).0;
+    let begin = fill_start(app, proj, today).0;
     let mut next = Some(start);
     while let Some(w) = next.filter(|c| left > 0 && if backward { *c >= begin } else { *c <= end }) {
         for wid in workers {
@@ -5163,23 +5168,39 @@ pub(crate) fn auto_fill_plan(
     plan
 }
 
-/// Prima settimana in cui «Aggiungi automatic effort» all'indietro può
-/// scrivere: l'**inizio del progetto** se c'è e cade dopo l'inizio della
-/// griglia, altrimenti l'inizio della griglia (`bool` = è l'inizio del progetto).
-pub(crate) fn fill_start(app: &App, proj: ProjectId) -> (WeekId, bool) {
-    match app.projects.get_project_start_week(proj) {
-        Some(s) if s >= app.start_week => (s, true),
-        _ => (app.start_week, false),
-    }
+/// Da dove parte il limite di «Aggiungi automatic effort» all'indietro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FillFrom {
+    /// La settimana corrente: non si scrive mai nel passato.
+    Today,
+    /// L'inizio del progetto (dopo la settimana corrente).
+    Project,
+    /// L'inizio della griglia (dopo la settimana corrente, progetto senza inizio).
+    Grid,
 }
 
-/// Dove si ferma «Aggiungi automatic effort»: fine (in avanti) o inizio
-/// (all'indietro) del progetto o della griglia.
-pub(crate) fn auto_fill_limit_label(app: &App, proj: ProjectId, backward: bool) -> &'static str {
-    match (backward, fill_start(app, proj).1) {
-        (false, _) => fill_limit_label(app, proj),
-        (true, true) => "inizio del progetto",
-        (true, false) => "inizio della griglia",
+/// Prima settimana in cui «Aggiungi automatic effort» all'indietro può
+/// scrivere: la più recente fra la **settimana corrente** (`today`: mai
+/// all'indietro oltre oggi), l'**inizio del progetto** (se c'è e cade dopo
+/// l'inizio della griglia) e l'inizio della griglia.
+pub(crate) fn fill_start(app: &App, proj: ProjectId, today: WeekId) -> (WeekId, FillFrom) {
+    let (start, from) = match app.projects.get_project_start_week(proj) {
+        Some(s) if s >= app.start_week => (s, FillFrom::Project),
+        _ => (app.start_week, FillFrom::Grid),
+    };
+    if today >= start { (today, FillFrom::Today) } else { (start, from) }
+}
+
+/// Dove si ferma «Aggiungi automatic effort»: fine (in avanti) o, all'indietro,
+/// settimana corrente o inizio del progetto o della griglia.
+pub(crate) fn auto_fill_limit_label(app: &App, proj: ProjectId, backward: bool, today: WeekId) -> &'static str {
+    if !backward {
+        return fill_limit_label(app, proj);
+    }
+    match fill_start(app, proj, today).1 {
+        FillFrom::Today => "settimana corrente",
+        FillFrom::Project => "inizio del progetto",
+        FillFrom::Grid => "inizio della griglia",
     }
 }
 

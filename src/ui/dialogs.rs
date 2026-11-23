@@ -698,8 +698,19 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
         app.workers.list().into_iter().map(|(id, _)| id).filter(|id| bf.selected.contains(id)).collect();
     // Il riepilogo mostra il piano che sovrascrive: è quello che verrebbe
     // chiesto; con «Mantieni» le celle occupate si saltano.
-    let plan = auto_fill_plan(app, bf.proj, bf.dev, WeekId(bf.week as usize), &chosen, hours.unwrap_or(0), bf.backward, true);
-    let limit = auto_fill_limit_label(app, bf.proj, bf.backward);
+    let today = current_week_id();
+    let plan = auto_fill_plan(
+        app,
+        bf.proj,
+        bf.dev,
+        WeekId(bf.week as usize),
+        &chosen,
+        hours.unwrap_or(0),
+        bf.backward,
+        true,
+        today,
+    );
+    let limit = auto_fill_limit_label(app, bf.proj, bf.backward, today);
 
     let mut open = true;
     let mut confirm = false;
@@ -738,7 +749,9 @@ pub(crate) fn auto_fill_window(ctx: &egui::Context, app: &App, state: &mut UiSta
                 ui.radio_value(&mut bf.backward, false, "In avanti")
                     .on_hover_text("Dalla settimana cliccata verso la fine del progetto.");
                 ui.radio_value(&mut bf.backward, true, "All'indietro")
-                    .on_hover_text("Dalla settimana cliccata verso l'inizio del progetto.");
+                    .on_hover_text(
+                        "Dalla settimana cliccata verso l'inizio del progetto, ma mai prima della settimana corrente.",
+                    );
             });
             if !bf.adaptive && hours.is_none() && !bf.effort_text.trim().is_empty() {
                 ui.colored_label(Color32::RED, "Ore non valide (numero intero, almeno 1).");

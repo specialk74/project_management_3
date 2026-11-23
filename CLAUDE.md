@@ -1155,10 +1155,14 @@ L'**unico** canale per riportare all'utente esiti ed errori; ha sostituito sia g
   `fill_dialogs_ask_before_overwriting`.
   **Direction**: radio «In avanti / All'indietro» (`BulkFill.backward` →
   `AutoFillEffort.backward` → last arg of `auto_fill_plan`): backward walks
-  from `start` down to `fill_start(app, proj)` (project start if inside the
-  grid, else `start_week`), so the partial week is the earliest; `cells` are
+  from `start` down to `fill_start(app, proj, today)` → `(WeekId, FillFrom {
+  Today, Project, Grid })` = the latest of the **current week** (never into
+  the past, user's request), the project start (if inside the grid) and
+  `start_week`; `auto_fill_plan` takes `today` as last arg (`current_week_id()`
+  in the dialog and the handler), so the partial week is the earliest; `cells` are
   sorted by week at the end either way; messages via
-  `auto_fill_limit_label(app, proj, backward)`. Test
+  `auto_fill_limit_label(app, proj, backward, today)` («settimana corrente» /
+  «inizio del progetto» / «inizio della griglia»). Test
   `auto_fill_can_go_backward_to_the_project_start`. **Adaptive**: checkbox
   «Adattivo» (`BulkFill.adaptive`, user's choices: free capacity, checkbox,
   every worker to the max in list order) disables the hours field and sends

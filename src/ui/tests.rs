@@ -5163,7 +5163,7 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     app.projects.add_effort(p, dev, wk(0), alice, Effort(6)); // già occupata
     app.workers.set_week_status(alice, wk(1).0, Some(WeekStatus::Ferie));
     app.compute_sovra();
-    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8, false, false);
+    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], 8, false, false, WeekId(0));
     assert_eq!((plan.planned, plan.allocated, plan.to_place(), plan.left), (40, 6, 34, 0));
     assert_eq!(
         plan.cells,
@@ -5177,7 +5177,7 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     app.projects.add_effort(q, dev, wk(1), bob, Effort(36));
     app.workers.set_week_override(bob, wk(2).0, 0);
     app.compute_sovra();
-    let plan = auto_fill_plan(&app, p, dev, start, &[bob], 8, false, false);
+    let plan = auto_fill_plan(&app, p, dev, start, &[bob], 8, false, false, WeekId(0));
     assert_eq!(
         plan.cells,
         vec![(wk(0), bob, 8), (wk(1), bob, 4), (wk(3), bob, 8), (wk(4), bob, 8), (wk(5), bob, 6)],
@@ -5185,13 +5185,13 @@ fn auto_fill_plan_spreads_what_is_left_of_the_planned_effort() {
     );
     // Ore che non stanno nella griglia: restano fuori.
     let last = app.end_week;
-    let plan = auto_fill_plan(&app, p, dev, WeekId(last.0 - WEEK_STEP), &[bob], 8, false, false);
+    let plan = auto_fill_plan(&app, p, dev, WeekId(last.0 - WEEK_STEP), &[bob], 8, false, false, WeekId(0));
     assert_eq!((plan.cells.len(), plan.left), (2, 34 - 16));
     // Niente da distribuire, nessun worker o 0 ore: nessuna cella.
     app.projects.add_effort(p, dev, wk(6), bob, Effort(34));
     app.compute_sovra();
-    assert!(auto_fill_plan(&app, p, dev, start, &[alice], 8, false, false).cells.is_empty());
-    assert!(auto_fill_plan(&app, p, dev, start, &[], 8, false, false).cells.is_empty());
+    assert!(auto_fill_plan(&app, p, dev, start, &[alice], 8, false, false, WeekId(0)).cells.is_empty());
+    assert!(auto_fill_plan(&app, p, dev, start, &[], 8, false, false, WeekId(0)).cells.is_empty());
 }
 
 /// Tasto destro sulla fascia milestone: «Aggiungi automatic effort…» sta
@@ -5289,7 +5289,7 @@ fn fills_stop_at_the_project_end() {
     // Aggiungi efforts per 5 settimane: solo 3 (0, 1, 2).
     assert_eq!(bulk_fill_weeks(&app, proj, alice, start, 5, None), vec![wk(0), wk(1), wk(2)]);
     // Automatico: 100h da 8h → solo 3 settimane, 76h restano fuori.
-    let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false);
+    let plan = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false, WeekId(0));
     assert_eq!((plan.cells.len(), plan.left), (3, 76));
     assert!(plan.cells.iter().all(|(w, ..)| *w <= wk(2)));
     // La dialog dell'inserimento multiplo lo dice.
@@ -5538,16 +5538,28 @@ fn auto_fill_can_go_backward_to_the_project_start() {
     app.projects.add_dev_effort(proj, dev, Effort(20));
     app.workers.set_week_status(alice, wk(5).0, Some(WeekStatus::Ferie));
     app.compute_sovra();
-    assert_eq!(fill_start(&app, proj), (wk(2), true));
+    assert_eq!(fill_start(&app, proj, WeekId(0)), (wk(2), FillFrom::Project));
     // Da 6 all'indietro: 6, (5 ferie), 4 e 3 parziale.
-    let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false);
+    let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false, WeekId(0));
     assert_eq!(plan.cells, vec![(wk(3), alice, 4), (wk(4), alice, 8), (wk(6), alice, 8)]);
     assert_eq!(plan.left, 0);
     // Da 3: solo 3 e 2 (inizio del progetto), 4h restano fuori.
-    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, true, false);
+    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, true, false, WeekId(0));
     assert_eq!((plan.cells, plan.left), (vec![(wk(2), alice, 8), (wk(3), alice, 8)], 4));
-    assert_eq!(auto_fill_limit_label(&app, proj, true), "inizio del progetto");
-    assert_eq!(auto_fill_limit_label(&app, proj, false), "fine del progetto");
+    assert_eq!(auto_fill_limit_label(&app, proj, true, WeekId(0)), "inizio del progetto");
+    assert_eq!(auto_fill_limit_label(&app, proj, false, WeekId(0)), "fine del progetto");
+    // Mai prima della settimana corrente: con «oggi» = 4, da 6 si riempiono
+    // solo 6 e 4 (5 ferie), il resto resta fuori.
+    assert_eq!(fill_start(&app, proj, wk(4)), (wk(4), FillFrom::Today));
+    assert_eq!(auto_fill_limit_label(&app, proj, true, wk(4)), "settimana corrente");
+    let plan = auto_fill_plan(&app, proj, dev, wk(6), &[alice], 8, true, false, wk(4));
+    assert_eq!((plan.cells, plan.left), (vec![(wk(4), alice, 8), (wk(6), alice, 8)], 4));
+    // Cliccata prima di oggi: niente da inserire all'indietro.
+    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, true, false, wk(4));
+    assert_eq!((plan.cells.len(), plan.left), (0, 20));
+    // In avanti «oggi» non conta.
+    let plan = auto_fill_plan(&app, proj, dev, wk(3), &[alice], 8, false, false, wk(10));
+    assert_eq!(plan.cells.first(), Some(&(wk(3), alice, 8)));
 
     // Dialog: «All'indietro» e Inserisci.
     let mut bf = BulkFill { effort_text: "8".into(), ..BulkFill::new(proj, dev, wk(6).0 as i32) };
@@ -5608,11 +5620,11 @@ fn fills_overwrite_or_keep_occupied_cells() {
     let cell = |app: &App, i| cell_effort(app, proj, dev, wk(i), alice);
 
     // Automatico: senza sovrascrivere salta la settimana 1.
-    let keep = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false);
+    let keep = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, false, WeekId(0));
     assert_eq!(keep.cells, vec![(wk(0), alice, 8), (wk(2), alice, 6)]);
     assert!(keep.overwritten.is_empty());
     // Sovrascrivendo le 6h si liberano: 20h in tutto, al posto delle 6.
-    let over = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, true);
+    let over = auto_fill_plan(&app, proj, dev, start, &[alice], 8, false, true, WeekId(0));
     assert_eq!(over.cells, vec![(wk(0), alice, 8), (wk(1), alice, 8), (wk(2), alice, 4)]);
     assert_eq!(over.overwritten, vec![(wk(1), alice, 6)]);
     assert_eq!(over.left, 0);
@@ -5923,7 +5935,7 @@ fn adaptive_auto_fill_fills_each_week_up_to_the_free_capacity() {
     app.workers.set_week_override(alice, wk(1).0, 20);
     app.compute_sovra();
     let max = app.workers.get_effective_max_hours(alice, wk(0).0) as usize;
-    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], AUTO_FILL_ADAPTIVE, false, false);
+    let plan = auto_fill_plan(&app, p, dev, start, &[alice, bob], AUTO_FILL_ADAPTIVE, false, false, WeekId(0));
     let mut expected = vec![(wk(0), alice, max), (wk(0), bob, max - 30), (wk(1), alice, 20), (wk(1), bob, max)];
     let mut left = 150 - expected.iter().map(|c| c.2).sum::<usize>();
     let mut i = 2;

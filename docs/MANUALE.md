@@ -776,7 +776,8 @@ dev ha un pianificato. La finestra **Inserimento automatico** chiede soltanto:
   capacità libera** (le sue ore massime di quella settimana meno quelle che ha
   già sugli altri progetti), nell'ordine dell'elenco, finché c'è da distribuire;
 - la **direzione**: **In avanti** (verso la fine del progetto, la scelta
-  iniziale) o **All'indietro** (verso l'inizio del progetto).
+  iniziale) o **All'indietro** (verso l'inizio del progetto, ma **mai prima
+  della settimana corrente**: nel passato non si inserisce nulla).
 
 In cima mostra quanto c'è da distribuire: *pianificato − ore già inserite* in
 griglia per quel dev (tutte le settimane, tutti i worker). Poi, dalla settimana
@@ -801,7 +802,8 @@ prende il nuovo valore, così alla fine il totale è proprio il pianificato; con
 → ultima) e quante ne prende ciascun worker. Come l'inserimento multiplo, **si
 ferma alla fine del progetto** (o della griglia, se non c'è data di fine) e non
 va oltre; all'indietro si ferma allo stesso modo all'**inizio del progetto** (o
-della griglia). In quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
+della griglia) o, se viene prima, alla **settimana corrente** (inclusa): se si
+clicca una settimana già passata, all'indietro non c'è niente da inserire. In quel caso dice quante ore restano fuori. Se le ore inserite coprono già il pianificato, non c'è
 niente da distribuire e **Inserisci** resta disattivato.
 
 ### Cancellare gli effort di più settimane
