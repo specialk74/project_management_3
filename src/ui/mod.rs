@@ -40,6 +40,7 @@ mod pies;
 mod registry;
 mod rules;
 mod saturation;
+mod swap;
 mod toasts;
 mod toolbar;
 mod worker_effort;
@@ -55,6 +56,7 @@ pub(crate) use pies::*;
 pub(crate) use registry::*;
 pub(crate) use rules::*;
 pub(crate) use saturation::*;
+pub(crate) use swap::*;
 pub(crate) use toasts::*;
 pub(crate) use toolbar::*;
 pub(crate) use worker_effort::*;
@@ -400,6 +402,147 @@ pub(crate) fn bulk_week_popup(app: &App, week: usize, date: String) -> Popup {
 pub(crate) struct CloneProject {
     pub src: Option<ProjectId>,
     pub search: String,
+}
+
+/// Stato della finestra «Scambia worker» (Aggiungi ▸ Scambia worker…): a
+/// sinistra il worker da sostituire, al centro quello che prende il suo
+/// posto (uno solo per parte), a destra i progetti e, per ognuno, i dev
+/// (`ticked` = coppie progetto × dev), in basso da
+/// quando (`from_date` = false ⇒ dalla settimana corrente, altrimenti dalla
+/// settimana che contiene `date`, in giorni).
+pub(crate) struct SwapWorker {
+    pub from: Option<WorkerId>,
+    pub to: Option<WorkerId>,
+    pub ticked: HashSet<(ProjectId, DevId)>,
+    pub from_search: String,
+    pub to_search: String,
+    pub from_date: bool,
+    pub date: i32,
+}
+
+impl Default for SwapWorker {
+    fn default() -> Self {
+        Self {
+            from: None,
+            to: None,
+            ticked: HashSet::new(),
+            from_search: String::new(),
+            to_search: String::new(),
+            from_date: false,
+            date: today_days(),
+        }
+    }
+}
+
+impl SwapWorker {
+    /// Prima settimana dello scambio (inclusa): la corrente con «Da oggi in
+    /// avanti», altrimenti il lunedì della data scelta.
+    pub fn start(&self) -> WeekId {
+        if self.from_date {
+            WeekId(local_to_days(&primo_giorno_settimana_corrente(&days_to_local(self.date))) as usize)
+        } else {
+            current_week_id()
+        }
+    }
+}
+
+/// Un dev di un progetto in cui lo scambio sposterebbe `cells` celle per
+/// `hours` ore.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SwapDev {
+    pub dev: DevId,
+    pub hours: usize,
+    pub cells: usize,
+}
+
+/// Un progetto proposto dallo scambio, con i suoi dev coinvolti.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SwapProject {
+    pub proj: ProjectId,
+    pub devs: Vec<SwapDev>,
+}
+
+impl SwapProject {
+    pub fn hours(&self) -> usize {
+        self.devs.iter().map(|d| d.hours).sum()
+    }
+}
+
+/// Progetti in cui `from` ha almeno una cella (anche a effort 0) dalla
+/// settimana `start` (inclusa) in poi, in ordine di elenco, e per ognuno i
+/// dev (ordine del progetto) con le ore e il numero di celle che lo scambio
+/// sposterebbe. Tutti gli stati.
+pub(crate) fn swap_worker_projects(app: &App, from: WorkerId, start: WeekId) -> Vec<SwapProject> {
+    app.projects
+        .list()
+        .into_iter()
+        .filter_map(|(proj, _)| {
+            let devs: Vec<SwapDev> = app
+                .projects
+                .list_devs(proj)
+                .into_iter()
+                .filter_map(|dev| {
+                    let sd = app.projects.get_single_dev(proj, dev)?;
+                    let (mut hours, mut cells) = (0, 0);
+                    for w in sd.get_weeks().into_iter().filter(|w| *w >= start) {
+                        if let Some(h) = cell_effort(app, proj, dev, w, from) {
+                            hours += h;
+                            cells += 1;
+                        }
+                    }
+                    (cells > 0).then_some(SwapDev { dev, hours, cells })
+                })
+                .collect();
+            (!devs.is_empty()).then_some(SwapProject { proj, devs })
+        })
+        .collect()
+}
+
+/// Scambio di worker: in ogni coppia progetto × dev di `targets`, ogni cella
+/// di `from` (anche a effort 0) dalla settimana `start` (inclusa) in poi passa a `to`
+/// con le stesse ore; se `to` ha già una cella lì le ore **si sommano** e la
+/// sua nota resta (la nota di `from` la sostituisce solo se era vuota).
+/// Ritorna (celle spostate, progetti toccati).
+pub(crate) fn swap_worker(
+    app: &mut App,
+    from: WorkerId,
+    to: WorkerId,
+    targets: &[(ProjectId, DevId)],
+    start: WeekId,
+) -> (usize, usize) {
+    if from == to || from == WORKER_ID_ZERO || to == WORKER_ID_ZERO {
+        return (0, 0);
+    }
+    let note_of = |app: &App, proj, dev, w, wid| {
+        app.projects
+            .get_single_dev(proj, dev)
+            .and_then(|sd| sd.get_all(w))
+            .and_then(|sew| sew.worker_id.get(&wid).map(|e| e.get_note()))
+            .unwrap_or_default()
+    };
+    let mut cells = 0;
+    let mut touched: HashSet<ProjectId> = HashSet::new();
+    for &(proj, dev) in targets {
+        let weeks: Vec<WeekId> = app
+            .projects
+            .get_single_dev(proj, dev)
+            .map(|sd| sd.get_weeks().into_iter().filter(|w| *w >= start).collect())
+            .unwrap_or_default();
+        for w in weeks {
+            let Some(h) = cell_effort(app, proj, dev, w, from) else { continue };
+            let old_note = note_of(app, proj, dev, w, from);
+            let existing = cell_effort(app, proj, dev, w, to);
+            let their_note = note_of(app, proj, dev, w, to);
+            app.projects.remove_worker_effort(proj, dev, w, from);
+            app.projects.add_effort(proj, dev, w, to, Effort(existing.unwrap_or(0) + h));
+            if their_note.trim().is_empty() && !old_note.trim().is_empty() {
+                app.projects.set_note(proj, dev, w, to, &old_note);
+            }
+            cells += 1;
+            touched.insert(proj);
+        }
+    }
+    (cells, touched.len())
 }
 
 /// Tripletta della copia: quella dell'originale più «Copia» (solo «Copia» se
@@ -1357,6 +1500,8 @@ pub struct UiState {
     milestone_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
+    // finestra «Scambia worker» (Aggiungi ▸ Scambia worker…)
+    swap_worker: Option<SwapWorker>,
     // Annulla/Ripeti: cronologia e «c'è stata una modifica in questo frame»
     // (messo da `mark_changed`, consumato dopo le azioni da `record_undo`).
     undo: UndoHistory,
@@ -1569,6 +1714,14 @@ pub(crate) enum Action {
     /// Clona completamente un progetto (Aggiungi ▸ Clona progetto…).
     CloneProject {
         src: ProjectId,
+    },
+    /// Sostituisce `from` con `to` nelle coppie progetto × dev date, dalla
+    /// settimana `start` (Aggiungi ▸ Scambia worker…).
+    SwapWorker {
+        from: WorkerId,
+        to: WorkerId,
+        targets: Vec<(ProjectId, DevId)>,
+        start: WeekId,
     },
     AddWorker(String),
     AddDev(String),
@@ -2501,6 +2654,7 @@ impl eframe::App for PjmApp {
             rule_warnings_window(ui.ctx(), app, state);
             rules_import_report_window(ui.ctx(), state);
             clone_project_window(ui.ctx(), app, state, &mut actions);
+            swap_worker_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state, &mut actions);
@@ -3194,6 +3348,22 @@ impl PjmApp {
                     self.ui.jump_to_project = Some(new);
                     let label = project_label(&self.app, new);
                     self.ui.toast_ok(format!("Progetto clonato: {label}"));
+                }
+            }
+            Action::SwapWorker { from, to, targets, start } => {
+                let (cells, touched) = swap_worker(&mut self.app, from, to, &targets, start);
+                let (a, b) = (
+                    self.app.workers.get_name_by_id(from).to_string(),
+                    self.app.workers.get_name_by_id(to).to_string(),
+                );
+                if cells > 0 {
+                    self.mark_changed();
+                    self.ui.toast_ok(format!(
+                        "Scambio worker: {a} → {b}, {cells} celle in {touched} progetti dal {}.",
+                        week_label(start.0 as i32)
+                    ));
+                } else {
+                    self.ui.toast_warn(format!("Scambio worker: nessuna cella di {a} da scambiare."));
                 }
             }
             Action::AddWorker(name) => {

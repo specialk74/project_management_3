@@ -165,6 +165,10 @@ pub(crate) fn toolbar(
                     state.clone_project = Some(CloneProject::default());
                     ui.close_kind(egui::UiKind::Menu);
                 }
+                if ui.button("Scambia worker…").clicked() {
+                    state.swap_worker = Some(SwapWorker::default());
+                    ui.close_kind(egui::UiKind::Menu);
+                }
                 if ui.button("Worker, dev e categorie…").clicked() {
                     state.show_registry = true;
                     ui.close_kind(egui::UiKind::Menu);

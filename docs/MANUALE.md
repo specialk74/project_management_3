@@ -424,6 +424,8 @@ Da sapere:
 - **+ Progetto** — crea un nuovo progetto vuoto.
 - **Clona progetto…** — crea una copia completa di un progetto esistente (vedi
   «Clonare un progetto»).
+- **Scambia worker…** — sostituisce un worker con un altro nei progetti scelti,
+  da oggi o da una data in avanti (vedi §8, «Scambiare un worker»).
 - **Worker, dev e categorie…** — rinominare, nascondere o eliminare worker, dev e
   categorie (vedi §3, «Rinominare, nascondere, eliminare»).
 - **Regole di automazione…** — regole che posizionano da sole le milestone (vedi
@@ -843,6 +845,37 @@ celle (worker, settimana, ore): **Sì, cancella** le toglie del tutto — ore,
 anche le assegnazioni a 0, e la nota della cella —, **Annulla** torna alla
 finestra. Effort pianificato, nota del dev e % dichiarata non si toccano. Si
 può annullare con `Cmd/Ctrl+Z`.
+
+### Scambiare un worker
+**Aggiungi ▸ Scambia worker…** passa il lavoro di un worker a un altro (per
+esempio quando una persona lascia un progetto e un collega la sostituisce). La
+finestra **Scambia worker** ha tre colonne, ognuna con la sua ricerca:
+
+- a **sinistra** il **worker da sostituire**: i worker visibili negli elenchi
+  (spunta «Elenchi» in Filtri ▸ Worker). Se ne sceglie **uno solo**: spuntato lui, gli altri si
+  disattivano (togliendo la spunta si riattivano);
+- al **centro** il worker che **lo sostituisce**: i worker degli elenchi, attivi
+  solo dopo aver scelto quello a sinistra; anche qui **uno solo**, e il worker
+  scelto a sinistra non si può prendere;
+- a **destra** i **progetti** in cui il worker da sostituire ha effort (anche
+  solo un'assegnazione a 0) dal periodo scelto in poi, di qualunque stato, e
+  sotto ognuno, rientrati, i **dev** in cui ha quelle ore; accanto a progetti e
+  dev le sue ore, in cima **Select All**. Si spuntano i dev da scambiare: la
+  spunta del progetto prende o toglie tutti i suoi dev (se ne sono spuntati
+  solo alcuni mostra uno stato intermedio).
+
+In basso si sceglie da quando: **Da oggi in avanti** (dalla settimana
+corrente, inclusa) oppure **Da una data in avanti** con il calendario (dalla
+settimana che contiene la data, inclusa). Il riepilogo dice quante celle e
+quante ore passano, in quanti progetti e dev.
+
+**OK** cerca nei dev spuntati di ogni progetto le celle del worker da
+sostituire da quella settimana in poi e le passa all'altro con **le stesse
+ore** (anche le assegnazioni a 0) e con la loro nota; le settimane precedenti e
+i dev e progetti non spuntati restano come sono. Se il worker che subentra ha **già**
+una cella sullo stesso dev nella stessa settimana, le ore **si sommano** e
+resta la sua nota (quella dell'altro la prende solo se era vuota): la finestra
+avvisa prima quante sono. Si può annullare con `Cmd/Ctrl+Z`.
 
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,

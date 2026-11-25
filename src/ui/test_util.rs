@@ -59,6 +59,23 @@ pub(crate) fn text_pos(out: &egui::FullOutput, needle: &str) -> Option<egui::Pos
     })
 }
 
+/// Centri di **tutte** le occorrenze del testo `needle` nel frame, da
+/// sinistra a destra (per uno stesso nome in più colonne).
+pub(crate) fn text_positions(out: &egui::FullOutput, needle: &str) -> Vec<egui::Pos2> {
+    let mut v: Vec<egui::Pos2> = out
+        .shapes
+        .iter()
+        .filter_map(|cs| match &cs.shape {
+            egui::epaint::Shape::Text(t) if t.galley.job.text == needle => {
+                Some(egui::Rect::from_min_size(t.pos, t.galley.size()).center())
+            }
+            _ => None,
+        })
+        .collect();
+    v.sort_by(|a, b| a.x.total_cmp(&b.x));
+    v
+}
+
 /// Rettangolo del testo `needle` disegnato nel frame (il primo trovato),
 /// per cliccare accanto a un'etichetta (es. la spunta alla sua sinistra).
 pub(crate) fn text_rect(out: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {

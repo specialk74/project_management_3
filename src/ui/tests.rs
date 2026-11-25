@@ -885,6 +885,158 @@ fn clone_project_window_lists_all_projects() {
     assert!(state.clone_project.is_some());
 }
 
+/// Scambio di worker: dalla settimana di partenza (inclusa) ogni cella di
+/// Alice nelle coppie progetto × dev scelte passa a Bob con le stesse ore
+/// (anche a 0, con la nota); dove Bob ha già una cella le ore si sommano e la
+/// sua nota resta; le settimane prima, i dev e i progetti non scelti restano
+/// com'erano.
+#[test]
+fn swap_worker_moves_cells_and_sums_where_the_other_is_already_there() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let fe = app.devs.add("Frontend");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("AAA"), None);
+    let q = app.projects.add("y", Some("BBB"), None);
+    app.projects.add_dev(p, fe);
+    app.projects.add_dev(p, be);
+    app.projects.add_dev(q, fe);
+    let base = app.start_week;
+    let wk = |i: usize| WeekId(base.0 + i * WEEK_STEP);
+    app.projects.add_effort(p, fe, wk(0), alice, Effort(8)); // prima della partenza
+    app.projects.add_effort(p, fe, wk(1), alice, Effort(8));
+    app.projects.set_note(p, fe, wk(1), alice, "nota di Alice");
+    app.projects.add_effort(p, be, wk(2), alice, Effort(0)); // solo assegnata
+    app.projects.add_effort(p, fe, wk(3), alice, Effort(6));
+    app.projects.add_effort(p, fe, wk(3), bob, Effort(4)); // già di Bob: somma
+    app.projects.set_note(p, fe, wk(3), bob, "nota di Bob");
+    app.projects.add_effort(q, fe, wk(1), alice, Effort(5)); // progetto non scelto
+
+    let found = swap_worker_projects(&app, alice, wk(1));
+    let sd = |dev, hours, cells| SwapDev { dev, hours, cells };
+    assert_eq!(
+        found,
+        vec![
+            SwapProject { proj: p, devs: vec![sd(fe, 14, 2), sd(be, 0, 1)] },
+            SwapProject { proj: q, devs: vec![sd(fe, 5, 1)] },
+        ]
+    );
+    assert_eq!(found[0].hours(), 14);
+    assert_eq!(swap_conflicts(&app, alice, bob, &[(p, fe)], wk(1)), 1);
+    // Solo il Frontend: il Backend resta ad Alice.
+    assert_eq!(swap_worker(&mut app, alice, bob, &[(p, fe)], wk(1)), (2, 1));
+    assert_eq!(cell_effort(&app, p, be, wk(2), alice), Some(0), "dev non scelto");
+    assert_eq!(swap_worker(&mut app, alice, bob, &[(p, be)], wk(1)), (1, 1));
+    let cell = |w, who| cell_effort(&app, p, fe, w, who);
+    assert_eq!((cell(wk(0), alice), cell(wk(0), bob)), (Some(8), None), "prima della partenza");
+    assert_eq!((cell(wk(1), alice), cell(wk(1), bob)), (None, Some(8)));
+    assert_eq!(cell_effort(&app, p, be, wk(2), bob), Some(0), "anche a effort 0");
+    assert_eq!((cell(wk(3), alice), cell(wk(3), bob)), (None, Some(10)), "ore sommate");
+    let note = |w, who| {
+        app.projects.get_single_dev(p, fe).and_then(|sd| sd.get_all(w)).and_then(|s| s.worker_id.get(&who).map(|e| e.get_note()))
+    };
+    assert_eq!(note(wk(1), bob).as_deref(), Some("nota di Alice"));
+    assert_eq!(note(wk(3), bob).as_deref(), Some("nota di Bob"));
+    assert_eq!(cell_effort(&app, q, fe, wk(1), alice), Some(5), "progetto non scelto");
+    assert_eq!(swap_worker(&mut app, bob, bob, &[(p, fe)], wk(0)), (0, 0), "stesso worker: niente");
+}
+
+/// Finestra «Scambia worker»: scelto il worker a sinistra gli altri si
+/// spengono e al centro lui non si può scegliere; a destra solo i progetti
+/// in cui ha effort da oggi e, sotto, i loro dev, con Select All; togliendo
+/// un dev resta fuori solo quello; «OK» manda lo scambio e l'azione lo esegue.
+#[test]
+fn swap_worker_window_picks_one_worker_per_side_and_the_projects() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    app.workers.add("Carla");
+    // Tolto dagli elenchi: non compare in nessuna delle due colonne.
+    let dario = app.workers.add("Dario");
+    app.workers.set_shown_in_find(dario, false);
+    let fe = app.devs.add("Frontend");
+    let be = app.devs.add("Backend");
+    let base = app.start_week;
+    let wk = |i: usize| WeekId(base.0 + i * WEEK_STEP);
+    let mut projs = Vec::new();
+    for t in ["AAA", "BBB", "CCC"] {
+        let p = app.projects.add(t, Some(t), None);
+        app.projects.add_dev(p, fe);
+        projs.push(p);
+    }
+    app.projects.add_dev(projs[0], be);
+    app.projects.add_effort(projs[0], fe, wk(0), alice, Effort(8));
+    app.projects.add_effort(projs[0], be, wk(1), alice, Effort(3));
+    app.projects.add_effort(projs[1], fe, wk(2), alice, Effort(4));
+    // Solo nel passato: non è in elenco «da oggi».
+    app.projects.add_effort(projs[2], fe, WeekId(base.0 - WEEK_STEP), alice, Effort(8));
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1400.0, 900.0)), ..Default::default() };
+    let mut state = UiState { swap_worker: Some(SwapWorker::default()), ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| swap_worker_window(ui.ctx(), &app, state, actions))
+    };
+    // Clic sull'occorrenza `nth` (da sinistra) di `label`, dopo che la
+    // finestra si è assestata (le prime volte si sposta per qualche frame).
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, label: &str, nth: usize| {
+        for _ in 0..3 {
+            frame(state, actions, None);
+        }
+        let out = frame(state, actions, None);
+        let pos = text_positions(&out, label)[nth];
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, Some(ev));
+        }
+        frame(state, actions, None)
+    };
+    let sw = |state: &UiState| (state.swap_worker.as_ref().unwrap().from, state.swap_worker.as_ref().unwrap().to);
+
+    let out = click(&mut state, &mut actions, "Alice", 0);
+    assert_eq!(sw(&state), (Some(alice), None));
+    assert!(!drawn_texts(&out).iter().any(|t| t == "Dario"), "solo i worker visibili");
+    assert!(drawn_texts(&out).iter().any(|t| t == "AAA") && drawn_texts(&out).iter().any(|t| t == "BBB"));
+    assert!(!drawn_texts(&out).iter().any(|t| t == "CCC"), "solo i progetti con effort da oggi");
+    click(&mut state, &mut actions, "Bob", 0);
+    assert_eq!(sw(&state), (Some(alice), None), "a sinistra gli altri sono spenti");
+    click(&mut state, &mut actions, "Alice", 1);
+    assert_eq!(sw(&state), (Some(alice), None), "al centro il worker scelto a sinistra è spento");
+    click(&mut state, &mut actions, "Bob", 1);
+    assert_eq!(sw(&state), (Some(alice), Some(bob)));
+    click(&mut state, &mut actions, "Carla", 1);
+    assert_eq!(sw(&state), (Some(alice), Some(bob)), "al centro uno solo");
+    let out = click(&mut state, &mut actions, "Select All", 0);
+    let summary = format!("Alice → Bob: 3 celle (15h) in 2 progetti (3 dev), dalla settimana {}.", week_label(base.0 as i32));
+    assert!(drawn_texts(&out).contains(&summary), "{summary}: {:?}", drawn_texts(&out));
+    // Tolto il Backend di AAA: resta fuori solo lui.
+    let out = click(&mut state, &mut actions, "Backend", 0);
+    let summary = format!("Alice → Bob: 2 celle (12h) in 2 progetti (2 dev), dalla settimana {}.", week_label(base.0 as i32));
+    assert!(drawn_texts(&out).contains(&summary), "{summary}: {:?}", drawn_texts(&out));
+    assert!(actions.is_empty());
+    click(&mut state, &mut actions, "OK", 0);
+    assert!(state.swap_worker.is_none());
+    assert!(
+        matches!(actions.as_slice(), [Action::SwapWorker { from, to, targets, start }]
+            if *from == alice && *to == bob && targets == &vec![(projs[0], fe), (projs[1], fe)] && *start == current_week_id()),
+        "{} azioni",
+        actions.len()
+    );
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for a in actions {
+        pjm.apply(a);
+    }
+    let app = &pjm.app;
+    assert_eq!(cell_effort(app, projs[0], fe, wk(0), bob), Some(8));
+    assert_eq!(cell_effort(app, projs[1], fe, wk(2), bob), Some(4));
+    assert_eq!(cell_effort(app, projs[0], be, wk(1), alice), Some(3), "dev non spuntato");
+    assert_eq!(cell_effort(app, projs[2], fe, WeekId(base.0 - WEEK_STEP), alice), Some(8));
+    assert!(pjm.ui.changed);
+}
+
 /// Progetto sull'intera griglia con un effort di Alice nella prima
 /// colonna; ritorna anche la settimana (giorno) di quella colonna.
 fn highlight_fixture() -> (App, WorkerId, i32) {

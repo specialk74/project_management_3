@@ -74,7 +74,8 @@ references; the UI lives entirely in the `src/ui/` module.
     filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app), `matrix.rs` (matrice
     progetti × worker: `matrix_select_window` + `matrix_window`, plus the shared
     `worker_pick_window`), `pies.rs` (torte dev/categorie per worker:
-    `pies_select_window` + `pies_window`), `worker_effort.rs` (finestra «Effort per
+    `pies_select_window` + `pies_window`), `swap.rs` (`swap_worker_window`, Aggiungi ▸
+    Scambia worker…), `worker_effort.rs` (finestra «Effort per
     worker», vedi Vista; data in `src/worker_effort.rs`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
     a column lives in a **private** helper of `grid.rs` (not re-exported) —
@@ -360,7 +361,7 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `undo_flash_fades_in_and_out`, `undo_scrolls_to_the_change_and_makes_it_glow`.
   Tests `undo_history_records_undoes_and_redoes`,
   `undo_and_redo_restore_the_data_but_keep_project_visibility`.
-- **Aggiungi**: + Progetto, **Clona progetto…**, **Worker, dev e categorie…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
+- **Aggiungi**: + Progetto, **Clona progetto…**, **Scambia worker…**, **Worker, dev e categorie…**, and `add_field` inputs for Worker / Dev / Categoria / Milestone.
   - **Worker, dev e categorie…** (`src/ui/registry.rs`, `registry_window`;
     `UiState.show_registry` / `registry_tab: RegistryTab` / `registry_search` /
     `registry_names` = name being edited per `(tab, id)`, committed on
@@ -399,6 +400,34 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     `registry_window_shows_usage_and_deletes_only_unused`,
     `registry_actions_rename_hide_delete_and_clean_the_session`,
     `hidden_dev_is_not_offered_to_projects_that_lack_it`.
+  - **Scambia worker…** → `UiState.swap_worker: Option<SwapWorker { from, to,
+    ticked: HashSet<(ProjectId, DevId)>, from_search, to_search, from_date, date }>` → `swap_worker_window`
+    (`src/ui/swap.rs`): three columns via `horizontal_top` with fixed widths and
+    `add_space(SWAP_GAP)` between them — **not** vertical `ui.separator()`s, which
+    take the whole available height and make an auto-sized window grow every
+    frame. Left and centre = `show_in_find` workers only (user's request; a
+    left choice no longer listed is dropped), centre enabled once the left
+    one is chosen; both single-choice via
+    `single_worker_column` (ticking one disables the others; the centre also
+    disables the left choice). Right = `swap_worker_projects(app, from, start)
+    -> Vec<SwapProject { proj, devs: Vec<SwapDev { dev, hours, cells }> }>`
+    (cells incl. effort 0 from `start`, every status, `Projects::list` order,
+    project's dev order): a project row (checkbox `.indeterminate` when only
+    some devs are ticked; toggles all its devs via `set_ticks`) with its devs
+    indented below (user's request: choose the dev per project) + Select All;
+    `ticked` keeps only listed pairs. Bottom: «Da oggi in avanti» (`current_week_id()`) / «Da una data in
+    avanti» + `DatePickerButton` → `SwapWorker::start()` = Monday of the date.
+    Summary + `swap_conflicts` («N celle hanno già Bob: le ore si sommano»). OK →
+    `Action::SwapWorker { from, to, targets: Vec<(ProjectId, DevId)>, start }` →
+    `swap_worker(app, …) -> (cells, projects)` (`mod.rs`): every cell of `from`
+    (ticked project × dev pairs, week ≥ start)
+    moves to `to` with the same hours and its note; where `to` already has a
+    cell the hours **add up** (user's choice) and `to`'s note stays (taken from
+    `from` only if empty); toast. Tests
+    `swap_worker_moves_cells_and_sums_where_the_other_is_already_there`,
+    `swap_worker_window_picks_one_worker_per_side_and_the_projects` (it settles
+    3 frames before each click: the window still moves for a few frames;
+    `text_positions` in `test_util.rs` finds the same name in both columns).
   - **Clona progetto…** → `UiState.clone_project: Option<CloneProject>` →
     `clone_project_window` (`dialogs.rs`: all projects incl. closed, listed and
     searched by tripletta only — `project_label`, name as fallback —, no fields)
