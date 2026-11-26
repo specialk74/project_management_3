@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~48.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 458 verdi |
+| Test | 275 verdi | 467 verdi |
 
 ## Ordine consigliato
 
@@ -34,6 +34,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 7. ~~**B10** — a parte: la modifica più invasiva~~ ✅ fatto
 8. **A13** — migrazione da chrono a jiff: aperta, da valutare
 9. ~~**A14, B11–B13**~~ ✅ fatto · **E5** — proposta, da approvare
+10. **A15** — aggiornamento printpdf 0.13.0: proposta, da approvare
 
 ---
 
@@ -165,6 +166,19 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
   per indicizzare `m.dev_hours`). _Impatto: Nullo · Rischio: Nullo._ _(approvato
   il 2026-11-13)_ _(fatto: `m.dev_hours.iter().enumerate().take(n)`, stesso
   comportamento; clippy di nuovo a 0 warning, 347 test verdi.)_
+
+- [ ] **A15. Aggiornamento printpdf 0.12.14 → 0.13.0** (proposta del
+  2026-11-26, da approvare), fuori dal range di `Cargo.toml`. Provato su una
+  copia del progetto: cambia solo la versione in `Cargo.toml`, **nessuna
+  modifica al codice** (0 errori, build e clippy 0 warning), 467 test verdi.
+  Con lei salgono azul-core/azul-css/azul-layout 0.0.20 → 0.0.21 e
+  **rust-fontconfig 5.0.2 → 5.2.0** (oggi bloccata proprio da printpdf
+  0.12); nessun'altra dipendenza cambia. `cargo audit`: nessuna
+  vulnerabilità, gli stessi 6 avvisi «non più mantenuto». Non verificato
+  l'aspetto dei PDF (i test controllano che siano validi, non che siano
+  uguali). _Impatto: Basso · Rischio: Basso._ **Da provare a mano dopo
+  l'applicazione**: un export per tipo (Gantt singolo e multiplo, Andamento,
+  Report, Matrice, Torte, Effort per worker) confrontato con quello di prima.
 
 - [ ] **A13. Migrazione da `chrono` a `jiff`** (da valutare, non approvata).
   `cargo audit` del 2026-11-17 segnala **chrono 0.4.45 «non più mantenuto»**
@@ -629,3 +643,19 @@ con il loro numero originale (M = `MIGLIORAMENTI.md`).
   A13). Restano indietro jiff 0.2.46 (1.0.2 bloccata da egui_extras 0.37) e
   rust-fontconfig 5.0.2 (5.1.0 esclusa da azul-core). Build e clippy 0
   warning, 459 test verdi. Da provare a mano: un export PDF (allsorts).
+- **2026-11-23** — `cargo update`: solo dipendenze indirette (ahash 0.8.13,
+  pathfinder_simd 0.5.7; tolti getrandom 0.3.4, r-efi, wasip2, wit-bindgen).
+  `Cargo.toml` invariato. Nessuna vulnerabilità, gli stessi 6 avvisi. Restano
+  indietro jiff 0.2.46 (1.0.2, A13) e rust-fontconfig 5.0.2 (5.1.0, printpdf).
+- **2026-11-24** — `cargo update`: crc32fast 1.5.6, litrs 1.1.0, rangemap
+  1.9.0, zerocopy 0.8.65, zlib-rs 0.6.9 (tutte indirette). Nessuna
+  vulnerabilità, gli stessi 6 avvisi.
+- **2026-11-25** — `cargo update`: ahash 0.8.14, sha2 0.11.2, toml_edit
+  0.25.21, toml_parser 1.1.7 (tutte indirette). Nessuna vulnerabilità, gli
+  stessi 6 avvisi; rust-fontconfig 5.2.0 disponibile, ancora bloccata.
+- **2026-11-26** — `cargo update`: allocator-api2 0.2.22, zerocopy 0.8.66
+  (indirette); `Cargo.toml` invariato. Uscito **printpdf 0.13.0**, fuori range:
+  provato su una copia (compila senza modifiche, 467 test verdi, sblocca
+  rust-fontconfig 5.2.0) e aggiunta **A15**, da approvare. Nessuna
+  vulnerabilità, gli stessi 6 avvisi. jiff resta 0.2.46 (1.0.3, A13). Build e
+  clippy 0 warning, 467 test verdi.
