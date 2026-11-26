@@ -101,7 +101,7 @@ references; the UI lives entirely in the `src/ui/` module.
   «Automation rules» below; window in `src/ui/rules.rs`; text export/import in
   `src/rules_text.rs`.
 - `src/view_csv.rs` — CSV export of the views (an «Esporta CSV…» button in Matrice,
-  Torte, Saturazione, Effort per worker): `matrix_csv` (row = project × worker × cell
+  Torte, Saturazione, Effort per worker, Domanda e capacità — see that view): `matrix_csv` (row = project × worker × cell
   dev: hours + `Worker share %`), `pies_csv` (row = worker × dev × project, with Priority and
   Status: Hours/Done/Planned) + `pies_capacity_csv(pies, split)` (row = worker: Hours, Done,
   Planned, Capacity, Used %, Future capacity, Free hours — the last two empty unless
@@ -908,9 +908,18 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `dm_rows_per_page()`, legend + «Total» row on every page; `dm_cell_shapes`
   mirrors `draw_cell`) → `save_pdf_dialog`. Tests in `demand.rs`,
   `demand_window_shows_assigned_and_unassigned_per_dev_and_month`,
-  `demand_pdf_has_the_table_and_splits_rows_and_columns`. Phases 2 and 4
-  (capacity per dev, scenarios) are still open in MIGLIORAMENTI #60; phase 3
-  has the PDF, not yet the CSV.
+  `demand_pdf_has_the_table_and_splits_rows_and_columns`. Phase 4 (scenarios)
+  is still open in MIGLIORAMENTI #60.
+  **CSV (phase 3)**: «Esporta CSV…» → `Action::ExportDemandCsv { from, to }` →
+  two files via `save_multi_export_dialog` («domanda_capacita»):
+  `view_csv::demand_csv` (`DEMAND_HEADER`, row = dev × period × project of the
+  cell) and `demand_capacity_csv` (`DEMAND_CAPACITY_HEADER`, row = dev × period;
+  Capacity / Gap empty for No end / Overdue and undeclared devs) — capacity in
+  a separate file because it isn't per project (a pivot would sum it again).
+  `Period` = `yyyy-mm` / `No end` / `Overdue` (`demand_period`); fractional
+  hours via `hours_dec` (1 decimal, **decimal comma**, integers bare). Tests
+  `demand_csv_has_project_rows_and_capacity_rows`,
+  `hours_use_a_decimal_comma`.
   **Capacity (phase 2)**: `Worker.dev_shares: Vec<(DevId, u32)>` (`#[serde(default,
   skip_serializing_if = "Vec::is_empty")]`, old files load) via
   `Workers::dev_shares/dev_share/set_dev_shares` (drops 0 and duplicates, sorted,

@@ -380,8 +380,8 @@ restano dentro la finestra principale.
   progetti e nel periodo scelti non ci sono ore compare un avviso e il file non
   viene creato.
 
-  Anche le viste **Matrice**, **Torte**, **Saturazione** ed **Effort per worker**
-  (menù Vista) hanno un pulsante **Esporta CSV…** che esporta i dati della
+  Anche le viste **Matrice**, **Torte**, **Saturazione**, **Effort per worker** e
+  **Domanda e capacità** (menù Vista) hanno un pulsante **Esporta CSV…** che esporta i dati della
   vista, con i suoi filtri (vedi le rispettive sezioni). Il formato del file è
   lo stesso.
 - **Esci** — chiude il programma. Se ci sono modifiche non salvate, chiede
@@ -2210,6 +2210,24 @@ una pagina: fino a **14 dev** e un anno di mesi con le colonne «No end»,
 continua sulle pagine dopo; se i mesi sono troppi per la larghezza, le colonne si
 dividono in più pagine. La riga **Total**
 c'è su ogni pagina; la colonna **Total** sta nell'ultimo blocco di colonne.
+
+**Esporta CSV…** salva, con una sola scelta del nome, **due file** per Excel (stesso
+formato degli altri CSV: `;`, intestazioni in inglese), con i filtri della
+finestra:
+- **`…_demand.csv`** — la domanda, **una riga per dev, periodo e progetto**: `Dev`,
+  `Period` (il mese come `2026-11`, oppure `No end` / `Overdue`), `Year`, `Month`,
+  `Tripletta`, `Project`, `Category`, `Priority`, `Status`, `Assigned`, `To assign`,
+  `Demand`. Sommando per Dev e Period si ritrovano le celle della finestra;
+- **`…_capacity.csv`** — **una riga per dev e periodo**: `Assigned`, `To assign`,
+  `Demand`, `Capacity`, `Gap` (capacità − domanda, negativo = mancano ore) e
+  `Capacity declared` (`Yes` / `No`). Capacity e Gap sono vuoti nelle colonne
+  No end / Overdue e per i dev senza capacità dichiarata.
+
+La capacità sta in un file a parte perché non appartiene a nessun progetto: in
+una tabella pivot, ripetuta sulle righe dei progetti, verrebbe sommata più
+volte. Le ore da assegnare sono distribuite sulle settimane e quindi possono
+avere decimali: sono scritte con una cifra e la **virgola** (`13,3`), come le
+legge Excel in italiano.
 
 ---
 

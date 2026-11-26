@@ -1,5 +1,5 @@
 //! Export CSV delle viste (pulsante «Esporta CSV…» in Matrice, Torte,
-//! Saturazione ed Effort per worker): gli stessi dati mostrati dalla finestra,
+//! Saturazione, Effort per worker e Domanda e capacità): gli stessi dati mostrati dalla finestra,
 //! filtri compresi, in formato «lungo» (una riga per valore, le colonne
 //! descrittive ripetute) adatto alle tabelle pivot. Il testo CSV (BOM, `;`,
 //! CRLF, virgolette) è quello di `effort_csv::csv_text`; intestazioni in
@@ -131,6 +131,110 @@ pub fn pies_capacity_rows(pies: &[WorkerPie], split: bool) -> Vec<Vec<String>> {
 pub fn pies_capacity_csv(pies: &[WorkerPie], split: bool) -> (String, usize) {
     let rows = pies_capacity_rows(pies, split);
     (csv_text(&PIES_CAPACITY_HEADER, &rows), rows.len())
+}
+
+/// Ore con una cifra decimale e la **virgola** (come il `;`, per Excel in
+/// italiano); intere senza decimali. Per le ore da assegnare, che sono
+/// spalmate sulle settimane e quindi frazionarie.
+pub fn hours_dec(h: f64) -> String {
+    let r = (h * 10.0).round() / 10.0;
+    if r.fract() == 0.0 { format!("{}", r as i64) } else { format!("{r:.1}").replace('.', ",") }
+}
+
+/// Colonne «Period», «Year», «Month» di una colonna di Domanda e capacità.
+fn demand_period(c: crate::demand::DemandCol) -> [String; 3] {
+    match c {
+        crate::demand::DemandCol::Month { year, month } => {
+            [format!("{year}-{month:02}"), year.to_string(), month.to_string()]
+        }
+        crate::demand::DemandCol::NoEnd => ["No end".into(), String::new(), String::new()],
+        crate::demand::DemandCol::Late => ["Overdue".into(), String::new(), String::new()],
+    }
+}
+
+/// Colonne del CSV della domanda per progetto.
+pub const DEMAND_HEADER: [&str; 12] = [
+    "Dev", "Period", "Year", "Month", "Tripletta", "Project", "Category", "Priority", "Status",
+    "Assigned", "To assign", "Demand",
+];
+
+/// Domanda e capacità, file della domanda: una riga per dev × periodo (mese,
+/// «No end», «Overdue») × progetto che compone la cella, nell'ordine della
+/// tabella, con categoria, priorità e stato del progetto. Sommando per Dev e
+/// Period si ritrovano le celle della finestra. La capacità sta nell'altro file
+/// (non è di un progetto).
+pub fn demand_rows(app: &App, data: &crate::demand::DemandData) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    for row in &data.rows {
+        let dev = app.devs.get(row.dev).map(|x| x.get_name()).unwrap_or_default();
+        for (col, cell) in data.cols.iter().zip(&row.cells) {
+            let [period, year, month] = demand_period(*col);
+            for p in &cell.projects {
+                out.push(vec![
+                    dev.clone(),
+                    period.clone(),
+                    year.clone(),
+                    month.clone(),
+                    app.projects.get_tripletta(p.proj),
+                    app.projects.get_info(p.proj),
+                    category_name(app, app.projects.get_category(p.proj)),
+                    priority_name(app, app.projects.get_priority(p.proj)),
+                    status_en(app.projects.status(p.proj)).to_string(),
+                    p.assigned.to_string(),
+                    hours_dec(p.unassigned),
+                    hours_dec(p.assigned as f64 + p.unassigned),
+                ]);
+            }
+        }
+    }
+    out
+}
+
+/// CSV della domanda per progetto e numero di righe di dati.
+pub fn demand_csv(app: &App, data: &crate::demand::DemandData) -> (String, usize) {
+    let rows = demand_rows(app, data);
+    (csv_text(&DEMAND_HEADER, &rows), rows.len())
+}
+
+/// Colonne del CSV della capacità per dev.
+pub const DEMAND_CAPACITY_HEADER: [&str; 10] = [
+    "Dev", "Period", "Year", "Month", "Assigned", "To assign", "Demand", "Capacity", "Gap",
+    "Capacity declared",
+];
+
+/// Domanda e capacità, file della capacità: una riga per dev × periodo con la
+/// domanda della cella, la capacità e lo scarto (capacità − domanda, negativo
+/// = mancano ore). Capacità e scarto vuoti nelle colonne «No end» /
+/// «Overdue» e per i dev senza capacità dichiarata.
+pub fn demand_capacity_rows(app: &App, data: &crate::demand::DemandData) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    for row in &data.rows {
+        let dev = app.devs.get(row.dev).map(|x| x.get_name()).unwrap_or_default();
+        for (col, cell) in data.cols.iter().zip(&row.cells) {
+            let month = matches!(col, crate::demand::DemandCol::Month { .. });
+            let cap = row.declared && month;
+            let [period, year, m] = demand_period(*col);
+            out.push(vec![
+                dev.clone(),
+                period,
+                year,
+                m,
+                cell.assigned.to_string(),
+                hours_dec(cell.unassigned),
+                hours_dec(cell.total()),
+                if cap { hours_dec(cell.capacity) } else { String::new() },
+                if cap { hours_dec(cell.gap()) } else { String::new() },
+                if row.declared { "Yes" } else { "No" }.to_string(),
+            ]);
+        }
+    }
+    out
+}
+
+/// CSV della capacità per dev e numero di righe di dati.
+pub fn demand_capacity_csv(app: &App, data: &crate::demand::DemandData) -> (String, usize) {
+    let rows = demand_capacity_rows(app, data);
+    (csv_text(&DEMAND_CAPACITY_HEADER, &rows), rows.len())
 }
 
 /// Colonne del CSV dell'effort per worker.
@@ -377,5 +481,58 @@ mod tests {
         assert_eq!(rows[0][4..], ["50", "40", "125", "10"]);
         assert_eq!(rows[1][1], format!("{}-{:0>2}", day[1], day[2]));
         assert_eq!(rows[1][4..], ["0", "0", "", "0"]);
+    }
+
+    /// Decimali con la virgola, interi senza.
+    #[test]
+    fn hours_use_a_decimal_comma() {
+        assert_eq!(hours_dec(12.0), "12");
+        assert_eq!(hours_dec(13.333), "13,3");
+        assert_eq!(hours_dec(-20.04), "-20");
+        assert_eq!(hours_dec(0.06), "0,1");
+    }
+
+    /// Domanda e capacità: file della domanda con una riga per dev × periodo ×
+    /// progetto (sommando si ritrovano le celle), file della capacità con una
+    /// riga per dev × periodo; capacità e scarto solo dove c'è capacità
+    /// dichiarata e nei mesi.
+    #[test]
+    fn demand_csv_has_project_rows_and_capacity_rows() {
+        let (mut app, _, monday) = fixture();
+        let mario = app.workers.list().into_iter().find(|(_, n)| n == "Mario").unwrap().0;
+        let be = app.devs.list().into_iter().find(|(_, n)| n == "Backend").unwrap().0;
+        let fe = app.devs.list().into_iter().find(|(_, n)| n == "Frontend").unwrap().0;
+        let p = app.projects.list()[0].0;
+        // 20h di Frontend da assegnare, senza data di fine; Mario 50% Backend.
+        app.projects.add_dev_effort(p, fe, Effort(30));
+        app.workers.set_dev_shares(mario, &[(be, 50)]);
+        let now = WeekId(monday as usize);
+        let none = BTreeSet::new();
+        let data = crate::demand::build(&app, monday, monday + 13, now, &none, &BTreeSet::new(), &BTreeSet::new(), &BTreeSet::new());
+        let rows = demand_rows(&app, &data);
+        let txt: Vec<String> = rows.iter().map(|r| r.join("|")).collect();
+        assert_eq!(
+            txt,
+            [
+                "Frontend|2026-01|2026|1|ABC|Portale|Cliente|Must|Active|10|0|10",
+                "Frontend|No end|||ABC|Portale|Cliente|Must|Active|0|20|20",
+                "Backend|2026-01|2026|1|ABC|Portale|Cliente|Must|Active|30|0|30",
+            ]
+        );
+        let cap: Vec<String> = demand_capacity_rows(&app, &data).iter().map(|r| r.join("|")).collect();
+        assert_eq!(
+            cap,
+            [
+                "Frontend|2026-01|2026|1|10|0|10|||No",
+                "Frontend|No end|||0|20|20|||No",
+                // Backend: due lunedì × 40h × 50% = 40h di capacità, 30h di domanda.
+                "Backend|2026-01|2026|1|30|0|30|40|10|Yes",
+                "Backend|No end|||0|0|0|||Yes",
+            ]
+        );
+        let (csv, n) = demand_csv(&app, &data);
+        assert_eq!(n, 3);
+        assert!(csv.starts_with("\u{FEFF}Dev;Period;Year;Month;Tripletta;Project;"));
+        assert!(demand_capacity_csv(&app, &data).0.contains("Capacity;Gap;Capacity declared\r\n"));
     }
 }

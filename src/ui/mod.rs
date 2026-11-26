@@ -1882,6 +1882,12 @@ pub(crate) enum Action {
         targets: Vec<(ProjectId, DevId)>,
         start: WeekId,
     },
+    /// CSV della finestra «Domanda e capacità» (due file: domanda per progetto
+    /// e capacità per dev), con i filtri della finestra.
+    ExportDemandCsv {
+        from: i32,
+        to: i32,
+    },
     /// Quote per dev del worker (finestra «Dev di …» del registro).
     SetWorkerDevShares {
         worker: WorkerId,
@@ -4281,6 +4287,24 @@ impl PjmApp {
                         "csv",
                         &dated_file_name("torte", "csv"),
                         vec![("hours".into(), csv.into_bytes()), ("capacity".into(), cap.into_bytes())],
+                    );
+                }
+            }
+            Action::ExportDemandCsv { from, to } => {
+                let data = demand_view_data(&self.app, &self.ui, from, to);
+                // Due file: la domanda per progetto e, a parte, la capacità per
+                // dev (non appartiene a un progetto: in una pivot si sommerebbe).
+                let (demand, n) = crate::view_csv::demand_csv(&self.app, &data);
+                let (cap, m) = crate::view_csv::demand_capacity_csv(&self.app, &data);
+                if n + m == 0 {
+                    self.ui.toast_warn("Niente da esportare nella vista: CSV non creato.");
+                } else {
+                    save_multi_export_dialog(
+                        &mut self.ui,
+                        "CSV",
+                        "csv",
+                        &dated_file_name("domanda_capacita", "csv"),
+                        vec![("demand".into(), demand.into_bytes()), ("capacity".into(), cap.into_bytes())],
                     );
                 }
             }

@@ -87,8 +87,9 @@ non il tempo di digitazione.
      **scarto** (verde se avanza, rosso se manca, con le ore) e una riga
      «Totale». Proposta di quote dalle assegnazioni degli ultimi 6 mesi, da
      confermare a mano. _Tempo: ~1 day · Difficoltà: Media._
-  3. _(PDF fatto il 2026-11-26 insieme al filtro Dev e alla legenda; resta il
-     CSV)_ **Export** PDF (inglese, A4 orizzontale, come gli altri) e CSV (riga = dev ×
+  3. ✅ _(fatta il 2026-11-26: PDF insieme al filtro Dev e alla legenda; CSV in
+     due file, la domanda con una riga per dev × mese × progetto e la capacità
+     con una riga per dev × mese)_ **Export** PDF (inglese, A4 orizzontale, come gli altri) e CSV (riga = dev ×
      mese: Assigned, Unassigned, Capacity, Gap). _Tempo: ~half day · Difficoltà:
      Bassa-Media._
   4. **Scenari** (facoltativa): progetti **ipotetici** con una probabilità (la

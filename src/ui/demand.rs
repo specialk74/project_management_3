@@ -436,6 +436,16 @@ pub(crate) fn demand_window(ctx: &egui::Context, app: &App, state: &mut UiState,
                 actions.push(Action::ExportDemand { from, to });
             }
             if ui
+                .add_enabled(any, egui::Button::new("Esporta CSV…"))
+                .on_hover_text(
+                    "Due file: la domanda con una riga per dev, mese e progetto (…_demand.csv) e la \
+                     capacità con una riga per dev e mese (…_capacity.csv).",
+                )
+                .clicked()
+            {
+                actions.push(Action::ExportDemandCsv { from, to });
+            }
+            if ui
                 .button("Quote dei worker…")
                 .on_hover_text("Apre Aggiungi ▸ Worker, dev e categorie… sulla scheda Worker: la colonna «Dev» dice quali dev sa fare ognuno e con che quota.")
                 .clicked()
@@ -616,6 +626,16 @@ mod tests {
             let _ = ctx.run_ui_test(i, |ui| demand_window(ui.ctx(), &app, &mut state, &mut actions));
         }
         assert!(matches!(actions.as_slice(), [Action::ExportDemand { from: f, to: t }] if *f == from && *t == to));
+        // «Esporta CSV…» manda l'export dei due file.
+        let mut actions = Vec::new();
+        let out = ctx.run_ui_test(input.clone(), |ui| demand_window(ui.ctx(), &app, &mut state, &mut actions));
+        let pos = text_pos(&out, "Esporta CSV…").expect("pulsante CSV");
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            let mut i = input.clone();
+            i.events = vec![ev];
+            let _ = ctx.run_ui_test(i, |ui| demand_window(ui.ctx(), &app, &mut state, &mut actions));
+        }
+        assert!(matches!(actions.as_slice(), [Action::ExportDemandCsv { from: f, to: t }] if *f == from && *t == to));
         // Quote dichiarate: «cap … · scarto» e il pulsante apre il registro dei worker.
         app.workers.set_dev_shares(alice, &[(be, 50)]);
         for _ in 0..2 {
