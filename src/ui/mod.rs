@@ -404,7 +404,7 @@ pub(crate) struct CloneProject {
     pub search: String,
 }
 
-/// Stato della finestra «Scambia worker» (Aggiungi ▸ Scambia worker…): a
+/// Stato della finestra «Scambia worker» (Modifica ▸ Scambia worker…): a
 /// sinistra il worker da sostituire, al centro quello che prende il suo
 /// posto (uno solo per parte), a destra i progetti e, per ognuno, i dev
 /// (`ticked` = coppie progetto × dev), in basso da
@@ -438,12 +438,89 @@ impl SwapWorker {
     /// Prima settimana dello scambio (inclusa): la corrente con «Da oggi in
     /// avanti», altrimenti il lunedì della data scelta.
     pub fn start(&self) -> WeekId {
-        if self.from_date {
-            WeekId(local_to_days(&primo_giorno_settimana_corrente(&days_to_local(self.date))) as usize)
-        } else {
-            current_week_id()
+        if self.from_date { week_of_day(self.date) } else { current_week_id() }
+    }
+}
+
+/// La settimana (il suo lunedì) che contiene il giorno `days`.
+pub(crate) fn week_of_day(days: i32) -> WeekId {
+    WeekId(local_to_days(&primo_giorno_settimana_corrente(&days_to_local(days))) as usize)
+}
+
+/// Stato della finestra «Cancella worker» (Modifica ▸ Cancella worker dai
+/// progetti…): a sinistra il worker, a destra i progetti e i dev in cui è
+/// presente nel periodo (`ticked`), in basso il periodo: da oggi in poi
+/// (`range` = false) oppure dal giorno `from` al giorno `to` (inclusi, in
+/// settimane). `asking` = è aperta la conferma.
+pub(crate) struct RemoveWorker {
+    pub worker: Option<WorkerId>,
+    pub ticked: HashSet<(ProjectId, DevId)>,
+    pub search: String,
+    pub range: bool,
+    pub from: i32,
+    pub to: i32,
+    pub asking: bool,
+}
+
+impl Default for RemoveWorker {
+    fn default() -> Self {
+        Self {
+            worker: None,
+            ticked: HashSet::new(),
+            search: String::new(),
+            range: false,
+            from: today_days(),
+            to: today_days(),
+            asking: false,
         }
     }
+}
+
+impl RemoveWorker {
+    /// Prima settimana (inclusa): la corrente, o quella della data «dal».
+    pub fn start(&self) -> WeekId {
+        if self.range { week_of_day(self.from) } else { current_week_id() }
+    }
+
+    /// Ultima settimana (inclusa): nessun limite «da oggi in poi», altrimenti
+    /// quella della data «al».
+    pub fn end(&self) -> Option<WeekId> {
+        self.range.then(|| week_of_day(self.to))
+    }
+}
+
+/// Celle che «Cancella worker» toglie: quelle di `worker` (anche a effort 0,
+/// con la nota) nelle coppie progetto × dev `targets`, nelle settimane da
+/// `start` a `end` (inclusi; `None` = senza fine). Ritorna (celle tolte,
+/// progetti toccati).
+pub(crate) fn remove_worker_cells(
+    app: &mut App,
+    worker: WorkerId,
+    targets: &[(ProjectId, DevId)],
+    start: WeekId,
+    end: Option<WeekId>,
+) -> (usize, usize) {
+    let mut cells = 0;
+    let mut touched: HashSet<ProjectId> = HashSet::new();
+    for &(proj, dev) in targets {
+        let weeks: Vec<WeekId> = app
+            .projects
+            .get_single_dev(proj, dev)
+            .map(|sd| sd.get_weeks().into_iter().filter(|w| in_period(*w, start, end)).collect())
+            .unwrap_or_default();
+        for w in weeks {
+            if app.projects.remove_worker_effort(proj, dev, w, worker) {
+                cells += 1;
+                touched.insert(proj);
+            }
+        }
+    }
+    (cells, touched.len())
+}
+
+/// `w` cade fra `start` e `end` (inclusi; `None` = senza fine).
+fn in_period(w: WeekId, start: WeekId, end: Option<WeekId>) -> bool {
+    w >= start && end.is_none_or(|e| w <= e)
 }
 
 /// Un dev di un progetto in cui lo scambio sposterebbe `cells` celle per
@@ -468,11 +545,12 @@ impl SwapProject {
     }
 }
 
-/// Progetti in cui `from` ha almeno una cella (anche a effort 0) dalla
-/// settimana `start` (inclusa) in poi, in ordine di elenco, e per ognuno i
-/// dev (ordine del progetto) con le ore e il numero di celle che lo scambio
-/// sposterebbe. Tutti gli stati.
-pub(crate) fn swap_worker_projects(app: &App, from: WorkerId, start: WeekId) -> Vec<SwapProject> {
+/// Progetti in cui `from` ha almeno una cella (anche a effort 0) nelle
+/// settimane da `start` a `end` (inclusi; `None` = senza fine), in ordine di
+/// elenco, e per ognuno i dev (ordine del progetto) con le ore e il numero di
+/// celle coinvolte. Tutti gli stati. Usato da «Scambia worker» e «Cancella
+/// worker».
+pub(crate) fn worker_projects(app: &App, from: WorkerId, start: WeekId, end: Option<WeekId>) -> Vec<SwapProject> {
     app.projects
         .list()
         .into_iter()
@@ -484,7 +562,7 @@ pub(crate) fn swap_worker_projects(app: &App, from: WorkerId, start: WeekId) -> 
                 .filter_map(|dev| {
                     let sd = app.projects.get_single_dev(proj, dev)?;
                     let (mut hours, mut cells) = (0, 0);
-                    for w in sd.get_weeks().into_iter().filter(|w| *w >= start) {
+                    for w in sd.get_weeks().into_iter().filter(|w| in_period(*w, start, end)) {
                         if let Some(h) = cell_effort(app, proj, dev, w, from) {
                             hours += h;
                             cells += 1;
@@ -1500,8 +1578,10 @@ pub struct UiState {
     milestone_manager_just_opened: bool,
     // finestra «Clona progetto» (Aggiungi ▸ Clona progetto…)
     clone_project: Option<CloneProject>,
-    // finestra «Scambia worker» (Aggiungi ▸ Scambia worker…)
+    // finestra «Scambia worker» (Modifica ▸ Scambia worker…)
     swap_worker: Option<SwapWorker>,
+    // finestra «Cancella worker» (Modifica ▸ Cancella worker dai progetti…)
+    remove_worker: Option<RemoveWorker>,
     // Annulla/Ripeti: cronologia e «c'è stata una modifica in questo frame»
     // (messo da `mark_changed`, consumato dopo le azioni da `record_undo`).
     undo: UndoHistory,
@@ -1716,12 +1796,20 @@ pub(crate) enum Action {
         src: ProjectId,
     },
     /// Sostituisce `from` con `to` nelle coppie progetto × dev date, dalla
-    /// settimana `start` (Aggiungi ▸ Scambia worker…).
+    /// settimana `start` (Modifica ▸ Scambia worker…).
     SwapWorker {
         from: WorkerId,
         to: WorkerId,
         targets: Vec<(ProjectId, DevId)>,
         start: WeekId,
+    },
+    /// Toglie le celle di `worker` nelle coppie progetto × dev date, dalla
+    /// settimana `start` a `end` (Modifica ▸ Cancella worker dai progetti…).
+    RemoveWorkerEffort {
+        worker: WorkerId,
+        targets: Vec<(ProjectId, DevId)>,
+        start: WeekId,
+        end: Option<WeekId>,
     },
     AddWorker(String),
     AddDev(String),
@@ -2655,6 +2743,7 @@ impl eframe::App for PjmApp {
             rules_import_report_window(ui.ctx(), state);
             clone_project_window(ui.ctx(), app, state, &mut actions);
             swap_worker_window(ui.ctx(), app, state, &mut actions);
+            remove_worker_window(ui.ctx(), app, state, &mut actions);
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state, &mut actions);
@@ -3364,6 +3453,16 @@ impl PjmApp {
                     ));
                 } else {
                     self.ui.toast_warn(format!("Scambio worker: nessuna cella di {a} da scambiare."));
+                }
+            }
+            Action::RemoveWorkerEffort { worker, targets, start, end } => {
+                let (cells, touched) = remove_worker_cells(&mut self.app, worker, &targets, start, end);
+                let name = self.app.workers.get_name_by_id(worker).to_string();
+                if cells > 0 {
+                    self.mark_changed();
+                    self.ui.toast_ok(format!("Cancellate {cells} celle di {name} in {touched} progetti."));
+                } else {
+                    self.ui.toast_warn(format!("Nessuna cella di {name} da cancellare."));
                 }
             }
             Action::AddWorker(name) => {

@@ -913,7 +913,7 @@ fn swap_worker_moves_cells_and_sums_where_the_other_is_already_there() {
     app.projects.set_note(p, fe, wk(3), bob, "nota di Bob");
     app.projects.add_effort(q, fe, wk(1), alice, Effort(5)); // progetto non scelto
 
-    let found = swap_worker_projects(&app, alice, wk(1));
+    let found = worker_projects(&app, alice, wk(1), None);
     let sd = |dev, hours, cells| SwapDev { dev, hours, cells };
     assert_eq!(
         found,
@@ -1035,6 +1035,123 @@ fn swap_worker_window_picks_one_worker_per_side_and_the_projects() {
     assert_eq!(cell_effort(app, projs[0], be, wk(1), alice), Some(3), "dev non spuntato");
     assert_eq!(cell_effort(app, projs[2], fe, WeekId(base.0 - WEEK_STEP), alice), Some(8));
     assert!(pjm.ui.changed);
+}
+
+/// «Cancella worker»: si tolgono le celle del worker (anche a 0, con la
+/// nota) nelle coppie progetto × dev scelte, nelle settimane del periodo
+/// (fine inclusa, o senza fine); il resto resta.
+#[test]
+fn remove_worker_cells_clears_only_the_chosen_devs_and_period() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let bob = app.workers.add("Bob");
+    let fe = app.devs.add("Frontend");
+    let be = app.devs.add("Backend");
+    let p = app.projects.add("x", Some("AAA"), None);
+    app.projects.add_dev(p, fe);
+    app.projects.add_dev(p, be);
+    let base = app.start_week;
+    let wk = |i: usize| WeekId(base.0 + i * WEEK_STEP);
+    for i in 0..5 {
+        app.projects.add_effort(p, fe, wk(i), alice, Effort(if i == 2 { 0 } else { 8 }));
+    }
+    app.projects.add_effort(p, fe, wk(2), bob, Effort(4));
+    app.projects.add_effort(p, be, wk(2), alice, Effort(6));
+    // Periodo 1..3: il Frontend di Alice in 1, 2 (a 0) e 3.
+    let found = worker_projects(&app, alice, wk(1), Some(wk(3)));
+    assert_eq!(found[0].devs, vec![SwapDev { dev: fe, hours: 16, cells: 3 }, SwapDev { dev: be, hours: 6, cells: 1 }]);
+    assert_eq!(remove_worker_cells(&mut app, alice, &[(p, fe)], wk(1), Some(wk(3))), (3, 1));
+    let cell = |app: &App, w, who| cell_effort(app, p, fe, w, who);
+    let left: Vec<Option<usize>> = (0..5).map(|i| cell(&app, wk(i), alice)).collect();
+    assert_eq!(left, vec![Some(8), None, None, None, Some(8)], "solo il periodo, fine inclusa");
+    assert_eq!(cell(&app, wk(2), bob), Some(4), "gli altri worker restano");
+    assert_eq!(cell_effort(&app, p, be, wk(2), alice), Some(6), "dev non scelto");
+    // Senza fine: da 0 in poi.
+    assert_eq!(remove_worker_cells(&mut app, alice, &[(p, fe), (p, be)], wk(0), None), (3, 1));
+    assert!(worker_projects(&app, alice, wk(0), None).is_empty());
+}
+
+/// Finestra «Cancella worker»: scelto il worker compaiono progetti e dev in
+/// cui è presente nel periodo; con il periodo «dal … al …» quelli fuori
+/// spariscono e una fine prima dell'inizio blocca; «Cancella…» chiede
+/// conferma e «Sì, cancella» manda la cancellazione.
+#[test]
+fn remove_worker_window_asks_then_clears_the_period() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    app.workers.add("Bob");
+    let fe = app.devs.add("Frontend");
+    let base = app.start_week;
+    let wk = |i: usize| WeekId(base.0 + i * WEEK_STEP);
+    let a = app.projects.add("AAA", Some("AAA"), None);
+    let b = app.projects.add("BBB", Some("BBB"), None);
+    for p in [a, b] {
+        app.projects.add_dev(p, fe);
+    }
+    app.projects.add_effort(a, fe, wk(1), alice, Effort(8));
+    app.projects.add_effort(b, fe, wk(6), alice, Effort(4));
+
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1400.0, 900.0)), ..Default::default() };
+    let mut state = UiState { remove_worker: Some(RemoveWorker::default()), ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| remove_worker_window(ui.ctx(), &app, state, actions))
+    };
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, label: &str| {
+        for _ in 0..3 {
+            frame(state, actions, None);
+        }
+        let out = frame(state, actions, None);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label}: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, Some(ev));
+        }
+        frame(state, actions, None)
+    };
+    let out = click(&mut state, &mut actions, "Alice");
+    assert_eq!(state.remove_worker.as_ref().unwrap().worker, Some(alice));
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|t| t == "AAA") && texts.iter().any(|t| t == "BBB"), "{texts:?}");
+    // Periodo dal … al …: BBB (settimana 6) resta fuori.
+    {
+        let rw = state.remove_worker.as_mut().unwrap();
+        rw.range = true;
+        rw.from = wk(0).0 as i32;
+        rw.to = wk(3).0 as i32 + 2; // un mercoledì: vale la sua settimana
+    }
+    let out = click(&mut state, &mut actions, "Select All");
+    let texts = drawn_texts(&out);
+    assert!(!texts.iter().any(|t| t == "BBB"), "{texts:?}");
+    let summary = format!("Alice: 1 celle (8h) in 1 progetti (1 dev), dal {} al {}.", week_label(wk(0).0 as i32), week_label(wk(3).0 as i32));
+    assert!(texts.contains(&summary), "{summary}: {texts:?}");
+    // Fine prima dell'inizio: avviso, niente da cancellare.
+    state.remove_worker.as_mut().unwrap().to = wk(0).0 as i32 - 1;
+    frame(&mut state, &mut actions, None);
+    let out = frame(&mut state, &mut actions, None);
+    assert!(drawn_texts(&out).iter().any(|t| t == "La data di fine è prima di quella di inizio."));
+    state.remove_worker.as_mut().unwrap().to = wk(3).0 as i32;
+    // Select All di nuovo (le spunte sparite col periodo vuoto).
+    click(&mut state, &mut actions, "Select All");
+    click(&mut state, &mut actions, "Cancella…");
+    assert!(state.remove_worker.as_ref().unwrap().asking, "chiede conferma");
+    assert!(actions.is_empty());
+    click(&mut state, &mut actions, "Sì, cancella");
+    assert!(state.remove_worker.is_none());
+    assert!(
+        matches!(actions.as_slice(), [Action::RemoveWorkerEffort { worker, targets, start, end }]
+            if *worker == alice && targets == &vec![(a, fe)] && *start == wk(0) && *end == Some(wk(3))),
+        "{} azioni",
+        actions.len()
+    );
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for x in actions {
+        pjm.apply(x);
+    }
+    assert_eq!(cell_effort(&pjm.app, a, fe, wk(1), alice), None);
+    assert_eq!(cell_effort(&pjm.app, b, fe, wk(6), alice), Some(4), "fuori dal periodo");
 }
 
 /// Progetto sull'intera griglia con un effort di Alice nella prima

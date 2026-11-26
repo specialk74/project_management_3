@@ -142,6 +142,15 @@ pub(crate) fn toolbar(
                 actions.push(Action::Redo);
                 ui.close_kind(egui::UiKind::Menu);
             }
+            ui.separator();
+            if ui.button("Scambia worker…").clicked() {
+                state.swap_worker = Some(SwapWorker::default());
+                ui.close_kind(egui::UiKind::Menu);
+            }
+            if ui.button("Cancella worker dai progetti…").clicked() {
+                state.remove_worker = Some(RemoveWorker::default());
+                ui.close_kind(egui::UiKind::Menu);
+            }
         });
 
         // ── Aggiungi ─────────────────────────────────────────────────────────
@@ -163,10 +172,6 @@ pub(crate) fn toolbar(
                 }
                 if ui.button("Clona progetto…").clicked() {
                     state.clone_project = Some(CloneProject::default());
-                    ui.close_kind(egui::UiKind::Menu);
-                }
-                if ui.button("Scambia worker…").clicked() {
-                    state.swap_worker = Some(SwapWorker::default());
                     ui.close_kind(egui::UiKind::Menu);
                 }
                 if ui.button("Worker, dev e categorie…").clicked() {

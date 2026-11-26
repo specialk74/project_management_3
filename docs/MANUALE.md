@@ -378,6 +378,11 @@ restano dentro la finestra principale.
   nome… Si può ripetere per tornare indietro di più passi (fino a **50**).
 - **Ripeti** (`Cmd/Ctrl+Shift+Z`) — rifà la modifica appena annullata. Facendo
   una modifica nuova dopo un Annulla, i «Ripeti» rimasti si perdono.
+- **Scambia worker…** — sostituisce un worker con un altro nei progetti e dev
+  scelti, da oggi o da una data in avanti (vedi §8, «Scambiare un worker»).
+- **Cancella worker dai progetti…** — toglie un worker dai progetti e dev
+  scelti, da oggi in poi o in un periodo (vedi §8, «Cancellare un worker dai
+  progetti»).
 
 Dopo Annulla o Ripeti la griglia **ti porta sulla modifica**, anche se nel
 frattempo eri andato altrove: se il punto cambiato non è già in vista, la griglia
@@ -424,8 +429,6 @@ Da sapere:
 - **+ Progetto** — crea un nuovo progetto vuoto.
 - **Clona progetto…** — crea una copia completa di un progetto esistente (vedi
   «Clonare un progetto»).
-- **Scambia worker…** — sostituisce un worker con un altro nei progetti scelti,
-  da oggi o da una data in avanti (vedi §8, «Scambiare un worker»).
 - **Worker, dev e categorie…** — rinominare, nascondere o eliminare worker, dev e
   categorie (vedi §3, «Rinominare, nascondere, eliminare»).
 - **Regole di automazione…** — regole che posizionano da sole le milestone (vedi
@@ -847,7 +850,7 @@ finestra. Effort pianificato, nota del dev e % dichiarata non si toccano. Si
 può annullare con `Cmd/Ctrl+Z`.
 
 ### Scambiare un worker
-**Aggiungi ▸ Scambia worker…** passa il lavoro di un worker a un altro (per
+**Modifica ▸ Scambia worker…** passa il lavoro di un worker a un altro (per
 esempio quando una persona lascia un progetto e un collega la sostituisce). La
 finestra **Scambia worker** ha tre colonne, ognuna con la sua ricerca:
 
@@ -876,6 +879,30 @@ i dev e progetti non spuntati restano come sono. Se il worker che subentra ha **
 una cella sullo stesso dev nella stessa settimana, le ore **si sommano** e
 resta la sua nota (quella dell'altro la prende solo se era vuota): la finestra
 avvisa prima quante sono. Si può annullare con `Cmd/Ctrl+Z`.
+
+### Cancellare un worker dai progetti
+**Modifica ▸ Cancella worker dai progetti…** toglie un worker da alcuni
+progetti e dev, per esempio quando esce da un progetto senza che qualcuno lo
+sostituisca. La finestra **Cancella worker** ha due colonne:
+
+- a **sinistra** il **worker** (i worker visibili negli elenchi, con ricerca):
+  se ne sceglie **uno solo**, gli altri si disattivano;
+- a **destra** i **progetti** e, rientrati sotto, i **dev** in cui il worker è
+  presente nel periodo scelto (anche solo con un'assegnazione a 0), con le sue
+  ore e **Select All**, come in «Scambia worker».
+
+In basso il periodo: **Da oggi in poi** (dalla settimana corrente, inclusa,
+senza fine) oppure **Dal** … **al** … con due calendari (dalla settimana che
+contiene la prima data a quella che contiene la seconda, **incluse**). Se la
+data di fine è prima di quella di inizio la finestra lo segnala e non elenca
+niente. Il riepilogo dice quante celle e ore si tolgono, in quanti progetti e
+dev.
+
+**Cancella…** chiede conferma (**«Cancellare gli effort?»**): **Sì, cancella**
+toglie le celle del worker nei dev spuntati e nel periodo — ore, assegnazioni a
+0 e note delle celle —, **Annulla** torna alla finestra. Gli altri worker, i dev
+non spuntati e le settimane fuori dal periodo restano come sono; effort
+pianificato e note del dev non si toccano. Si può annullare con `Cmd/Ctrl+Z`.
 
 ### Copia / Taglia / Incolla
 Durante la modifica di una cella funzionano `Cmd/Ctrl+C`, `Cmd/Ctrl+X`,
