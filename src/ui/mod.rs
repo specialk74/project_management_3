@@ -404,6 +404,66 @@ pub(crate) struct CloneProject {
     pub search: String,
 }
 
+/// Modalità del filtro worker (colonna Workers della dialog «Filtri»): da
+/// quando un worker selezionato deve essere **assegnato** (anche a effort 0)
+/// perché il progetto o il dev compaia. Non persistita.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum WorkerFilterMode {
+    /// `Cmd/Ctrl+F`: dalla **settimana scorsa** in poi; un dev (e quindi un
+    /// progetto) in cui il worker c'era solo prima non compare.
+    #[default]
+    Recent,
+    /// `Cmd/Ctrl+Shift+F`: in qualunque settimana (il vecchio Ctrl+F).
+    AllTime,
+    /// `Cmd/Ctrl+G`: progetti in cui è assegnato nella settimana corrente.
+    CurrentWeek,
+}
+
+impl WorkerFilterMode {
+    pub const ALL: [WorkerFilterMode; 3] = [Self::Recent, Self::AllTime, Self::CurrentWeek];
+
+    /// Voce della dialog Filtri.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Recent => "Dalla settimana scorsa in poi",
+            Self::AllTime => "Tutte le settimane",
+            Self::CurrentWeek => "Solo settimana corrente",
+        }
+    }
+
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::Recent => {
+                "Progetti e dev in cui un worker selezionato è assegnato dalla settimana scorsa in poi; \
+                 se c'era solo prima, non compaiono (⌘/Ctrl+F)"
+            }
+            Self::AllTime => "Progetti e dev in cui un worker selezionato è assegnato in qualunque settimana (⌘/Ctrl+Shift+F)",
+            Self::CurrentWeek => "Solo i progetti in cui un worker selezionato è assegnato nella settimana corrente (⌘/Ctrl+G)",
+        }
+    }
+}
+
+/// Prima settimana della modalità `Recent` del filtro worker: la settimana
+/// prima di quella corrente.
+pub(crate) fn recent_filter_start() -> WeekId {
+    WeekId(current_week_id().0.saturating_sub(WEEK_STEP))
+}
+
+/// Scorciatoia del filtro worker con la modalità `mode`: a dialog chiusa la
+/// apre in quella modalità; aperta in un'altra modalità commuta soltanto;
+/// aperta nella stessa fa il toggle di Select All. Sempre focus sui Workers.
+fn worker_filter_shortcut(state: &mut UiState, mode: WorkerFilterMode) {
+    if state.show_filters && state.worker_filter_mode == mode {
+        state.worker_filter_toggle_all = true;
+    } else {
+        state.worker_filter_mode = mode;
+        if !state.show_filters {
+            open_filters(state, FilterPane::Workers);
+        }
+    }
+    focus_pane(state, FilterPane::Workers);
+}
+
 /// Stato della finestra «Scambia worker» (Modifica ▸ Scambia worker…): a
 /// sinistra il worker da sostituire, al centro quello che prende il suo
 /// posto (uno solo per parte), a destra i progetti e, per ognuno, i dev
@@ -808,7 +868,7 @@ pub(crate) fn reset_all_filters(app: &App, state: &mut UiState, actions: &mut Ve
     state.dev_filter = None;
     state.category_filter = None;
     state.year_filter = None;
-    state.worker_filter_current_week = false;
+    state.worker_filter_mode = WorkerFilterMode::default();
     state.worker_search.clear();
     state.project_search.clear();
     state.dev_search.clear();
@@ -1372,11 +1432,9 @@ pub struct UiState {
     move_dialog_was_open: bool,
     // filtro worker: None = nessun filtro (tutti); Some(set) = mostra solo questi nomi
     worker_filter: Option<HashSet<String>>,
-    // Modalità "settimana corrente" del filtro worker (Ctrl+G): con filtro attivo
-    // un progetto compare solo se un worker selezionato ha effort nella settimana
-    // corrente. Dentro il progetto la resa resta come Ctrl+F (tutte le settimane).
-    // Ctrl+F la disattiva, Ctrl+G la riattiva. Non persistita.
-    worker_filter_current_week: bool,
+    // Modalità del filtro worker: Ctrl+F dalla settimana scorsa in poi,
+    // Ctrl+Shift+F tutte le settimane, Ctrl+G settimana corrente. Non persistita.
+    worker_filter_mode: WorkerFilterMode,
     /// Worker scelto col click sinistro sul suo nome nel footer: le sue righe
     /// nelle celle dei dev restano evidenziate (giallo su scuro) finché non si
     /// riclicca lo stesso nome (o un altro, che prende il suo posto). Solo sessione.
@@ -2582,35 +2640,22 @@ impl eframe::App for PjmApp {
             // "Filtri" (Workers + Progetti + Dev), portando il focus sulla ricerca
             // della propria colonna. A dialog già aperta la stessa scorciatoia fa
             // il toggle del "Select All" di quella colonna (Shift = deseleziona
-            // tutti). Fa eccezione la coppia F/G, che condivide la colonna Workers:
-            // premere l'altra commuta solo la modalità "settimana corrente".
+            // tutti). Fanno eccezione F, Shift+F e G, che condividono la colonna
+            // Workers con tre modalità (`WorkerFilterMode`): premere un'altra di
+            // queste commuta solo la modalità. Shift+F quindi **non** deseleziona:
+            // è il filtro su tutte le settimane.
             if key_f {
-                if shift {
-                    state.worker_filter = Some(HashSet::new()); // deseleziona tutti
-                    state.worker_filter_current_week = false;
-                } else if state.show_filters && !state.worker_filter_current_week {
-                    state.worker_filter_toggle_all = true;
-                } else if state.show_filters {
-                    state.worker_filter_current_week = false; // commuta a "tutte le settimane"
-                } else {
-                    state.worker_filter_current_week = false;
-                    open_filters(state, FilterPane::Workers);
-                }
-                focus_pane(state, FilterPane::Workers);
+                let mode = if shift { WorkerFilterMode::AllTime } else { WorkerFilterMode::Recent };
+                worker_filter_shortcut(state, mode);
             }
             if key_g {
                 if shift {
                     state.worker_filter = Some(HashSet::new()); // deseleziona tutti
-                    state.worker_filter_current_week = true;
-                } else if state.show_filters && state.worker_filter_current_week {
-                    state.worker_filter_toggle_all = true;
-                } else if state.show_filters {
-                    state.worker_filter_current_week = true; // commuta a "settimana corrente"
+                    state.worker_filter_mode = WorkerFilterMode::CurrentWeek;
+                    focus_pane(state, FilterPane::Workers);
                 } else {
-                    state.worker_filter_current_week = true;
-                    open_filters(state, FilterPane::Workers);
+                    worker_filter_shortcut(state, WorkerFilterMode::CurrentWeek);
                 }
-                focus_pane(state, FilterPane::Workers);
             }
             if key_d {
                 if shift {

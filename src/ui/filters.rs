@@ -1,7 +1,8 @@
 //! Dialog unica dei filtri: Workers + Progetti + Dev + Categorie + Anni in
 //! cinque colonne affiancate.
 //!
-//! È l'unica finestra aperta da `Cmd/Ctrl+F` (workers), `Cmd/Ctrl+G` (workers
+//! È l'unica finestra aperta da `Cmd/Ctrl+F` (workers dalla settimana scorsa),
+//! `Cmd/Ctrl+Shift+F` (workers su tutte le settimane), `Cmd/Ctrl+G` (workers
 //! sulla settimana corrente), `Cmd/Ctrl+P` (progetti), `Cmd/Ctrl+D` (dev),
 //! `Cmd/Ctrl+K` (categorie) e `Cmd/Ctrl+Y` (anni):
 //! la scorciatoia porta il focus sul campo di ricerca della propria colonna e,
@@ -11,12 +12,13 @@ use super::*;
 
 /// Per ogni nome worker: (numero di progetti APERTI, numero di progetti CHIUSI)
 /// distinti in cui il worker è assegnato, **anche con effort 0** (conta
-/// l'assegnazione, non le ore). Con `current_week_only` (modalità
-/// Ctrl+G) conta solo la presenza nella **settimana corrente**; altrimenti (Ctrl+F)
-/// su **tutte** le settimane. Ignora filtri e vista. Chiave per nome (come il
-/// filtro worker).
-fn worker_project_counts(app: &App, current_week_only: bool) -> HashMap<String, (u32, u32)> {
+/// l'assegnazione, non le ore), secondo la modalità del filtro: dalla
+/// settimana scorsa in poi (Ctrl+F), su **tutte** le settimane (Ctrl+Shift+F)
+/// o solo nella **settimana corrente** (Ctrl+G). Ignora filtri e vista.
+/// Chiave per nome (come il filtro worker).
+fn worker_project_counts(app: &App, mode: WorkerFilterMode) -> HashMap<String, (u32, u32)> {
     let cur = current_week_id();
+    let since = recent_filter_start();
     let mut counts: HashMap<String, (u32, u32)> = HashMap::new();
     for (proj, _) in app.projects.list() {
         let closed = app.projects.is_closed(proj);
@@ -24,10 +26,10 @@ fn worker_project_counts(app: &App, current_week_only: bool) -> HashMap<String, 
         let mut seen: HashSet<WorkerId> = HashSet::new();
         for dev in app.projects.list_devs(proj) {
             if let Some(sd) = app.projects.get_single_dev(proj, dev) {
-                let weeks = if current_week_only {
-                    vec![cur]
-                } else {
-                    sd.get_weeks()
+                let weeks = match mode {
+                    WorkerFilterMode::CurrentWeek => vec![cur],
+                    WorkerFilterMode::Recent => sd.get_weeks().into_iter().filter(|w| *w >= since).collect(),
+                    WorkerFilterMode::AllTime => sd.get_weeks(),
                 };
                 for wk in weeks {
                     if let Some(sew) = sd.get_all(wk) {
@@ -88,7 +90,7 @@ pub(crate) fn filters_window(
         .map(|(_, n)| n)
         .filter(|n| search_matches(&qw, n))
         .collect();
-    let counts = worker_project_counts(app, state.worker_filter_current_week);
+    let counts = worker_project_counts(app, state.worker_filter_mode);
 
     // Progetti: in elenco si mostra SOLO la tripletta (fallback al nome), ma la
     // ricerca combacia sia con tripletta sia con nome.
@@ -204,16 +206,12 @@ pub(crate) fn filters_window(
                     if focus == Some(FilterPane::Workers) {
                         te.request_focus();
                     }
-                    // Modalità Ctrl+G: solo i progetti in cui il worker lavora
-                    // nella settimana corrente.
-                    ui.checkbox(
-                        &mut state.worker_filter_current_week,
-                        "Solo settimana corrente",
-                    )
-                    .on_hover_text(
-                        "Mostra solo i progetti in cui un worker selezionato ha \
-                         effort nella settimana corrente (⌘/Ctrl+G)",
-                    );
+                    // Modalità: Ctrl+F dalla settimana scorsa, Ctrl+Shift+F
+                    // tutte le settimane, Ctrl+G settimana corrente.
+                    for mode in WorkerFilterMode::ALL {
+                        ui.radio_value(&mut state.worker_filter_mode, mode, mode.label())
+                            .on_hover_text(mode.hint());
+                    }
                     ui.separator();
                     egui::ScrollArea::vertical()
                         .scroll_source(drag_scroll())
@@ -647,14 +645,24 @@ mod tests {
         app.projects.add_dev(p4, dev);
         app.projects.add_effort(p4, dev, cur, bob, Effort(8));
 
-        // Ctrl+F: tutte le settimane. Alice è in P1 + P3 (effort 0) aperti e P2
-        // chiuso; Bob è in P1 (altra settimana) + P4 = 2 aperti.
-        let all = worker_project_counts(&app, false);
-        assert_eq!(all.get("Alice").copied(), Some((2, 1)));
-        assert_eq!(all.get("Bob").copied(), Some((2, 0)));
+        // P5 aperto: Bob nella settimana scorsa.
+        let p5 = app.projects.add("P5", Some("EEE"), Some(cur));
+        app.projects.add_dev(p5, dev);
+        app.projects.add_effort(p5, dev, WeekId(cur.0 - WEEK_STEP), bob, Effort(8));
 
-        // Ctrl+G: solo settimana corrente. Bob non è in P1 questa settimana → solo P4.
-        let cw = worker_project_counts(&app, true);
+        // Ctrl+Shift+F: tutte le settimane. Alice è in P1 + P3 (effort 0) aperti
+        // e P2 chiuso; Bob è in P1 (settimana lontana) + P4 + P5 = 3 aperti.
+        let all = worker_project_counts(&app, WorkerFilterMode::AllTime);
+        assert_eq!(all.get("Alice").copied(), Some((2, 1)));
+        assert_eq!(all.get("Bob").copied(), Some((3, 0)));
+
+        // Ctrl+F: dalla settimana scorsa. Bob in P1 solo molto prima → P4 + P5.
+        let recent = worker_project_counts(&app, WorkerFilterMode::Recent);
+        assert_eq!(recent.get("Alice").copied(), Some((2, 1)));
+        assert_eq!(recent.get("Bob").copied(), Some((2, 0)));
+
+        // Ctrl+G: solo settimana corrente. Bob → solo P4.
+        let cw = worker_project_counts(&app, WorkerFilterMode::CurrentWeek);
         assert_eq!(cw.get("Alice").copied(), Some((2, 1)));
         assert_eq!(cw.get("Bob").copied(), Some((1, 0)));
     }

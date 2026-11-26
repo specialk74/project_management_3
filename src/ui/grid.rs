@@ -292,7 +292,7 @@ pub(crate) fn body_layout(
         ui,
         app,
         filter,
-        state.worker_filter_current_week,
+        state.worker_filter_mode,
         dev_filter,
         &ProjectFilter::from_state(state),
         state.project_view,
@@ -306,7 +306,7 @@ pub(crate) fn project_layout(
     ui: &egui::Ui,
     app: &App,
     filter: &Filter,
-    current_week_only: bool,
+    worker_mode: WorkerFilterMode,
     dev_filter: &DevFilter,
     proj_filter: &ProjectFilter,
     view: ProjectViewMode,
@@ -317,6 +317,7 @@ pub(crate) fn project_layout(
     // categoria e priorità (una riga) + inizio + fine + avanzamento + ore
     // previste / spese (una riga, in fondo).
     let extra_rows = if compact { 1.0 } else { 6.0 };
+    let recent_since = recent_filter_start();
     let mut out = Vec::new();
     for (proj_id, name) in app.projects.list() {
         // Visibilità (filtro «Progetti…») + modalità Vista (stati mostrati),
@@ -332,7 +333,7 @@ pub(crate) fn project_layout(
         // Modalità "settimana corrente" (Ctrl+G): col filtro worker attivo mostra
         // solo i progetti in cui un worker selezionato ha effort nella settimana
         // corrente. Dentro, la resa resta identica a Ctrl+F (nessun'altra modifica).
-        if current_week_only
+        if worker_mode == WorkerFilterMode::CurrentWeek
             && let Some(set) = filter.as_ref()
             && !project_worker_in_current_week(app, proj_id, set)
         {
@@ -345,6 +346,12 @@ pub(crate) fn project_layout(
             .list_devs(proj_id)
             .into_iter()
             .filter(|d| dev_shown(app, proj_id, *d, dev_filter))
+            // Modalità Ctrl+F (dalla settimana scorsa in poi): il dev compare
+            // solo se un worker selezionato è assegnato da lì in avanti.
+            .filter(|d| {
+                worker_mode != WorkerFilterMode::Recent
+                    || filter.as_ref().is_none_or(|set| dev_worker_since(app, proj_id, *d, set, recent_since))
+            })
             .filter_map(|d| filtered_dev_max_rows(app, proj_id, d, filter).map(|m| (d, m)))
             .collect();
         // con un filtro attivo, nascondi i progetti senza dev corrispondenti
@@ -372,6 +379,20 @@ pub(crate) fn project_layout(
         });
     }
     out
+}
+
+/// True se nel dev un worker con nome in `set` è assegnato (anche a effort 0)
+/// in una settimana da `since` (inclusa) in poi. Usato dal filtro Ctrl+F.
+pub(crate) fn dev_worker_since(app: &App, proj: ProjectId, dev: DevId, set: &HashSet<String>, since: WeekId) -> bool {
+    app.projects.get_single_dev(proj, dev).is_some_and(|sd| {
+        sd.get_weeks().into_iter().filter(|w| *w >= since).any(|w| {
+            sd.get_all(w).is_some_and(|sew| {
+                sew.worker_id
+                    .keys()
+                    .any(|wid| *wid != WORKER_ID_ZERO && set.contains(app.workers.get_name_by_id(*wid)))
+            })
+        })
+    })
 }
 
 /// True se il progetto ha almeno un dev in cui un worker con nome in `set` è

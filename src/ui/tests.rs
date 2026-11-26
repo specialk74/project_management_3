@@ -2001,6 +2001,87 @@ fn ctrl_1_to_4_switch_the_project_view() {
     }
 }
 
+/// Filtro worker per modalità: con Ctrl+F (dalla settimana scorsa) un dev in
+/// cui il worker c'era solo prima sparisce, e con lui il progetto se non
+/// resta altro; la settimana scorsa conta. Ctrl+Shift+F li mostra tutti
+/// (qualunque settimana), Ctrl+G solo i progetti con il worker questa settimana.
+#[test]
+fn worker_filter_modes_pick_projects_and_devs_by_time() {
+    let mut app = App::new();
+    let alice = app.workers.add("Alice");
+    let fe = app.devs.add("Frontend");
+    let be = app.devs.add("Backend");
+    let cur = current_week_id();
+    let weeks_ago = |n: usize| WeekId(cur.0 - n * WEEK_STEP);
+    // AAA: Frontend con Alice solo due settimane fa, Backend la settimana scorsa.
+    let a = app.projects.add("A", Some("AAA"), None);
+    app.projects.add_dev(a, fe);
+    app.projects.add_dev(a, be);
+    app.projects.add_effort(a, fe, weeks_ago(2), alice, Effort(8));
+    app.projects.add_effort(a, be, weeks_ago(1), alice, Effort(0));
+    // BBB: Alice solo molto prima.
+    let b = app.projects.add("B", Some("BBB"), None);
+    app.projects.add_dev(b, fe);
+    app.projects.add_effort(b, fe, weeks_ago(5), alice, Effort(8));
+    // CCC: Alice questa settimana.
+    let c = app.projects.add("C", Some("CCC"), None);
+    app.projects.add_dev(c, fe);
+    app.projects.add_effort(c, fe, cur, alice, Effort(4));
+
+    let filter: Filter = Some(["Alice".to_string()].into_iter().collect());
+    let shown = |mode| -> Vec<(ProjectId, Vec<DevId>)> {
+        layout_with_worker_mode(&app, &filter, &None, false, mode)
+            .into_iter()
+            .map(|l| (l.proj, l.devs.into_iter().map(|(d, _)| d).collect()))
+            .collect()
+    };
+    assert_eq!(shown(WorkerFilterMode::Recent), vec![(a, vec![be]), (c, vec![fe])], "dalla settimana scorsa");
+    assert_eq!(shown(WorkerFilterMode::AllTime), vec![(a, vec![fe, be]), (b, vec![fe]), (c, vec![fe])]);
+    assert_eq!(shown(WorkerFilterMode::CurrentWeek), vec![(c, vec![fe])]);
+    // Senza filtro worker la modalità non conta.
+    assert_eq!(layout_with_worker_mode(&app, &None, &None, false, WorkerFilterMode::Recent).len(), 3);
+}
+
+/// Scorciatoie del filtro worker: Ctrl+F apre la dialog in modalità «dalla
+/// settimana scorsa», Ctrl+Shift+F commuta a «tutte le settimane» (non
+/// deseleziona più), Ctrl+G a «settimana corrente»; la stessa scorciatoia a
+/// dialog aperta nella sua modalità fa il toggle di Select All.
+#[test]
+fn ctrl_f_shift_f_and_g_pick_the_worker_filter_mode() {
+    let mut pjm = PjmApp { app: App::new(), ui: UiState::default() };
+    pjm.app.workers.add("Alice");
+    let ctx = egui::Context::default();
+    let mut frame = eframe::Frame::_new_kittest();
+    let mut press = |pjm: &mut PjmApp, key, shift: bool| {
+        let modifiers = if shift { egui::Modifiers::COMMAND | egui::Modifiers::SHIFT } else { egui::Modifiers::COMMAND };
+        let input = egui::RawInput {
+            screen_rect: Some(screen(1200.0, 800.0)),
+            events: vec![
+                egui::Event::ModifiersChanged(modifiers),
+                egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers },
+            ],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui_test(input, |ui| eframe::App::ui(pjm, ui, &mut frame));
+        let _ = ctx.run_ui_test(egui::RawInput { screen_rect: Some(screen(1200.0, 800.0)), ..Default::default() }, |ui| {
+            eframe::App::ui(pjm, ui, &mut frame)
+        });
+    };
+    assert_eq!(pjm.ui.worker_filter_mode, WorkerFilterMode::Recent, "di default");
+    pjm.ui.worker_filter_mode = WorkerFilterMode::AllTime;
+    press(&mut pjm, egui::Key::F, false);
+    assert!(pjm.ui.show_filters);
+    assert_eq!(pjm.ui.worker_filter_mode, WorkerFilterMode::Recent);
+    press(&mut pjm, egui::Key::F, true);
+    assert_eq!(pjm.ui.worker_filter_mode, WorkerFilterMode::AllTime);
+    assert_eq!(pjm.ui.worker_filter, None, "Shift+F non deseleziona");
+    press(&mut pjm, egui::Key::G, false);
+    assert_eq!(pjm.ui.worker_filter_mode, WorkerFilterMode::CurrentWeek);
+    // Stessa modalità a dialog aperta: toggle di Select All (tutti → nessuno).
+    press(&mut pjm, egui::Key::G, false);
+    assert_eq!(pjm.ui.worker_filter, Some(HashSet::new()));
+}
+
 /// Accoda gli eventi di un click "realistico" su `pos`: hover in un frame,
 /// Gli ambiti spuntati nelle dialog di export diventano l'elenco passato
 /// alle azioni: uno = un file, due = due file (ordine Internal, External).
@@ -2824,6 +2905,16 @@ fn layout_in_headless_ui(
     dev_filter: &DevFilter,
     compact: bool,
 ) -> Vec<ProjLayout> {
+    layout_with_worker_mode(app, filter, dev_filter, compact, WorkerFilterMode::AllTime)
+}
+
+fn layout_with_worker_mode(
+    app: &App,
+    filter: &Filter,
+    dev_filter: &DevFilter,
+    compact: bool,
+    mode: WorkerFilterMode,
+) -> Vec<ProjLayout> {
     let ctx = egui::Context::default();
     let input = egui::RawInput {
         screen_rect: Some(screen(1200.0, 800.0)),
@@ -2837,7 +2928,7 @@ fn layout_in_headless_ui(
                 ui,
                 app,
                 filter,
-                false,
+                mode,
                 dev_filter,
                 &ProjectFilter::default(),
                 ProjectViewMode::Open,

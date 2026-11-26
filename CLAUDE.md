@@ -457,7 +457,8 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     globals stay shared — so `App::validate` stays clean. The handler jumps to the
     copy and toasts. Test
     `clone_project_copies_everything_and_duplicates_own_milestones`.
-- **Filtri**: le prime sei voci (Progetti… `Cmd/Ctrl+P`, Workers… `Cmd/Ctrl+F`,
+- **Filtri**: le prime sette voci (Progetti… `Cmd/Ctrl+P`, Workers (dalla settimana
+  scorsa)… `Cmd/Ctrl+F`, Workers (tutte le settimane)… `Cmd/Ctrl+Shift+F`,
   Workers (settimana corrente)… `Cmd/Ctrl+G`, Dev… `Cmd/Ctrl+D`, Categorie…
   `Cmd/Ctrl+K`, Anni… `Cmd/Ctrl+Y`) aprono **un'unica dialog** `filters_window`
   (`src/ui/filters.rs`, `UiState.show_filters`) a **cinque colonne** — Workers |
@@ -467,23 +468,32 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   helper `open_filters`/`focus_pane`/`toggle_filters`). Ripremuta a dialog aperta, la
   stessa scorciatoia fa il **toggle di Select All** della sua colonna
   (`*_filter_toggle_all`), applicato agli elementi **attualmente elencati** (rispetta la
-  ricerca); `Shift+…` deseleziona tutto senza aprire. **`Cmd/Ctrl+J`** →
+  ricerca); `Shift+…` deseleziona tutto senza aprire (**tranne `Shift+F`**, che è
+  la modalità «tutte le settimane»). **`Cmd/Ctrl+J`** →
   `reset_all_filters(app, state, actions)`: rimette `worker_filter`/`dev_filter`/
-  `category_filter`/`year_filter` a `None` (il criterio anno resta), spegne `worker_filter_current_week`, svuota le ricerche e riabilita tutti
+  `category_filter`/`year_filter` a `None` (il criterio anno resta), rimette `worker_filter_mode` a `Recent`, svuota le ricerche e riabilita tutti
   i progetti, **di qualunque stato** (`Action::SetProjectEnabled`, che non marca il file come
   modificato). È **idempotente**: ripremuto non deseleziona nulla. Dettagli per colonna:
   - **Workers** — elenca solo i worker con `Worker.show_in_find` true (default true; la
     visibilità nel footer non conta); accanto a ogni nome il conteggio progetti
-    `N/Aperti - M/Chiuso` via `worker_project_counts(app, current_week_only)` = progetti
+    `N/Aperti - M/Chiuso` via `worker_project_counts(app, mode)` = progetti
     distinti in cui il worker è **assegnato** (anche a effort 0 — conta l'assegnazione,
     non le ore), split per `is_closed`, ignora vista/filtri.
-    La spunta **«Solo settimana corrente»** è `UiState.worker_filter_current_week`
-    (Ctrl+G): mostra solo i progetti in cui un worker selezionato è **assegnato nella
-    settimana corrente** (`current_week_id()`, anche con effort 0); dentro il progetto la resa resta identica
-    a Ctrl+F (tutte le settimane). Ctrl+F disattiva la modalità, Ctrl+G la riattiva; con
-    la dialog aperta nella *altra* modalità la scorciatoia commuta soltanto, nella stessa
-    fa il toggle di Select All. Il gate è il predicato `project_worker_in_current_week`
-    applicato in `project_layout`, unica sorgente di grid+left_column. Non persistito.
+    **Modalità** `UiState.worker_filter_mode: WorkerFilterMode` (`mod.rs`, non
+    persistita, tre `radio_value` in cima alla colonna con `label()`/`hint()`):
+    `Recent` (**default**, Ctrl+F, user's request) = un **dev** compare solo se un
+    worker selezionato è assegnato (anche a effort 0) da `recent_filter_start()` =
+    settimana corrente − 1 in poi (`dev_worker_since`, filtro sui dev in
+    `project_layout`; progetto senza dev rimasti ⇒ nascosto; dentro il dev le righe
+    restano su tutte le settimane); `AllTime` (Ctrl+Shift+F, il vecchio Ctrl+F) =
+    qualunque settimana; `CurrentWeek` (Ctrl+G) = gate sul **progetto** con
+    `project_worker_in_current_week`. Le tre scorciatoie passano da
+    `worker_filter_shortcut(state, mode)`: dialog chiusa ⇒ la apre in quella
+    modalità; aperta in un'altra ⇒ commuta soltanto; nella stessa ⇒ toggle di
+    Select All. `Shift+G` deseleziona ancora. Il menù ha una voce per modalità.
+    `project_layout` (unica sorgente di grid+left_column) prende il `mode`. Tests
+    `worker_filter_modes_pick_projects_and_devs_by_time`,
+    `ctrl_f_shift_f_and_g_pick_the_worker_filter_mode`.
   - **Progetti** — visibilità enable/disable + ricerca/salto per tripletta (click sulla
     tripletta o Invio → `jump_to_project`, chiude la dialog e azzera la ricerca).
     Elenca solo i progetti il cui stato è nella vista corrente

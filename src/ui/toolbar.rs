@@ -238,27 +238,16 @@ pub(crate) fn toolbar(
                 ui.close_kind(egui::UiKind::Menu);
             }
             let filter_on = state.worker_filter.is_some();
-            if ui
-                .selectable_label(
-                    filter_on && !state.worker_filter_current_week,
-                    "Workers…  (⌘/Ctrl+F)",
-                )
-                .clicked()
-            {
-                state.worker_filter_current_week = false;
-                toggle_filters(state, FilterPane::Workers);
-                ui.close_kind(egui::UiKind::Menu);
-            }
-            if ui
-                .selectable_label(
-                    filter_on && state.worker_filter_current_week,
-                    "Workers (settimana corrente)…  (⌘/Ctrl+G)",
-                )
-                .clicked()
-            {
-                state.worker_filter_current_week = true;
-                toggle_filters(state, FilterPane::Workers);
-                ui.close_kind(egui::UiKind::Menu);
+            for (mode, text) in [
+                (WorkerFilterMode::Recent, "Workers (dalla settimana scorsa)…  (⌘/Ctrl+F)"),
+                (WorkerFilterMode::AllTime, "Workers (tutte le settimane)…  (⌘/Ctrl+Shift+F)"),
+                (WorkerFilterMode::CurrentWeek, "Workers (settimana corrente)…  (⌘/Ctrl+G)"),
+            ] {
+                if ui.selectable_label(filter_on && state.worker_filter_mode == mode, text).clicked() {
+                    state.worker_filter_mode = mode;
+                    toggle_filters(state, FilterPane::Workers);
+                    ui.close_kind(egui::UiKind::Menu);
+                }
             }
             if ui
                 .selectable_label(state.dev_filter.is_some(), "Dev…  (⌘/Ctrl+D)")
