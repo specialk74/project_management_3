@@ -50,6 +50,59 @@ non il tempo di digitazione.
 - [ ] **54. Torte: fetta «Altri» per i progetti piccoli** — con molti progetti l'anello esterno della prima torta si riempie di fette sottilissime: sotto una soglia (es. 2% del worker) i progetti di una fetta dev·categoria si raggruppano in un'unica fetta «Altri», con l'elenco nel tooltip; le tabelle restano complete. Stessa resa nel PDF/SVG. _Tempo: ~1-2 h · Difficoltà: Bassa-Media._
 - [ ] **55. Torte: clic su una fetta di progetto → griglia** — salta al progetto nella griglia (come la ricerca per tripletta), per correggere subito gli effort. _Tempo: ~1 h · Difficoltà: Bassa._
 
+## H. Capacity planning (domanda vs capacità per ruolo)
+
+- [ ] **60. Vista «Domanda e capacità per dev»** — risponde a «abbiamo abbastanza
+  persone, per ruolo, per il lavoro che arriva?», che oggi il programma non dice:
+  sa chi fa cosa e chi è saturo, ma non quanti Frontend servono a marzo rispetto a
+  quanti ce ne sono. _(proposta del 2026-11-26, da approvare; i dettagli si
+  concordano prima di partire)_ Si fa a fasi, ognuna utile da sola:
+  1. ✅ _(fatta il 2026-11-26: Vista ▸ **Domanda per dev…**; diventerà «Domanda
+     e capacità» con la fase 2. In più della proposta: la colonna «In ritardo»
+     per i progetti con la fine già passata, lo Stato che a ogni apertura
+     riparte da Attivi + On-Hold, la colonna «Totale» e una barretta blu /
+     arancione in ogni cella.)_ **Domanda per dev e per mese** (nessun cambio
+     al file). Nuova finestra (Vista ▸
+     Domanda e capacità…, finestra vera del sistema come Saturazione): righe = dev,
+     colonne = mesi di un periodo scelto (default 12 mesi da oggi, combo anni come
+     Matrice e Torte), filtri Categorie / Stato / Priorità come Matrice e Torte.
+     Ogni cella divide la domanda in due: **assegnata** (ore già in griglia per
+     quel dev in quel mese, di tutti i progetti) e **da assegnare** (il residuo
+     del dev, pianificato − ore in griglia, se positivo, spalmato in modo uguale
+     sulle settimane che restano fra oggi, o l'inizio del progetto se è dopo, e
+     la fine del progetto). I residui dei progetti senza data di fine vanno in una
+     colonna «Senza data». Tooltip con i progetti che compongono la cella.
+     _Tempo: ~1 day · Difficoltà: Media._
+  2. **Capacità per dev** (nuovo dato nel file). Ogni worker dichiara **quali dev
+     sa fare**, con una quota (es. Alice: Frontend 70%, Test 30%): nuova colonna
+     «Dev» nella scheda Worker di Aggiungi ▸ Worker, dev e categorie…, salvata
+     come campo opzionale del worker (i file vecchi si aprono uguali). Capacità
+     del dev nel mese = Σ delle ore massime effettive dei suoi worker (limiti di
+     settimana, ferie con il massimo a 0, ghost esclusi: la regola di
+     Saturazione) × la loro quota. In finestra, per ogni dev: capacità, domanda,
+     **scarto** (verde se avanza, rosso se manca, con le ore) e una riga
+     «Totale». Proposta di quote dalle assegnazioni degli ultimi 6 mesi, da
+     confermare a mano. _Tempo: ~1 day · Difficoltà: Media._
+  3. _(PDF fatto il 2026-11-26 insieme al filtro Dev e alla legenda; resta il
+     CSV)_ **Export** PDF (inglese, A4 orizzontale, come gli altri) e CSV (riga = dev ×
+     mese: Assigned, Unassigned, Capacity, Gap). _Tempo: ~half day · Difficoltà:
+     Bassa-Media._
+  4. **Scenari** (facoltativa): progetti **ipotetici** con una probabilità (la
+     loro domanda pesata a parte, in tratteggio) e **worker previsti** da una
+     data (es. «un Backend da maggio»), che contano solo in questa vista. _Tempo:
+     ~1-2 days · Difficoltà: Media-Alta._
+
+  **Cosa cambia per l'utente**: una finestra in più, una colonna in più nel
+  registro dei worker; la griglia, il footer, le altre viste e gli export
+  esistenti restano come sono. **Nel file**: dalla fase 2 un campo nuovo per
+  worker (dalla 4 anche per progetti e worker previsti). **Attenzione con i
+  colleghi**: una versione vecchia del programma apre il file ma, al primo
+  salvataggio, **perde** quel campo; conviene aggiornare tutti insieme.
+  **Limiti**: la domanda «da assegnare» è una stima (spalmata in parti uguali,
+  non secondo il vero andamento del lavoro); un dev senza pianificato non ha
+  domanda da assegnare. _Tempo totale: ~2,5 days per le fasi 1-3, ~4 days con
+  gli scenari._
+
 ---
 
 # Fatti

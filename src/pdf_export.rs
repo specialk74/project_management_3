@@ -3776,6 +3776,211 @@ pub fn build_worker_effort_pdf(
     pdf_document("Effort by worker", &pages)
 }
 
+// --- Domanda per dev ------------------------------------------------------------
+
+/// Colonna dei dev, larghezza minima di una colonna, righe (mm).
+const DM_X0: f32 = X_LABEL;
+const DM_LABEL_W: f32 = 34.0;
+const DM_CELL_MIN_W: f32 = 16.0;
+const DM_TOP: f32 = PAGE_H - 34.0;
+const DM_HEAD_H: f32 = 6.0;
+const DM_ROW_H: f32 = 10.0;
+const DM_BOT: f32 = FOOTER_TOP + 4.0;
+/// Ore assegnate (blu) e da assegnare (arancione), come nella finestra.
+const DM_ASSIGNED: (f32, f32, f32) = (0.36, 0.55, 0.94);
+const DM_UNASSIGNED: (f32, f32, f32) = (1.0, 0.55, 0.10);
+
+/// Colonne per pagina (oltre a quella dei dev).
+fn dm_cols_per_page() -> usize {
+    ((PAGE_W - X_LABEL - DM_X0 - DM_LABEL_W) / DM_CELL_MIN_W).floor() as usize
+}
+
+/// Righe di dev per pagina (sotto l'intestazione, sopra la riga Total).
+fn dm_rows_per_page() -> usize {
+    (((DM_TOP - DM_HEAD_H - DM_BOT) / DM_ROW_H).floor() as usize).saturating_sub(1).max(1)
+}
+
+fn dm_col_label(c: crate::demand::DemandCol) -> String {
+    match c {
+        crate::demand::DemandCol::Month { year, month } => {
+            format!("{} '{:02}", MONTHS_EN[month as usize - 1], year % 100)
+        }
+        crate::demand::DemandCol::NoEnd => "No end".into(),
+        crate::demand::DemandCol::Late => "Overdue".into(),
+    }
+}
+
+/// Una cella: totale in grassetto, sotto «assegnate + da assegnare» (blu /
+/// arancione), in fondo la barretta rispetto a `max` (se c'è).
+fn dm_cell_shapes(
+    x0: f32,
+    y1: f32,
+    w: f32,
+    cell: &crate::demand::DemandCell,
+    max: Option<f64>,
+    fill: (f32, f32, f32),
+) -> Vec<Shape> {
+    let mut out = rect_fill(x0, y1 - DM_ROW_H, x0 + w, y1, fill);
+    let cx = x0 + w / 2.0;
+    if cell.is_empty() {
+        out.extend(text_center_font(cx, y1 - DM_ROW_H / 2.0 - 1.0, "—", 7.0, false, GRAY_DK));
+        return out;
+    }
+    let total = format!("{}h", cell.total().round() as i64);
+    out.extend(text_center_font(cx, y1 - 3.6, &total, 7.5, true, BLACK));
+    let a = (cell.assigned > 0).then(|| cell.assigned.to_string());
+    let u = (cell.unassigned.round() > 0.0).then(|| format!("{}", cell.unassigned.round() as i64));
+    let parts: Vec<(String, (f32, f32, f32))> = match (a, u) {
+        (Some(a), Some(u)) => vec![(a, DM_ASSIGNED), (" + ".into(), TEXT_GRAY), (u, DM_UNASSIGNED)],
+        (Some(a), None) => vec![(a, DM_ASSIGNED)],
+        (None, Some(u)) => vec![(u, DM_UNASSIGNED)],
+        (None, None) => Vec::new(),
+    };
+    let size = 6.0;
+    let width: f32 = parts.iter().map(|(t, _)| font_text_w_mm(t, size, false)).sum();
+    let mut x = cx - width / 2.0;
+    for (t, color) in parts {
+        out.extend(text_left(x, y1 - 6.6, &t, size, false, color));
+        x += font_text_w_mm(&t, size, false);
+    }
+    if let Some(max) = max.filter(|m| *m > 0.0) {
+        let full = w - 2.0;
+        let (bx, by) = (x0 + 1.0, y1 - DM_ROW_H + 0.8);
+        let wa = full * (cell.assigned as f64 / max) as f32;
+        let wu = full * (cell.unassigned / max) as f32;
+        out.extend(rect_fill(bx, by, bx + wa, by + 1.1, DM_ASSIGNED));
+        out.extend(rect_fill(bx + wa, by, bx + wa + wu, by + 1.1, DM_UNASSIGNED));
+    }
+    out
+}
+
+/// Pagine della tabella: colonne a blocchi che entrano in larghezza (l'ultima
+/// colonna, «Total», nell'ultimo blocco) e righe a gruppi che entrano in
+/// altezza; in ogni pagina titolo, sottotitolo, legenda, intestazione,
+/// colonna dei dev e riga «Total» (di tutti i dev).
+fn demand_pages(app: &App, data: &crate::demand::DemandData, subtitle: &str, created: &str) -> Vec<Vec<Shape>> {
+    use crate::demand::DemandCell;
+    // Colonne: quelle dei dati, poi «Total» (indice = cols.len()).
+    let ncol = data.cols.len() + 1;
+    let per = dm_cols_per_page().max(1);
+    let blocks: Vec<std::ops::Range<usize>> =
+        (0..ncol).step_by(per).map(|a| a..(a + per).min(ncol)).collect();
+    let rows_per = dm_rows_per_page();
+    let chunks: Vec<std::ops::Range<usize>> = (0..data.rows.len().max(1))
+        .step_by(rows_per)
+        .map(|a| a..(a + rows_per).min(data.rows.len()))
+        .collect();
+    let max = data.rows.iter().flat_map(|r| r.cells.iter().map(|c| c.total())).fold(0.0, f64::max);
+    let sums: Vec<DemandCell> = data.rows.iter().map(|r| r.sum()).collect();
+    let mut grand = DemandCell::default();
+    for c in &sums {
+        grand.assigned += c.assigned;
+        grand.unassigned += c.unassigned;
+    }
+    let total_pages = blocks.len() * chunks.len();
+    let mut pages = Vec::new();
+    for cols in &blocks {
+        let cw = ((PAGE_W - X_LABEL - DM_X0 - DM_LABEL_W) / cols.len() as f32).min(24.0);
+        let col_x = |i: usize| DM_X0 + DM_LABEL_W + (i - cols.start) as f32 * cw;
+        let x1 = col_x(cols.end);
+        for rows in &chunks {
+            let mut out = Vec::new();
+            let title = if total_pages > 1 {
+                format!("Demand by dev ({}/{total_pages})", pages.len() + 1)
+            } else {
+                "Demand by dev".to_string()
+            };
+            out.extend(text_left(X_LABEL, PAGE_H - 14.0, &title, 14.0, true, BLACK));
+            out.extend(text_left(X_LABEL, PAGE_H - 20.0, subtitle, 9.0, false, TEXT_GRAY));
+            // Legenda.
+            let mut lx = X_LABEL;
+            let ly = PAGE_H - 27.0;
+            for (label, color) in [
+                ("Assigned: hours already in the grid", DM_ASSIGNED),
+                ("To assign: planned − grid hours, spread evenly up to the project end", DM_UNASSIGNED),
+            ] {
+                out.extend(rect_fill(lx, ly, lx + 5.0, ly + 2.4, color));
+                out.extend(text_left(lx + 6.5, ly + 0.3, label, 8.0, false, BLACK));
+                lx += 6.5 + font_text_w_mm(label, 8.0, false) + 8.0;
+            }
+            // Intestazione.
+            let head_bot = DM_TOP - DM_HEAD_H;
+            out.extend(rect_fill(DM_X0, head_bot, x1, DM_TOP, GRAY_FOOTER));
+            out.extend(text_left(DM_X0 + 1.5, head_bot + 2.0, "Dev", 7.5, true, BLACK));
+            for i in cols.clone() {
+                let label = data.cols.get(i).map_or("Total".to_string(), |c| dm_col_label(*c));
+                let label = truncate_to_font_w(&label, 7.0, true, cw - 1.0);
+                out.extend(text_center_font(col_x(i) + cw / 2.0, head_bot + 2.0, &label, 7.0, true, BLACK));
+            }
+            // Righe dei dev.
+            let mut y = head_bot;
+            for ri in rows.clone() {
+                let row = &data.rows[ri];
+                let fill = if (ri - rows.start) % 2 == 0 { WHITE } else { (0.96, 0.96, 0.96) };
+                let (bg, fg) = app
+                    .devs
+                    .get(row.dev)
+                    .map_or((GRAY_FOOTER, BLACK), |d| (u32_rgb(d.bg_color() as u32), u32_rgb(d.font_color() as u32)));
+                out.extend(rect_fill(DM_X0, y - DM_ROW_H + 0.4, DM_X0 + DM_LABEL_W - 0.6, y - 0.4, bg));
+                let name = app.devs.get(row.dev).map(|d| d.get_name()).unwrap_or_default();
+                let name = truncate_to_font_w(&name, 7.5, false, DM_LABEL_W - 3.0);
+                out.extend(text_left(DM_X0 + 1.5, y - DM_ROW_H / 2.0 - 1.0, &name, 7.5, false, fg));
+                for i in cols.clone() {
+                    let shapes = match row.cells.get(i) {
+                        Some(cell) => dm_cell_shapes(col_x(i), y, cw, cell, Some(max), fill),
+                        None => dm_cell_shapes(col_x(i), y, cw, &sums[ri], None, fill),
+                    };
+                    out.extend(shapes);
+                }
+                out.extend(line(DM_X0, y - DM_ROW_H, x1, y - DM_ROW_H, 0.15, GRAY_GUIDE));
+                y -= DM_ROW_H;
+            }
+            // Riga «Total», di tutti i dev.
+            out.extend(line(DM_X0, y, x1, y, 0.5, BLACK));
+            out.extend(text_left(DM_X0 + 1.5, y - DM_ROW_H / 2.0 - 1.0, "Total", 7.5, true, BLACK));
+            for i in cols.clone() {
+                let cell = data.total.get(i).unwrap_or(&grand);
+                out.extend(dm_cell_shapes(col_x(i), y, cw, cell, None, GRAY_FOOTER));
+            }
+            y -= DM_ROW_H;
+            // Bordi verticali.
+            out.extend(line(col_x(cols.start), DM_TOP, col_x(cols.start), y, 0.3, BLACK));
+            for i in cols.start + 1..cols.end {
+                out.extend(line(col_x(i), DM_TOP, col_x(i), y, 0.15, GRAY_GUIDE));
+            }
+            out.extend(line(DM_X0, y, x1, y, 0.3, BLACK));
+
+            out.extend(rect_fill(X_LABEL, FOOTER_BOT, PAGE_W - X_LABEL, FOOTER_TOP, GRAY_FOOTER));
+            out.extend(text_center(PAGE_W / 2.0, (FOOTER_BOT + FOOTER_TOP) / 2.0 - 1.4, created, 8.0, false, TEXT_GRAY));
+            pages.push(out);
+        }
+    }
+    pages
+}
+
+/// PDF «Domanda per dev» (inglese, A4 orizzontale): la tabella della
+/// finestra, con legenda e filtri nel sottotitolo (come le Torte). `None` se
+/// non c'è nessun dev con domanda.
+#[allow(clippy::too_many_arguments)]
+pub fn build_demand_pdf(
+    app: &App,
+    data: &crate::demand::DemandData,
+    from: i32,
+    to: i32,
+    years: &[i32],
+    categories: &[Option<crate::categories::CategoryId>],
+    devs: &[DevId],
+    priorities: &[Option<crate::priorities::PriorityId>],
+    statuses: &[crate::project_utils::project::ProjectStatus],
+) -> Option<Vec<u8>> {
+    if data.rows.is_empty() {
+        return None;
+    }
+    let subtitle = pies_subtitle(app, from, to, years, categories, devs, priorities, statuses);
+    let created = today().format(US_DATE).to_string();
+    pdf_document("Demand by dev", &demand_pages(app, data, &subtitle, &created))
+}
+
 // --- Torte dev/categorie per worker ---------------------------------------------
 
 /// Pannelli della pagina (sinistra: dev e categorie, destra: categorie): in
@@ -4684,6 +4889,52 @@ mod tests {
     /// Effort per worker: una pagina per worker con righe, intestazione su tre
     /// righe (anno, mese, giorno) e ore; chi non ha effort è saltato; troppe
     /// settimane o righe continuano su altre pagine.
+    /// PDF «Demand by dev»: titolo, legenda, colonne in inglese, cella con
+    /// totale e «assegnate + da assegnare», riga Total; con molti dev o molti
+    /// mesi si divide in più pagine (righe e colonne), ognuna con la riga Total.
+    #[test]
+    fn demand_pdf_has_the_table_and_splits_rows_and_columns() {
+        use std::collections::BTreeSet;
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let now = WeekId(crate::date_utils::dates::current_monday_days() as usize);
+        let p = app.projects.add("x", Some("P1"), None);
+        let q = app.projects.add("y", Some("P2"), None);
+        app.projects.set_project_end_week(q, Some(WeekId(now.0 - 7)));
+        let mut devs = Vec::new();
+        for i in 0..20 {
+            let d = app.devs.add(&format!("Dev{i:02}"));
+            app.projects.add_dev(p, d);
+            app.projects.add_effort(p, d, now, alice, Effort(8));
+            devs.push(d);
+        }
+        app.projects.add_dev(q, devs[0]);
+        app.projects.add_dev_effort(q, devs[0], Effort(5));
+        let none = BTreeSet::new();
+        let build = |to: i32| {
+            crate::demand::build(&app, now.0 as i32, to, now, &none, &BTreeSet::new(), &BTreeSet::new(), &BTreeSet::new())
+        };
+        let data = build(now.0 as i32 + 6);
+        let pages = demand_pages(&app, &data, "sub", "created");
+        assert_eq!(pages.len(), 20_usize.div_ceil(dm_rows_per_page()), "righe su più pagine");
+        let t = texts(&pages[0]);
+        let (y, m) = crate::demand::month_of_day(now.0 as i32);
+        let month = format!("{} '{:02}", MONTHS_EN[m as usize - 1], y % 100);
+        for s in ["Demand by dev (1/2)", "sub", "Dev", "Dev00", month.as_str(), "Overdue", "Total", "8h", "8", "5", "created"] {
+            assert!(t.iter().any(|x| x == s), "manca «{s}»: {t:?}");
+        }
+        assert!(t.iter().any(|x| x.starts_with("Assigned")) && t.iter().any(|x| x.starts_with("To assign")));
+        assert!(texts(&pages[1]).iter().any(|x| x == "Total"), "Total su ogni pagina");
+        // Due anni di mesi: le colonne non stanno in una pagina.
+        let long = build(now.0 as i32 + 730);
+        let long_pages = demand_pages(&app, &long, "sub", "created");
+        assert!(long_pages.len() >= 2 * pages.len(), "colonne a blocchi: {}", long_pages.len());
+        let bytes = build_demand_pdf(&app, &data, now.0 as i32, now.0 as i32 + 6, &[], &[], &[], &[], &[]).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+        let empty = crate::demand::DemandData { cols: Vec::new(), rows: Vec::new(), total: Vec::new() };
+        assert!(build_demand_pdf(&app, &empty, 0, 0, &[], &[], &[], &[], &[]).is_none());
+    }
+
     #[test]
     fn worker_effort_pdf_has_a_page_per_worker_and_splits_when_too_big() {
         let mut app = App::new();

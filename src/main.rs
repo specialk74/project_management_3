@@ -1,6 +1,7 @@
 mod app;
 mod categories;
 mod date_utils;
+mod demand;
 mod dev_utils;
 mod effort_csv;
 mod view_csv;

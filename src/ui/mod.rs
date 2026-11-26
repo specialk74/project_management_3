@@ -29,6 +29,7 @@ pub(crate) use crate::ui_style::*;
 pub(crate) use crate::workers_utils::worker::{WORKER_ID_ZERO, WeekStatus, WorkerId};
 
 mod compare;
+mod demand;
 mod dialogs;
 mod export;
 mod filters;
@@ -45,6 +46,7 @@ mod toasts;
 mod toolbar;
 mod worker_effort;
 pub(crate) use compare::*;
+pub(crate) use demand::*;
 pub(crate) use dialogs::*;
 pub(crate) use export::*;
 pub(crate) use filters::*;
@@ -1557,6 +1559,15 @@ pub struct UiState {
     // Effort per worker (Vista ▸ Effort per worker…): finestra aperta e periodo
     // Da/A in giorni (`None` = da oggi a fine griglia). Solo sessione.
     show_worker_effort: bool,
+    // finestra «Domanda per dev» (Vista ▸ Domanda per dev…, #60): periodo
+    // (`None` = da oggi a un anno), anni della combo e filtri, solo sessione.
+    show_demand: bool,
+    demand_range: Option<(i32, i32)>,
+    demand_years: std::collections::BTreeSet<i32>,
+    demand_categories: std::collections::BTreeSet<Option<CategoryId>>,
+    demand_statuses: std::collections::BTreeSet<ProjectStatus>,
+    demand_priorities: std::collections::BTreeSet<Option<PriorityId>>,
+    demand_devs: std::collections::BTreeSet<DevId>,
     worker_effort_range: Option<(i32, i32)>,
     // anni scelti nella combo (come matrice e torte): impostano Da/A; svuotata
     // se Da/A cambiano a mano. Solo sessione.
@@ -1860,6 +1871,12 @@ pub(crate) enum Action {
         to: WorkerId,
         targets: Vec<(ProjectId, DevId)>,
         start: WeekId,
+    },
+    /// PDF della finestra «Domanda per dev» per il periodo `[from, to]`, con i
+    /// filtri della finestra.
+    ExportDemand {
+        from: i32,
+        to: i32,
     },
     /// Toglie le celle di `worker` nelle coppie progetto × dev date, dalla
     /// settimana `start` a `end` (Modifica ▸ Cancella worker dai progetti…).
@@ -2792,6 +2809,7 @@ impl eframe::App for PjmApp {
             closed_filter_window(ui.ctx(), app, state, &mut actions);
             move_dialog_window(ui.ctx(), app, state, &mut actions);
             saturation_window(ui.ctx(), app, state, &mut actions);
+            demand_window(ui.ctx(), app, state, &mut actions);
             matrix_window(ui.ctx(), app, state, &mut actions);
             pies_window(ui.ctx(), app, state, &mut actions);
             worker_effort_window(ui.ctx(), app, state, &mut actions);
@@ -4130,6 +4148,21 @@ impl PjmApp {
                     None => self
                         .ui
                         .toast_warn("Nessun progetto da esportare: matrice non creata."),
+                }
+            }
+            Action::ExportDemand { from, to } => {
+                let data = demand_view_data(&self.app, &self.ui, from, to);
+                let ui = &self.ui;
+                let years: Vec<i32> = ui.demand_years.iter().copied().collect();
+                let cats: Vec<_> = ui.demand_categories.iter().copied().collect();
+                let devs: Vec<_> = ui.demand_devs.iter().copied().collect();
+                let pris: Vec<_> = ui.demand_priorities.iter().copied().collect();
+                let statuses: Vec<_> = ui.demand_statuses.iter().copied().collect();
+                match crate::pdf_export::build_demand_pdf(
+                    &self.app, &data, from, to, &years, &cats, &devs, &pris, &statuses,
+                ) {
+                    Some(bytes) => save_pdf_dialog(&mut self.ui, bytes, &dated_file_name("domanda_per_dev", "pdf")),
+                    None => self.ui.toast_warn("Nessuna domanda nel periodo: PDF non creato."),
                 }
             }
             Action::ExportWorkerEffort { from, to } => {

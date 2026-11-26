@@ -20,7 +20,7 @@ Legenda impatto/rischio: **Alto** / **Medio** / **Basso** / **Nullo**.
 | Righe Rust | ~28.000 | ~48.000 |
 | Warning `cargo build` | 82 | **0** |
 | Warning `cargo clippy` | ~135 | **0** (anche sui test) |
-| Test | 275 verdi | 467 verdi |
+| Test | 275 verdi | 472 verdi |
 
 ## Ordine consigliato
 

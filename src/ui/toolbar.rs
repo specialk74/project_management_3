@@ -404,6 +404,13 @@ pub(crate) fn toolbar(
                 state.show_worker_effort = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
+            if ui.button("Domanda per dev…").clicked() {
+                // A ogni apertura: progetti attivi e on-hold (i chiusi non hanno
+                // più lavoro da assegnare); si cambia dalla combo Stato.
+                state.demand_statuses = [ProjectStatus::Active, ProjectStatus::OnHold].into_iter().collect();
+                state.show_demand = true;
+                ui.close_kind(egui::UiKind::Menu);
+            }
             ui.separator();
             if ui.button("Avvisi delle regole…").clicked() {
                 state.show_rule_warnings = true;

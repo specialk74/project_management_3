@@ -282,7 +282,8 @@ altri si raggiungono scorrendo l'elenco. Così anche su uno schermo piccolo i
 bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 
 **Finestre separate**: **Saturazione worker**, **Matrice progetti/worker**,
-**Torte dev/categorie per worker** ed **Effort per worker** (menù Vista) si
+**Torte dev/categorie per worker**, **Effort per worker** e **Domanda per dev**
+(menù Vista) si
 aprono come **finestre vere del sistema**, con la loro barra del titolo: si
 possono spostare fuori dalla finestra principale (anche su un altro monitor),
 ridimensionare e chiudere con il pulsante di chiusura del sistema. La scelta
@@ -500,6 +501,8 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
   progetti ha lavorato in un intervallo di date, con export PDF/SVG (vedi §15).
 - **Effort per worker…** — per ogni worker, le ore settimana per settimana su
   ciascun progetto e dev, con export PDF (vedi §15).
+- **Domanda per dev…** — per ogni dev, mese per mese, quante ore sono già
+  assegnate e quante restano da assegnare (vedi §15).
 
 ---
 
@@ -2124,6 +2127,45 @@ Esporta CSV…): **una riga per worker, progetto, dev e settimana in cui è
 assegnato** (anche a 0 ore, come nella tabella), con `Worker`, `Project`, `Dev`,
 `Week` (lunedì `aaaa-mm-gg`), `Year`, `Month`, `Hours` e `Week status`
 (*Vacation* / *Sick*, vuoto se nessuno dei due).
+
+### Domanda per dev (Vista ▸ Domanda per dev…)
+Risponde alla domanda **«quanto lavoro c'è per ogni ruolo, mese per mese?»**.
+È il primo passo verso il *capacity planning*: per ora mostra la **domanda**; la
+capacità per dev (quante ore possono dare i worker di quel ruolo) arriverà più
+avanti. Solo lettura, finestra vera del sistema come le altre viste.
+
+In alto il **periodo** (Da / A, la combo degli anni e «Da oggi a un anno», di
+partenza da oggi a un anno da oggi) e, sotto, i filtri **Categorie**, **Stato**,
+**Priorità** e **Dev** come in Matrice e Torte: con il filtro Dev restano solo le
+righe dei dev spuntati, e la riga Totale somma solo quelli. A ogni apertura lo Stato riparte da
+**Attivi + On-Hold**: i progetti chiusi non hanno più lavoro da assegnare (si
+possono aggiungere dalla combo). Conta **tutti** i progetti che passano i filtri,
+non solo quelli della vista corrente.
+
+La tabella ha una **riga per dev** (solo i dev con ore nel periodo, il nome nel
+colore del dev) e una **colonna per mese**; in fondo la riga **Totale**, a destra
+la colonna **Totale**. Ogni cella mostra in grande il totale e sotto le due parti:
+- in **blu** le ore **assegnate**: quelle già in griglia per quel dev, su tutti i
+  progetti, nel mese del **lunedì** della settimana;
+- in **arancione** le ore **da assegnare**: per ogni dev di ogni progetto, effort
+  pianificato meno tutte le ore già in griglia (se positivo), **spalmato in parti
+  uguali** sulle settimane che restano, da quella corrente (o dall'inizio del
+  progetto, se è più avanti) alla **fine del progetto**, inclusa. È una stima:
+  il lavoro vero di rado si distribuisce in modo uniforme.
+
+Una barretta in fondo alla cella, blu e arancione, la confronta con la cella più
+carica della tabella. Sopra la tabella una **legenda** ricorda cosa sono il blu e
+l'arancione (passando sulle due voci, la spiegazione completa). Le colonne **Senza fine** (progetti senza data di fine) e
+**In ritardo** (progetti con la fine già passata) raccolgono il «da assegnare»
+che non si sa in quale mese cada; compaiono solo se servono e non dipendono dal
+periodo. Passando con il mouse su una cella si vedono i progetti che la
+compongono, dal più pesante.
+
+**Esporta PDF…** salva la tabella in un PDF (in inglese, A4 orizzontale, come gli
+altri export) con la stessa legenda e i filtri nel sottotitolo. Se i dev non
+entrano in una pagina la tabella continua sulle pagine dopo; se i mesi sono
+troppi per la larghezza, le colonne si dividono in più pagine. La riga **Total**
+c'è su ogni pagina; la colonna **Total** sta nell'ultimo blocco di colonne.
 
 ---
 

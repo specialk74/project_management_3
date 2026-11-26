@@ -74,7 +74,8 @@ references; the UI lives entirely in the `src/ui/` module.
     filtri Workers/Progetti/Dev), `toasts.rs` (notifiche in-app), `matrix.rs` (matrice
     progetti × worker: `matrix_select_window` + `matrix_window`, plus the shared
     `worker_pick_window`), `pies.rs` (torte dev/categorie per worker:
-    `pies_select_window` + `pies_window`), `swap.rs` (`swap_worker_window` / `remove_worker_window`,
+    `pies_select_window` + `pies_window`), `demand.rs` (`demand_window`, Vista ▸
+    Domanda per dev…, data in `src/demand.rs`), `swap.rs` (`swap_worker_window` / `remove_worker_window`,
     Modifica ▸ Scambia worker… / Cancella worker dai progetti…), `worker_effort.rs` (finestra «Effort per
     worker», vedi Vista; data in `src/worker_effort.rs`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
@@ -119,6 +120,7 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/worker_matrix.rs` / `src/worker_pies.rs` / `src/worker_effort.rs` — data
   shared by the matrix / pies / effort-per-worker windows and their PDF (and SVG)
   exports.
+- `src/demand.rs` — demand per dev and month (Vista ▸ Domanda per dev…, #60).
 - Data modules: `workers_utils/`, `dev_utils/`, `project_utils/`, `single_dev_utils/`, `single_effort_utils/`, `categories.rs`, `milestones.rs`, `date_utils/`, `sync_merge.rs`.
 
 ### Data Model
@@ -873,6 +875,38 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `pies_sum_hours_by_dev_and_category`, `pie_geometry_labels_and_hit`,
   `worker_pies_draw_slices_labels_and_tables`,
   `pies_pdf_has_a_page_per_worker_with_hours`.
+  **Domanda per dev…** (MIGLIORAMENTI #60 phase 1; `src/ui/demand.rs`, data in
+  `src/demand.rs`): read-only OS window (`os_window`), `UiState.show_demand` /
+  `demand_range: Option<(i32, i32)>` (`None` = worker_effort's `default_range()`,
+  now `pub(crate)`) / `demand_years` / `demand_categories` / `demand_statuses`
+  (reset to Active + OnHold on every opening from the menu) /
+  `demand_priorities`, same combos and pickers as Effort per worker / matrix.
+  `demand::build(app, from, to, now, cats, statuses, pris) -> DemandData {
+  cols: Vec<DemandCol { Month{year, month}, NoEnd, Late }>, rows:
+  Vec<DemandRow { dev, cells }>, total }`: **assigned** = grid hours
+  (`effort_tot`) in the month of the week's Monday (Monday in `[from, to]`);
+  **unassigned** = per project × dev `planned − effort_up_to(MAX)` (if > 0)
+  spread evenly (`f64`) over `spread_weeks(start, end, now)` = from
+  `max(now, project start)` to the project end (inclusive); no end ⇒ `NoEnd`,
+  end before `now` ⇒ `Late` (both outside the period, dropped when unused);
+  every status/category/priority via the filters (empty = all), not the body
+  view. Rows only for devs with demand (`Devs::list` order). Cells
+  (`DemandCell { assigned, unassigned, projects: Vec<ProjDemand> }`) painted at
+  coordinates by `draw_demand_table` / `draw_cell` (total, «a + u» LayoutJob
+  blue / orange, a bar scaled to the biggest dev cell, tooltip =
+  `projects_by_weight`). Dev filter `devs_combo` → `UiState.demand_devs`
+  (last arg of `build`, empty = all: only those rows, totals follow); caption
+  at normal size + `demand_legend` (blue / orange swatches with hints).
+  **Esporta PDF…** → `Action::ExportDemand { from, to }` →
+  `pdf_export::build_demand_pdf(app, &data, from, to, years, cats, devs, pris,
+  statuses)` (subtitle via `pies_subtitle`; `demand_pages`: columns in blocks of
+  `dm_cols_per_page()` with «Total» in the last block, rows in chunks of
+  `dm_rows_per_page()`, legend + «Total» row on every page; `dm_cell_shapes`
+  mirrors `draw_cell`) → `save_pdf_dialog`. Tests in `demand.rs`,
+  `demand_window_shows_assigned_and_unassigned_per_dev_and_month`,
+  `demand_pdf_has_the_table_and_splits_rows_and_columns`. Phases 2 and 4
+  (capacity per dev, scenarios) are still open in MIGLIORAMENTI #60; phase 3
+  has the PDF, not yet the CSV.
   **Effort per worker…** (`src/ui/worker_effort.rs`, data in `src/worker_effort.rs`;
   `UiState.show_worker_effort` + `worker_effort_range: Option<(i32, i32)>`, `None` =
   `default_range()` = current Monday → today + 12 months, button «Da oggi a un anno»,

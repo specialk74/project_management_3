@@ -84,7 +84,7 @@ fn workers_combo(ui: &mut egui::Ui, app: &App, set: &mut std::collections::BTree
 
 /// Periodo di default: dalla settimana corrente a un anno da oggi (stesso
 /// giorno dell'anno prossimo).
-fn default_range() -> (i32, i32) {
+pub(crate) fn default_range() -> (i32, i32) {
     let today = today();
     let to = today
         .checked_add_months(chrono::Months::new(12))
