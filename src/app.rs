@@ -243,8 +243,14 @@ impl App {
     }
 
     /// Elimina il dev **solo se non è in nessun progetto**.
+    /// Elimina il dev **solo se nessun progetto lo usa**; se lo elimina,
+    /// lo toglie anche dalle quote dei worker.
     pub fn delete_dev(&mut self, dev: DevId) -> bool {
-        self.dev_usage(dev) == 0 && self.devs.del(dev)
+        let done = self.dev_usage(dev) == 0 && self.devs.del(dev);
+        if done {
+            self.workers.remove_dev_shares(dev);
+        }
+        done
     }
 
     /// Elimina la categoria **solo se nessun progetto la usa**.
@@ -299,6 +305,17 @@ impl App {
                     i + 1,
                     hex_rgb_string(MONTH_COLORS_DEFAULT[i])
                 ));
+            }
+        }
+        // Quote per dev dei worker: dev esistenti, somma al massimo 100%.
+        for (wid, wname) in self.workers.list() {
+            let shares = self.workers.dev_shares(wid);
+            if shares.iter().any(|(d, _)| !dev_ids.contains(d)) {
+                issues.push(format!("Worker «{wname}»: quota su un dev sconosciuto."));
+            }
+            let sum: u32 = shares.iter().map(|(_, p)| p).sum();
+            if sum > 100 {
+                issues.push(format!("Worker «{wname}»: quote dei dev al {sum}%, oltre il 100%."));
             }
         }
         for (pid, pname) in self.projects.list() {

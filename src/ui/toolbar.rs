@@ -404,7 +404,7 @@ pub(crate) fn toolbar(
                 state.show_worker_effort = true;
                 ui.close_kind(egui::UiKind::Menu);
             }
-            if ui.button("Domanda per dev…").clicked() {
+            if ui.button("Domanda e capacità…").clicked() {
                 // A ogni apertura: progetti attivi e on-hold (i chiusi non hanno
                 // più lavoro da assegnare); si cambia dalla combo Stato.
                 state.demand_statuses = [ProjectStatus::Active, ProjectStatus::OnHold].into_iter().collect();

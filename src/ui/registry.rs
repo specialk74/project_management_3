@@ -15,6 +15,8 @@ const REG_HIDDEN_W: f32 = 72.0;
 /// Colonna «Nei totali», solo nella scheda Dev.
 const REG_TOTALS_W: f32 = 72.0;
 const REG_DEL_W: f32 = 32.0;
+/// Colonna «Dev» (quote per dev), solo nella scheda Worker.
+const REG_SHARES_W: f32 = 360.0;
 const REG_GAP: f32 = 10.0;
 /// Altezza di una riga.
 const REG_ROW_H: f32 = 24.0;
@@ -53,6 +55,17 @@ struct RegistryRow {
     /// Solo per i dev: compare nei totali in basso a sinistra del footer
     /// (`hide_in_totals` spento). `None` nelle altre schede.
     in_totals: Option<bool>,
+    /// Solo per i worker: quote per dev e il loro riassunto. `None` nelle
+    /// altre schede.
+    shares: Option<(Vec<(DevId, u32)>, String)>,
+}
+
+/// Riassunto delle quote: «Frontend 70% · Test 30%», «—» se non dichiarate.
+pub(crate) fn shares_summary(app: &App, shares: &[(DevId, u32)]) -> String {
+    if shares.is_empty() {
+        return "—".into();
+    }
+    shares.iter().map(|(d, p)| format!("{} {p}%", dev_name(app, *d))).collect::<Vec<_>>().join(" · ")
 }
 
 /// Le righe della scheda `tab`, filtrate dalla ricerca `q` (minuscolo).
@@ -74,6 +87,11 @@ fn registry_rows(app: &App, tab: RegistryTab, q: &str) -> Vec<RegistryRow> {
                     }),
                     hidden: app.workers.is_archived(id),
                     in_totals: None,
+                    shares: Some({
+                        let v = app.workers.dev_shares(id).to_vec();
+                        let s = shares_summary(app, &v);
+                        (v, s)
+                    }),
                     name,
                 })
                 .collect()
@@ -87,6 +105,7 @@ fn registry_rows(app: &App, tab: RegistryTab, q: &str) -> Vec<RegistryRow> {
                 usage: projects_usage(app.dev_usage(id)),
                 hidden: app.devs.is_hidden(id),
                 in_totals: Some(!app.devs.is_hidden_in_totals(id)),
+                shares: None,
                 name,
             })
             .collect(),
@@ -99,6 +118,7 @@ fn registry_rows(app: &App, tab: RegistryTab, q: &str) -> Vec<RegistryRow> {
                 usage: projects_usage(app.category_usage(id)),
                 hidden: app.categories.is_hidden(id),
                 in_totals: None,
+                shares: None,
                 name,
             })
             .collect(),
@@ -111,6 +131,7 @@ fn registry_rows(app: &App, tab: RegistryTab, q: &str) -> Vec<RegistryRow> {
                 usage: projects_usage(app.priority_usage(id)),
                 hidden: app.priorities.is_hidden(id),
                 in_totals: None,
+                shares: None,
                 name,
             })
             .collect(),
@@ -159,6 +180,14 @@ fn delete_action(tab: RegistryTab, id: usize) -> Action {
         RegistryTab::Priorities => Action::DeletePriority(PriorityId(id)),
     }
 }
+
+/// Altezza massima dell'elenco dei dev in «Dev di …», poi si scorre.
+const WORKER_DEVS_LIST_H: f32 = 420.0;
+
+/// Spiegazione della colonna «Dev» (scheda Worker).
+const SHARES_HELP: &str = "Dev che il worker sa fare, con la quota del suo tempo: servono \
+     alla capacità per dev di Vista ▸ Domanda e capacità… (es. Frontend 70%, Test 30%). \
+     Clic per modificarle.";
 
 /// Spiegazione di «Nei totali» (scheda Dev).
 const TOTALS_HELP: &str = "Nei totali: il dev compare nel riquadro in basso a sinistra del \
@@ -259,6 +288,11 @@ pub(crate) fn registry_window(
                             .on_hover_text(TOTALS_HELP)
                     });
                 }
+                if tab == RegistryTab::Workers {
+                    reg_cell(ui, REG_SHARES_W, |ui| {
+                        ui.label(egui::RichText::new("Dev (capacità)").strong()).on_hover_text(SHARES_HELP)
+                    });
+                }
                 reg_cell(ui, REG_DEL_W, |_| ());
             });
             ui.separator();
@@ -349,6 +383,23 @@ fn registry_row(
         }
     }
 
+    // Solo worker: le quote per dev, modificate nella finestra a parte.
+    if let Some((shares, summary)) = &r.shares {
+        let clicked = reg_cell(ui, REG_SHARES_W, |ui| {
+            let text = egui::RichText::new(summary).color(if shares.is_empty() { text_dim() } else { text() });
+            // Il pulsante può troncare: nel tooltip l'elenco completo, un dev per riga.
+            let hint = if shares.is_empty() {
+                SHARES_HELP.to_string()
+            } else {
+                format!("{}\n\n{SHARES_HELP}", summary.replace(" · ", "\n"))
+            };
+            ui.add(egui::Button::new(text).truncate()).on_hover_text(hint).clicked()
+        });
+        if clicked {
+            state.worker_devs_edit = Some(WorkerDevsEdit { worker: WorkerId(r.id), shares: shares.clone(), note: None });
+        }
+    }
+
     let del = reg_cell(ui, REG_DEL_W, |ui| {
         ui.add_enabled(r.usage.is_none(), egui::Button::new("🗑"))
     });
@@ -364,6 +415,112 @@ fn registry_row(
         actions.push(delete_action(tab, r.id));
     }
     Rect::from_min_max(top_left, egui::pos2(ui.min_rect().right(), top_left.y + REG_ROW_H))
+}
+
+/// Finestra «Dev di …» (dalla colonna «Dev» del registro dei worker): una
+/// quota in % per **ogni** dev (i nascosti in grigio, «nascosto»), in un
+/// elenco che scorre, la somma
+/// (al massimo 100%), «Proponi dagli ultimi 6 mesi» (`propose_shares`) e
+/// «Azzera». OK manda `Action::SetWorkerDevShares`.
+pub(crate) fn worker_devs_window(ctx: &egui::Context, app: &App, state: &mut UiState, actions: &mut Vec<Action>) {
+    let Some(ed) = state.worker_devs_edit.as_mut() else {
+        return;
+    };
+    let name = app.workers.get_name_by_id(ed.worker).to_string();
+    let mut open = true;
+    let mut ok = false;
+    let mut cancel = false;
+    egui::Window::new(format!("Dev di {name}"))
+        .id(egui::Id::unique("worker_devs_window"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "Quota del tempo di questo worker per ogni dev che sa fare: la sua capacità per \
+                     quel dev è la quota delle sue ore massime di ogni settimana.",
+                )
+                .color(text_dim()),
+            );
+            ui.separator();
+            egui::ScrollArea::vertical()
+                .id_salt("worker_devs_scroll")
+                .scroll_source(drag_scroll())
+                .max_height(WORKER_DEVS_LIST_H)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    egui::Grid::new("worker_devs_grid").num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
+                        for (dev, dname) in app.devs.list() {
+                            let cur = ed.shares.iter().find(|(d, _)| *d == dev).map_or(0, |(_, p)| *p);
+                            let fill = dev_color(app, dev);
+                            ui.label(egui::RichText::new(format!(" {dname} ")).background_color(fill).color(contrast_text(fill)));
+                            let mut v = cur;
+                            if ui.add(egui::DragValue::new(&mut v).range(0..=100).suffix("%")).changed() {
+                                ed.shares.retain(|(d, _)| *d != dev);
+                                if v > 0 {
+                                    ed.shares.push((dev, v));
+                                }
+                                ed.shares.sort_by_key(|(d, _)| *d);
+                            }
+                            if app.devs.is_hidden(dev) {
+                                ui.label(egui::RichText::new("nascosto").small().color(text_dim()));
+                            } else {
+                                ui.label("");
+                            }
+                            ui.end_row();
+                        }
+                    });
+                });
+            let sum: u32 = ed.shares.iter().map(|(_, p)| p).sum();
+            if sum > 100 {
+                ui.colored_label(g(error_red()), format!("Totale {sum}%: al massimo 100%."));
+            } else {
+                ui.label(format!("Totale {sum}%"));
+                if (1..100).contains(&sum) {
+                    ui.label(egui::RichText::new("Il resto del tempo non conta per nessun dev.").small().color(text_dim()));
+                }
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Proponi dagli ultimi 6 mesi")
+                    .on_hover_text("Le quote in proporzione alle sue ore per dev nelle 26 settimane prima di questa.")
+                    .clicked()
+                {
+                    let proposal = crate::demand::propose_shares(app, ed.worker, current_week_id());
+                    ed.note = proposal.is_empty().then(|| "Nessuna ora negli ultimi 6 mesi.".to_string());
+                    if !proposal.is_empty() {
+                        ed.shares = proposal;
+                    }
+                }
+                if ui.button("Azzera").clicked() {
+                    ed.shares.clear();
+                    ed.note = None;
+                }
+            });
+            if let Some(n) = &ed.note {
+                ui.colored_label(warn_amber(), n);
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.add_enabled(sum <= 100, egui::Button::new("OK")).clicked() {
+                    ok = true;
+                }
+                if ui.button("Annulla").clicked() {
+                    cancel = true;
+                }
+            });
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                cancel = true;
+            }
+        });
+    if ok {
+        actions.push(Action::SetWorkerDevShares { worker: ed.worker, shares: ed.shares.clone() });
+    }
+    if ok || cancel || !open {
+        state.worker_devs_edit = None;
+    }
 }
 
 /// Dopo l'eliminazione di un worker: toglie i riferimenti rimasti nello stato

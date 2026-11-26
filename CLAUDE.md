@@ -75,7 +75,7 @@ references; the UI lives entirely in the `src/ui/` module.
     progetti × worker: `matrix_select_window` + `matrix_window`, plus the shared
     `worker_pick_window`), `pies.rs` (torte dev/categorie per worker:
     `pies_select_window` + `pies_window`), `demand.rs` (`demand_window`, Vista ▸
-    Domanda per dev…, data in `src/demand.rs`), `swap.rs` (`swap_worker_window` / `remove_worker_window`,
+    Domanda e capacità…, data in `src/demand.rs`), `swap.rs` (`swap_worker_window` / `remove_worker_window`,
     Modifica ▸ Scambia worker… / Cancella worker dai progetti…), `worker_effort.rs` (finestra «Effort per
     worker», vedi Vista; data in `src/worker_effort.rs`).
   - **`draw_dev_cells` is only the column-loop orchestrator** (~165 lines): each case of
@@ -120,7 +120,7 @@ references; the UI lives entirely in the `src/ui/` module.
 - `src/worker_matrix.rs` / `src/worker_pies.rs` / `src/worker_effort.rs` — data
   shared by the matrix / pies / effort-per-worker windows and their PDF (and SVG)
   exports.
-- `src/demand.rs` — demand per dev and month (Vista ▸ Domanda per dev…, #60).
+- `src/demand.rs` — demand and capacity per dev and month (Vista ▸ Domanda e capacità…, #60).
 - Data modules: `workers_utils/`, `dev_utils/`, `project_utils/`, `single_dev_utils/`, `single_effort_utils/`, `categories.rs`, `milestones.rs`, `date_utils/`, `sync_merge.rs`.
 
 ### Data Model
@@ -432,8 +432,11 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
     together (`Workers::is_archived`, no new field); dev: `Dev.hidden`
     (`#[serde(default, skip_serializing_if = "is_false")]`, `Devs::is_hidden/
     set_hidden/list_visible`) skipped in `dev_manage_window` (unless already in
-    the project), Filtri ▸ Dev, the pies `devs_combo`, and the matrix «Ore per
-    dev» rows when it has no hours; category: `Categories.hidden: BTreeSet`
+    the project), Filtri ▸ Dev, `devs_combo` (pies and Domanda e capacità) **only
+    when unused** (`dev_usage == 0`; a used hidden dev still has data in those
+    views, so it stays listed as «Name (nascosto)» and can be unticked — it was
+    the «can't untick DMS» bug), and the matrix «Ore per dev» rows when it has
+    no hours; category: `Categories.hidden: BTreeSet`
     (skip if empty) skipped in the project category popup (unless current),
     Filtri ▸ Categorie, `categories_combo`, the footer selector (unless
     selected). In the combos hidden items stay in the «all» set and the last
@@ -875,7 +878,8 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `pies_sum_hours_by_dev_and_category`, `pie_geometry_labels_and_hit`,
   `worker_pies_draw_slices_labels_and_tables`,
   `pies_pdf_has_a_page_per_worker_with_hours`.
-  **Domanda per dev…** (MIGLIORAMENTI #60 phase 1; `src/ui/demand.rs`, data in
+  **Domanda e capacità…** (MIGLIORAMENTI #60 phases 1–2, was «Domanda per dev»;
+  `src/ui/demand.rs`, data in
   `src/demand.rs`): read-only OS window (`os_window`), `UiState.show_demand` /
   `demand_range: Option<(i32, i32)>` (`None` = worker_effort's `default_range()`,
   now `pub(crate)`) / `demand_years` / `demand_categories` / `demand_statuses`
@@ -907,6 +911,54 @@ toolbar uses `egui::MenuBar::new().ui(…)`; a non-scrollable synced `ScrollArea
   `demand_pdf_has_the_table_and_splits_rows_and_columns`. Phases 2 and 4
   (capacity per dev, scenarios) are still open in MIGLIORAMENTI #60; phase 3
   has the PDF, not yet the CSV.
+  **Capacity (phase 2)**: `Worker.dev_shares: Vec<(DevId, u32)>` (`#[serde(default,
+  skip_serializing_if = "Vec::is_empty")]`, old files load) via
+  `Workers::dev_shares/dev_share/set_dev_shares` (drops 0 and duplicates, sorted,
+  ≤ 100, returns `bool`) / `remove_dev_shares` (called by `App::delete_dev`);
+  `App::validate` reports unknown devs and sums > 100. `DemandCell` gained
+  `capacity` + `cap_workers` (`gap()` = capacity − demand, `no_demand()`,
+  `is_empty()` = no demand and no capacity); `DemandRow.declared` = some
+  `capacity_workers` (not archived, not ghost) has a share on the dev;
+  `DemandData::grand()` / `any_declared()`. `build` adds, per
+  `period_mondays(from, to)` (Monday in the period) and worker,
+  `get_effective_max_hours × pct / 100` to the month (Saturazione rule); not
+  filtered by the project filters. `propose_shares(app, w, now)` = hours per dev
+  in the 26 weeks before `now`, integer % summing to 100 (largest remainder).
+  Row backgrounds are the table's own `dm_row_bg(odd)` (dark #1E1E1E / #2A2A2A,
+  light white / #E9E9E9) — **not** `row_even()/row_alt()`, whose dark #808080
+  hid the grey text and the colours; `dm_assigned_color` / `dm_unassigned_color`
+  are theme-aware (lighter on dark, darker on light). Test
+  `row_backgrounds_keep_every_text_readable` (WCAG contrast, both themes).
+  GUI: cell rows `DM_ROW_H` 52 / `DM_CELL_W` 100, `CellStyle { max, strong,
+  show_cap, bg }` (`show_cap` = declared row and a month / Totale column), third
+  line `cap_job` («cap 80h · +37h», gap green / red), black capacity tick on the
+  bar, reddish background when short, tooltip with demand / capacity / verdict
+  and `cap_workers_by_weight`; «capacità non dichiarata» under the dev name;
+  legend + «Quote dei worker…» (opens the registry's Workers tab). Under the
+  legend a `CollapsingHeader` «Come si legge una cella» (default open, GUI only,
+  **not** in the PDF — user's request) with `demand_cell_key`: a sample cell
+  (120 + 40 vs cap 140, short) drawn by `draw_cell` (`CellStyle.tooltip: false`)
+  and `DM_KEY_NOTES` linked by lines at each element's height, plus
+  `DM_KEY_BG_NOTE` below; it replaced the grey «Ogni cella: …» line. Registry:
+  Workers tab column «Dev (capacità)» (`REG_SHARES_W` 360, `RegistryRow.shares`,
+  `shares_summary`; the button truncates, its tooltip lists every share one per
+  line) → `UiState.worker_devs_edit: Option<WorkerDevsEdit { worker,
+  shares, note }>` → `worker_devs_window` («Dev di …»: DragValue % for **every**
+  dev, hidden ones marked «nascosto», in a `ScrollArea` capped at
+  `WORKER_DEVS_LIST_H`,
+  total ≤ 100 or OK disabled, «Proponi dagli ultimi 6 mesi», «Azzera») →
+  `Action::SetWorkerDevShares`. PDF: `dm_cell_shapes(…, show_cap)` third line
+  shrunk to fit, tick, `DM_SHORT_BG`; rows shrink to fit one page:
+  `dm_row_h(n)` = available ÷ (n + 1) clamped to [`DM_ROW_MIN_H` 9, `DM_ROW_H` 13]
+  and every offset / font of `dm_cell_shapes(…, rh, …)` scales by `rh / DM_ROW_H`
+  (14 devs + Total fit; `DM_LABEL_W` 30, `DM_CELL_MIN_W` 14.5 so a year + No end +
+  Overdue + Total is one column block — before, 9 rows per page and «Total»
+  alone on pages 3–4); two-line legend; title «Demand and
+  capacity by dev». Tests `capacity_comes_from_the_worker_shares`,
+  `proposed_shares_follow_the_last_six_months`,
+  `dev_shares_are_normalized_saved_only_when_set_and_dropped_with_the_dev`,
+  `worker_dev_shares_are_edited_from_the_registry`, plus the window and PDF
+  tests. Older program versions drop `dev_shares` on save.
   **Effort per worker…** (`src/ui/worker_effort.rs`, data in `src/worker_effort.rs`;
   `UiState.show_worker_effort` + `worker_effort_range: Option<(i32, i32)>`, `None` =
   `default_range()` = current Monday → today + 12 months, button «Da oggi a un anno»,

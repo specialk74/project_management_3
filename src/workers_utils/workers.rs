@@ -1,3 +1,4 @@
+use crate::dev_utils::dev::DevId;
 use crate::workers_utils::worker::{DEFAULT_MAX_HOURS, WORKER_ID_ZERO, WeekStatus, Worker, WorkerId};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -178,6 +179,44 @@ impl Workers {
         }
     }
 
+    /// Quote per dev del worker (vuoto = non dichiarate).
+    pub fn dev_shares(&self, id: WorkerId) -> &[(DevId, u32)] {
+        self.worker_id.get(&id).map_or(&[], |w| w.dev_shares.as_slice())
+    }
+
+    /// Quota (in %) del worker sul dev, 0 se non dichiarata.
+    pub fn dev_share(&self, id: WorkerId, dev: DevId) -> u32 {
+        self.dev_shares(id).iter().find(|(d, _)| *d == dev).map_or(0, |(_, p)| *p)
+    }
+
+    /// Imposta le quote: tolte quelle a 0 e i doppioni (vale l'ultima),
+    /// ordinate per dev, ognuna al massimo 100. `true` se è cambiato qualcosa.
+    pub fn set_dev_shares(&mut self, id: WorkerId, shares: &[(DevId, u32)]) -> bool {
+        let Some(w) = self.worker_id.get_mut(&id) else {
+            return false;
+        };
+        let mut v: Vec<(DevId, u32)> = Vec::new();
+        for &(d, p) in shares {
+            v.retain(|(x, _)| *x != d);
+            if p > 0 {
+                v.push((d, p.min(100)));
+            }
+        }
+        v.sort_by_key(|(d, _)| *d);
+        if w.dev_shares == v {
+            return false;
+        }
+        w.dev_shares = v;
+        true
+    }
+
+    /// Toglie il dev dalle quote di tutti i worker (dev eliminato).
+    pub fn remove_dev_shares(&mut self, dev: DevId) {
+        for w in self.worker_id.values_mut() {
+            w.dev_shares.retain(|(d, _)| *d != dev);
+        }
+    }
+
     pub fn list(&self) -> Vec<(WorkerId, String)> {
         let mut items: Vec<(WorkerId, String)> = self
             .worker_id
@@ -327,6 +366,31 @@ mod tests {
         let list = ws.list();
         let names: Vec<&str> = list.iter().map(|(_, n)| n.as_str()).collect();
         assert_eq!(names, vec!["Alice", "Bob", "Charlie"]);
+    }
+
+    /// Quote per dev: senza le quote a 0 e i doppioni, ordinate per dev, al
+    /// massimo 100; nel file solo se dichiarate (i file vecchi si aprono
+    /// senza); un dev eliminato sparisce dalle quote.
+    #[test]
+    fn dev_shares_are_normalized_saved_only_when_set_and_dropped_with_the_dev() {
+        use crate::dev_utils::dev::DevId;
+        let mut ws = Workers::new();
+        let a = ws.add("Alice");
+        let (fe, be, te) = (DevId(2), DevId(1), DevId(3));
+        assert!(ws.set_dev_shares(a, &[(fe, 70), (te, 0), (be, 20), (fe, 60), (DevId(9), 150)]));
+        assert_eq!(ws.dev_shares(a), &[(be, 20), (fe, 60), (DevId(9), 100)]);
+        assert_eq!(ws.dev_share(a, fe), 60);
+        assert!(!ws.set_dev_shares(a, &[(fe, 60), (be, 20), (DevId(9), 100)]), "uguali: niente modifica");
+        let ron = ron::to_string(&ws).unwrap();
+        assert!(ron.contains("dev_shares"), "{ron}");
+        let back: Workers = ron::from_str(&ron).unwrap();
+        assert_eq!(back.dev_shares(a), ws.dev_shares(a));
+        ws.remove_dev_shares(DevId(9));
+        assert_eq!(ws.dev_shares(a), &[(be, 20), (fe, 60)]);
+        ws.set_dev_shares(a, &[]);
+        assert!(!ron::to_string(&ws).unwrap().contains("dev_shares"), "vuote: non salvate");
+        let old: crate::workers_utils::worker::Worker = ron::from_str(r#"(name: "Bob")"#).unwrap();
+        assert!(old.dev_shares.is_empty());
     }
 
     #[test]

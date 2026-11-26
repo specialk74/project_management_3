@@ -3610,6 +3610,78 @@ fn current_week_has_a_green_border_in_header_grid_and_footer() {
 
 /// Finestra «Worker, dev e categorie»: per ogni worker l'uso; il cestino
 /// funziona solo su chi non è usato (Anna), su Mario (con celle) no.
+/// Scheda Worker del registro: la colonna «Dev (capacità)» riassume le quote
+/// e apre «Dev di …»; lì «Proponi dagli ultimi 6 mesi» le ricava dalle ore,
+/// OK le salva; oltre il 100% la validazione del file lo segnala.
+#[test]
+fn worker_dev_shares_are_edited_from_the_registry() {
+    let mut app = App::new();
+    let mario = app.workers.add("Mario");
+    app.workers.add("Anna");
+    let fe = app.devs.add("Frontend");
+    let be = app.devs.add("Backend");
+    let old = app.devs.add("Vecchio");
+    app.devs.set_hidden(old, true);
+    let p = app.projects.add("x", Some("P1"), None);
+    app.projects.add_dev(p, fe);
+    app.projects.add_dev(p, be);
+    let last = WeekId(current_week_id().0 - WEEK_STEP);
+    app.projects.add_effort(p, fe, last, mario, Effort(6));
+    app.projects.add_effort(p, be, last, mario, Effort(2));
+    app.workers.set_dev_shares(mario, &[(fe, 70)]);
+    let ctx = egui::Context::default();
+    let input = egui::RawInput { screen_rect: Some(screen(1400.0, 800.0)), ..Default::default() };
+    let mut state = UiState { show_registry: true, ..Default::default() };
+    let mut actions = Vec::new();
+    let frame = |state: &mut UiState, actions: &mut Vec<Action>, ev: Option<egui::Event>| {
+        let mut i = input.clone();
+        i.events.extend(ev);
+        ctx.run_ui_test(i, |ui| {
+            registry_window(ui.ctx(), &app, state, actions);
+            worker_devs_window(ui.ctx(), &app, state, actions);
+        })
+    };
+    let click = |state: &mut UiState, actions: &mut Vec<Action>, label: &str| {
+        for _ in 0..3 {
+            frame(state, actions, None);
+        }
+        let out = frame(state, actions, None);
+        let pos = text_pos(&out, label).unwrap_or_else(|| panic!("{label}: {:?}", drawn_texts(&out)));
+        for ev in click_events(pos, egui::PointerButton::Primary) {
+            frame(state, actions, Some(ev));
+        }
+        frame(state, actions, None)
+    };
+    frame(&mut state, &mut actions, None);
+    let out = frame(&mut state, &mut actions, None);
+    let texts = drawn_texts(&out);
+    for t in ["Dev (capacità)", "Frontend 70%", "—"] {
+        assert!(texts.iter().any(|x| x == t), "manca «{t}»: {texts:?}");
+    }
+    let out = click(&mut state, &mut actions, "Frontend 70%");
+    assert!(state.worker_devs_edit.as_ref().is_some_and(|e| e.worker == mario && e.shares == vec![(fe, 70)]));
+    let texts = drawn_texts(&out);
+    assert!(texts.iter().any(|x| x == "Dev di Mario"), "{texts:?}");
+    // Tutti i dev, anche quello nascosto (segnato).
+    for t in [" Frontend ", " Backend ", " Vecchio ", "nascosto"] {
+        assert!(texts.iter().any(|x| x == t), "manca «{t}»: {texts:?}");
+    }
+    click(&mut state, &mut actions, "Proponi dagli ultimi 6 mesi");
+    assert_eq!(state.worker_devs_edit.as_ref().unwrap().shares, vec![(fe, 75), (be, 25)]);
+    click(&mut state, &mut actions, "OK");
+    assert!(state.worker_devs_edit.is_none());
+    assert!(matches!(actions.as_slice(), [Action::SetWorkerDevShares { worker, shares }]
+        if *worker == mario && shares == &vec![(fe, 75), (be, 25)]));
+    let mut pjm = PjmApp { app: app.clone(), ui: UiState::default() };
+    for x in actions {
+        pjm.apply(x);
+    }
+    assert_eq!(pjm.app.workers.dev_shares(mario), &[(fe, 75), (be, 25)]);
+    assert!(pjm.ui.changed);
+    pjm.app.workers.set_dev_shares(mario, &[(fe, 70), (be, 70)]);
+    assert!(pjm.app.validate().iter().any(|m| m.contains("140%")), "{:?}", pjm.app.validate());
+}
+
 #[test]
 fn registry_window_shows_usage_and_deletes_only_unused() {
     let mut app = App::new();

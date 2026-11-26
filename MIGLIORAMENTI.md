@@ -73,7 +73,11 @@ non il tempo di digitazione.
      la fine del progetto). I residui dei progetti senza data di fine vanno in una
      colonna «Senza data». Tooltip con i progetti che compongono la cella.
      _Tempo: ~1 day · Difficoltà: Media._
-  2. **Capacità per dev** (nuovo dato nel file). Ogni worker dichiara **quali dev
+  2. ✅ _(fatta il 2026-11-26: la vista si chiama ora **Domanda e capacità…**;
+     capacità e scarto in ogni cella con il segno sulla barretta e il fondo
+     rossastro dove manca, «capacità non dichiarata» per i dev senza quote,
+     pulsante «Quote dei worker…»; il PDF mostra le stesse cose)_ **Capacità per
+     dev** (nuovo dato nel file). Ogni worker dichiara **quali dev
      sa fare**, con una quota (es. Alice: Frontend 70%, Test 30%): nuova colonna
      «Dev» nella scheda Worker di Aggiungi ▸ Worker, dev e categorie…, salvata
      come campo opzionale del worker (i file vecchi si aprono uguali). Capacità

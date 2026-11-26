@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::dev_utils::dev::DevId;
+
 pub const WORKER_ID_ZERO: WorkerId = WorkerId(0);
 pub const DEFAULT_MAX_HOURS: u32 = 40;
 
@@ -64,6 +66,12 @@ pub struct Worker {
     /// lampeggiante, barra/linea rossa negli export. Default `false`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub ghost: bool,
+    /// Dev che il worker sa fare, con la quota del suo tempo in % (es.
+    /// Frontend 70, Test 30): la sua capacità per dev nella vista «Domanda e
+    /// capacità». Vuoto = non dichiarato (non salvato). Ordinato per dev,
+    /// senza quote a 0 (`Workers::set_dev_shares`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dev_shares: Vec<(DevId, u32)>,
 }
 
 impl Worker {
@@ -79,6 +87,7 @@ impl Worker {
             hide_in_footer: None,
             show_in_find: true,
             ghost: false,
+            dev_shares: Vec::new(),
         }
     }
 

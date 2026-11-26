@@ -1,9 +1,11 @@
-//! Domanda per dev e per mese (MIGLIORAMENTI #60, fase 1): quanto lavoro c'è
+//! Domanda e capacità per dev e per mese (MIGLIORAMENTI #60, fasi 1-2): quanto lavoro c'è
 //! per ogni dev (ruolo), mese per mese, diviso in **assegnato** (ore già in
 //! griglia) e **da assegnare** (il residuo del dev, pianificato − ore in
 //! griglia, spalmato in parti uguali sulle settimane che restano al
-//! progetto). Dati della finestra Vista ▸ Domanda per dev…; la capacità per
-//! dev arriverà con la fase 2.
+//! progetto). Fase 2: la **capacità** per dev = ore massime effettive dei
+//! worker che hanno dichiarato una quota su quel dev (`Worker.dev_shares`) ×
+//! la quota, e lo scarto capacità − domanda. Dati della finestra Vista ▸
+//! Domanda e capacità…
 
 use std::collections::BTreeSet;
 
@@ -16,6 +18,7 @@ use crate::dev_utils::dev::DevId;
 use crate::priorities::PriorityId;
 use crate::project_utils::project::{ProjectId, ProjectStatus};
 use crate::single_dev_utils::single_dev::{WEEK_STEP, WeekId};
+use crate::workers_utils::worker::{WORKER_ID_ZERO, WorkerId};
 
 /// Una colonna della tabella.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,21 +39,45 @@ pub struct ProjDemand {
     pub unassigned: f64,
 }
 
-/// Una cella: ore assegnate e da assegnare, con i progetti che le compongono.
+/// Una cella: ore assegnate e da assegnare, con i progetti che le compongono,
+/// e la capacità (0 nelle colonne «Senza fine» / «In ritardo») con i worker
+/// che la danno.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DemandCell {
     pub assigned: usize,
     pub unassigned: f64,
     pub projects: Vec<ProjDemand>,
+    pub capacity: f64,
+    pub cap_workers: Vec<(WorkerId, f64)>,
 }
 
 impl DemandCell {
+    /// Domanda: assegnate + da assegnare.
     pub fn total(&self) -> f64 {
         self.assigned as f64 + self.unassigned
     }
 
-    pub fn is_empty(&self) -> bool {
+    /// Niente domanda.
+    pub fn no_demand(&self) -> bool {
         self.assigned == 0 && self.unassigned <= 0.0
+    }
+
+    /// Niente domanda né capacità.
+    pub fn is_empty(&self) -> bool {
+        self.no_demand() && self.capacity <= 0.0
+    }
+
+    /// Capacità − domanda: positivo = avanza, negativo = manca.
+    pub fn gap(&self) -> f64 {
+        self.capacity - self.total()
+    }
+
+    fn add_capacity(&mut self, worker: WorkerId, hours: f64) {
+        self.capacity += hours;
+        match self.cap_workers.iter_mut().find(|(w, _)| *w == worker) {
+            Some((_, h)) => *h += hours,
+            None => self.cap_workers.push((worker, hours)),
+        }
     }
 
     fn add(&mut self, proj: ProjectId, assigned: usize, unassigned: f64) {
@@ -69,6 +96,16 @@ impl DemandCell {
         for p in &other.projects {
             self.add(p.proj, p.assigned, p.unassigned);
         }
+        for &(w, h) in &other.cap_workers {
+            self.add_capacity(w, h);
+        }
+    }
+
+    /// Worker dal contributo più grande al più piccolo (per il tooltip).
+    pub fn cap_workers_by_weight(&self) -> Vec<(WorkerId, f64)> {
+        let mut v = self.cap_workers.clone();
+        v.sort_by(|a, b| b.1.total_cmp(&a.1));
+        v
     }
 
     /// Progetti dal più pesante al più leggero (per il tooltip).
@@ -79,11 +116,14 @@ impl DemandCell {
     }
 }
 
-/// Una riga: un dev, una cella per colonna.
+/// Una riga: un dev, una cella per colonna. `declared` = almeno un worker
+/// (che conta per la capacità) ha una quota su questo dev: senza, la
+/// capacità non è nota e lo scarto non ha senso.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DemandRow {
     pub dev: DevId,
     pub cells: Vec<DemandCell>,
+    pub declared: bool,
 }
 
 impl DemandRow {
@@ -106,6 +146,22 @@ pub struct DemandData {
     pub total: Vec<DemandCell>,
 }
 
+impl DemandData {
+    /// Somma di tutta la tabella (domanda di tutte le colonne, capacità dei mesi).
+    pub fn grand(&self) -> DemandCell {
+        let mut c = DemandCell::default();
+        for t in &self.total {
+            c.merge(t);
+        }
+        c
+    }
+
+    /// Almeno un dev mostrato ha la capacità dichiarata.
+    pub fn any_declared(&self) -> bool {
+        self.rows.iter().any(|r| r.declared)
+    }
+}
+
 /// Mese (anno, mese) del giorno `days`.
 pub fn month_of_day(days: i32) -> (i32, u32) {
     let d = days_to_local(days);
@@ -121,6 +177,67 @@ pub fn months(from: i32, to: i32) -> Vec<(i32, u32)> {
         out.push((y, m));
         (y, m) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
     }
+    out
+}
+
+/// I lunedì delle settimane del periodo: quelle con il lunedì in `[from, to]`.
+pub fn period_mondays(from: i32, to: i32) -> Vec<WeekId> {
+    let mut first = crate::date_utils::dates::local_to_days(&crate::date_utils::dates::primo_giorno_settimana_corrente(
+        &days_to_local(from),
+    ));
+    if first < from {
+        first += WEEK_STEP as i32;
+    }
+    (first..=to).step_by(WEEK_STEP).map(|d| WeekId(d as usize)).collect()
+}
+
+/// Worker che contano per la capacità: né archiviati (tolti da footer ed
+/// elenchi) né ghost.
+pub fn capacity_workers(app: &App) -> Vec<WorkerId> {
+    app.workers
+        .list()
+        .into_iter()
+        .map(|(id, _)| id)
+        .filter(|&id| id != WORKER_ID_ZERO && !app.workers.is_archived(id) && !app.workers.is_ghost(id))
+        .collect()
+}
+
+/// Quote proposte per `worker` dalle sue assegnazioni degli ultimi 6 mesi
+/// (26 settimane prima di `now`, esclusa): ore per dev su tutti i progetti in
+/// percentuale, intere, che sommano a 100 (resti più grandi). Vuoto senza ore.
+pub fn propose_shares(app: &App, worker: WorkerId, now: WeekId) -> Vec<(DevId, u32)> {
+    const WEEKS: usize = 26;
+    let since = WeekId(now.0.saturating_sub(WEEKS * WEEK_STEP));
+    let mut hours: Vec<(DevId, usize)> = Vec::new();
+    for (proj, _) in app.projects.list() {
+        for dev in app.projects.list_devs(proj) {
+            let Some(sd) = app.projects.get_single_dev(proj, dev) else { continue };
+            for wk in sd.get_weeks().into_iter().filter(|w| *w >= since && *w < now) {
+                let h = sd.get_all(wk).and_then(|s| s.worker_id.get(&worker)).map_or(0, |e| e.get_effort().0);
+                if h > 0 {
+                    match hours.iter_mut().find(|(d, _)| *d == dev) {
+                        Some((_, x)) => *x += h,
+                        None => hours.push((dev, h)),
+                    }
+                }
+            }
+        }
+    }
+    let total: usize = hours.iter().map(|(_, h)| h).sum();
+    if total == 0 {
+        return Vec::new();
+    }
+    // Parte intera, poi i punti mancanti ai resti più grandi.
+    let mut parts: Vec<(DevId, u32, usize)> =
+        hours.iter().map(|&(d, h)| (d, (h * 100 / total) as u32, (h * 100) % total)).collect();
+    let missing = 100 - parts.iter().map(|(_, p, _)| p).sum::<u32>();
+    let mut order: Vec<usize> = (0..parts.len()).collect();
+    order.sort_by(|&a, &b| parts[b].2.cmp(&parts[a].2).then(parts[a].0.cmp(&parts[b].0)));
+    for &i in order.iter().take(missing as usize) {
+        parts[i].1 += 1;
+    }
+    let mut out: Vec<(DevId, u32)> = parts.into_iter().filter(|(_, p, _)| *p > 0).map(|(d, p, _)| (d, p)).collect();
+    out.sort_by_key(|(d, _)| *d);
     out
 }
 
@@ -170,8 +287,29 @@ pub fn build(
         .map(|(d, _)| d)
         .filter(|d| dev_filter.is_empty() || dev_filter.contains(d))
         .collect();
-    let mut rows: Vec<DemandRow> =
-        devs.iter().map(|&dev| DemandRow { dev, cells: vec![DemandCell::default(); cols.len()] }).collect();
+    let cap_workers = capacity_workers(app);
+    let mut rows: Vec<DemandRow> = devs
+        .iter()
+        .map(|&dev| DemandRow {
+            dev,
+            cells: vec![DemandCell::default(); cols.len()],
+            declared: cap_workers.iter().any(|&w| app.workers.dev_share(w, dev) > 0),
+        })
+        .collect();
+    // Capacità: per ogni settimana del periodo, le ore massime effettive di
+    // ogni worker × la sua quota sul dev (regola di Saturazione: limiti di
+    // settimana, ferie solo se il limite è 0).
+    for w in period_mondays(from, to) {
+        let Some(i) = col_of(w.0 as i32) else { continue };
+        for &wid in &cap_workers {
+            let max = app.workers.get_effective_max_hours(wid, w.0) as f64;
+            for &(dev, pct) in app.workers.dev_shares(wid) {
+                if let Some(row) = rows.iter_mut().find(|r| r.dev == dev) {
+                    row.cells[i].add_capacity(wid, max * pct as f64 / 100.0);
+                }
+            }
+        }
+    }
     for (proj, _) in app.projects.list() {
         if !cats.is_empty() && !cats.contains(&app.projects.get_category(proj)) {
             continue;
@@ -251,6 +389,83 @@ mod tests {
 
     fn day(y: i32, m: u32, d: u32) -> i32 {
         local_to_days(&chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap())
+    }
+
+    /// Capacità per dev: ore massime effettive di ogni settimana del periodo
+    /// × la quota del worker, nel mese del lunedì; i limiti di settimana
+    /// contano, ghost e archiviati no; scarto = capacità − domanda; un dev con
+    /// sola capacità ha la sua riga, uno senza quote è «non dichiarato».
+    #[test]
+    fn capacity_comes_from_the_worker_shares() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let bob = app.workers.add("Bob");
+        let ghost = app.workers.add("Ghost");
+        let gone = app.workers.add("Gone");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let now = monday(2026, 11, 23);
+        let wk = |i: usize| WeekId(now.0 + i * WEEK_STEP);
+        app.workers.set_dev_shares(alice, &[(fe, 50), (be, 50)]);
+        app.workers.set_dev_shares(bob, &[(fe, 100)]);
+        app.workers.set_dev_shares(ghost, &[(fe, 100)]);
+        app.workers.set_ghost(ghost, true);
+        app.workers.set_dev_shares(gone, &[(fe, 100)]);
+        app.workers.set_hidden_in_footer(gone, true);
+        app.workers.set_shown_in_find(gone, false);
+        app.workers.set_week_override(bob, wk(1).0, 0); // ferie
+        assert_eq!(capacity_workers(&app), vec![alice, bob]);
+        // Domanda: 30h di Frontend assegnate a novembre.
+        let p = app.projects.add("A", Some("AAA"), None);
+        app.projects.add_dev(p, fe);
+        app.projects.add_effort(p, fe, wk(0), alice, Effort(30));
+        let none = BTreeSet::new();
+        // Novembre: lunedì 23 e 30 → Alice 2 × 20h + Bob 40h + 0h = 80h di Frontend.
+        let data = build(&app, now.0 as i32, day(2026, 11, 30), now, &none, &BTreeSet::new(), &BTreeSet::new(), &BTreeSet::new());
+        assert_eq!(period_mondays(now.0 as i32, day(2026, 11, 30)), vec![wk(0), wk(1)]);
+        let fe_row = data.rows.iter().find(|r| r.dev == fe).unwrap();
+        assert!(fe_row.declared);
+        assert_eq!(fe_row.cells[0].capacity, 80.0);
+        assert_eq!(fe_row.cells[0].gap(), 50.0);
+        assert_eq!(fe_row.cells[0].cap_workers_by_weight(), vec![(alice, 40.0), (bob, 40.0)]);
+        let be_row = data.rows.iter().find(|r| r.dev == be).expect("solo capacità: riga presente");
+        assert_eq!((be_row.cells[0].capacity, be_row.cells[0].total()), (40.0, 0.0));
+        assert_eq!(data.grand().capacity, 120.0);
+        // Senza quote: «non dichiarato».
+        app.workers.set_dev_shares(alice, &[]);
+        app.workers.set_dev_shares(bob, &[]);
+        let data = build(&app, now.0 as i32, day(2026, 11, 30), now, &none, &BTreeSet::new(), &BTreeSet::new(), &BTreeSet::new());
+        assert_eq!(data.rows.len(), 1);
+        assert!(!data.rows[0].declared && !data.any_declared());
+    }
+
+    /// Proposta delle quote: ore per dev nelle 26 settimane prima di oggi, in
+    /// percentuali intere che sommano a 100; vuota senza ore.
+    #[test]
+    fn proposed_shares_follow_the_last_six_months() {
+        let mut app = App::new();
+        let alice = app.workers.add("Alice");
+        let fe = app.devs.add("Frontend");
+        let be = app.devs.add("Backend");
+        let te = app.devs.add("Test");
+        let now = monday(2026, 11, 23);
+        let ago = |n: usize| WeekId(now.0 - n * WEEK_STEP);
+        let p = app.projects.add("A", Some("AAA"), None);
+        for d in [fe, be, te] {
+            app.projects.add_dev(p, d);
+        }
+        assert!(propose_shares(&app, alice, now).is_empty());
+        app.projects.add_effort(p, fe, ago(1), alice, Effort(20));
+        app.projects.add_effort(p, be, ago(10), alice, Effort(10));
+        app.projects.add_effort(p, te, ago(2), alice, Effort(10));
+        app.projects.add_effort(p, te, ago(40), alice, Effort(100)); // troppo vecchia
+        app.projects.add_effort(p, te, now, alice, Effort(100)); // settimana corrente: no
+        assert_eq!(propose_shares(&app, alice, now), vec![(fe, 50), (be, 25), (te, 25)]);
+        // La cella di Frontend passa a 10h: tre parti uguali, 34 + 33 + 33.
+        app.projects.add_effort(p, fe, ago(1), alice, Effort(10));
+        let s = propose_shares(&app, alice, now);
+        assert_eq!(s.iter().map(|(_, p)| p).sum::<u32>(), 100);
+        assert_eq!(s, vec![(fe, 34), (be, 33), (te, 33)]);
     }
 
     #[test]

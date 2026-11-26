@@ -70,7 +70,13 @@ pub(crate) fn devs_combo(
         .into_iter()
         .map(|(d, name)| {
             let fill = dev_color(app, d);
-            TickItem { id: d, name, colors: Some((fill, contrast_text(fill))), hidden: app.devs.is_hidden(d) }
+            // Un dev nascosto (archiviato) non si propone per il lavoro nuovo, ma
+            // se è ancora in qualche progetto i suoi dati compaiono nelle viste:
+            // allora resta in elenco, segnato, così si può togliere.
+            let hidden = app.devs.is_hidden(d);
+            let used = app.dev_usage(d) > 0;
+            let name = if hidden && used { format!("{name} (nascosto)") } else { name };
+            TickItem { id: d, name, colors: Some((fill, contrast_text(fill))), hidden: hidden && !used }
         })
         .collect();
     TickCombo {

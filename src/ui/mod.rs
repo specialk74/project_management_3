@@ -504,6 +504,14 @@ impl SwapWorker {
     }
 }
 
+/// Quote per dev di un worker in modifica (finestra «Dev di …»).
+pub(crate) struct WorkerDevsEdit {
+    pub worker: WorkerId,
+    pub shares: Vec<(DevId, u32)>,
+    /// Avviso dopo «Proponi» senza ore.
+    pub note: Option<String>,
+}
+
 /// La settimana (il suo lunedì) che contiene il giorno `days`.
 pub(crate) fn week_of_day(days: i32) -> WeekId {
     WeekId(local_to_days(&primo_giorno_settimana_corrente(&days_to_local(days))) as usize)
@@ -1559,7 +1567,7 @@ pub struct UiState {
     // Effort per worker (Vista ▸ Effort per worker…): finestra aperta e periodo
     // Da/A in giorni (`None` = da oggi a fine griglia). Solo sessione.
     show_worker_effort: bool,
-    // finestra «Domanda per dev» (Vista ▸ Domanda per dev…, #60): periodo
+    // finestra «Domanda e capacità» (Vista ▸ Domanda e capacità…, #60): periodo
     // (`None` = da oggi a un anno), anni della combo e filtri, solo sessione.
     show_demand: bool,
     demand_range: Option<(i32, i32)>,
@@ -1651,6 +1659,8 @@ pub struct UiState {
     swap_worker: Option<SwapWorker>,
     // finestra «Cancella worker» (Modifica ▸ Cancella worker dai progetti…)
     remove_worker: Option<RemoveWorker>,
+    // finestra «Dev di …»: quote per dev del worker in modifica (registro)
+    worker_devs_edit: Option<WorkerDevsEdit>,
     // Annulla/Ripeti: cronologia e «c'è stata una modifica in questo frame»
     // (messo da `mark_changed`, consumato dopo le azioni da `record_undo`).
     undo: UndoHistory,
@@ -1872,7 +1882,12 @@ pub(crate) enum Action {
         targets: Vec<(ProjectId, DevId)>,
         start: WeekId,
     },
-    /// PDF della finestra «Domanda per dev» per il periodo `[from, to]`, con i
+    /// Quote per dev del worker (finestra «Dev di …» del registro).
+    SetWorkerDevShares {
+        worker: WorkerId,
+        shares: Vec<(DevId, u32)>,
+    },
+    /// PDF della finestra «Domanda e capacità» per il periodo `[from, to]`, con i
     /// filtri della finestra.
     ExportDemand {
         from: i32,
@@ -2796,6 +2811,7 @@ impl eframe::App for PjmApp {
             dev_totals_window(ui.ctx(), app, state, &mut actions);
             worker_visibility_window(ui.ctx(), app, state, &mut actions);
             registry_window(ui.ctx(), app, state, &mut actions);
+            worker_devs_window(ui.ctx(), app, state, &mut actions);
             rules_window(ui.ctx(), app, state, &mut actions);
             confirm_delete_milestone_window(ui.ctx(), app, state, &mut actions);
             rule_preview_window(ui.ctx(), app, state, &mut actions);
@@ -4148,6 +4164,11 @@ impl PjmApp {
                     None => self
                         .ui
                         .toast_warn("Nessun progetto da esportare: matrice non creata."),
+                }
+            }
+            Action::SetWorkerDevShares { worker, shares } => {
+                if self.app.workers.set_dev_shares(worker, &shares) {
+                    self.mark_changed();
                 }
             }
             Action::ExportDemand { from, to } => {

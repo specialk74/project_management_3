@@ -228,9 +228,11 @@ l'elenco. Per ogni elemento una riga con:
     come spegnere insieme le spunte **Footer** ed **Elenchi** di «Filtri ▸ Worker
     (visibilità e ghost)…»;
   - un **dev** nascosto non è più proposto in «Dev del progetto» (resta nei
-    progetti che lo hanno già, dove si può ancora togliere), nel filtro Dev e
-    nella combo Dev delle torte; nelle righe «Ore per dev» della matrice compare
-    solo se ha ore;
+    progetti che lo hanno già, dove si può ancora togliere) e nel filtro Dev; nella
+    combo **Dev** di Torte e Domanda e capacità resta solo se è ancora usato in
+    qualche progetto (i suoi dati lì compaiono), con «(nascosto)» accanto al nome,
+    così si può togliere; nelle righe «Ore per dev» della matrice compare solo se
+    ha ore;
   - una **categoria** nascosta non è più proposta nella scelta della categoria del
     progetto (resta su quelli che la hanno), nel filtro Categorie, nelle combo di
     matrice e torte e nel selettore del footer;
@@ -240,6 +242,18 @@ l'elenco. Per ogni elemento una riga con:
 
   Il nome di un elemento nascosto è scritto in grigio; togliendo la spunta torna
   come prima.
+- **Dev (capacità)** (solo nella scheda **Worker**) — i dev che il worker sa fare,
+  con la **quota** del suo tempo per ciascuno (es. «Frontend 70% · Test 30%»; «—»
+  se non dichiarati). Servono alla capacità di **Vista ▸ Domanda e capacità…**.
+  Se sono tante e il pulsante le taglia con «…», passandoci sopra si vedono
+  tutte, una per riga. Il pulsante apre la finestra **Dev di …**: un campo in %
+  per **ogni** dev, anche quelli nascosti (segnati «nascosto»), in un elenco che
+  scorre se sono molti, il **Totale** (al massimo 100%: oltre, OK è spento;
+  sotto, il resto del tempo non conta per nessun dev), **Proponi dagli ultimi 6
+  mesi** (le quote in proporzione alle sue ore per dev nelle 26 settimane prima di
+  questa, intere e con somma 100) e **Azzera**; **OK** salva, **Annulla** o **Esc**
+  lasciano tutto com'era. Le quote sono salvate nel file solo se dichiarate;
+  eliminando un dev sparisce anche dalle quote.
 - **Nei totali** (solo nella scheda **Dev**) — il dev compare nel riquadro in basso
   a sinistra del footer (riga e somma «Totale»). È la stessa spunta di **Filtri ▸
   Dev nei totali…** ed è **indipendente** da «Nascosto»: un dev tolto dai totali
@@ -282,7 +296,7 @@ altri si raggiungono scorrendo l'elenco. Così anche su uno schermo piccolo i
 bottoni in fondo (es. **Esporta PDF…**) restano sempre visibili.
 
 **Finestre separate**: **Saturazione worker**, **Matrice progetti/worker**,
-**Torte dev/categorie per worker**, **Effort per worker** e **Domanda per dev**
+**Torte dev/categorie per worker**, **Effort per worker** e **Domanda e capacità**
 (menù Vista) si
 aprono come **finestre vere del sistema**, con la loro barra del titolo: si
 possono spostare fuori dalla finestra principale (anche su un altro monitor),
@@ -501,8 +515,9 @@ Progetti, Dev, Categorie, Anni — vedi §14): cambia solo la colonna che riceve
   progetti ha lavorato in un intervallo di date, con export PDF/SVG (vedi §15).
 - **Effort per worker…** — per ogni worker, le ore settimana per settimana su
   ciascun progetto e dev, con export PDF (vedi §15).
-- **Domanda per dev…** — per ogni dev, mese per mese, quante ore sono già
-  assegnate e quante restano da assegnare (vedi §15).
+- **Domanda e capacità…** — per ogni dev, mese per mese, quante ore sono già
+  assegnate, quante restano da assegnare e quante ne possono dare i worker di
+  quel dev (vedi §15).
 
 ---
 
@@ -2128,11 +2143,11 @@ assegnato** (anche a 0 ore, come nella tabella), con `Worker`, `Project`, `Dev`,
 `Week` (lunedì `aaaa-mm-gg`), `Year`, `Month`, `Hours` e `Week status`
 (*Vacation* / *Sick*, vuoto se nessuno dei due).
 
-### Domanda per dev (Vista ▸ Domanda per dev…)
-Risponde alla domanda **«quanto lavoro c'è per ogni ruolo, mese per mese?»**.
-È il primo passo verso il *capacity planning*: per ora mostra la **domanda**; la
-capacità per dev (quante ore possono dare i worker di quel ruolo) arriverà più
-avanti. Solo lettura, finestra vera del sistema come le altre viste.
+### Domanda e capacità (Vista ▸ Domanda e capacità…)
+Risponde alla domanda **«abbiamo abbastanza persone, per ogni ruolo, per il lavoro
+che c'è mese per mese?»** (il *capacity planning*): per ogni dev confronta la
+**domanda** (le ore di lavoro) con la **capacità** (le ore che possono dare i worker
+di quel ruolo). Solo lettura, finestra vera del sistema come le altre viste.
 
 In alto il **periodo** (Da / A, la combo degli anni e «Da oggi a un anno», di
 partenza da oggi a un anno da oggi) e, sotto, i filtri **Categorie**, **Stato**,
@@ -2142,9 +2157,10 @@ righe dei dev spuntati, e la riga Totale somma solo quelli. A ogni apertura lo S
 possono aggiungere dalla combo). Conta **tutti** i progetti che passano i filtri,
 non solo quelli della vista corrente.
 
-La tabella ha una **riga per dev** (solo i dev con ore nel periodo, il nome nel
-colore del dev) e una **colonna per mese**; in fondo la riga **Totale**, a destra
-la colonna **Totale**. Ogni cella mostra in grande il totale e sotto le due parti:
+La tabella ha una **riga per dev** (i dev con domanda o capacità nel periodo, il
+nome nel colore del dev) e una **colonna per mese**; in fondo la riga **Totale**, a
+destra la colonna **Totale**. Ogni cella mostra in grande la **domanda** totale e
+sotto le sue due parti:
 - in **blu** le ore **assegnate**: quelle già in griglia per quel dev, su tutti i
   progetti, nel mese del **lunedì** della settimana;
 - in **arancione** le ore **da assegnare**: per ogni dev di ogni progetto, effort
@@ -2153,18 +2169,46 @@ la colonna **Totale**. Ogni cella mostra in grande il totale e sotto le due part
   progetto, se è più avanti) alla **fine del progetto**, inclusa. È una stima:
   il lavoro vero di rado si distribuisce in modo uniforme.
 
+Sotto, la riga **«cap capacità · scarto»**:
+- la **capacità** del dev nel mese: per ogni settimana del mese (quelle con il
+  lunedì nel periodo), le **ore massime effettive** di ogni worker che ha una
+  **quota** su quel dev — il suo massimo o il limite di quella settimana, come in
+  Saturazione: una settimana di ferie conta solo se il suo limite è 0 — per la
+  quota. Le quote si dichiarano nella colonna **Dev (capacità)** del registro dei
+  worker (§3, o il pulsante **Quote dei worker…** della finestra). Ghost e worker
+  archiviati (nascosti in footer ed elenchi) non contano. La capacità è quella di
+  tutti i worker: **non** dipende dai filtri dei progetti;
+- lo **scarto** = capacità − domanda: **verde con il +** se avanzano ore, **rosso
+  con il −** se mancano; dove mancano anche il fondo della cella è rossastro.
+
+Un dev su cui nessun worker ha una quota è segnato **«capacità non dichiarata»**:
+mostra solo la domanda. Le colonne «Senza fine» e «In ritardo» non hanno
+capacità; nella colonna **Totale** la capacità è quella dei mesi e la domanda
+comprende anche quelle due colonne.
+
 Una barretta in fondo alla cella, blu e arancione, la confronta con la cella più
-carica della tabella. Sopra la tabella una **legenda** ricorda cosa sono il blu e
-l'arancione (passando sulle due voci, la spiegazione completa). Le colonne **Senza fine** (progetti senza data di fine) e
+carica della tabella (domanda o capacità); il **segno nero** sulla barretta è la
+capacità: se la barretta lo supera, il lavoro è più delle persone. Sopra la
+tabella una **legenda** ricorda colori e segni (passando sulle voci, la
+spiegazione completa) e, nella sezione **«Come si legge una cella»** (aperta
+all'inizio, si chiude con un clic sul titolo), una **cella di esempio** —
+domanda 160h, di cui 120 assegnate e 40 da assegnare, capacità 140h: mancano 20h
+— con accanto, collegata da una linea, la spiegazione di ogni riga e della
+barretta, e sotto il significato del fondo rossastro. La cella di esempio c'è
+solo nella finestra, non nel PDF. Le colonne **Senza fine** (progetti senza data di fine) e
 **In ritardo** (progetti con la fine già passata) raccolgono il «da assegnare»
 che non si sa in quale mese cada; compaiono solo se servono e non dipendono dal
-periodo. Passando con il mouse su una cella si vedono i progetti che la
-compongono, dal più pesante.
+periodo. Passando con il mouse su una cella si vedono la domanda, la capacità e
+quanto manca o avanza, i worker che danno la capacità (con le loro ore) e i
+progetti che compongono la domanda, dal più pesante.
 
 **Esporta PDF…** salva la tabella in un PDF (in inglese, A4 orizzontale, come gli
-altri export) con la stessa legenda e i filtri nel sottotitolo. Se i dev non
-entrano in una pagina la tabella continua sulle pagine dopo; se i mesi sono
-troppi per la larghezza, le colonne si dividono in più pagine. La riga **Total**
+altri export) con la stessa legenda, la capacità, lo scarto e i filtri nel
+sottotitolo. Le righe si abbassano (con il testo) per far stare tutti i dev in
+una pagina: fino a **14 dev** e un anno di mesi con le colonne «No end»,
+«Overdue» e «Total» la tabella sta in **una sola pagina**. Con più dev la tabella
+continua sulle pagine dopo; se i mesi sono troppi per la larghezza, le colonne si
+dividono in più pagine. La riga **Total**
 c'è su ogni pagina; la colonna **Total** sta nell'ultimo blocco di colonne.
 
 ---
